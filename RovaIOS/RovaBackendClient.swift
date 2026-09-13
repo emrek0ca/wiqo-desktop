@@ -12,11 +12,11 @@ struct PlannedCommand: Identifiable {
 }
 
 /// Where the app's copilot/auth requests go. Defaults to localhost for Simulator use;
-/// override via the login screen when testing against a Mac's LAN address or a deployed
-/// instance, e.g. "https://api.rova.app".
+/// override via the login screen when pointing at a different deployment or a Mac's LAN
+/// address during local backend development.
 enum RovaBackendConfig {
     private static let key = "rova.backend.baseURL"
-    private static let fallback = URL(string: "http://localhost:4000")!
+    private static let fallback = URL(string: "https://84-247-172-213.sslip.io")!
 
     static var baseURL: URL {
         get {

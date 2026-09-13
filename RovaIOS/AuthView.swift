@@ -45,11 +45,11 @@ struct AuthView: View {
                     Section { Text(errorMessage).foregroundStyle(.red) }
                 }
                 Section("Sunucu Adresi") {
-                    TextField("http://…", text: $backendURLText)
+                    TextField("https://…", text: $backendURLText)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
-                    Text("Rova AI'nin bağlandığı sunucu. Simülatörde varsayılan (localhost) çalışır; fiziksel cihazda test ederken Mac'inin yerel ağ adresini gir (ör. http://192.168.1.5:4000).")
+                    Text("Rova AI'nin bağlandığı sunucu. Varsayılan olarak canlı Rova sunucusuna bağlanır; yerel backend geliştirmesi yapıyorsan Mac'inin ağ adresini girebilirsin (ör. http://192.168.1.5:4000).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
