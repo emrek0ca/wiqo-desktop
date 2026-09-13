@@ -86,8 +86,15 @@ struct HomeView: View {
                             Text(model.deviceInfo?.displayName ?? "My Mac").font(.headline)
                             HStack(spacing: 6) {
                                 Text(statusText).font(.subheadline).foregroundStyle(statusColor)
-                                if let latency = model.lastPingLatencyMs, model.state == .connected {
-                                    Text("• \(latency) ms").font(.caption).foregroundStyle(.secondary)
+                                if model.state == .connected {
+                                    Image(systemName: model.connectionQuality.symbolName)
+                                        .font(.caption2)
+                                        .foregroundStyle(qualityColor)
+                                    if let latency = model.lastPingLatencyMs {
+                                        Text("\(model.connectionQuality.label) • \(latency) ms")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                             }
                         }
@@ -305,6 +312,10 @@ struct HomeView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.connect() }
         }
+        .onChange(of: model.systemStatus) { _, status in
+            if let level = status?.volumePercentage { volume = Double(level) }
+            if let level = status?.brightnessPercentage { brightness = Double(level) }
+        }
     }
 
     private var statusText: String {
@@ -313,6 +324,15 @@ struct HomeView: View {
         case .connecting: return "Connecting…"
         case .failed: return "Connection failed"
         case .disconnected: return "Mac Offline"
+        }
+    }
+
+    private var qualityColor: Color {
+        switch model.connectionQuality {
+        case .unknown: return .secondary
+        case .weak: return .red
+        case .good: return .orange
+        case .excellent: return .green
         }
     }
 

@@ -189,8 +189,47 @@ enum MacSystem {
         return nil
     }
 
+    /// System-wide media command IDs used by `MRMediaRemoteSendCommand`. These match the
+    /// values Control Center's Now Playing widget sends, so they reach whichever app currently
+    /// owns Now Playing (Music, Spotify, Safari, Chrome, ...) without needing to know which one.
+    private enum MediaRemoteCommand: UInt32 {
+        case togglePlayPause = 2
+        case nextTrack = 4
+        case previousTrack = 5
+    }
+
     @MainActor
     static func mediaControl(_ action: MediaAction) -> RovaError? {
+        let command: MediaRemoteCommand
+        switch action {
+        case .playPause: command = .togglePlayPause
+        case .nextTrack: command = .nextTrack
+        case .previousTrack: command = .previousTrack
+        }
+        if sendMediaRemoteCommand(command) {
+            return nil
+        }
+        // Fall back to the app-specific AppleScript path if MediaRemote is unavailable
+        // (e.g. blocked by the App Sandbox on this macOS version).
+        return legacyMediaControl(action)
+    }
+
+    /// Sends a command via the private MediaRemote framework, the same mechanism the system
+    /// media keys and Control Center's Now Playing widget use. Returns false if the framework,
+    /// symbol, or the XPC call to `mediaremoted` is unavailable, so the caller can fall back.
+    private static func sendMediaRemoteCommand(_ command: MediaRemoteCommand) -> Bool {
+        guard let handle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_NOW) else {
+            return false
+        }
+        defer { dlclose(handle) }
+        guard let sym = dlsym(handle, "MRMediaRemoteSendCommand") else { return false }
+        typealias SendCommandFunc = @convention(c) (UInt32, CFDictionary?) -> Bool
+        let sendCommand = unsafeBitCast(sym, to: SendCommandFunc.self)
+        return sendCommand(command.rawValue, nil)
+    }
+
+    @MainActor
+    private static func legacyMediaControl(_ action: MediaAction) -> RovaError? {
         let isSpotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty
         let isMusicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty
 
@@ -250,8 +289,31 @@ enum MacSystem {
             batteryPercentage: batteryPercentage,
             isCharging: isCharging,
             uptimeSeconds: ProcessInfo.processInfo.systemUptime,
-            runtimeStatus: runtimeStatus
+            runtimeStatus: runtimeStatus,
+            volumePercentage: currentVolume(),
+            brightnessPercentage: currentBrightness()
         )
+    }
+
+    static func currentVolume() -> Int? {
+        guard let script = NSAppleScript(source: "output volume of (get volume settings)") else { return nil }
+        var error: NSDictionary?
+        let result = script.executeAndReturnError(&error)
+        guard error == nil else { return nil }
+        return Int(result.int32Value)
+    }
+
+    static func currentBrightness() -> Int? {
+        guard let handle = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_NOW) else {
+            return nil
+        }
+        defer { dlclose(handle) }
+        guard let sym = dlsym(handle, "DisplayServicesGetBrightness") else { return nil }
+        typealias GetBrightnessFunc = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
+        let getB = unsafeBitCast(sym, to: GetBrightnessFunc.self)
+        var value: Float = 0
+        guard getB(CGMainDisplayID(), &value) == 0 else { return nil }
+        return Int((value * 100).rounded())
     }
 
     static func localIPv4Address() -> String {

@@ -135,6 +135,8 @@ public struct SystemStatus: Codable, Equatable, Sendable {
     public let isCharging: Bool?
     public let uptimeSeconds: Double
     public let runtimeStatus: String
+    public let volumePercentage: Int?
+    public let brightnessPercentage: Int?
 
     public init(
         hostname: String,
@@ -142,7 +144,9 @@ public struct SystemStatus: Codable, Equatable, Sendable {
         batteryPercentage: Int?,
         isCharging: Bool?,
         uptimeSeconds: Double,
-        runtimeStatus: String
+        runtimeStatus: String,
+        volumePercentage: Int? = nil,
+        brightnessPercentage: Int? = nil
     ) {
         self.hostname = hostname
         self.macOSVersion = macOSVersion
@@ -150,6 +154,8 @@ public struct SystemStatus: Codable, Equatable, Sendable {
         self.isCharging = isCharging
         self.uptimeSeconds = uptimeSeconds
         self.runtimeStatus = runtimeStatus
+        self.volumePercentage = volumePercentage
+        self.brightnessPercentage = brightnessPercentage
     }
 }
 

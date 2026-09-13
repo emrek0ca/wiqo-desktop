@@ -12,6 +12,39 @@ enum IOSConnectionState: String {
     case failed
 }
 
+enum ConnectionQuality: Equatable, Sendable {
+    case unknown
+    case weak
+    case good
+    case excellent
+
+    /// Derives a quality bucket from a round-trip ping latency measured over the local network.
+    static func forLatency(ms: Int) -> ConnectionQuality {
+        switch ms {
+        case ..<60: return .excellent
+        case ..<200: return .good
+        default: return .weak
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .unknown: return ""
+        case .weak: return "Zayıf"
+        case .good: return "İyi"
+        case .excellent: return "Mükemmel"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .unknown: return "wifi.slash"
+        case .weak: return "wifi.exclamationmark"
+        case .good, .excellent: return "wifi"
+        }
+    }
+}
+
 struct IOSActivity: Identifiable {
     let id = UUID()
     let title: String
@@ -25,6 +58,7 @@ final class IOSConnectionModel: ObservableObject {
     @Published private(set) var deviceInfo: DeviceInfo?
     @Published private(set) var systemStatus: SystemStatus?
     @Published private(set) var lastPingLatencyMs: Int?
+    @Published private(set) var connectionQuality: ConnectionQuality = .unknown
     @Published private(set) var activities: [IOSActivity] = []
     @Published private(set) var lastError: String?
     @Published private(set) var isPaired = false
@@ -44,6 +78,7 @@ final class IOSConnectionModel: ObservableObject {
     private var pending: [UUID: CheckedContinuation<CommandResult, Error>] = [:]
     private var reconnectTask: Task<Void, Never>?
     private var reconnectAttempt = 0
+    private var heartbeatTask: Task<Void, Never>?
     private var browser: NWBrowser?
     private let discoveryQueue = DispatchQueue(label: "com.rova.discovery", qos: .utility)
     private var discoveredServiceName: String?
@@ -131,6 +166,7 @@ final class IOSConnectionModel: ObservableObject {
         reconnectTask?.cancel()
         reconnectTask = nil
         reconnectAttempt = 0
+        stopHeartbeat()
         connection?.cancel()
         connection = nil
         authenticated = false
@@ -147,6 +183,7 @@ final class IOSConnectionModel: ObservableObject {
         isPairing = false
         reconnectTask?.cancel()
         reconnectTask = nil
+        stopHeartbeat()
         connection?.cancel()
         connection = nil
         authenticated = false
@@ -166,6 +203,7 @@ final class IOSConnectionModel: ObservableObject {
         deviceInfo = nil
         systemStatus = nil
         lastPingLatencyMs = nil
+        connectionQuality = .unknown
     }
 
     func authenticateBiometrics(reason: String = "Rova komutunu onaylayın") async -> Bool {
@@ -218,9 +256,15 @@ final class IOSConnectionModel: ObservableObject {
                 self.lastError = error.message
             }
             if type == .ping {
-                let latencyMs = max(0, Int(Date().timeIntervalSince(startTime) * 1000))
-                lastPingLatencyMs = latencyMs
-                appendActivity(title: "Ping", detail: "Pong (\(latencyMs) ms)")
+                if let error = result.error {
+                    connectionQuality = .weak
+                    appendActivity(title: "Ping", detail: error.message)
+                } else {
+                    let latencyMs = max(0, Int(Date().timeIntervalSince(startTime) * 1000))
+                    lastPingLatencyMs = latencyMs
+                    connectionQuality = .forLatency(ms: latencyMs)
+                    appendActivity(title: "Ping", detail: "Pong (\(latencyMs) ms)")
+                }
             } else if case .systemStatus(let status) = result.data {
                 systemStatus = status
                 let batteryStr = status.batteryPercentage.map { "\($0)%" } ?? "N/A"
@@ -383,6 +427,7 @@ final class IOSConnectionModel: ObservableObject {
             connectTimeoutTask = nil
             pairingTimeoutTask?.cancel()
             pairingTimeoutTask = nil
+            stopHeartbeat()
             state = .failed
             authenticated = false
             fail(error.localizedDescription.isEmpty ? "Bağlantı kurulamadı." : "Mac bağlantısı kurulamadı.")
@@ -392,9 +437,11 @@ final class IOSConnectionModel: ObservableObject {
             connectTimeoutTask = nil
             pairingTimeoutTask?.cancel()
             pairingTimeoutTask = nil
+            stopHeartbeat()
             state = .disconnected
             authenticated = false
             isPairing = false
+            connectionQuality = .unknown
         default:
             break
         }
@@ -459,6 +506,8 @@ final class IOSConnectionModel: ObservableObject {
             authenticated = true
             deviceInfo = response.deviceInfo
             state = .connected
+            startHeartbeat()
+            Task { [weak self] in _ = await self?.send(.getSystemStatus) }
         case .result(let result):
             if case .systemStatus(let status) = result.data {
                 systemStatus = status
@@ -503,6 +552,8 @@ final class IOSConnectionModel: ObservableObject {
         // still report .ready. Tear it down and reconnect instead of leaving the UI stuck on
         // "Connected" with every further command failing the same way.
         if state == .connected {
+            stopHeartbeat()
+            connectionQuality = .unknown
             connection?.cancel()
             connection = nil
             authenticated = false
@@ -510,6 +561,25 @@ final class IOSConnectionModel: ObservableObject {
             lastError = message
             scheduleReconnect()
         }
+    }
+
+    /// Sends a background ping while connected so a dead socket (Wi-Fi handoff, sleep/wake,
+    /// NAT drop) is caught within seconds instead of waiting for the user to issue a command,
+    /// and so `connectionQuality` stays a live signal rather than a one-time measurement.
+    private func startHeartbeat() {
+        heartbeatTask?.cancel()
+        heartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                guard let self, !Task.isCancelled, self.state == .connected else { return }
+                _ = await self.send(.ping)
+            }
+        }
+    }
+
+    private func stopHeartbeat() {
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
     }
 
     private func failPending(_ error: Error) {
@@ -539,6 +609,8 @@ final class IOSConnectionModel: ObservableObject {
         lastError = message
         state = .failed
         isPairing = false
+        stopHeartbeat()
+        connectionQuality = .unknown
         failPending(IOSConnectionError.failed)
     }
 
