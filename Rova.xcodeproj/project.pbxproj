@@ -1,0 +1,623 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B001 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001 /* Protocol.swift */; };
+		B002 /* Validation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F002 /* Validation.swift */; };
+		B003 /* Framing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F003 /* Framing.swift */; };
+		B004 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F004 /* KeychainStore.swift */; };
+		B005 /* CryptoSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F005 /* CryptoSupport.swift */; };
+		B006 /* QRPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F006 /* QRPairing.swift */; };
+		B007 /* RovaMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F007 /* RovaMacApp.swift */; };
+		B008 /* TLSIdentityStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F008 /* TLSIdentityStore.swift */; };
+		B009 /* MacSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F009 /* MacSystem.swift */; };
+		B010 /* CommandLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = F010 /* CommandLedger.swift */; };
+		B011 /* MacCommandEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F011 /* MacCommandEngine.swift */; };
+		B012 /* MacServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F012 /* MacServer.swift */; };
+		B013 /* MacRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = F013 /* MacRuntime.swift */; };
+		B014 /* MacViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F014 /* MacViews.swift */; };
+		B017 /* RovaIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F017 /* RovaIOSApp.swift */; };
+		B018 /* IOSConnectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F018 /* IOSConnectionModel.swift */; };
+		B019 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F019 /* QRScannerView.swift */; };
+		B020 /* IOSViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F020 /* IOSViews.swift */; };
+		B026 /* ProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F026 /* ProtocolTests.swift */; };
+		B027 /* MacCommandEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F027 /* MacCommandEngineTests.swift */; };
+		FF28DCBE30573E6C0006FF82 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001 /* Protocol.swift */; };
+		FF28DCBF30573E6C0006FF82 /* Validation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F002 /* Validation.swift */; };
+		FF28DCC030573E6C0006FF82 /* Framing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F003 /* Framing.swift */; };
+		FF28DCC130573E6C0006FF82 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F004 /* KeychainStore.swift */; };
+		FF28DCC230573E6C0006FF82 /* CryptoSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F005 /* CryptoSupport.swift */; };
+		FF28DCC330573E6C0006FF82 /* QRPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F006 /* QRPairing.swift */; };
+		FF28DCC430573E6C0006FF82 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001 /* Protocol.swift */; };
+		FF28DCC530573E6C0006FF82 /* Validation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F002 /* Validation.swift */; };
+		FF28DCC630573E6C0006FF82 /* Framing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F003 /* Framing.swift */; };
+		FF28DCC730573E6C0006FF82 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F004 /* KeychainStore.swift */; };
+		FF28DCC830573E6C0006FF82 /* CryptoSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F005 /* CryptoSupport.swift */; };
+		FF28DCC930573E6C0006FF82 /* QRPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F006 /* QRPairing.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		Q001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = X001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = T001;
+			remoteInfo = RovaMac;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		F001 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
+		F002 /* Validation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Validation.swift; sourceTree = "<group>"; };
+		F003 /* Framing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Framing.swift; sourceTree = "<group>"; };
+		F004 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		F005 /* CryptoSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoSupport.swift; sourceTree = "<group>"; };
+		F006 /* QRPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRPairing.swift; sourceTree = "<group>"; };
+		F007 /* RovaMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RovaMacApp.swift; sourceTree = "<group>"; };
+		F008 /* TLSIdentityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TLSIdentityStore.swift; sourceTree = "<group>"; };
+		F009 /* MacSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSystem.swift; sourceTree = "<group>"; };
+		F010 /* CommandLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandLedger.swift; sourceTree = "<group>"; };
+		F011 /* MacCommandEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCommandEngine.swift; sourceTree = "<group>"; };
+		F012 /* MacServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacServer.swift; sourceTree = "<group>"; };
+		F013 /* MacRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRuntime.swift; sourceTree = "<group>"; };
+		F014 /* MacViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacViews.swift; sourceTree = "<group>"; };
+		F015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F016 /* RovaMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RovaMac.entitlements; sourceTree = "<group>"; };
+		F017 /* RovaIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RovaIOSApp.swift; sourceTree = "<group>"; };
+		F018 /* IOSConnectionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSConnectionModel.swift; sourceTree = "<group>"; };
+		F019 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
+		F020 /* IOSViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSViews.swift; sourceTree = "<group>"; };
+		F021 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F022 /* Rova.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rova.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F023 /* Rova.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rova.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F024 /* RovaSharedTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RovaSharedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F025 /* RovaMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RovaMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F026 /* ProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolTests.swift; sourceTree = "<group>"; };
+		F027 /* MacCommandEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCommandEngineTests.swift; sourceTree = "<group>"; };
+		F028 /* project.pbxproj */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = project.pbxproj; sourceTree = "<group>"; };
+		F029 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = README.md; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		P005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		P006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		P007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		P008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		G000 = {
+			isa = PBXGroup;
+			children = (
+				G001 /* RovaShared */,
+				G002 /* RovaMac */,
+				G003 /* RovaIOS */,
+				G004 /* Tests */,
+				G005 /* Products */,
+				F028 /* project.pbxproj */,
+				F029 /* README.md */,
+			);
+			sourceTree = "<group>";
+		};
+		G001 /* RovaShared */ = {
+			isa = PBXGroup;
+			children = (
+				F001 /* Protocol.swift */,
+				F002 /* Validation.swift */,
+				F003 /* Framing.swift */,
+				F004 /* KeychainStore.swift */,
+				F005 /* CryptoSupport.swift */,
+				F006 /* QRPairing.swift */,
+			);
+			path = RovaShared;
+			sourceTree = "<group>";
+		};
+		G002 /* RovaMac */ = {
+			isa = PBXGroup;
+			children = (
+				F007 /* RovaMacApp.swift */,
+				F008 /* TLSIdentityStore.swift */,
+				F009 /* MacSystem.swift */,
+				F010 /* CommandLedger.swift */,
+				F011 /* MacCommandEngine.swift */,
+				F012 /* MacServer.swift */,
+				F013 /* MacRuntime.swift */,
+				F014 /* MacViews.swift */,
+				F015 /* Info.plist */,
+				F016 /* RovaMac.entitlements */,
+			);
+			path = RovaMac;
+			sourceTree = "<group>";
+		};
+		G003 /* RovaIOS */ = {
+			isa = PBXGroup;
+			children = (
+				F017 /* RovaIOSApp.swift */,
+				F018 /* IOSConnectionModel.swift */,
+				F019 /* QRScannerView.swift */,
+				F020 /* IOSViews.swift */,
+				F021 /* Info.plist */,
+			);
+			path = RovaIOS;
+			sourceTree = "<group>";
+		};
+		G004 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				G006 /* RovaSharedTests */,
+				G007 /* RovaMacTests */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		G005 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F022 /* Rova.app */,
+				F023 /* Rova.app */,
+				F024 /* RovaSharedTests.xctest */,
+				F025 /* RovaMacTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		G006 /* RovaSharedTests */ = {
+			isa = PBXGroup;
+			children = (
+				F026 /* ProtocolTests.swift */,
+			);
+			path = RovaSharedTests;
+			sourceTree = "<group>";
+		};
+		G007 /* RovaMacTests */ = {
+			isa = PBXGroup;
+			children = (
+				F027 /* MacCommandEngineTests.swift */,
+			);
+			path = RovaMacTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		T001 /* RovaMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C001 /* Build configuration list for PBXNativeTarget "RovaMac" */;
+			buildPhases = (
+				P001 /* Sources */,
+				P005 /* Frameworks */,
+				P009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RovaMac;
+			productName = RovaMac;
+			productReference = F022 /* Rova.app */;
+			productType = "com.apple.product-type.application";
+		};
+		T002 /* RovaIOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C002 /* Build configuration list for PBXNativeTarget "RovaIOS" */;
+			buildPhases = (
+				P002 /* Sources */,
+				P006 /* Frameworks */,
+				P010 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RovaIOS;
+			productName = RovaIOS;
+			productReference = F023 /* Rova.app */;
+			productType = "com.apple.product-type.application";
+		};
+		T003 /* RovaSharedTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C003 /* Build configuration list for PBXNativeTarget "RovaSharedTests" */;
+			buildPhases = (
+				P003 /* Sources */,
+				P007 /* Frameworks */,
+				P011 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RovaSharedTests;
+			productName = RovaSharedTests;
+			productReference = F024 /* RovaSharedTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		T004 /* RovaMacTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C004 /* Build configuration list for PBXNativeTarget "RovaMacTests" */;
+			buildPhases = (
+				P004 /* Sources */,
+				P008 /* Frameworks */,
+				P012 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D001 /* PBXTargetDependency */,
+			);
+			name = RovaMacTests;
+			productName = RovaMacTests;
+			productReference = F025 /* RovaMacTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		X001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 2630;
+				ORGANIZATIONNAME = Rova;
+				TargetAttributes = {
+					T001 = {
+						CreatedOnToolsVersion = 26.6;
+						ProvisioningStyle = Automatic;
+					};
+					T002 = {
+						CreatedOnToolsVersion = 26.6;
+						DevelopmentTeam = 7SRKKF75MC;
+						ProvisioningStyle = Automatic;
+					};
+					T003 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = T001;
+					};
+					T004 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = T001;
+					};
+				};
+			};
+			buildConfigurationList = C000 /* Build configuration list for PBXProject "Rova" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				tr,
+			);
+			mainGroup = G000;
+			productRefGroup = G005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				T001 /* RovaMac */,
+				T002 /* RovaIOS */,
+				T003 /* RovaSharedTests */,
+				T004 /* RovaMacTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		P009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		P010 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		P011 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		P012 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		P001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B007 /* RovaMacApp.swift in Sources */,
+				B008 /* TLSIdentityStore.swift in Sources */,
+				B009 /* MacSystem.swift in Sources */,
+				B010 /* CommandLedger.swift in Sources */,
+				B011 /* MacCommandEngine.swift in Sources */,
+				B012 /* MacServer.swift in Sources */,
+				B013 /* MacRuntime.swift in Sources */,
+				B014 /* MacViews.swift in Sources */,
+				B001 /* Protocol.swift in Sources */,
+				B002 /* Validation.swift in Sources */,
+				B003 /* Framing.swift in Sources */,
+				B004 /* KeychainStore.swift in Sources */,
+				B005 /* CryptoSupport.swift in Sources */,
+				B006 /* QRPairing.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		P002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B017 /* RovaIOSApp.swift in Sources */,
+				B018 /* IOSConnectionModel.swift in Sources */,
+				B019 /* QRScannerView.swift in Sources */,
+				B020 /* IOSViews.swift in Sources */,
+				FF28DCBE30573E6C0006FF82 /* Protocol.swift in Sources */,
+				FF28DCBF30573E6C0006FF82 /* Validation.swift in Sources */,
+				FF28DCC030573E6C0006FF82 /* Framing.swift in Sources */,
+				FF28DCC130573E6C0006FF82 /* KeychainStore.swift in Sources */,
+				FF28DCC230573E6C0006FF82 /* CryptoSupport.swift in Sources */,
+				FF28DCC330573E6C0006FF82 /* QRPairing.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		P003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B026 /* ProtocolTests.swift in Sources */,
+				FF28DCC430573E6C0006FF82 /* Protocol.swift in Sources */,
+				FF28DCC530573E6C0006FF82 /* Validation.swift in Sources */,
+				FF28DCC630573E6C0006FF82 /* Framing.swift in Sources */,
+				FF28DCC730573E6C0006FF82 /* KeychainStore.swift in Sources */,
+				FF28DCC830573E6C0006FF82 /* CryptoSupport.swift in Sources */,
+				FF28DCC930573E6C0006FF82 /* QRPairing.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		P004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B027 /* MacCommandEngineTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = T001 /* RovaMac */;
+			targetProxy = Q001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		D000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		D001C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		D010 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = RovaMac/RovaMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_TESTABILITY = YES;
+				INFOPLIST_FILE = RovaMac/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rova.mac;
+				PRODUCT_NAME = Rova;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_MODULE_NAME = RovaMac;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		D011 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = RovaMac/RovaMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = RovaMac/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rova.mac;
+				PRODUCT_NAME = Rova;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_MODULE_NAME = RovaMac;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		D020 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 7SRKKF75MC;
+				INFOPLIST_FILE = RovaIOS/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rova.ios;
+				PRODUCT_NAME = Rova;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_MODULE_NAME = RovaIOS;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		D021 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 7SRKKF75MC;
+				INFOPLIST_FILE = RovaIOS/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rova.ios;
+				PRODUCT_NAME = Rova;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_MODULE_NAME = RovaIOS;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		D030 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rova.sharedtests;
+				PRODUCT_NAME = RovaSharedTests;
+				SWIFT_MODULE_NAME = RovaSharedTests;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		D031 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rova.sharedtests;
+				PRODUCT_NAME = RovaSharedTests;
+				SWIFT_MODULE_NAME = RovaSharedTests;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		D040 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rova.mactests;
+				PRODUCT_NAME = RovaMacTests;
+				SWIFT_MODULE_NAME = RovaMacTests;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Rova.app/Contents/MacOS/Rova";
+			};
+			name = Debug;
+		};
+		D041 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rova.mactests;
+				PRODUCT_NAME = RovaMacTests;
+				SWIFT_MODULE_NAME = RovaMacTests;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Rova.app/Contents/MacOS/Rova";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		C000 /* Build configuration list for PBXProject "Rova" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D000 /* Debug */,
+				D001C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C001 /* Build configuration list for PBXNativeTarget "RovaMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D010 /* Debug */,
+				D011 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C002 /* Build configuration list for PBXNativeTarget "RovaIOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D020 /* Debug */,
+				D021 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C003 /* Build configuration list for PBXNativeTarget "RovaSharedTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D030 /* Debug */,
+				D031 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C004 /* Build configuration list for PBXNativeTarget "RovaMacTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D040 /* Debug */,
+				D041 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = X001 /* Project object */;
+}

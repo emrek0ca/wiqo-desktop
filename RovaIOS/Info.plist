@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Rova</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.rova.ios</string>
+	<key>CFBundleName</key>
+	<string>Rova</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Rova, aynı ağdaki Mac’inizi bulup komut göndermek için yerel ağınızı kullanır.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_rova._tcp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Rova, Mac’te gösterilen pairing QR kodunu taramak için kamerayı kullanır.</string>
+</dict>
+</plist>
