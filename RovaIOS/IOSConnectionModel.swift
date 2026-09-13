@@ -110,7 +110,14 @@ final class IOSConnectionModel: ObservableObject {
             state = .disconnected
             return
         }
-        guard state != .connected, state != .connecting else { return }
+        if state == .connected {
+            // Called opportunistically (e.g. app returning to foreground). Probe liveness
+            // rather than no-op: a stale socket that silently died while backgrounded will
+            // time out and self-heal via `timeout(_:message:)` instead of staying stuck.
+            Task { [weak self] in _ = await self?.send(.ping) }
+            return
+        }
+        guard state != .connecting else { return }
         mode = .authenticated
         connect(host: endpoint.host, port: endpoint.port, fingerprint: fingerprint)
     }
@@ -321,7 +328,13 @@ final class IOSConnectionModel: ObservableObject {
             }
             completion(RovaCrypto.sha256Hex(certificateData) == fingerprint)
         }, DispatchQueue(label: "com.rova.tls.verify", qos: .userInitiated))
-        return NWParameters(tls: tls, tcp: NWProtocolTCP.Options())
+        let tcp = NWProtocolTCP.Options()
+        tcp.enableKeepalive = true
+        tcp.keepaliveIdle = 10
+        tcp.keepaliveInterval = 5
+        tcp.keepaliveCount = 3
+        tcp.connectionTimeout = 6
+        return NWParameters(tls: tls, tcp: tcp)
     }
 
     private func handleConnectionState(_ newState: NWConnection.State, for source: NWConnection) {
@@ -485,6 +498,18 @@ final class IOSConnectionModel: ObservableObject {
         guard let continuation = pending.removeValue(forKey: id) else { return }
         let result = failureResult(id: id, error: RovaError(code: "TIMEOUT", message: message))
         continuation.resume(returning: result)
+        // A healthy local socket never takes 10s to answer. A timeout means the connection
+        // is silently dead (Wi-Fi handoff, sleep/wake, NAT drop) even though NWConnection may
+        // still report .ready. Tear it down and reconnect instead of leaving the UI stuck on
+        // "Connected" with every further command failing the same way.
+        if state == .connected {
+            connection?.cancel()
+            connection = nil
+            authenticated = false
+            state = .disconnected
+            lastError = message
+            scheduleReconnect()
+        }
     }
 
     private func failPending(_ error: Error) {
@@ -585,7 +610,10 @@ final class IOSConnectionModel: ObservableObject {
 
     private func handleDiscoveryResult(endpoint: NWEndpoint, serviceName: String) {
         guard isPaired, let fingerprint = certificateFingerprint else { return }
-        guard state != .connected else { return }
+        // Bonjour re-broadcasts periodically (network changes, TTL refresh); only act on it
+        // when we are not already connected or mid-handshake, otherwise every re-broadcast
+        // cancels and restarts an in-flight connection attempt, which reads as a flaky link.
+        guard state == .disconnected || state == .failed else { return }
         discoveredServiceName = serviceName
         reconnectTask?.cancel()
         reconnectTask = nil

@@ -36,7 +36,12 @@ final class MacServer: @unchecked Sendable {
                 throw RovaTLSError.identityCreationFailed
             }
             sec_protocol_options_set_local_identity(tlsOptions.securityProtocolOptions, localIdentity)
-            let parameters = NWParameters(tls: tlsOptions, tcp: NWProtocolTCP.Options())
+            let tcpOptions = NWProtocolTCP.Options()
+            tcpOptions.enableKeepalive = true
+            tcpOptions.keepaliveIdle = 10
+            tcpOptions.keepaliveInterval = 5
+            tcpOptions.keepaliveCount = 3
+            let parameters = NWParameters(tls: tlsOptions, tcp: tcpOptions)
             parameters.allowLocalEndpointReuse = true
             let listener = try NWListener(using: parameters, on: port)
             listener.service = NWListener.Service(name: Host.current().localizedName, type: "_rova._tcp", domain: nil)

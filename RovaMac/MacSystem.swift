@@ -93,16 +93,18 @@ enum MacSystem {
     static func setBrightness(_ level: Int) -> RovaError? {
         let clamped = max(0, min(100, level))
         let normalized = Float(clamped) / 100.0
-        if let handle = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_NOW) {
-            defer { dlclose(handle) }
-            typealias SetBrightnessFunc = @convention(c) (CGDirectDisplayID, Float) -> Int32
-            if let sym = dlsym(handle, "DisplayServicesSetBrightness") {
-                let setB = unsafeBitCast(sym, to: SetBrightnessFunc.self)
-                let res = setB(CGMainDisplayID(), normalized)
-                if res == 0 {
-                    return nil
-                }
-            }
+        guard let handle = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_NOW) else {
+            return RovaError(code: "BRIGHTNESS_UNAVAILABLE", message: "Ekran parlaklığı bu Mac'te desteklenmiyor.")
+        }
+        defer { dlclose(handle) }
+        guard let sym = dlsym(handle, "DisplayServicesSetBrightness") else {
+            return RovaError(code: "BRIGHTNESS_UNAVAILABLE", message: "Ekran parlaklığı bu Mac'te desteklenmiyor.")
+        }
+        typealias SetBrightnessFunc = @convention(c) (CGDirectDisplayID, Float) -> Int32
+        let setB = unsafeBitCast(sym, to: SetBrightnessFunc.self)
+        let res = setB(CGMainDisplayID(), normalized)
+        guard res == 0 else {
+            return RovaError(code: "BRIGHTNESS_FAILED", message: "Parlaklık ayarlanamadı. Harici ekranlarda veya bazı Mac modellerinde desteklenmiyor olabilir.")
         }
         return nil
     }
