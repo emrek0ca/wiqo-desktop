@@ -7,8 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		2993FDDD0A014C9D94732216 /* GroqCopilot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CCBD7958FEC1CAD3A47CECE /* GroqCopilot.swift */; };
+		1D26C79A99868523A4ECB1D0 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3316E23CDB65A96A8283CF08 /* AuthView.swift */; };
 		3C44106B0048C66ECF01156E /* CopilotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */; };
+		6C2FB4A549AEFF241332DB4B /* RovaBackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */; };
 		B001 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001 /* Protocol.swift */; };
 		B002 /* Validation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F002 /* Validation.swift */; };
 		B003 /* Framing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F003 /* Framing.swift */; };
@@ -54,8 +55,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RovaBackendClient.swift; sourceTree = "<group>"; };
+		3316E23CDB65A96A8283CF08 /* AuthView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotView.swift; sourceTree = "<group>"; };
-		6CCBD7958FEC1CAD3A47CECE /* GroqCopilot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GroqCopilot.swift; sourceTree = "<group>"; };
 		F001 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
 		F002 /* Validation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Validation.swift; sourceTree = "<group>"; };
 		F003 /* Framing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Framing.swift; sourceTree = "<group>"; };
@@ -170,8 +172,9 @@
 				F019 /* QRScannerView.swift */,
 				F020 /* IOSViews.swift */,
 				F021 /* Info.plist */,
-				6CCBD7958FEC1CAD3A47CECE /* GroqCopilot.swift */,
 				40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */,
+				091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */,
+				3316E23CDB65A96A8283CF08 /* AuthView.swift */,
 			);
 			path = RovaIOS;
 			sourceTree = "<group>";
@@ -400,8 +403,9 @@
 				FF28DCC130573E6C0006FF82 /* KeychainStore.swift in Sources */,
 				FF28DCC230573E6C0006FF82 /* CryptoSupport.swift in Sources */,
 				FF28DCC330573E6C0006FF82 /* QRPairing.swift in Sources */,
-				2993FDDD0A014C9D94732216 /* GroqCopilot.swift in Sources */,
 				3C44106B0048C66ECF01156E /* CopilotView.swift in Sources */,
+				6C2FB4A549AEFF241332DB4B /* RovaBackendClient.swift in Sources */,
+				1D26C79A99868523A4ECB1D0 /* AuthView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

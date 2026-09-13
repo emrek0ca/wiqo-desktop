@@ -1,16 +1,18 @@
 import SwiftUI
 
-/// Natural-language entry point for Rova. Text goes to `GroqCopilot.plan(for:availableApps:)`,
-/// which returns an ordered list of the exact same commands the manual buttons already send.
-/// A plan with no destructive step runs immediately; a plan with any destructive step (lock,
-/// sleep, display sleep, quit app) must be confirmed and biometrically authenticated first,
-/// matching the confirmation already required for those actions in the manual UI.
+/// Natural-language entry point for Rova. Text goes to `RovaBackendClient.plan(for:availableApps:)`,
+/// which asks Rova's backend to translate it via Groq into an ordered list of the exact same
+/// commands the manual buttons already send. A plan with no destructive step runs immediately; a
+/// plan with any destructive step (lock, sleep, display sleep, quit app) must be confirmed and
+/// biometrically authenticated first, matching the confirmation already required for those
+/// actions in the manual UI. Using the AI feature requires a Rova account; Mac pairing and
+/// manual control are unaffected and stay fully local.
 struct CopilotView: View {
     @ObservedObject var model: IOSConnectionModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var apiKeyInput = ""
-    @State private var hasAPIKey = GroqCopilot.apiKey() != nil
+    @State private var isAuthenticated = RovaBackendClient.isAuthenticated
+    @State private var showingAuth = false
     @State private var requestText = ""
     @State private var isPlanning = false
     @State private var isExecuting = false
@@ -22,8 +24,12 @@ struct CopilotView: View {
     var body: some View {
         NavigationStack {
             Form {
-                if !hasAPIKey {
-                    apiKeySection
+                if !isAuthenticated {
+                    Section {
+                        Text("Rova'ya doğal dille komut vermek için bir Rova hesabına giriş yapman gerekiyor. Mac'ini manuel kontrol etmek için hesaba ihtiyacın yok.")
+                            .foregroundStyle(.secondary)
+                        Button("Giriş Yap / Kayıt Ol") { showingAuth = true }
+                    }
                 } else {
                     requestSection
                     if model.state != .connected {
@@ -39,9 +45,10 @@ struct CopilotView: View {
                         Section { Text(errorMessage).foregroundStyle(.red) }
                     }
                     Section {
-                        Button("Groq anahtarını kaldır", role: .destructive) {
-                            GroqCopilot.clearAPIKey()
-                            hasAPIKey = false
+                        Button("Çıkış Yap", role: .destructive) {
+                            RovaBackendClient.signOut()
+                            isAuthenticated = false
+                            pendingPlan = []
                         }
                     }
                 }
@@ -52,25 +59,12 @@ struct CopilotView: View {
                     Button("Kapat") { dismiss() }
                 }
             }
-        }
-    }
-
-    private var apiKeySection: some View {
-        Section("Groq API Anahtarı") {
-            SecureField("gsk_…", text: $apiKeyInput)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Kaydet") {
-                let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                try? GroqCopilot.saveAPIKey(trimmed)
-                hasAPIKey = true
-                apiKeyInput = ""
+            .sheet(isPresented: $showingAuth) {
+                AuthView {
+                    isAuthenticated = true
+                    showingAuth = false
+                }
             }
-            .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Text("Anahtar yalnızca bu cihazda, Keychain'de saklanır; Rova sunucusuna veya başka bir yere gönderilmez.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -144,7 +138,7 @@ struct CopilotView: View {
         isPlanning = true
         defer { isPlanning = false }
         do {
-            let plan = try await GroqCopilot.plan(for: requestText, availableApps: availableApps)
+            let plan = try await RovaBackendClient.plan(for: requestText, availableApps: availableApps)
             requestText = ""
             pendingPlan = plan
             if plan.contains(where: \.isDestructive) {
@@ -152,6 +146,9 @@ struct CopilotView: View {
             } else {
                 await execute(plan)
             }
+        } catch RovaBackendError.notAuthenticated {
+            isAuthenticated = false
+            errorMessage = "Oturumun sona ermiş, tekrar giriş yap."
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }

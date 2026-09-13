@@ -26,5 +26,10 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Rova, Mac’te gösterilen pairing QR kodunu taramak için kamerayı kullanır.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
