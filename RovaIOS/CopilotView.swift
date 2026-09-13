@@ -1,43 +1,57 @@
 import SwiftUI
 
-/// Natural-language entry point for Rova. Text goes to `RovaBackendClient.plan(for:availableApps:)`,
-/// which asks Rova's backend to translate it via Groq into an ordered list of the exact same
-/// commands the manual buttons already send. A plan with no destructive step runs immediately; a
-/// plan with any destructive step (lock, sleep, display sleep, quit app) must be confirmed and
-/// biometrically authenticated first, matching the confirmation already required for those
-/// actions in the manual UI.
+private struct ChatBubble: Identifiable {
+    enum Role { case user, assistant, system }
+
+    let id = UUID()
+    let role: Role
+    var text: String
+    var steps: [PlannedCommand] = []
+    var needsConfirmation = false
+    var executedStepIDs: Set<UUID> = []
+}
+
+/// A real conversation with Rova, not a one-shot "type → plan → confirm" form. Every message
+/// (from either side) is kept in `bubbles` and the full history is resent with each new message
+/// so the model has context - the backend itself is stateless.
 ///
-/// Login lives at the app root (`RootView`), not here - by the time this view is reachable the
-/// user is already authenticated, so this screen is purely about asking and running commands.
+/// Non-destructive steps the model decides on (volume, brightness, opening an app, ...) run
+/// immediately and silently once the reply is shown, exactly like the model just "did the
+/// thing" - no extra screen in between. Destructive steps (lock, sleep, quit app) still show an
+/// inline confirmation under that message and require Face ID/Touch ID, matching the manual
+/// buttons elsewhere in the app.
 struct CopilotView: View {
     @ObservedObject var model: IOSConnectionModel
     @ObservedObject var authSession: AuthSessionStore
     @Environment(\.dismiss) private var dismiss
 
-    @State private var requestText = ""
-    @State private var isPlanning = false
-    @State private var isExecuting = false
-    @State private var pendingPlan: [PlannedCommand] = []
-    @State private var executedStepIDs: Set<UUID> = []
-    @State private var needsConfirmation = false
-    @State private var errorMessage: String?
+    @State private var bubbles: [ChatBubble] = []
+    @State private var inputText = ""
+    @State private var isSending = false
 
     var body: some View {
         NavigationStack {
-            Form {
-                requestSection
-                if model.state != .connected {
-                    Section {
-                        Text("Komutları çalıştırmak için Mac'e bağlı olman gerekiyor.")
-                            .foregroundStyle(.secondary)
+            VStack(spacing: 0) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(bubbles) { bubble in
+                                bubbleView(bubble)
+                                    .id(bubble.id)
+                            }
+                            if isSending {
+                                HStack { ProgressView(); Text("Düşünüyor…").foregroundStyle(.secondary) }
+                                    .padding(.horizontal)
+                            }
+                        }
+                        .padding(.vertical, 12)
+                    }
+                    .onChange(of: bubbles.count) { _, _ in
+                        if let last = bubbles.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
                     }
                 }
-                if !pendingPlan.isEmpty {
-                    planSection
-                }
-                if let errorMessage {
-                    Section { Text(errorMessage).foregroundStyle(.red) }
-                }
+                Divider()
+                inputBar
             }
             .navigationTitle("Rova AI")
             .toolbar {
@@ -48,107 +62,131 @@ struct CopilotView: View {
         }
     }
 
-    private var requestSection: some View {
-        Section("Rova'ya söyle") {
-            TextField("Örn: toplantıya hazırlan", text: $requestText, axis: .vertical)
-                .lineLimit(1...4)
-                .disabled(isPlanning || isExecuting)
-            Button {
-                Task { await runPlanning() }
-            } label: {
-                if isPlanning {
-                    HStack { ProgressView(); Text("Düşünüyor…") }
-                } else {
-                    Label("Gönder", systemImage: "sparkles")
-                }
+    private func bubbleView(_ bubble: ChatBubble) -> some View {
+        VStack(alignment: bubble.role == .user ? .trailing : .leading, spacing: 6) {
+            HStack {
+                if bubble.role == .user { Spacer(minLength: 40) }
+                Text(bubble.text)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(bubbleBackground(bubble.role), in: RoundedRectangle(cornerRadius: 16))
+                    .foregroundStyle(bubble.role == .user ? Color.white : Color.primary)
+                if bubble.role != .user { Spacer(minLength: 40) }
             }
-            .disabled(
-                requestText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    || isPlanning || isExecuting || model.state != .connected
-            )
+            if bubble.needsConfirmation {
+                confirmationCard(for: bubble)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: bubble.role == .user ? .trailing : .leading)
+        .padding(.horizontal)
+    }
+
+    private func bubbleBackground(_ role: ChatBubble.Role) -> Color {
+        switch role {
+        case .user: return .accentColor
+        case .assistant: return Color(.secondarySystemBackground)
+        case .system: return .red.opacity(0.15)
         }
     }
 
-    private var planSection: some View {
-        Section("Plan") {
-            ForEach(pendingPlan) { step in
+    private func confirmationCard(for bubble: ChatBubble) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(bubble.steps) { step in
                 HStack {
-                    Image(systemName: stepIcon(step))
-                        .foregroundStyle(stepColor(step))
-                    Text(step.summary)
-                    Spacer()
-                    if isExecuting && !executedStepIDs.contains(step.id) {
-                        ProgressView().controlSize(.small)
-                    }
+                    Image(systemName: bubble.executedStepIDs.contains(step.id) ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(bubble.executedStepIDs.contains(step.id) ? .green : .orange)
+                    Text(step.summary).font(.subheadline)
                 }
             }
-            if needsConfirmation {
+            HStack {
                 Button(role: .destructive) {
-                    Task { await confirmAndExecute() }
+                    Task { await confirmAndExecute(bubbleID: bubble.id) }
                 } label: {
                     Label("Onayla ve Çalıştır", systemImage: "checkmark.shield")
                 }
-                Button("İptal", role: .cancel) {
-                    pendingPlan = []
-                    needsConfirmation = false
+                .buttonStyle(.borderedProminent)
+                Button("İptal") {
+                    setBubble(bubble.id) { $0.needsConfirmation = false; $0.steps = [] }
                 }
+                .buttonStyle(.bordered)
             }
         }
+        .padding(10)
+        .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.top, 2)
     }
 
-    private func stepIcon(_ step: PlannedCommand) -> String {
-        if executedStepIDs.contains(step.id) { return "checkmark.circle.fill" }
-        return step.isDestructive ? "exclamationmark.triangle.fill" : "circle"
-    }
-
-    private func stepColor(_ step: PlannedCommand) -> Color {
-        if executedStepIDs.contains(step.id) { return .green }
-        return step.isDestructive ? .orange : .secondary
+    private var inputBar: some View {
+        HStack(spacing: 10) {
+            TextField("Rova'ya söyle…", text: $inputText, axis: .vertical)
+                .lineLimit(1...4)
+                .textFieldStyle(.roundedBorder)
+                .disabled(isSending)
+            Button {
+                Task { await sendMessage() }
+            } label: {
+                Image(systemName: "arrow.up.circle.fill").font(.title)
+            }
+            .disabled(
+                inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || isSending || model.state != .connected
+            )
+        }
+        .padding(10)
     }
 
     private var availableApps: [ApplicationID] {
         model.deviceInfo?.availableApplications.map(\.id) ?? []
     }
 
-    private func runPlanning() async {
-        errorMessage = nil
-        pendingPlan = []
-        executedStepIDs = []
-        needsConfirmation = false
-        isPlanning = true
-        defer { isPlanning = false }
+    private func sendMessage() async {
+        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        inputText = ""
+        bubbles.append(ChatBubble(role: .user, text: text))
+        isSending = true
+        defer { isSending = false }
+
+        let history = bubbles
+            .filter { $0.role != .system }
+            .map { RovaBackendClient.ChatTurn(role: $0.role == .user ? "user" : "assistant", content: $0.text) }
+
         do {
-            let plan = try await RovaBackendClient.plan(for: requestText, availableApps: availableApps)
-            requestText = ""
-            pendingPlan = plan
-            if plan.contains(where: \.isDestructive) {
-                needsConfirmation = true
+            let result = try await RovaBackendClient.converse(messages: history, availableApps: availableApps)
+            var reply = ChatBubble(role: .assistant, text: result.reply.isEmpty ? "…" : result.reply, steps: result.steps)
+            if result.steps.contains(where: \.isDestructive) {
+                reply.needsConfirmation = true
+                bubbles.append(reply)
             } else {
-                await execute(plan)
+                bubbles.append(reply)
+                await execute(result.steps, bubbleID: reply.id)
             }
         } catch RovaBackendError.notAuthenticated {
-            // The session token expired mid-use; drop back to the app-level login screen
-            // instead of showing an error inside a sheet the user can no longer act on.
             authSession.signOut()
             dismiss()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            bubbles.append(ChatBubble(role: .system, text: message))
         }
     }
 
-    private func confirmAndExecute() async {
+    private func confirmAndExecute(bubbleID: UUID) async {
         let ok = await model.authenticateBiometrics(reason: "Bu eylemleri Mac'te çalıştırmak için kimliğinizi doğrulayın")
         guard ok else { return }
-        needsConfirmation = false
-        await execute(pendingPlan)
+        setBubble(bubbleID) { $0.needsConfirmation = false }
+        guard let steps = bubbles.first(where: { $0.id == bubbleID })?.steps else { return }
+        await execute(steps, bubbleID: bubbleID)
     }
 
-    private func execute(_ plan: [PlannedCommand]) async {
-        isExecuting = true
-        defer { isExecuting = false }
-        for step in plan {
+    private func execute(_ steps: [PlannedCommand], bubbleID: UUID) async {
+        for step in steps {
             _ = await model.send(step.type, payload: step.payload)
-            executedStepIDs.insert(step.id)
+            setBubble(bubbleID) { $0.executedStepIDs.insert(step.id) }
         }
+    }
+
+    private func setBubble(_ id: UUID, _ mutate: (inout ChatBubble) -> Void) {
+        guard let index = bubbles.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&bubbles[index])
     }
 }

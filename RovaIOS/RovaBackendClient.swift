@@ -75,13 +75,29 @@ enum RovaBackendClient {
         return decoded.token
     }
 
-    static func plan(for text: String, availableApps: [ApplicationID]) async throws -> [PlannedCommand] {
+    /// One turn of conversation, in the wire shape `/copilot/chat` expects and returns.
+    struct ChatTurn: Codable {
+        let role: String
+        let content: String
+    }
+
+    struct ConverseResult {
+        let reply: String
+        let steps: [PlannedCommand]
+    }
+
+    /// Sends the whole conversation so far (the backend is stateless; the app owns history) and
+    /// gets back the model's natural-language reply plus any Mac-bound steps it decided to take.
+    static func converse(messages: [ChatTurn], availableApps: [ApplicationID]) async throws -> ConverseResult {
         guard let token else { throw RovaBackendError.notAuthenticated }
-        var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("copilot/plan"))
+        var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("copilot/chat"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let body: [String: Any] = ["text": text, "availableApps": availableApps.map(\.rawValue)]
+        let body: [String: Any] = [
+            "messages": messages.map { ["role": $0.role, "content": $0.content] },
+            "availableApps": availableApps.map(\.rawValue)
+        ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await send(request)
@@ -95,11 +111,12 @@ enum RovaBackendClient {
             let summary: String
             let isDestructive: Bool
         }
-        struct PlanResponse: Decodable { let steps: [StepResponse] }
-        let decoded = try decode(PlanResponse.self, from: data, response: response)
-        return decoded.steps.map {
+        struct ChatResponse: Decodable { let reply: String; let steps: [StepResponse] }
+        let decoded = try decode(ChatResponse.self, from: data, response: response)
+        let steps = decoded.steps.map {
             PlannedCommand(type: $0.type, payload: $0.payload, summary: $0.summary, isDestructive: $0.isDestructive)
         }
+        return ConverseResult(reply: decoded.reply, steps: steps)
     }
 
     // MARK: - Shared plumbing
