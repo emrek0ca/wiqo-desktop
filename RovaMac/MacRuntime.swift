@@ -247,6 +247,7 @@ final class MacRuntime: ObservableObject {
     }
 
     private func isPairingCodeValid(_ code: String) -> Bool {
+        guard pairingExpiresAt > Date() else { refreshPairingCode(); return false }
         let payload = PairingPayload(host: localIPAddress, port: port, certificateFingerprint: certificateFingerprint, pairingCode: pairingCode, expiresAt: pairingExpiresAt)
         if !RovaValidation.isPairingPayloadValid(payload) { refreshPairingCode(); return false }
         return RovaCrypto.constantTimeEquals(code, pairingCode)

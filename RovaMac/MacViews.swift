@@ -93,6 +93,10 @@ struct PairingQRView: View {
         .padding(24)
         .frame(width: 320, height: 380)
         .onAppear {
+            // Always show a fresh 5-minute code: a code generated at app launch (or the last
+            // time this window was opened) could otherwise already be expired or seconds from
+            // expiring, which used to surface as a confusing generic "invalid QR" on the phone.
+            runtime.regeneratePairing()
             DispatchQueue.main.async {
                 NSApp.activate(ignoringOtherApps: true)
                 guard let window = NSApp.windows.first(where: { $0.title == "Pairing QR" }) else { return }

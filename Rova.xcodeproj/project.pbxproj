@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		1D26C79A99868523A4ECB1D0 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3316E23CDB65A96A8283CF08 /* AuthView.swift */; };
 		3C44106B0048C66ECF01156E /* CopilotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */; };
+		4FDC30AA70FBC8AD06EAAEAF /* AuthSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDEB5E8610087C8CA0CC13D /* AuthSessionStore.swift */; };
 		6C2FB4A549AEFF241332DB4B /* RovaBackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */; };
 		B001 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001 /* Protocol.swift */; };
 		B002 /* Validation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F002 /* Validation.swift */; };
@@ -56,6 +57,7 @@
 
 /* Begin PBXFileReference section */
 		091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RovaBackendClient.swift; sourceTree = "<group>"; };
+		0EDEB5E8610087C8CA0CC13D /* AuthSessionStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AuthSessionStore.swift; sourceTree = "<group>"; };
 		3316E23CDB65A96A8283CF08 /* AuthView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotView.swift; sourceTree = "<group>"; };
 		F001 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
@@ -175,6 +177,7 @@
 				40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */,
 				091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */,
 				3316E23CDB65A96A8283CF08 /* AuthView.swift */,
+				0EDEB5E8610087C8CA0CC13D /* AuthSessionStore.swift */,
 			);
 			path = RovaIOS;
 			sourceTree = "<group>";
@@ -406,6 +409,7 @@
 				3C44106B0048C66ECF01156E /* CopilotView.swift in Sources */,
 				6C2FB4A549AEFF241332DB4B /* RovaBackendClient.swift in Sources */,
 				1D26C79A99868523A4ECB1D0 /* AuthView.swift in Sources */,
+				4FDC30AA70FBC8AD06EAAEAF /* AuthSessionStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

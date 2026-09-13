@@ -25,8 +25,15 @@ final class ProtocolTests: XCTestCase {
     }
 
     func testExpiredPairingAndInvalidToken() {
-        let payload = PairingPayload(host: "192.168.1.2", port: 47831, certificateFingerprint: String(repeating: "a", count: 64), pairingCode: "123456", expiresAt: Date().addingTimeInterval(-1))
-        XCTAssertFalse(RovaValidation.isPairingPayloadValid(payload))
+        // isPairingPayloadValid checks shape only; expiry is the caller's own, separate check
+        // (this split lets callers tell "malformed QR" and "expired QR" apart, see Validation.swift).
+        let expired = PairingPayload(host: "192.168.1.2", port: 47831, certificateFingerprint: String(repeating: "a", count: 64), pairingCode: "123456", expiresAt: Date().addingTimeInterval(-1))
+        XCTAssertTrue(RovaValidation.isPairingPayloadValid(expired))
+        XCTAssertFalse(expired.expiresAt > Date())
+
+        let malformed = PairingPayload(host: "192.168.1.2", port: 47831, certificateFingerprint: "not-a-fingerprint", pairingCode: "123456", expiresAt: Date().addingTimeInterval(300))
+        XCTAssertFalse(RovaValidation.isPairingPayloadValid(malformed))
+
         let id = UUID()
         XCTAssertFalse(RovaValidation.isValidToken("wrong", expected: "right", deviceID: id, expectedDeviceID: id))
     }

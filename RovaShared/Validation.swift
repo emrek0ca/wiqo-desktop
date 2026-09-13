@@ -61,8 +61,11 @@ public enum RovaValidation {
         return RovaCrypto.constantTimeEquals(signature, expected)
     }
 
-    public static func isPairingPayloadValid(_ payload: PairingPayload, now: Date = Date()) -> Bool {
-        payload.version == 1 && payload.expiresAt > now && payload.pairingCode.count == 6 &&
+    /// Checks the payload's *shape* only (well-formed host/port/fingerprint/code) - deliberately
+    /// independent of `expiresAt` so callers can distinguish "malformed QR" from "expired QR"
+    /// and show the right message instead of a generic "invalid" for both.
+    public static func isPairingPayloadValid(_ payload: PairingPayload) -> Bool {
+        payload.version == 1 && payload.pairingCode.count == 6 &&
             payload.pairingCode.allSatisfy({ $0.isNumber }) && payload.port != 0 && !payload.host.isEmpty &&
             payload.certificateFingerprint.count == 64 &&
             payload.certificateFingerprint.allSatisfy({ $0.isHexDigit })

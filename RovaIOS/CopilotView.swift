@@ -5,14 +5,15 @@ import SwiftUI
 /// commands the manual buttons already send. A plan with no destructive step runs immediately; a
 /// plan with any destructive step (lock, sleep, display sleep, quit app) must be confirmed and
 /// biometrically authenticated first, matching the confirmation already required for those
-/// actions in the manual UI. Using the AI feature requires a Rova account; Mac pairing and
-/// manual control are unaffected and stay fully local.
+/// actions in the manual UI.
+///
+/// Login lives at the app root (`RootView`), not here - by the time this view is reachable the
+/// user is already authenticated, so this screen is purely about asking and running commands.
 struct CopilotView: View {
     @ObservedObject var model: IOSConnectionModel
+    @ObservedObject var authSession: AuthSessionStore
     @Environment(\.dismiss) private var dismiss
 
-    @State private var isAuthenticated = RovaBackendClient.isAuthenticated
-    @State private var showingAuth = false
     @State private var requestText = ""
     @State private var isPlanning = false
     @State private var isExecuting = false
@@ -24,45 +25,24 @@ struct CopilotView: View {
     var body: some View {
         NavigationStack {
             Form {
-                if !isAuthenticated {
+                requestSection
+                if model.state != .connected {
                     Section {
-                        Text("Rova'ya doğal dille komut vermek için bir Rova hesabına giriş yapman gerekiyor. Mac'ini manuel kontrol etmek için hesaba ihtiyacın yok.")
+                        Text("Komutları çalıştırmak için Mac'e bağlı olman gerekiyor.")
                             .foregroundStyle(.secondary)
-                        Button("Giriş Yap / Kayıt Ol") { showingAuth = true }
                     }
-                } else {
-                    requestSection
-                    if model.state != .connected {
-                        Section {
-                            Text("Komutları çalıştırmak için Mac'e bağlı olman gerekiyor.")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    if !pendingPlan.isEmpty {
-                        planSection
-                    }
-                    if let errorMessage {
-                        Section { Text(errorMessage).foregroundStyle(.red) }
-                    }
-                    Section {
-                        Button("Çıkış Yap", role: .destructive) {
-                            RovaBackendClient.signOut()
-                            isAuthenticated = false
-                            pendingPlan = []
-                        }
-                    }
+                }
+                if !pendingPlan.isEmpty {
+                    planSection
+                }
+                if let errorMessage {
+                    Section { Text(errorMessage).foregroundStyle(.red) }
                 }
             }
             .navigationTitle("Rova AI")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Kapat") { dismiss() }
-                }
-            }
-            .sheet(isPresented: $showingAuth) {
-                AuthView {
-                    isAuthenticated = true
-                    showingAuth = false
                 }
             }
         }
@@ -147,8 +127,10 @@ struct CopilotView: View {
                 await execute(plan)
             }
         } catch RovaBackendError.notAuthenticated {
-            isAuthenticated = false
-            errorMessage = "Oturumun sona ermiş, tekrar giriş yap."
+            // The session token expired mid-use; drop back to the app-level login screen
+            // instead of showing an error inside a sheet the user can no longer act on.
+            authSession.signOut()
+            dismiss()
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }

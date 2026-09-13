@@ -2,10 +2,17 @@ import SwiftUI
 
 struct RootView: View {
     @ObservedObject var model: IOSConnectionModel
+    @ObservedObject var authSession: AuthSessionStore
 
     var body: some View {
         Group {
-            if model.isPaired { HomeView(model: model) } else { PairingView(model: model) }
+            if !authSession.isAuthenticated {
+                AuthView { authSession.refresh() }
+            } else if model.isPaired {
+                HomeView(model: model, authSession: authSession)
+            } else {
+                PairingView(model: model)
+            }
         }
     }
 }
@@ -61,6 +68,7 @@ struct PairingView: View {
 
 struct HomeView: View {
     @ObservedObject var model: IOSConnectionModel
+    @ObservedObject var authSession: AuthSessionStore
     @State private var showingLockConfirmation = false
     @State private var showingSleepConfirmation = false
     @State private var showingDisplaySleepConfirmation = false
@@ -309,11 +317,12 @@ struct HomeView: View {
                         Button("Refresh Status") { Task { _ = await model.send(.getSystemStatus) } }
                         Divider()
                         Button("Forget Mac", role: .destructive) { model.forgetPairing() }
+                        Button("Rova Hesabından Çıkış Yap", role: .destructive) { authSession.signOut() }
                     } label: { Image(systemName: "ellipsis.circle") }
                 }
             }
             .sheet(isPresented: $showingCopilot) {
-                CopilotView(model: model)
+                CopilotView(model: model, authSession: authSession)
             }
         }
         .task { model.connect() }
