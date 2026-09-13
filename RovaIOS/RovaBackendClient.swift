@@ -11,22 +11,10 @@ struct PlannedCommand: Identifiable {
     let isDestructive: Bool
 }
 
-/// Where the app's copilot/auth requests go. Defaults to localhost for Simulator use;
-/// override via the login screen when pointing at a different deployment or a Mac's LAN
-/// address during local backend development.
+/// Where the app's copilot/auth requests go. Fixed - there is exactly one Rova backend, and it
+/// is not meant to be user-configurable in the shipped app.
 enum RovaBackendConfig {
-    private static let key = "rova.backend.baseURL"
-    private static let fallback = URL(string: "https://84-247-172-213.sslip.io")!
-
-    static var baseURL: URL {
-        get {
-            guard let stored = UserDefaults.standard.string(forKey: key), let url = URL(string: stored) else {
-                return fallback
-            }
-            return url
-        }
-        set { UserDefaults.standard.set(newValue.absoluteString, forKey: key) }
-    }
+    static let baseURL = URL(string: "https://84-247-172-213.sslip.io")!
 }
 
 enum RovaBackendError: Error, LocalizedError {
