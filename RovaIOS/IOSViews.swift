@@ -68,6 +68,7 @@ struct HomeView: View {
     @State private var brightness: Double = 80
     @State private var urlText = "https://www.apple.com"
     @State private var clipboardText = ""
+    @State private var showingCopilot = false
     @Environment(\.scenePhase) private var scenePhase
 
     private var availableApps: [ApplicationInfo] {
@@ -295,6 +296,10 @@ struct HomeView: View {
             .navigationTitle("Rova")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingCopilot = true } label: { Image(systemName: "sparkles") }
+                        .accessibilityLabel("Rova AI")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { model.retry() } label: { Image(systemName: "arrow.clockwise") }
                         .accessibilityLabel("Retry connection")
                 }
@@ -306,6 +311,9 @@ struct HomeView: View {
                         Button("Forget Mac", role: .destructive) { model.forgetPairing() }
                     } label: { Image(systemName: "ellipsis.circle") }
                 }
+            }
+            .sheet(isPresented: $showingCopilot) {
+                CopilotView(model: model)
             }
         }
         .task { model.connect() }
