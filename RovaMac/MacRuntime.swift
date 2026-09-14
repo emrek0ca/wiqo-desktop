@@ -233,8 +233,11 @@ final class MacRuntime: ObservableObject {
             }
             commandLogger.info("Executing capability \(request.type.rawValue, privacy: .public)")
             let currentStatus = serviceState.rawValue
-            Task { [engine] in
+            Task { [engine, errorLogger] in
                 let result = await engine.execute(request, runtimeStatus: currentStatus)
+                if result.status == .failed || result.status == .denied {
+                    errorLogger.error("Capability \(request.type.rawValue, privacy: .public) \(result.status.rawValue, privacy: .public): \(result.message, privacy: .public)")
+                }
                 session.send(WireEnvelope(requestID: envelope.requestID, message: .result(result)))
             }
         case .backendToken(let backendToken):

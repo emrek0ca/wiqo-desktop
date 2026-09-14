@@ -9,6 +9,11 @@ private struct ChatBubble: Identifiable {
     var steps: [PlannedCommand] = []
     var needsConfirmation = false
     var executedStepIDs: Set<UUID> = []
+    /// Populated when the Mac actually rejects/fails a step - the model's reply text is written
+    /// optimistically before execution happens, so this is the only place a real failure (a
+    /// permission denial, a full disk, anything) becomes visible instead of silently vanishing
+    /// behind a reply that already claimed success.
+    var failedSteps: [UUID: String] = [:]
 }
 
 private let suggestions: [(title: String, icon: String)] = [
@@ -116,10 +121,33 @@ struct CopilotView: View {
             }
             if bubble.needsConfirmation {
                 confirmationCard(for: bubble)
+            } else if !bubble.failedSteps.isEmpty {
+                failureCard(for: bubble)
             }
         }
         .frame(maxWidth: .infinity, alignment: bubble.role == .user ? .trailing : .leading)
         .padding(.horizontal)
+    }
+
+    /// Shown for auto-run (non-destructive) steps that actually failed - these otherwise have no
+    /// visible trace at all once the reply text is on screen.
+    private func failureCard(for bubble: ChatBubble) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(bubble.steps.filter { bubble.failedSteps[$0.id] != nil }) { step in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(step.summary).font(.subheadline.weight(.medium))
+                        if let message = bubble.failedSteps[step.id] {
+                            Text(message).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
+        .padding(.top, 2)
     }
 
     private func bubbleBackground(_ role: ChatBubble.Role) -> Color {
@@ -133,10 +161,15 @@ struct CopilotView: View {
     private func confirmationCard(for bubble: ChatBubble) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(bubble.steps) { step in
-                HStack {
-                    Image(systemName: bubble.executedStepIDs.contains(step.id) ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(bubble.executedStepIDs.contains(step.id) ? .green : .orange)
-                    Text(step.summary).font(.subheadline)
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: stepIcon(bubble, step))
+                        .foregroundStyle(stepColor(bubble, step))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(step.summary).font(.subheadline)
+                        if let message = bubble.failedSteps[step.id] {
+                            Text(message).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
             HStack {
@@ -155,6 +188,18 @@ struct CopilotView: View {
         .padding(12)
         .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
         .padding(.top, 2)
+    }
+
+    private func stepIcon(_ bubble: ChatBubble, _ step: PlannedCommand) -> String {
+        if bubble.failedSteps[step.id] != nil { return "xmark.circle.fill" }
+        if bubble.executedStepIDs.contains(step.id) { return "checkmark.circle.fill" }
+        return "exclamationmark.triangle.fill"
+    }
+
+    private func stepColor(_ bubble: ChatBubble, _ step: PlannedCommand) -> Color {
+        if bubble.failedSteps[step.id] != nil { return .red }
+        if bubble.executedStepIDs.contains(step.id) { return .green }
+        return .orange
     }
 
     private var inputBar: some View {
@@ -227,8 +272,13 @@ struct CopilotView: View {
 
     private func execute(_ steps: [PlannedCommand], bubbleID: UUID) async {
         for step in steps {
-            _ = await model.send(step.type, payload: step.payload)
-            setBubble(bubbleID) { $0.executedStepIDs.insert(step.id) }
+            let result = await model.send(step.type, payload: step.payload)
+            setBubble(bubbleID) { bubble in
+                bubble.executedStepIDs.insert(step.id)
+                if result.status != .completed {
+                    bubble.failedSteps[step.id] = result.error?.message ?? result.message
+                }
+            }
         }
     }
 
