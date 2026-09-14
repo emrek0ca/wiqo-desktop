@@ -88,35 +88,89 @@ enum RovaBackendClient {
 
     /// Sends the whole conversation so far (the backend is stateless; the app owns history) and
     /// gets back the model's natural-language reply plus any Mac-bound steps it decided to take.
-    static func converse(messages: [ChatTurn], availableApps: [ApplicationID]) async throws -> ConverseResult {
+    ///
+    /// The backend streams this as Server-Sent Events - zero or more live status lines ("Wikipedia'da
+    /// araştırıyorum…") delivered via `onStatus` as the model works, followed by exactly one
+    /// terminal event. This is what replaces a dead spinner with something that actually shows
+    /// progress on a long multi-tool request, and it's also why a slow chain (e.g. "research this
+    /// and save it") no longer looks hung - the connection stays alive and visibly working instead
+    /// of going silent until either an answer or a timeout arrives.
+    static func converse(
+        messages: [ChatTurn],
+        availableApps: [ApplicationID],
+        onStatus: @escaping @Sendable (String) -> Void = { _ in }
+    ) async throws -> ConverseResult {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("copilot/chat"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        // The backend caps its own work at 45s and always emits a terminal event by then; this
+        // just needs enough margin on top of that for a slow mobile network.
+        request.timeoutInterval = 90
         let body: [String: Any] = [
             "messages": messages.map { ["role": $0.role, "content": $0.content] },
             "availableApps": availableApps.map(\.rawValue)
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await send(request)
-        if response.statusCode == 401 {
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (bytes, response) = try await URLSession.shared.bytes(for: request)
+        } catch {
+            throw RovaBackendError.network(error.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else { throw RovaBackendError.invalidResponse }
+        if http.statusCode == 401 {
             signOut()
             throw RovaBackendError.notAuthenticated
         }
+        guard (200..<300).contains(http.statusCode) else {
+            throw RovaBackendError.network("İstek başarısız oldu (kod \(http.statusCode)).")
+        }
+
         struct StepResponse: Decodable {
             let type: CommandType
             let payload: CommandPayload
             let summary: String
             let isDestructive: Bool
         }
-        struct ChatResponse: Decodable { let reply: String; let steps: [StepResponse] }
-        let decoded = try decode(ChatResponse.self, from: data, response: response)
-        let steps = decoded.steps.map {
-            PlannedCommand(type: $0.type, payload: $0.payload, summary: $0.summary, isDestructive: $0.isDestructive)
+        struct StatusEvent: Decodable { let text: String }
+        struct DoneEvent: Decodable { let reply: String; let steps: [StepResponse] }
+        struct ErrorEvent: Decodable { let message: String }
+        struct EventKind: Decodable { let type: String }
+
+        do {
+            for try await line in bytes.lines {
+                guard line.hasPrefix("data: ") else { continue }
+                let json = Data(line.dropFirst(6).utf8)
+                guard let kind = try? JSONDecoder().decode(EventKind.self, from: json) else { continue }
+                switch kind.type {
+                case "status":
+                    if let event = try? JSONDecoder().decode(StatusEvent.self, from: json) {
+                        onStatus(event.text)
+                    }
+                case "done":
+                    let event = try JSONDecoder().decode(DoneEvent.self, from: json)
+                    let steps = event.steps.map {
+                        PlannedCommand(type: $0.type, payload: $0.payload, summary: $0.summary, isDestructive: $0.isDestructive)
+                    }
+                    return ConverseResult(reply: event.reply, steps: steps)
+                case "error":
+                    let event = try? JSONDecoder().decode(ErrorEvent.self, from: json)
+                    throw RovaBackendError.declined(event?.message ?? "İstek anlaşılamadı.")
+                default:
+                    continue
+                }
+            }
+        } catch let error as RovaBackendError {
+            throw error
+        } catch {
+            throw RovaBackendError.network(error.localizedDescription)
         }
-        return ConverseResult(reply: decoded.reply, steps: steps)
+        throw RovaBackendError.invalidResponse
     }
 
     // MARK: - Tasks & automations (created conversationally; managed here)

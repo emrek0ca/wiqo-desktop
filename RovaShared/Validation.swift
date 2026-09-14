@@ -38,8 +38,21 @@ public enum RovaValidation {
             guard case .media = request.payload else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Medya komutu geçersiz.")
             }
+        case .saveTextFile:
+            guard case .textFile(let file) = request.payload, isValidDesktopFilename(file.filename),
+                  !file.content.isEmpty, file.content.count <= 200_000 else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Dosya adı veya içeriği geçersiz.")
+            }
         }
         return nil
+    }
+
+    /// A single path component with no separators or traversal - this is appended directly to
+    /// the Desktop folder URL, so it must never be able to escape that directory.
+    public static func isValidDesktopFilename(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 255, trimmed != ".", trimmed != ".." else { return false }
+        return !trimmed.contains("/") && !trimmed.contains("\\") && !trimmed.contains("\0")
     }
 
     public static func isRequestTimestampValid(_ createdAt: Date, now: Date = Date(), maxSkewSeconds: TimeInterval = 600) -> Bool {

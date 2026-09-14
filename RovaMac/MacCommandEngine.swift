@@ -120,6 +120,12 @@ actor MacCommandEngine {
             }
             let error = await MainActor.run { MacSystem.setClipboardText(text) }
             return (nil, error == nil ? "Metin Mac panosuna kopyalandı." : error!.message, error)
+        case .saveTextFile:
+            guard case .textFile(let file) = request.payload else {
+                return (nil, "Geçersiz dosya isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya isteği geçersiz."))
+            }
+            let error = MacSystem.saveTextFile(file)
+            return (nil, error == nil ? "\(file.filename) masaüstüne kaydedildi." : error!.message, error)
         case .ping:
             return (.ping(PingData()), "Pong.", nil)
         }

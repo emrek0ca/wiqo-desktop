@@ -644,6 +644,7 @@ final class IOSConnectionModel: ObservableObject {
         case .toggleMute: return "Mute"
         case .mediaControl: return "Media Control"
         case .setClipboardText: return "Clipboard"
+        case .saveTextFile: return "Save File"
         case .ping: return "Ping"
         }
     }

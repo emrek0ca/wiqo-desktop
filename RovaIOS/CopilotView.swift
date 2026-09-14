@@ -34,6 +34,7 @@ struct CopilotView: View {
     @State private var bubbles: [ChatBubble] = []
     @State private var inputText = ""
     @State private var isSending = false
+    @State private var statusText = "Düşünüyor…"
 
     var body: some View {
         NavigationStack {
@@ -89,8 +90,9 @@ struct CopilotView: View {
                             .id(bubble.id)
                     }
                     if isSending {
-                        HStack { ProgressView(); Text("Düşünüyor…").foregroundStyle(.secondary) }
+                        HStack { ProgressView(); Text(statusText).foregroundStyle(.secondary) }
                             .padding(.horizontal)
+                            .animation(.easeInOut(duration: 0.15), value: statusText)
                     }
                 }
                 .padding(.vertical, 12)
@@ -186,6 +188,7 @@ struct CopilotView: View {
         inputText = ""
         bubbles.append(ChatBubble(role: .user, text: text))
         isSending = true
+        statusText = "Düşünüyor…"
         defer { isSending = false }
 
         let history = bubbles
@@ -193,7 +196,9 @@ struct CopilotView: View {
             .map { RovaBackendClient.ChatTurn(role: $0.role == .user ? "user" : "assistant", content: $0.text) }
 
         do {
-            let result = try await RovaBackendClient.converse(messages: history, availableApps: availableApps)
+            let result = try await RovaBackendClient.converse(messages: history, availableApps: availableApps) { text in
+                Task { @MainActor in statusText = text }
+            }
             var reply = ChatBubble(role: .assistant, text: result.reply.isEmpty ? "…" : result.reply, steps: result.steps)
             if result.steps.contains(where: \.isDestructive) {
                 reply.needsConfirmation = true

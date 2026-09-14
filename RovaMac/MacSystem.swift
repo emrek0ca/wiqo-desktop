@@ -119,6 +119,22 @@ enum MacSystem {
         return nil
     }
 
+    static func saveTextFile(_ payload: TextFilePayload) -> RovaError? {
+        guard RovaValidation.isValidDesktopFilename(payload.filename) else {
+            return RovaError(code: "INVALID_FILENAME", message: "Dosya adı geçersiz.")
+        }
+        guard let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first else {
+            return RovaError(code: "DESKTOP_UNAVAILABLE", message: "Masaüstü klasörüne erişilemedi.")
+        }
+        let fileURL = desktopURL.appendingPathComponent(payload.filename)
+        do {
+            try payload.content.write(to: fileURL, atomically: true, encoding: .utf8)
+            return nil
+        } catch {
+            return RovaError(code: "FILE_WRITE_FAILED", message: "Dosya yazılamadı: \(error.localizedDescription)")
+        }
+    }
+
     @MainActor
     static func quitApplication(_ id: ApplicationID) -> RovaError? {
         guard let bundleID = applications.first(where: { $0.0 == id })?.1 else {

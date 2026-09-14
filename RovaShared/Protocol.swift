@@ -21,6 +21,7 @@ public enum CommandType: String, Codable, CaseIterable, Sendable {
     case mediaControl
     case setClipboardText
     case quitApplication
+    case saveTextFile
     case ping
 }
 
@@ -58,6 +59,16 @@ public enum ApplicationID: String, Codable, CaseIterable, Sendable {
     }
 }
 
+public struct TextFilePayload: Codable, Equatable, Sendable {
+    public let filename: String
+    public let content: String
+
+    public init(filename: String, content: String) {
+        self.filename = filename
+        self.content = content
+    }
+}
+
 public enum CommandPayload: Codable, Equatable, Sendable {
     case none
     case application(ApplicationID)
@@ -66,9 +77,10 @@ public enum CommandPayload: Codable, Equatable, Sendable {
     case media(MediaAction)
     case brightness(Int)
     case clipboardText(String)
+    case textFile(TextFilePayload)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case none, application, url, volume, media, brightness, clipboardText }
+    private enum Kind: String, Codable { case none, application, url, volume, media, brightness, clipboardText, textFile }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -88,6 +100,8 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             self = .brightness(try container.decode(Int.self, forKey: .value))
         case .clipboardText:
             self = .clipboardText(try container.decode(String.self, forKey: .value))
+        case .textFile:
+            self = .textFile(try container.decode(TextFilePayload.self, forKey: .value))
         }
     }
 
@@ -114,6 +128,9 @@ public enum CommandPayload: Codable, Equatable, Sendable {
         case .clipboardText(let text):
             try container.encode(Kind.clipboardText, forKey: .kind)
             try container.encode(text, forKey: .value)
+        case .textFile(let payload):
+            try container.encode(Kind.textFile, forKey: .kind)
+            try container.encode(payload, forKey: .value)
         }
     }
 }
