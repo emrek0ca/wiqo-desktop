@@ -3,29 +3,6 @@
 <plist version="1.0">
 <dict>
 	<key>com.apple.security.app-sandbox</key>
-	<true/>
-	<key>com.apple.security.network.client</key>
-	<true/>
-	<key>com.apple.security.network.server</key>
-	<true/>
-	<key>com.apple.security.automation.apple-events</key>
-	<true/>
-	<key>com.apple.security.files.desktop-folder.read-write</key>
-	<true/>
-	<key>com.apple.security.temporary-exception.apple-events</key>
-	<array>
-		<string>com.apple.systemevents</string>
-		<string>com.apple.finder</string>
-		<string>com.apple.Music</string>
-		<string>com.spotify.client</string>
-		<string>com.apple.Safari</string>
-		<string>com.apple.dt.Xcode</string>
-		<string>com.apple.Terminal</string>
-		<string>com.microsoft.VSCode</string>
-		<string>com.apple.mail</string>
-		<string>com.apple.MobileSMS</string>
-		<string>com.apple.Notes</string>
-		<string>com.apple.systempreferences</string>
-	</array>
+	<false/>
 </dict>
 </plist>
