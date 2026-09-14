@@ -33,6 +33,7 @@ final class MacRuntime: ObservableObject {
     private var authenticatedSessionID: ObjectIdentifier?
     private var sessionFailedPairingAttempts: [ObjectIdentifier: Int] = [:]
     private static let maxPairingAttemptsPerSession = 3
+    private lazy var backendChannel = MacBackendChannel(engine: engine, runtimeStatus: { [weak self] in self?.serviceState.rawValue ?? "unknown" })
 
     init() {
         let key = "rova.mac.device-id"
@@ -48,6 +49,7 @@ final class MacRuntime: ObservableObject {
         token = try? RovaKeychainStore.load(account: "paired-device-token").flatMap { String(data: $0, encoding: .utf8) }
         launchAtLogin = SMAppService.mainApp.status == .enabled
         refreshPairingCode()
+        backendChannel.connectWithStoredTokenIfAvailable()
     }
 
     func start() {
@@ -235,6 +237,12 @@ final class MacRuntime: ObservableObject {
                 let result = await engine.execute(request, runtimeStatus: currentStatus)
                 session.send(WireEnvelope(requestID: envelope.requestID, message: .result(result)))
             }
+        case .backendToken(let backendToken):
+            guard session.isAuthenticated else {
+                authLogger.warning("Backend token rejected before authentication")
+                return
+            }
+            backendChannel.connect(token: backendToken)
         default:
             authLogger.warning("Unsupported message rejected")
             session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "UNSUPPORTED_MESSAGE", message: "Mesaj desteklenmiyor."))))

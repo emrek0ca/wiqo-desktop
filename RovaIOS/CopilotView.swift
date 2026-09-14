@@ -11,19 +11,25 @@ private struct ChatBubble: Identifiable {
     var executedStepIDs: Set<UUID> = []
 }
 
-/// A real conversation with Rova, not a one-shot "type → plan → confirm" form. Every message
-/// (from either side) is kept in `bubbles` and the full history is resent with each new message
-/// so the model has context - the backend itself is stateless.
+private let suggestions: [(title: String, icon: String)] = [
+    ("Toplantıya hazırla", "person.2.fill"),
+    ("Sesi kıs", "speaker.wave.1.fill"),
+    ("Bugün hava nasıl?", "cloud.sun.fill"),
+    ("Ekranı kısarak odaklan", "moon.stars.fill")
+]
+
+/// Rova's home screen. A real conversation, not a one-shot "type → plan → confirm" form - every
+/// message (from either side) is kept in `bubbles` and the full history is resent with each new
+/// message so the model has context (the backend itself is stateless).
 ///
 /// Non-destructive steps the model decides on (volume, brightness, opening an app, ...) run
 /// immediately and silently once the reply is shown, exactly like the model just "did the
 /// thing" - no extra screen in between. Destructive steps (lock, sleep, quit app) still show an
 /// inline confirmation under that message and require Face ID/Touch ID, matching the manual
-/// buttons elsewhere in the app.
+/// buttons on the Mac tab.
 struct CopilotView: View {
     @ObservedObject var model: IOSConnectionModel
     @ObservedObject var authSession: AuthSessionStore
-    @Environment(\.dismiss) private var dismiss
 
     @State private var bubbles: [ChatBubble] = []
     @State private var inputText = ""
@@ -32,32 +38,65 @@ struct CopilotView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 12) {
-                            ForEach(bubbles) { bubble in
-                                bubbleView(bubble)
-                                    .id(bubble.id)
-                            }
-                            if isSending {
-                                HStack { ProgressView(); Text("Düşünüyor…").foregroundStyle(.secondary) }
-                                    .padding(.horizontal)
-                            }
-                        }
-                        .padding(.vertical, 12)
-                    }
-                    .onChange(of: bubbles.count) { _, _ in
-                        if let last = bubbles.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
-                    }
+                if bubbles.isEmpty {
+                    emptyState
+                } else {
+                    conversation
                 }
                 Divider()
                 inputBar
             }
-            .navigationTitle("Rova AI")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Kapat") { dismiss() }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Rova")
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 22) {
+            Spacer()
+            Image(systemName: "sparkles")
+                .font(.system(size: 46))
+                .foregroundStyle(.tint)
+            Text("Rova'ya sor")
+                .font(.title2.weight(.semibold))
+            Text("Mac'ini kontrol et, bir şey sor ya da tekrarlayan bir görev kur.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(suggestions, id: \.title) { suggestion in
+                        RovaChip(title: suggestion.title, systemImage: suggestion.icon) {
+                            inputText = suggestion.title
+                            Task { await sendMessage() }
+                        }
+                    }
                 }
+                .padding(.horizontal)
+            }
+            Spacer()
+            Spacer()
+        }
+    }
+
+    private var conversation: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    ForEach(bubbles) { bubble in
+                        bubbleView(bubble)
+                            .id(bubble.id)
+                    }
+                    if isSending {
+                        HStack { ProgressView(); Text("Düşünüyor…").foregroundStyle(.secondary) }
+                            .padding(.horizontal)
+                    }
+                }
+                .padding(.vertical, 12)
+            }
+            .onChange(of: bubbles.count) { _, _ in
+                if let last = bubbles.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
             }
         }
     }
@@ -67,9 +106,9 @@ struct CopilotView: View {
             HStack {
                 if bubble.role == .user { Spacer(minLength: 40) }
                 Text(bubble.text)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(bubbleBackground(bubble.role), in: RoundedRectangle(cornerRadius: 16))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(bubbleBackground(bubble.role), in: RoundedRectangle(cornerRadius: RovaDesign.bubbleRadius, style: .continuous))
                     .foregroundStyle(bubble.role == .user ? Color.white : Color.primary)
                 if bubble.role != .user { Spacer(minLength: 40) }
             }
@@ -111,8 +150,8 @@ struct CopilotView: View {
                 .buttonStyle(.bordered)
             }
         }
-        .padding(10)
-        .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .padding(12)
+        .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
         .padding(.top, 2)
     }
 
@@ -120,19 +159,21 @@ struct CopilotView: View {
         HStack(spacing: 10) {
             TextField("Rova'ya söyle…", text: $inputText, axis: .vertical)
                 .lineLimit(1...4)
-                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
                 .disabled(isSending)
             Button {
                 Task { await sendMessage() }
             } label: {
-                Image(systemName: "arrow.up.circle.fill").font(.title)
+                Image(systemName: "arrow.up.circle.fill").font(.system(size: 30))
             }
             .disabled(
                 inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     || isSending || model.state != .connected
             )
         }
-        .padding(10)
+        .padding(12)
     }
 
     private var availableApps: [ApplicationID] {
@@ -162,8 +203,9 @@ struct CopilotView: View {
                 await execute(result.steps, bubbleID: reply.id)
             }
         } catch RovaBackendError.notAuthenticated {
+            // Sends the whole app back to the login screen (RootView switches on this),
+            // there's no local sheet/screen of our own to dismiss here.
             authSession.signOut()
-            dismiss()
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             bubbles.append(ChatBubble(role: .system, text: message))

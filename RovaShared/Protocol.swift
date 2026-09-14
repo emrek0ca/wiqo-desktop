@@ -274,6 +274,10 @@ public struct DeviceInfo: Codable, Equatable, Sendable, Identifiable {
     public let port: UInt16
     public let serviceStatus: String
     public let availableApplications: [ApplicationInfo]
+    /// "macOS" today; a future Windows companion reports "windows" here. Nothing in the wire
+    /// protocol keys off this yet - it exists so a client can eventually branch on it (icons,
+    /// available capabilities) without another protocol change.
+    public let platform: String
 
     public init(
         id: UUID,
@@ -282,7 +286,8 @@ public struct DeviceInfo: Codable, Equatable, Sendable, Identifiable {
         localIPAddress: String,
         port: UInt16,
         serviceStatus: String,
-        availableApplications: [ApplicationInfo]
+        availableApplications: [ApplicationInfo],
+        platform: String = "macOS"
     ) {
         self.id = id
         self.displayName = displayName
@@ -291,6 +296,7 @@ public struct DeviceInfo: Codable, Equatable, Sendable, Identifiable {
         self.port = port
         self.serviceStatus = serviceStatus
         self.availableApplications = availableApplications
+        self.platform = platform
     }
 }
 
@@ -363,10 +369,14 @@ public enum WireMessage: Codable, Equatable, Sendable {
     case command(CommandRequest)
     case result(CommandResult)
     case failure(RovaError)
+    /// The iPhone hands its Rova backend login session to the Mac over this already-authenticated
+    /// local connection, once, so the Mac can open its own persistent channel to the backend
+    /// (see MacBackendChannel) without needing a separate Mac-side login screen.
+    case backendToken(String)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
     private enum Kind: String, Codable {
-        case hello, pair, pairAccepted, authenticate, authenticated, command, result, failure
+        case hello, pair, pairAccepted, authenticate, authenticated, command, result, failure, backendToken
     }
 
     public init(from decoder: Decoder) throws {
@@ -380,6 +390,7 @@ public enum WireMessage: Codable, Equatable, Sendable {
         case .command: self = .command(try container.decode(CommandRequest.self, forKey: .value))
         case .result: self = .result(try container.decode(CommandResult.self, forKey: .value))
         case .failure: self = .failure(try container.decode(RovaError.self, forKey: .value))
+        case .backendToken: self = .backendToken(try container.decode(String.self, forKey: .value))
         }
     }
 
@@ -393,6 +404,7 @@ public enum WireMessage: Codable, Equatable, Sendable {
         case .authenticated(let value): try container.encode(Kind.authenticated, forKey: .kind); try container.encode(value, forKey: .value)
         case .command(let value): try container.encode(Kind.command, forKey: .kind); try container.encode(value, forKey: .value)
         case .result(let value): try container.encode(Kind.result, forKey: .kind); try container.encode(value, forKey: .value)
+        case .backendToken(let value): try container.encode(Kind.backendToken, forKey: .kind); try container.encode(value, forKey: .value)
         case .failure(let value): try container.encode(Kind.failure, forKey: .kind); try container.encode(value, forKey: .value)
         }
     }

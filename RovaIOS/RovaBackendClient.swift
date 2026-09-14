@@ -119,6 +119,67 @@ enum RovaBackendClient {
         return ConverseResult(reply: decoded.reply, steps: steps)
     }
 
+    // MARK: - Tasks & automations (created conversationally; managed here)
+
+    struct RovaTask: Decodable, Identifiable {
+        let id: Int
+        let title: String
+        let status: String
+        let createdAt: String
+        let completedAt: String?
+    }
+
+    struct RovaAutomation: Decodable, Identifiable {
+        let id: Int
+        let prompt: String
+        let cron: String
+        let isActive: Bool
+        let lastRunAt: String?
+        let nextRunAt: String?
+    }
+
+    static func fetchTasks() async throws -> [RovaTask] {
+        struct Response: Decodable { let tasks: [RovaTask] }
+        return try await authorizedGet("tasks", as: Response.self).tasks
+    }
+
+    static func completeTask(id: Int) async throws {
+        _ = try await authorizedMutate("tasks/\(id)/complete", method: "POST")
+    }
+
+    static func fetchAutomations() async throws -> [RovaAutomation] {
+        struct Response: Decodable { let automations: [RovaAutomation] }
+        return try await authorizedGet("automations", as: Response.self).automations
+    }
+
+    static func cancelAutomation(id: Int) async throws {
+        _ = try await authorizedMutate("automations/\(id)", method: "DELETE")
+    }
+
+    private static func authorizedGet<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
+        guard let token else { throw RovaBackendError.notAuthenticated }
+        var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await send(request)
+        if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
+        return try decode(T.self, from: data, response: response)
+    }
+
+    @discardableResult
+    private static func authorizedMutate(_ path: String, method: String) async throws -> Data {
+        guard let token else { throw RovaBackendError.notAuthenticated }
+        var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
+        request.httpMethod = method
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await send(request)
+        if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
+        guard (200..<300).contains(response.statusCode) else {
+            let message = (try? JSONDecoder().decode(BackendErrorEnvelope.self, from: data))?.error.message
+            throw RovaBackendError.network(message ?? "İstek başarısız oldu (kod \(response.statusCode)).")
+        }
+        return data
+    }
+
     // MARK: - Shared plumbing
 
     private static func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {

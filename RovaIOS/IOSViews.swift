@@ -9,10 +9,18 @@ struct RootView: View {
             if !authSession.isAuthenticated {
                 AuthView { authSession.refresh() }
             } else if model.isPaired {
-                HomeView(model: model, authSession: authSession)
+                TabView {
+                    CopilotView(model: model, authSession: authSession)
+                        .tabItem { Label("Rova", systemImage: "sparkles") }
+                    HomeView(model: model, authSession: authSession)
+                        .tabItem { Label("Mac", systemImage: "laptopcomputer") }
+                }
             } else {
                 PairingView(model: model)
             }
+        }
+        .onChange(of: authSession.isAuthenticated) { _, isAuthenticated in
+            if isAuthenticated { model.sendBackendTokenIfAvailable() }
         }
     }
 }
@@ -76,7 +84,8 @@ struct HomeView: View {
     @State private var brightness: Double = 80
     @State private var urlText = "https://www.apple.com"
     @State private var clipboardText = ""
-    @State private var showingCopilot = false
+    @State private var tasks: [RovaBackendClient.RovaTask] = []
+    @State private var automations: [RovaBackendClient.RovaAutomation] = []
     @Environment(\.scenePhase) private var scenePhase
 
     private var availableApps: [ApplicationInfo] {
@@ -85,228 +94,24 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    HStack(spacing: 12) {
-                        Image(systemName: "laptopcomputer")
-                            .font(.title2)
-                            .foregroundStyle(.tint)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(model.deviceInfo?.displayName ?? "My Mac").font(.headline)
-                            HStack(spacing: 6) {
-                                Text(statusText).font(.subheadline).foregroundStyle(statusColor)
-                                if model.state == .connected {
-                                    Image(systemName: model.connectionQuality.symbolName)
-                                        .font(.caption2)
-                                        .foregroundStyle(qualityColor)
-                                    if let latency = model.lastPingLatencyMs {
-                                        Text("\(model.connectionQuality.label) • \(latency) ms")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                        Spacer()
-                        if model.state == .connecting { ProgressView() }
-                    }
+            ScrollView {
+                VStack(spacing: RovaDesign.cardSpacing) {
+                    statusCard
+                    quickActionsCard
+                    mediaCard
+                    displayCard
+                    appsCard
+                    clipboardCard
+                    urlCard
+                    if !pendingTasks.isEmpty || !activeAutomations.isEmpty { tasksAutomationsCard }
+                    activityCard
+                    if let error = model.lastError { errorCard(error) }
                 }
-                if let status = model.systemStatus {
-                    Section("System Status") {
-                        LabeledContent("macOS", value: status.macOSVersion)
-                        if let battery = status.batteryPercentage {
-                            let chargingSuffix = (status.isCharging == true) ? " (Charging)" : ""
-                            LabeledContent("Battery", value: "\(battery)%\(chargingSuffix)")
-                        }
-                        LabeledContent("Uptime", value: formatUptime(status.uptimeSeconds))
-                    }
-                }
-                Section("Media & Audio") {
-                    HStack(spacing: 20) {
-                        Button {
-                            hapticImpact()
-                            Task { _ = await model.mediaControl(.previousTrack) }
-                        } label: {
-                            Image(systemName: "backward.fill").font(.title3)
-                        }
-                        .buttonStyle(.borderless)
-
-                        Button {
-                            hapticImpact()
-                            Task { _ = await model.mediaControl(.playPause) }
-                        } label: {
-                            Image(systemName: "playpause.fill").font(.title2)
-                        }
-                        .buttonStyle(.borderless)
-
-                        Button {
-                            hapticImpact()
-                            Task { _ = await model.mediaControl(.nextTrack) }
-                        } label: {
-                            Image(systemName: "forward.fill").font(.title3)
-                        }
-                        .buttonStyle(.borderless)
-
-                        Spacer()
-
-                        Button {
-                            hapticImpact()
-                            Task { _ = await model.toggleMute() }
-                        } label: {
-                            Image(systemName: "speaker.slash.fill").font(.title3)
-                        }
-                        .buttonStyle(.borderless)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .disabled(model.state != .connected)
-
-                    HStack(spacing: 12) {
-                        Image(systemName: "speaker.wave.1.fill").foregroundStyle(.secondary)
-                        Slider(value: $volume, in: 0...100, step: 5) { editing in
-                            if !editing {
-                                hapticImpact()
-                                Task { _ = await model.setVolume(Int(volume)) }
-                            }
-                        }
-                        Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
-                    }
-                    .disabled(model.state != .connected)
-                }
-                Section("Display & Screen") {
-                    HStack(spacing: 12) {
-                        Image(systemName: "sun.min.fill").foregroundStyle(.secondary)
-                        Slider(value: $brightness, in: 0...100, step: 5) { editing in
-                            if !editing {
-                                hapticImpact()
-                                Task { _ = await model.setBrightness(Int(brightness)) }
-                            }
-                        }
-                        Image(systemName: "sun.max.fill").foregroundStyle(.secondary)
-                    }
-                    .disabled(model.state != .connected)
-
-                    Button {
-                        showingDisplaySleepConfirmation = true
-                    } label: {
-                        Label("Display Sleep", systemImage: "display")
-                    }
-                    .disabled(model.state != .connected)
-                    .confirmationDialog("Mac ekranı uyutulacak. Devam et?", isPresented: $showingDisplaySleepConfirmation, titleVisibility: .visible) {
-                        Button("Display Sleep", role: .destructive) {
-                            hapticImpact()
-                            Task { _ = await model.displaySleep() }
-                        }
-                        Button("Cancel", role: .cancel) { }
-                    }
-                }
-                Section("Quick Actions & Apps") {
-                    ForEach(availableApps) { app in
-                        HStack {
-                            Button {
-                                hapticImpact()
-                                Task { _ = await model.send(.openApplication, payload: .application(app.id)) }
-                            } label: {
-                                Label("Open \(app.name)", systemImage: icon(for: app.id))
-                            }
-                            Spacer()
-                            Button(role: .destructive) {
-                                hapticImpact()
-                                Task { _ = await model.quitApplication(app.id) }
-                            } label: {
-                                Image(systemName: "xmark.circle")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel("Quit \(app.name)")
-                        }
-                        .disabled(model.state != .connected)
-                    }
-                    Button {
-                        showingLockConfirmation = true
-                    } label: {
-                        Label("Lock Mac", systemImage: "lock.fill")
-                    }
-                    .disabled(model.state != .connected)
-                    .confirmationDialog("Mac kilitlenecek. Devam et?", isPresented: $showingLockConfirmation, titleVisibility: .visible) {
-                        Button("Lock Mac", role: .destructive) {
-                            hapticImpact()
-                            Task {
-                                let ok = await model.authenticateBiometrics(reason: "Mac'i kilitlemek için kimliğinizi doğrulayın")
-                                if ok { _ = await model.send(.lockMac) }
-                            }
-                        }
-                        Button("Cancel", role: .cancel) { }
-                    }
-
-                    Button {
-                        showingSleepConfirmation = true
-                    } label: {
-                        Label("Sleep Mac", systemImage: "moon.fill")
-                    }
-                    .disabled(model.state != .connected)
-                    .confirmationDialog("Mac uyku moduna alınacak. Devam et?", isPresented: $showingSleepConfirmation, titleVisibility: .visible) {
-                        Button("Sleep Mac", role: .destructive) {
-                            hapticImpact()
-                            Task {
-                                let ok = await model.authenticateBiometrics(reason: "Mac'i uykuya almak için kimliğinizi doğrulayın")
-                                if ok { _ = await model.sleepMac() }
-                            }
-                        }
-                        Button("Cancel", role: .cancel) { }
-                    }
-                }
-                Section("Mac Clipboard") {
-                    HStack {
-                        TextField("Metin yapıştır veya yaz…", text: $clipboardText)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        Button {
-                            guard !clipboardText.isEmpty else { return }
-                            hapticImpact()
-                            Task {
-                                _ = await model.setClipboardText(clipboardText)
-                                clipboardText = ""
-                                hapticNotification(.success)
-                            }
-                        } label: {
-                            Image(systemName: "arrow.up.doc.fill")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(clipboardText.isEmpty || model.state != .connected)
-                    }
-                }
-                Section("Open URL") {
-                    TextField("https://…", text: $urlText)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Button("Open in Browser") {
-                        hapticImpact()
-                        Task { _ = await model.send(.openURL, payload: .url(urlText)) }
-                    }
-                    .disabled(model.state != .connected)
-                }
-                Section("Activity") {
-                    if model.activities.isEmpty {
-                        Text("No recent commands").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(model.activities) { activity in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(activity.title).font(.subheadline.weight(.medium))
-                                Text(activity.detail).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-                if let error = model.lastError {
-                    Section { Text(error).foregroundStyle(.red) }
-                }
+                .padding(RovaDesign.screenPadding)
             }
-            .navigationTitle("Rova")
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Mac")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingCopilot = true } label: { Image(systemName: "sparkles") }
-                        .accessibilityLabel("Rova AI")
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { model.retry() } label: { Image(systemName: "arrow.clockwise") }
                         .accessibilityLabel("Retry connection")
@@ -321,11 +126,11 @@ struct HomeView: View {
                     } label: { Image(systemName: "ellipsis.circle") }
                 }
             }
-            .sheet(isPresented: $showingCopilot) {
-                CopilotView(model: model, authSession: authSession)
-            }
         }
-        .task { model.connect() }
+        .task {
+            model.connect()
+            await loadTasksAndAutomations()
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.connect() }
         }
@@ -333,6 +138,282 @@ struct HomeView: View {
             if let level = status?.volumePercentage { volume = Double(level) }
             if let level = status?.brightnessPercentage { brightness = Double(level) }
         }
+    }
+
+    // MARK: - Cards
+
+    private var statusCard: some View {
+        RovaCard {
+            HStack(spacing: 12) {
+                Image(systemName: "laptopcomputer")
+                    .font(.title2)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.deviceInfo?.displayName ?? "My Mac").font(.headline)
+                    HStack(spacing: 6) {
+                        Text(statusText).font(.subheadline).foregroundStyle(statusColor)
+                        if model.state == .connected {
+                            Image(systemName: model.connectionQuality.symbolName)
+                                .font(.caption2)
+                                .foregroundStyle(qualityColor)
+                            if let latency = model.lastPingLatencyMs {
+                                Text("\(model.connectionQuality.label) • \(latency) ms")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                Spacer()
+                if model.state == .connecting { ProgressView() }
+            }
+            if let status = model.systemStatus {
+                Divider()
+                HStack {
+                    Label(status.macOSVersion, systemImage: "apple.logo")
+                    Spacer()
+                    if let battery = status.batteryPercentage {
+                        Label("\(battery)%\(status.isCharging == true ? " ⚡︎" : "")", systemImage: "battery.100")
+                    }
+                    Spacer()
+                    Label(formatUptime(status.uptimeSeconds), systemImage: "clock")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var quickActionsCard: some View {
+        RovaCard {
+            Text("Hızlı Eylemler").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    RovaActionTile(title: "Kilitle", systemImage: "lock.fill", isDestructive: true) {
+                        showingLockConfirmation = true
+                    }
+                    RovaActionTile(title: "Uyku", systemImage: "moon.fill", isDestructive: true) {
+                        showingSleepConfirmation = true
+                    }
+                    RovaActionTile(title: "Ekran Uyut", systemImage: "display", isDestructive: true) {
+                        showingDisplaySleepConfirmation = true
+                    }
+                    RovaActionTile(title: "Geri", systemImage: "backward.fill") {
+                        hapticImpact(); Task { _ = await model.mediaControl(.previousTrack) }
+                    }
+                    RovaActionTile(title: "Oynat/Duraklat", systemImage: "playpause.fill") {
+                        hapticImpact(); Task { _ = await model.mediaControl(.playPause) }
+                    }
+                    RovaActionTile(title: "İleri", systemImage: "forward.fill") {
+                        hapticImpact(); Task { _ = await model.mediaControl(.nextTrack) }
+                    }
+                    RovaActionTile(title: "Sessiz", systemImage: "speaker.slash.fill") {
+                        hapticImpact(); Task { _ = await model.toggleMute() }
+                    }
+                }
+            }
+            .disabled(model.state != .connected)
+        }
+        .confirmationDialog("Mac kilitlenecek. Devam et?", isPresented: $showingLockConfirmation, titleVisibility: .visible) {
+            Button("Lock Mac", role: .destructive) {
+                hapticImpact()
+                Task {
+                    let ok = await model.authenticateBiometrics(reason: "Mac'i kilitlemek için kimliğinizi doğrulayın")
+                    if ok { _ = await model.send(.lockMac) }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        }
+        .confirmationDialog("Mac uyku moduna alınacak. Devam et?", isPresented: $showingSleepConfirmation, titleVisibility: .visible) {
+            Button("Sleep Mac", role: .destructive) {
+                hapticImpact()
+                Task {
+                    let ok = await model.authenticateBiometrics(reason: "Mac'i uykuya almak için kimliğinizi doğrulayın")
+                    if ok { _ = await model.sleepMac() }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        }
+        .confirmationDialog("Mac ekranı uyutulacak. Devam et?", isPresented: $showingDisplaySleepConfirmation, titleVisibility: .visible) {
+            Button("Display Sleep", role: .destructive) {
+                hapticImpact()
+                Task { _ = await model.displaySleep() }
+            }
+            Button("Cancel", role: .cancel) { }
+        }
+    }
+
+    private var mediaCard: some View {
+        RovaCard {
+            Text("Ses").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                Image(systemName: "speaker.wave.1.fill").foregroundStyle(.secondary)
+                Slider(value: $volume, in: 0...100, step: 5) { editing in
+                    if !editing {
+                        hapticImpact()
+                        Task { _ = await model.setVolume(Int(volume)) }
+                    }
+                }
+                Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
+            }
+            .disabled(model.state != .connected)
+        }
+    }
+
+    private var displayCard: some View {
+        RovaCard {
+            Text("Parlaklık").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                Image(systemName: "sun.min.fill").foregroundStyle(.secondary)
+                Slider(value: $brightness, in: 0...100, step: 5) { editing in
+                    if !editing {
+                        hapticImpact()
+                        Task { _ = await model.setBrightness(Int(brightness)) }
+                    }
+                }
+                Image(systemName: "sun.max.fill").foregroundStyle(.secondary)
+            }
+            .disabled(model.state != .connected)
+        }
+    }
+
+    private var appsCard: some View {
+        RovaCard {
+            Text("Uygulamalar").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(availableApps) { app in
+                        RovaActionTile(title: app.name, systemImage: icon(for: app.id)) {
+                            hapticImpact()
+                            Task { _ = await model.send(.openApplication, payload: .application(app.id)) }
+                        }
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                Task { _ = await model.quitApplication(app.id) }
+                            } label: {
+                                Label("Kapat", systemImage: "xmark.circle")
+                            }
+                        }
+                    }
+                }
+            }
+            .disabled(model.state != .connected)
+            if !availableApps.isEmpty {
+                Text("Kapatmak için basılı tut").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var clipboardCard: some View {
+        RovaCard {
+            Text("Pano").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            HStack {
+                TextField("Metin yapıştır veya yaz…", text: $clipboardText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button {
+                    guard !clipboardText.isEmpty else { return }
+                    hapticImpact()
+                    Task {
+                        _ = await model.setClipboardText(clipboardText)
+                        clipboardText = ""
+                        hapticNotification(.success)
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.doc.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(clipboardText.isEmpty || model.state != .connected)
+            }
+        }
+    }
+
+    private var urlCard: some View {
+        RovaCard {
+            Text("URL Aç").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            TextField("https://…", text: $urlText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Open in Browser") {
+                hapticImpact()
+                Task { _ = await model.send(.openURL, payload: .url(urlText)) }
+            }
+            .disabled(model.state != .connected)
+        }
+    }
+
+    private var pendingTasks: [RovaBackendClient.RovaTask] {
+        tasks.filter { $0.status == "pending" }
+    }
+
+    private var activeAutomations: [RovaBackendClient.RovaAutomation] {
+        automations.filter(\.isActive)
+    }
+
+    private var tasksAutomationsCard: some View {
+        RovaCard {
+            if !pendingTasks.isEmpty {
+                Text("Görevler").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(pendingTasks) { task in
+                    HStack {
+                        Image(systemName: "circle").foregroundStyle(.secondary)
+                        Text(task.title).font(.subheadline)
+                        Spacer()
+                    }
+                }
+            }
+            if !activeAutomations.isEmpty {
+                if !pendingTasks.isEmpty { Divider() }
+                Text("Otomasyonlar").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(activeAutomations) { automation in
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(automation.prompt).font(.subheadline)
+                            Text(automation.cron).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            Task {
+                                try? await RovaBackendClient.cancelAutomation(id: automation.id)
+                                await loadTasksAndAutomations()
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle").foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+        }
+    }
+
+    private var activityCard: some View {
+        RovaCard {
+            Text("Etkinlik").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            if model.activities.isEmpty {
+                Text("Henüz komut yok").foregroundStyle(.secondary).font(.subheadline)
+            } else {
+                ForEach(model.activities.prefix(8)) { activity in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(activity.title).font(.subheadline.weight(.medium))
+                        Text(activity.detail).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func errorCard(_ error: String) -> some View {
+        RovaCard {
+            Text(error).foregroundStyle(.red).font(.subheadline)
+        }
+    }
+
+    private func loadTasksAndAutomations() async {
+        async let fetchedTasks = try? RovaBackendClient.fetchTasks()
+        async let fetchedAutomations = try? RovaBackendClient.fetchAutomations()
+        tasks = (await fetchedTasks) ?? []
+        automations = (await fetchedAutomations) ?? []
     }
 
     private var statusText: String {

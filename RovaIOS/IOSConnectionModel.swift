@@ -508,6 +508,7 @@ final class IOSConnectionModel: ObservableObject {
             state = .connected
             startHeartbeat()
             Task { [weak self] in _ = await self?.send(.getSystemStatus) }
+            sendBackendTokenIfAvailable()
         case .result(let result):
             if case .systemStatus(let status) = result.data {
                 systemStatus = status
@@ -527,6 +528,16 @@ final class IOSConnectionModel: ObservableObject {
         default:
             break
         }
+    }
+
+    /// Hands the Mac this device's current Rova backend login session, once, over the existing
+    /// authenticated local connection - lets the Mac open its own persistent channel to the
+    /// backend (for automations that fire with no iPhone around) without a separate Mac login.
+    /// Safe to call opportunistically (e.g. right after Mac auth, or right after a fresh Rova
+    /// login) - it's a no-op if there's no Mac connection or no backend session yet.
+    func sendBackendTokenIfAvailable() {
+        guard state == .connected, let token = RovaBackendClient.token else { return }
+        sendEnvelope(WireEnvelope(message: .backendToken(token)))
     }
 
     private func sendEnvelope(_ envelope: WireEnvelope, on source: NWConnection? = nil) {

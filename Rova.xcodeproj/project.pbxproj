@@ -11,6 +11,8 @@
 		3C44106B0048C66ECF01156E /* CopilotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */; };
 		4FDC30AA70FBC8AD06EAAEAF /* AuthSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDEB5E8610087C8CA0CC13D /* AuthSessionStore.swift */; };
 		6C2FB4A549AEFF241332DB4B /* RovaBackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */; };
+		98D7CE60A345E6E8CBEE8D65 /* MacBackendChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3072ACE850F6012D34640ABF /* MacBackendChannel.swift */; };
+		9A799AC24B4407A68BB153AE /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E4E100FCB3F1A506A081F9 /* DesignSystem.swift */; };
 		B001 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001 /* Protocol.swift */; };
 		B002 /* Validation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F002 /* Validation.swift */; };
 		B003 /* Framing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F003 /* Framing.swift */; };
@@ -56,8 +58,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		05E4E100FCB3F1A506A081F9 /* DesignSystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RovaBackendClient.swift; sourceTree = "<group>"; };
 		0EDEB5E8610087C8CA0CC13D /* AuthSessionStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AuthSessionStore.swift; sourceTree = "<group>"; };
+		3072ACE850F6012D34640ABF /* MacBackendChannel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacBackendChannel.swift; sourceTree = "<group>"; };
 		3316E23CDB65A96A8283CF08 /* AuthView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotView.swift; sourceTree = "<group>"; };
 		F001 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
@@ -162,6 +166,7 @@
 				F014 /* MacViews.swift */,
 				F015 /* Info.plist */,
 				F016 /* RovaMac.entitlements */,
+				3072ACE850F6012D34640ABF /* MacBackendChannel.swift */,
 			);
 			path = RovaMac;
 			sourceTree = "<group>";
@@ -178,6 +183,7 @@
 				091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */,
 				3316E23CDB65A96A8283CF08 /* AuthView.swift */,
 				0EDEB5E8610087C8CA0CC13D /* AuthSessionStore.swift */,
+				05E4E100FCB3F1A506A081F9 /* DesignSystem.swift */,
 			);
 			path = RovaIOS;
 			sourceTree = "<group>";
@@ -389,6 +395,7 @@
 				B004 /* KeychainStore.swift in Sources */,
 				B005 /* CryptoSupport.swift in Sources */,
 				B006 /* QRPairing.swift in Sources */,
+				98D7CE60A345E6E8CBEE8D65 /* MacBackendChannel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -410,6 +417,7 @@
 				6C2FB4A549AEFF241332DB4B /* RovaBackendClient.swift in Sources */,
 				1D26C79A99868523A4ECB1D0 /* AuthView.swift in Sources */,
 				4FDC30AA70FBC8AD06EAAEAF /* AuthSessionStore.swift in Sources */,
+				9A799AC24B4407A68BB153AE /* DesignSystem.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
