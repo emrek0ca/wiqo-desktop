@@ -220,17 +220,17 @@ final class IOSConnectionModel: ObservableObject {
         }
     }
 
-    func send(_ type: CommandType, payload: CommandPayload = .none) async -> CommandResult {
+    func send(_ type: CommandType, payload: CommandPayload = .none, commandID: UUID? = nil) async -> CommandResult {
         guard isPaired else { return failureResult(id: UUID(), error: RovaError(code: "NOT_PAIRED", message: "Önce Mac ile pair olun.")) }
         guard authenticated, let connection else {
             connect()
             return failureResult(id: UUID(), error: RovaError(code: "OFFLINE", message: "Mac bağlı değil."))
         }
         let now = Date()
-        let commandID = UUID()
+        let resolvedCommandID = commandID ?? UUID()
         let nonce = try? RovaCrypto.randomToken()
-        let signature = token.map { RovaValidation.signRequest(id: commandID, type: type, nonce: nonce ?? "", token: $0) }
-        let request = CommandRequest(id: commandID, type: type, payload: payload, createdAt: now, signature: signature, nonce: nonce)
+        let signature = token.map { RovaValidation.signRequest(id: resolvedCommandID, type: type, nonce: nonce ?? "", token: $0) }
+        let request = CommandRequest(id: resolvedCommandID, type: type, payload: payload, createdAt: now, signature: signature, nonce: nonce)
         if let validationError = RovaValidation.validate(request) {
             return failureResult(id: request.id, error: validationError)
         }
@@ -419,7 +419,7 @@ final class IOSConnectionModel: ObservableObject {
                     on: source
                 )
             }
-        case .waiting(let error):
+        case .waiting:
             // Explicitly handle waiting state when network interface changes or path is pending
             lastError = "Ağ bağlantısı bekleniyor..."
         case .failed(let error):
@@ -646,6 +646,16 @@ final class IOSConnectionModel: ObservableObject {
         case .setClipboardText: return "Clipboard"
         case .saveTextFile: return "Save File"
         case .ping: return "Ping"
+        case .sendMessage: return "Send Message"
+        case .listCalendarEvents: return "List Calendar"
+        case .createCalendarEvent: return "Create Calendar Event"
+        case .listDesktopFiles: return "List Desktop Files"
+        case .readDesktopFile: return "Read Desktop File"
+        case .moveDesktopFile: return "Move Desktop File"
+        case .renameDesktopFile: return "Rename Desktop File"
+        case .saveArtifact: return "Save Artifact"
+        case .readDocument: return "Read Document"
+        case .editDocument: return "Edit Document"
         }
     }
 

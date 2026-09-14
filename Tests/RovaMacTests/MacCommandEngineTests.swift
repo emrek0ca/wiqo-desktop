@@ -22,6 +22,14 @@ final class MacCommandEngineTests: XCTestCase {
         XCTAssertEqual(result.error?.code, "INVALID_PAYLOAD")
     }
 
+    func testNewFileCommandRejectsPathTraversalBeforeExecution() async {
+        let engine = MacCommandEngine(ledger: CommandLedger(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        let request = CommandRequest(type: .readDesktopFile, payload: .fileName("../private.txt"))
+        let result = await engine.execute(request, runtimeStatus: "running")
+        XCTAssertEqual(result.status, .denied)
+        XCTAssertEqual(result.error?.code, "INVALID_PAYLOAD")
+    }
+
     func testRestartWithUnfinishedRunningCommandYieldsDenied() async {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("rova-ledger-\(UUID().uuidString).json")
         let ledger = CommandLedger(fileURL: url)

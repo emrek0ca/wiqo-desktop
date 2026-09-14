@@ -1,12 +1,15 @@
 import Foundation
 
 public enum RovaValidation {
-    public static let maxFrameSize = 64 * 1024
+    // Commands carry structured document metadata and small local read results. Large generated
+    // binaries never cross this wire; they are downloaded by the Mac from the authenticated
+    // backend artifact endpoint.
+    public static let maxFrameSize = 1 * 1024 * 1024
     public static let commandTimeout: Duration = .seconds(10)
 
     public static func validate(_ request: CommandRequest) -> RovaError? {
         switch request.type {
-        case .getSystemStatus, .ping, .lockMac, .sleepMac, .displaySleep, .toggleMute:
+        case .getSystemStatus, .ping, .lockMac, .sleepMac, .displaySleep, .toggleMute, .listCalendarEvents, .listDesktopFiles:
             guard request.payload == .none else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Bu komut payload kabul etmiyor.")
             }
@@ -43,6 +46,52 @@ public enum RovaValidation {
                   !file.content.isEmpty, file.content.count <= 200_000 else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Dosya adı veya içeriği geçersiz.")
             }
+        case .sendMessage:
+            guard case .message(let message) = request.payload,
+                  isSafeText(message.recipient, maxLength: 320),
+                  !message.body.isEmpty, message.body.count <= 10_000,
+                  !message.body.contains("\0") else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Mesaj alıcısı veya içeriği geçersiz.")
+            }
+        case .createCalendarEvent:
+            guard case .calendarEvent(let event) = request.payload,
+                  isSafeText(event.title, maxLength: 300),
+                  event.endAt > event.startAt,
+                  event.endAt.timeIntervalSince(event.startAt) <= 7 * 24 * 60 * 60,
+                  event.notes.map({ $0.count <= 4_000 && !$0.contains("\0") }) ?? true,
+                  event.location.map({ $0.count <= 1_000 && !$0.contains("\0") }) ?? true else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Takvim etkinliği bilgileri geçersiz.")
+            }
+        case .readDesktopFile:
+            guard case .fileName(let filename) = request.payload, isValidDesktopFilename(filename) else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Okunacak dosya adı geçersiz.")
+            }
+        case .moveDesktopFile, .renameDesktopFile:
+            guard case .fileMove(let move) = request.payload,
+                  isValidDesktopFilename(move.source), isValidDesktopFilename(move.destination),
+                  move.source != move.destination else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Kaynak veya hedef dosya adı geçersiz.")
+            }
+        case .saveArtifact:
+            guard case .artifactFile(let artifact) = request.payload,
+                  isValidDesktopFilename(artifact.filename),
+                  artifact.artifactID.range(of: "^[0-9a-f-]{20,128}$", options: .regularExpression) != nil,
+                  artifact.mimeType.count <= 160, !artifact.mimeType.contains(where: { $0.isWhitespace || $0 == "\0" }),
+                  artifact.byteCount.map({ $0 > 0 && $0 <= 25 * 1024 * 1024 }) ?? true,
+                  artifact.sha256.map({ $0.count == 64 && $0.allSatisfy(\.isHexDigit) }) ?? true,
+                  isAllowedArtifactURL(artifact.downloadURL) else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Artifact kaydetme isteği geçersiz.")
+            }
+        case .readDocument:
+            guard case .fileName(let filename) = request.payload, isValidDesktopFilename(filename) else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Okunacak belge adı geçersiz.")
+            }
+        case .editDocument:
+            guard case .document(let document) = request.payload,
+                  isValidDesktopFilename(document.filename),
+                  document.content.count > 0, document.content.count <= 500_000 else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Belge düzenleme isteği geçersiz.")
+            }
         }
         return nil
     }
@@ -52,7 +101,11 @@ public enum RovaValidation {
     public static func isValidDesktopFilename(_ name: String) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 255, trimmed != ".", trimmed != ".." else { return false }
-        return !trimmed.contains("/") && !trimmed.contains("\\") && !trimmed.contains("\0")
+        return !trimmed.contains("/") && !trimmed.contains("\\") && !trimmed.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 })
+    }
+
+    private static func isSafeText(_ value: String, maxLength: Int) -> Bool {
+        !value.isEmpty && value.count <= maxLength && !value.contains(where: { $0.isNewline || $0 == "\0" })
     }
 
     public static func isRequestTimestampValid(_ createdAt: Date, now: Date = Date(), maxSkewSeconds: TimeInterval = 600) -> Bool {
@@ -103,5 +156,10 @@ public enum RovaValidation {
             return false
         }
         return true
+    }
+
+    public static func isAllowedArtifactURL(_ rawValue: String) -> Bool {
+        guard isAllowedURL(rawValue), let host = URLComponents(string: rawValue)?.host?.lowercased() else { return false }
+        return host == "84-247-172-213.sslip.io"
     }
 }

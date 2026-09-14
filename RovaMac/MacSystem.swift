@@ -1,4 +1,5 @@
 import AppKit
+import EventKit
 import Foundation
 import IOKit
 import IOKit.ps
@@ -127,12 +128,236 @@ enum MacSystem {
             return RovaError(code: "DESKTOP_UNAVAILABLE", message: "Masaüstü klasörüne erişilemedi.")
         }
         let fileURL = desktopURL.appendingPathComponent(payload.filename)
+        guard isDirectDesktopEntry(fileURL, desktop: desktopURL),
+              !FileManager.default.fileExists(atPath: fileURL.path) else {
+            return RovaError(code: "FILE_EXISTS", message: "Aynı adlı dosya zaten var; üzerine yazılmadı.")
+        }
         do {
             try payload.content.write(to: fileURL, atomically: true, encoding: .utf8)
             return nil
         } catch {
-            return RovaError(code: "FILE_WRITE_FAILED", message: "Dosya yazılamadı: \(error.localizedDescription)")
+            return RovaError(code: "FILE_WRITE_FAILED", message: "Dosya yazılamadı.")
         }
+    }
+
+    static func readDocument(_ filename: String) -> (data: CommandData?, error: RovaError?) {
+        let outcome = DocumentEngine.read(filename: filename)
+        return (outcome.data.map(CommandData.documentContent), outcome.error)
+    }
+
+    static func editDocument(_ payload: DocumentPayload) -> RovaError? {
+        DocumentEngine.write(payload)
+    }
+
+    /// Downloads a backend-produced artifact over the authenticated Mac channel and commits it
+    /// to Desktop only after the complete response has arrived. The URL is allow-listed by the
+    /// shared validator, so a model-produced URL cannot turn this into an arbitrary downloader.
+    static func saveArtifact(_ payload: ArtifactFilePayload, token: String) async -> RovaError? {
+        guard RovaValidation.isAllowedArtifactURL(payload.downloadURL),
+              let url = URL(string: payload.downloadURL) else {
+            return RovaError(code: "INVALID_ARTIFACT_URL", message: "Artifact indirme adresi güvenli değil.")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 45
+        do {
+            let (bytes, response) = try await URLSession.shared.bytes(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return RovaError(code: "ARTIFACT_DOWNLOAD_FAILED", message: "Artifact backend'den indirilemedi.")
+            }
+            if let contentType = http.value(forHTTPHeaderField: "Content-Type"), contentType.lowercased().hasPrefix("application/json") {
+                return RovaError(code: "ARTIFACT_DOWNLOAD_FAILED", message: "Artifact backend'den geçerli bir dosya döndürmedi.")
+            }
+            if let contentLength = http.value(forHTTPHeaderField: "Content-Length").flatMap(Int64.init), contentLength > DocumentEngine.maxFileBytes {
+                return RovaError(code: "ARTIFACT_TOO_LARGE", message: "İndirilen dosya desteklenen boyut sınırını aşıyor.")
+            }
+            var data = Data()
+            data.reserveCapacity(min(Int(payload.byteCount ?? DocumentEngine.maxFileBytes), Int(DocumentEngine.maxFileBytes)))
+            for try await byte in bytes {
+                if data.count >= Int(DocumentEngine.maxFileBytes) {
+                    return RovaError(code: "ARTIFACT_TOO_LARGE", message: "İndirilen dosya desteklenen boyut sınırını aşıyor.")
+                }
+                data.append(byte)
+            }
+            if let expectedByteCount = payload.byteCount, Int64(data.count) != expectedByteCount {
+                return RovaError(code: "ARTIFACT_INTEGRITY_FAILED", message: "İndirilen artifact boyut doğrulamasından geçmedi.")
+            }
+            if let expectedSHA256 = payload.sha256, RovaCrypto.sha256Hex(data) != expectedSHA256.lowercased() {
+                return RovaError(code: "ARTIFACT_INTEGRITY_FAILED", message: "İndirilen artifact bütünlük doğrulamasından geçmedi.")
+            }
+            return DocumentEngine.commitArtifact(data, filename: payload.filename, overwrite: payload.overwrite)
+        } catch is CancellationError {
+            return RovaError(code: "CANCELLED", message: "Artifact indirme iptal edildi.")
+        } catch {
+            return RovaError(code: "ARTIFACT_DOWNLOAD_FAILED", message: "Artifact indirilemedi.")
+        }
+    }
+
+    @MainActor
+    static func sendMessage(_ payload: MessagePayload) -> RovaError? {
+        let recipient = appleScriptLiteral(payload.recipient)
+        let body = appleScriptLiteral(payload.body)
+        let source = """
+        tell application "Messages"
+            set targetService to 1st service whose service type = iMessage
+            set targetBuddy to buddy \(recipient) of targetService
+            send \(body) to targetBuddy
+        end tell
+        """
+        guard let script = NSAppleScript(source: source) else {
+            return RovaError(code: "MESSAGE_UNAVAILABLE", message: "Mesaj gönderme hazırlanamadı.")
+        }
+        var error: NSDictionary?
+        _ = script.executeAndReturnError(&error)
+        guard let error else { return nil }
+        let number = (error[NSAppleScript.errorNumber] as? Int) ?? 0
+        if number == -1743 {
+            return RovaError(code: "MESSAGE_PERMISSION_DENIED", message: "Mac'te Rova için Messages/Otomasyon izni verilmedi.")
+        }
+        return RovaError(code: "MESSAGE_SEND_FAILED", message: "Mesaj gönderilemedi.")
+    }
+
+    @MainActor
+    static func listCalendarEvents() async -> (data: CommandData?, error: RovaError?) {
+        guard let store = await calendarStore() else {
+            return (nil, RovaError(code: "CALENDAR_PERMISSION_DENIED", message: "Takvim erişimi verilmedi."))
+        }
+        let start = Date()
+        let end = Calendar.current.date(byAdding: .day, value: 14, to: start) ?? start.addingTimeInterval(14 * 24 * 60 * 60)
+        let events = store.events(matching: store.predicateForEvents(withStart: start, end: end, calendars: nil))
+            .sorted { $0.startDate < $1.startDate }
+            .prefix(100)
+            .map(calendarInfo)
+        return (.calendarEvents(Array(events)), nil)
+    }
+
+    @MainActor
+    static func createCalendarEvent(_ payload: CalendarEventPayload) async -> (data: CommandData?, error: RovaError?) {
+        guard let store = await calendarStore() else {
+            return (nil, RovaError(code: "CALENDAR_PERMISSION_DENIED", message: "Takvim erişimi verilmedi."))
+        }
+        let calendar: EKCalendar?
+        if let name = payload.calendarName, !name.isEmpty {
+            calendar = store.calendars(for: .event).first { $0.title == name }
+        } else {
+            calendar = store.defaultCalendarForNewEvents
+        }
+        guard let calendar else {
+            return (nil, RovaError(code: "CALENDAR_NOT_FOUND", message: "Etkinliğin ekleneceği takvim bulunamadı."))
+        }
+        let event = EKEvent(eventStore: store)
+        event.title = payload.title
+        event.startDate = payload.startAt
+        event.endDate = payload.endAt
+        event.calendar = calendar
+        event.notes = payload.notes
+        event.location = payload.location
+        do {
+            try store.save(event, span: .thisEvent)
+            return (.calendarEvents([calendarInfo(event)]), nil)
+        } catch {
+            return (nil, RovaError(code: "CALENDAR_SAVE_FAILED", message: "Takvim etkinliği kaydedilemedi."))
+        }
+    }
+
+    static func listDesktopFiles() -> (data: CommandData?, error: RovaError?) {
+        guard let desktopURL = desktopURL() else {
+            return (nil, RovaError(code: "DESKTOP_UNAVAILABLE", message: "Masaüstü klasörüne erişilemedi."))
+        }
+        do {
+            let urls = try FileManager.default.contentsOfDirectory(at: desktopURL, includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey], options: [.skipsHiddenFiles])
+            let files = urls.compactMap { url -> DesktopFileInfo? in
+                guard isDirectDesktopEntry(url, desktop: desktopURL) else { return nil }
+                guard RovaValidation.isValidDesktopFilename(url.lastPathComponent),
+                      let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey]) else { return nil }
+                return DesktopFileInfo(filename: url.lastPathComponent, byteCount: Int64(values.fileSize ?? 0), modifiedAt: values.contentModificationDate, isDirectory: values.isDirectory ?? false)
+            }.sorted { $0.filename.localizedStandardCompare($1.filename) == .orderedAscending }
+            return (.desktopFiles(Array(files.prefix(100))), nil)
+        } catch {
+            return (nil, RovaError(code: "DESKTOP_LIST_FAILED", message: "Masaüstü dosyaları listelenemedi."))
+        }
+    }
+
+    static func readDesktopFile(_ filename: String) -> (data: CommandData?, error: RovaError?) {
+        guard let desktop = desktopURL(), let url = safeDesktopURL(filename),
+              isDirectDesktopEntry(url, desktop: desktop), FileManager.default.fileExists(atPath: url.path) else {
+            return (nil, RovaError(code: "FILE_NOT_FOUND", message: "Masaüstünde bu dosya bulunamadı."))
+        }
+        do {
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey])
+            guard values.isDirectory != true, values.isRegularFile == true, let size = values.fileSize, size <= 200_000 else {
+                return (nil, RovaError(code: "FILE_TOO_LARGE", message: "Yalnızca 200 KB veya daha küçük metin dosyaları okunabilir."))
+            }
+            let content = try String(contentsOf: url, encoding: .utf8)
+            return (.fileContent(DesktopFileContent(filename: filename, content: content)), nil)
+        } catch {
+            return (nil, RovaError(code: "FILE_READ_FAILED", message: "Dosya okunamadı."))
+        }
+    }
+
+    static func moveDesktopFile(_ payload: DesktopFileMovePayload) -> RovaError? {
+        guard let desktop = desktopURL(),
+              let source = safeDesktopURL(payload.source), let destination = safeDesktopURL(payload.destination),
+              isDirectDesktopEntry(source, desktop: desktop), isDirectDesktopEntry(destination, desktop: desktop),
+              FileManager.default.fileExists(atPath: source.path) else {
+            return RovaError(code: "FILE_NOT_FOUND", message: "Kaynak dosya masaüstünde bulunamadı.")
+        }
+        guard let values = try? source.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey]),
+              values.isDirectory != true, values.isRegularFile == true else {
+            return RovaError(code: "FILE_NOT_REGULAR", message: "Yalnızca normal dosyalar taşınabilir.")
+        }
+        guard !FileManager.default.fileExists(atPath: destination.path) else {
+            return RovaError(code: "FILE_EXISTS", message: "Hedef dosya zaten var; üzerine yazılmadı.")
+        }
+        do {
+            try FileManager.default.moveItem(at: source, to: destination)
+            return nil
+        } catch {
+            return RovaError(code: "FILE_MOVE_FAILED", message: "Dosya taşınamadı veya yeniden adlandırılamadı.")
+        }
+    }
+
+    private static func desktopURL() -> URL? {
+        FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+    }
+
+    private static func isDirectDesktopEntry(_ url: URL, desktop: URL) -> Bool {
+        let resolvedDesktop = desktop.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolvedURL = url.resolvingSymlinksInPath().standardizedFileURL
+        return resolvedURL.deletingLastPathComponent().path == resolvedDesktop
+    }
+
+    private static func safeDesktopURL(_ filename: String) -> URL? {
+        guard RovaValidation.isValidDesktopFilename(filename), let desktop = desktopURL() else { return nil }
+        return desktop.appendingPathComponent(filename, isDirectory: false)
+    }
+
+    private static func appleScriptLiteral(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\r\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\n")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        return "\"\(escaped)\""
+    }
+
+    @MainActor
+    private static func calendarStore() async -> EKEventStore? {
+        let store = EKEventStore()
+        let granted = await withCheckedContinuation { continuation in
+            if #available(macOS 14.0, *) {
+                store.requestFullAccessToEvents { granted, _ in continuation.resume(returning: granted) }
+            } else {
+                store.requestAccess(to: .event) { granted, _ in continuation.resume(returning: granted) }
+            }
+        }
+        return granted ? store : nil
+    }
+
+    private static func calendarInfo(_ event: EKEvent) -> CalendarEventInfo {
+        CalendarEventInfo(identifier: event.eventIdentifier ?? UUID().uuidString, title: event.title ?? "(Başlıksız)", startAt: event.startDate, endAt: event.endDate, calendarName: event.calendar?.title ?? "Takvim", location: event.location)
     }
 
     @MainActor

@@ -90,6 +90,59 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(RovaValidation.validate(invalidQuitApp)?.code, "INVALID_PAYLOAD")
     }
 
+    func testNewCapabilityWireRoundTrips() throws {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        let requests = [
+            CommandRequest(type: .sendMessage, payload: .message(MessagePayload(recipient: "+905551112233", body: "Merhaba")), createdAt: start),
+            CommandRequest(type: .createCalendarEvent, payload: .calendarEvent(CalendarEventPayload(title: "Toplantı", startAt: start, endAt: start.addingTimeInterval(3_600), calendarName: "İş", notes: "Not", location: "Ofis")), createdAt: start),
+            CommandRequest(type: .readDesktopFile, payload: .fileName("notlar.txt"), createdAt: start),
+            CommandRequest(type: .moveDesktopFile, payload: .fileMove(DesktopFileMovePayload(source: "eski.txt", destination: "yeni.txt")), createdAt: start)
+        ]
+
+        for request in requests {
+            let envelope = WireEnvelope(requestID: request.id, message: .command(request))
+            var buffer = Data()
+            let frames = try RovaFrameCodec.appendAndExtract(RovaWireCodec.encode(envelope), from: &buffer)
+            XCTAssertEqual(frames.count, 1)
+            let decoded = try RovaWireCodec.decode(frames[0])
+            XCTAssertEqual(decoded, envelope)
+        }
+    }
+
+    func testNewCapabilityValidationRejectsUnsafeInputs() {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        let validMessage = CommandRequest(type: .sendMessage, payload: .message(MessagePayload(recipient: "user@example.com", body: "Merhaba")))
+        XCTAssertNil(RovaValidation.validate(validMessage))
+
+        let invalidMessage = CommandRequest(type: .sendMessage, payload: .message(MessagePayload(recipient: "user@example.com\n", body: "Merhaba")))
+        XCTAssertEqual(RovaValidation.validate(invalidMessage)?.code, "INVALID_PAYLOAD")
+
+        let invalidEvent = CommandRequest(type: .createCalendarEvent, payload: .calendarEvent(CalendarEventPayload(title: "Toplantı", startAt: start, endAt: start)))
+        XCTAssertEqual(RovaValidation.validate(invalidEvent)?.code, "INVALID_PAYLOAD")
+
+        let traversal = CommandRequest(type: .readDesktopFile, payload: .fileName("../gizli.txt"))
+        XCTAssertEqual(RovaValidation.validate(traversal)?.code, "INVALID_PAYLOAD")
+
+        let invalidMove = CommandRequest(type: .moveDesktopFile, payload: .fileMove(DesktopFileMovePayload(source: "a.txt", destination: "a.txt")))
+        XCTAssertEqual(RovaValidation.validate(invalidMove)?.code, "INVALID_PAYLOAD")
+    }
+
+    func testLegacyDeviceInfoDefaultsToMacOSPlatform() throws {
+        let json = """
+        {
+          "id": "00000000-0000-0000-0000-000000000001",
+          "displayName": "Mac",
+          "hostname": "mac.local",
+          "localIPAddress": "192.168.1.10",
+          "port": 47831,
+          "serviceStatus": "running",
+          "availableApplications": []
+        }
+        """
+        let decoded = try JSONDecoder().decode(DeviceInfo.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.platform, "macOS")
+    }
+
     func testHMACSignatureAndTimestampValidation() throws {
         let token = "test-secret-token-1234567890abcdef"
         let id = UUID()

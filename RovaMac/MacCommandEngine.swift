@@ -126,6 +126,68 @@ actor MacCommandEngine {
             }
             let error = MacSystem.saveTextFile(file)
             return (nil, error == nil ? "\(file.filename) masaüstüne kaydedildi." : error!.message, error)
+        case .saveArtifact:
+            guard case .artifactFile(let artifact) = request.payload else {
+                return (nil, "Geçersiz artifact isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Artifact isteği geçersiz."))
+            }
+            guard let tokenData = try? RovaKeychainStore.load(account: "rova-backend-token"),
+                  let token = String(data: tokenData, encoding: .utf8),
+                  !token.isEmpty else {
+                return (nil, "Backend oturumu bulunamadı.", RovaError(code: "BACKEND_AUTH_REQUIRED", message: "Artifact indirmek için Mac backend oturumu gerekli."))
+            }
+            let error = await MacSystem.saveArtifact(artifact, token: token)
+            return (nil, error == nil ? "\(artifact.filename) masaüstüne kaydedildi." : error!.message, error)
+        case .readDocument:
+            guard case .fileName(let filename) = request.payload else {
+                return (nil, "Geçersiz belge okuma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Belge adı geçersiz."))
+            }
+            let outcome = await Task.detached(priority: .userInitiated) { MacSystem.readDocument(filename) }.value
+            return (outcome.data, outcome.error == nil ? "\(filename) okundu." : outcome.error!.message, outcome.error)
+        case .editDocument:
+            guard case .document(let document) = request.payload else {
+                return (nil, "Geçersiz belge düzenleme isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Belge düzenleme isteği geçersiz."))
+            }
+            let error = await Task.detached(priority: .userInitiated) { MacSystem.editDocument(document) }.value
+            return (nil, error == nil ? "\(document.filename) güncellendi." : error!.message, error)
+        case .sendMessage:
+            guard case .message(let message) = request.payload else {
+                return (nil, "Geçersiz mesaj isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Mesaj isteği geçersiz."))
+            }
+            let error = await MainActor.run { MacSystem.sendMessage(message) }
+            return (nil, error == nil ? "Mesaj gönderildi." : error!.message, error)
+        case .listCalendarEvents:
+            let outcome = await MacSystem.listCalendarEvents()
+            let count = outcome.data.flatMap { data -> Int? in
+                if case .calendarEvents(let events) = data { return events.count }
+                return nil
+            } ?? 0
+            return (outcome.data, outcome.error == nil ? "\(count) takvim etkinliği bulundu." : outcome.error!.message, outcome.error)
+        case .createCalendarEvent:
+            guard case .calendarEvent(let event) = request.payload else {
+                return (nil, "Geçersiz takvim etkinliği isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Takvim etkinliği isteği geçersiz."))
+            }
+            let outcome = await MacSystem.createCalendarEvent(event)
+            return (outcome.data, outcome.error == nil ? "Takvim etkinliği oluşturuldu." : outcome.error!.message, outcome.error)
+        case .listDesktopFiles:
+            let outcome = MacSystem.listDesktopFiles()
+            let count = outcome.data.flatMap { data -> Int? in
+                if case .desktopFiles(let files) = data { return files.count }
+                return nil
+            } ?? 0
+            return (outcome.data, outcome.error == nil ? "Masaüstünde \(count) öğe bulundu." : outcome.error!.message, outcome.error)
+        case .readDesktopFile:
+            guard case .fileName(let filename) = request.payload else {
+                return (nil, "Geçersiz dosya okuma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya adı geçersiz."))
+            }
+            let outcome = MacSystem.readDesktopFile(filename)
+            return (outcome.data, outcome.error == nil ? "\(filename) okundu." : outcome.error!.message, outcome.error)
+        case .moveDesktopFile, .renameDesktopFile:
+            guard case .fileMove(let move) = request.payload else {
+                return (nil, "Geçersiz dosya taşıma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya taşıma isteği geçersiz."))
+            }
+            let error = MacSystem.moveDesktopFile(move)
+            let verb = request.type == .renameDesktopFile ? "yeniden adlandırıldı" : "taşındı"
+            return (nil, error == nil ? "Dosya \(verb)." : error!.message, error)
         case .ping:
             return (.ping(PingData()), "Pong.", nil)
         }

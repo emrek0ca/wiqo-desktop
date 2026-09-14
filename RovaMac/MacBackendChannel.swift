@@ -81,10 +81,22 @@ final class MacBackendChannel: NSObject {
         guard let data = text.data(using: .utf8),
               let payload = try? JSONDecoder().decode(AutomationRunPayload.self, from: data) else { return }
         Task { [engine, runtimeStatus] in
-            for step in payload.steps where !step.isDestructive {
+            for step in payload.steps where Self.canRunUnattended(step) {
                 let request = CommandRequest(type: step.type, payload: step.payload)
                 _ = await engine.execute(request, runtimeStatus: runtimeStatus())
             }
+        }
+    }
+
+    private static func canRunUnattended(_ step: AutomationStep) -> Bool {
+        guard !step.isDestructive, step.requiresUserPresence != true else { return false }
+        switch step.type {
+        case .lockMac, .sleepMac, .displaySleep, .quitApplication, .saveTextFile,
+             .sendMessage, .createCalendarEvent, .moveDesktopFile, .renameDesktopFile,
+             .saveArtifact, .readDocument, .editDocument:
+            return false
+        default:
+            return true
         }
     }
 
@@ -114,4 +126,6 @@ private struct AutomationStep: Decodable {
     let payload: CommandPayload
     let summary: String
     let isDestructive: Bool
+    // Optional so queued runs written by an older backend remain deliverable.
+    let requiresUserPresence: Bool?
 }

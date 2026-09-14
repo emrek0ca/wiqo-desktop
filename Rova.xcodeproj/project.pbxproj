@@ -27,6 +27,7 @@
 		B012 /* MacServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F012 /* MacServer.swift */; };
 		B013 /* MacRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = F013 /* MacRuntime.swift */; };
 		B014 /* MacViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F014 /* MacViews.swift */; };
+		B015 /* DocumentEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F030 /* DocumentEngine.swift */; };
 		B017 /* RovaIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F017 /* RovaIOSApp.swift */; };
 		B018 /* IOSConnectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F018 /* IOSConnectionModel.swift */; };
 		B019 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F019 /* QRScannerView.swift */; };
@@ -93,6 +94,7 @@
 		F027 /* MacCommandEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCommandEngineTests.swift; sourceTree = "<group>"; };
 		F028 /* project.pbxproj */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = project.pbxproj; sourceTree = "<group>"; };
 		F029 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = README.md; sourceTree = "<group>"; };
+		F030 /* DocumentEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentEngine.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -164,6 +166,7 @@
 				F012 /* MacServer.swift */,
 				F013 /* MacRuntime.swift */,
 				F014 /* MacViews.swift */,
+				F030 /* DocumentEngine.swift */,
 				F015 /* Info.plist */,
 				F016 /* RovaMac.entitlements */,
 				3072ACE850F6012D34640ABF /* MacBackendChannel.swift */,
@@ -389,6 +392,7 @@
 				B012 /* MacServer.swift in Sources */,
 				B013 /* MacRuntime.swift in Sources */,
 				B014 /* MacViews.swift in Sources */,
+				B015 /* DocumentEngine.swift in Sources */,
 				B001 /* Protocol.swift in Sources */,
 				B002 /* Validation.swift in Sources */,
 				B003 /* Framing.swift in Sources */,

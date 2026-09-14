@@ -23,12 +23,60 @@ public enum CommandType: String, Codable, CaseIterable, Sendable {
     case quitApplication
     case saveTextFile
     case ping
+    case sendMessage
+    case listCalendarEvents
+    case createCalendarEvent
+    case listDesktopFiles
+    case readDesktopFile
+    case moveDesktopFile
+    case renameDesktopFile
+    case saveArtifact
+    case readDocument
+    case editDocument
 }
 
 public enum MediaAction: String, Codable, CaseIterable, Sendable {
     case playPause
     case nextTrack
     case previousTrack
+}
+
+public struct MessagePayload: Codable, Equatable, Sendable {
+    public let recipient: String
+    public let body: String
+
+    public init(recipient: String, body: String) {
+        self.recipient = recipient
+        self.body = body
+    }
+}
+
+public struct CalendarEventPayload: Codable, Equatable, Sendable {
+    public let title: String
+    public let startAt: Date
+    public let endAt: Date
+    public let calendarName: String?
+    public let notes: String?
+    public let location: String?
+
+    public init(title: String, startAt: Date, endAt: Date, calendarName: String? = nil, notes: String? = nil, location: String? = nil) {
+        self.title = title
+        self.startAt = startAt
+        self.endAt = endAt
+        self.calendarName = calendarName
+        self.notes = notes
+        self.location = location
+    }
+}
+
+public struct DesktopFileMovePayload: Codable, Equatable, Sendable {
+    public let source: String
+    public let destination: String
+
+    public init(source: String, destination: String) {
+        self.source = source
+        self.destination = destination
+    }
 }
 
 public enum ApplicationID: String, Codable, CaseIterable, Sendable {
@@ -69,6 +117,51 @@ public struct TextFilePayload: Codable, Equatable, Sendable {
     }
 }
 
+public enum DocumentFormat: String, Codable, CaseIterable, Sendable {
+    case doc
+    case docx
+    case xlsx
+    case pdf
+    case md
+    case txt
+    case csv
+    case html
+}
+
+public struct DocumentPayload: Codable, Equatable, Sendable {
+    public let filename: String
+    public let format: DocumentFormat
+    public let content: String
+    public let overwrite: Bool
+
+    public init(filename: String, format: DocumentFormat, content: String, overwrite: Bool = false) {
+        self.filename = filename
+        self.format = format
+        self.content = content
+        self.overwrite = overwrite
+    }
+}
+
+public struct ArtifactFilePayload: Codable, Equatable, Sendable {
+    public let artifactID: String
+    public let filename: String
+    public let mimeType: String
+    public let downloadURL: String
+    public let overwrite: Bool
+    public let byteCount: Int64?
+    public let sha256: String?
+
+    public init(artifactID: String, filename: String, mimeType: String, downloadURL: String, overwrite: Bool = false, byteCount: Int64? = nil, sha256: String? = nil) {
+        self.artifactID = artifactID
+        self.filename = filename
+        self.mimeType = mimeType
+        self.downloadURL = downloadURL
+        self.overwrite = overwrite
+        self.byteCount = byteCount
+        self.sha256 = sha256
+    }
+}
+
 public enum CommandPayload: Codable, Equatable, Sendable {
     case none
     case application(ApplicationID)
@@ -78,9 +171,15 @@ public enum CommandPayload: Codable, Equatable, Sendable {
     case brightness(Int)
     case clipboardText(String)
     case textFile(TextFilePayload)
+    case message(MessagePayload)
+    case calendarEvent(CalendarEventPayload)
+    case fileName(String)
+    case fileMove(DesktopFileMovePayload)
+    case document(DocumentPayload)
+    case artifactFile(ArtifactFilePayload)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case none, application, url, volume, media, brightness, clipboardText, textFile }
+    private enum Kind: String, Codable { case none, application, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -102,6 +201,18 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             self = .clipboardText(try container.decode(String.self, forKey: .value))
         case .textFile:
             self = .textFile(try container.decode(TextFilePayload.self, forKey: .value))
+        case .message:
+            self = .message(try container.decode(MessagePayload.self, forKey: .value))
+        case .calendarEvent:
+            self = .calendarEvent(try container.decode(CalendarEventPayload.self, forKey: .value))
+        case .fileName:
+            self = .fileName(try container.decode(String.self, forKey: .value))
+        case .fileMove:
+            self = .fileMove(try container.decode(DesktopFileMovePayload.self, forKey: .value))
+        case .document:
+            self = .document(try container.decode(DocumentPayload.self, forKey: .value))
+        case .artifactFile:
+            self = .artifactFile(try container.decode(ArtifactFilePayload.self, forKey: .value))
         }
     }
 
@@ -131,8 +242,26 @@ public enum CommandPayload: Codable, Equatable, Sendable {
         case .textFile(let payload):
             try container.encode(Kind.textFile, forKey: .kind)
             try container.encode(payload, forKey: .value)
-        }
+        case .message(let payload):
+            try container.encode(Kind.message, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .calendarEvent(let payload):
+            try container.encode(Kind.calendarEvent, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .fileName(let filename):
+            try container.encode(Kind.fileName, forKey: .kind)
+            try container.encode(filename, forKey: .value)
+        case .fileMove(let payload):
+            try container.encode(Kind.fileMove, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .document(let payload):
+            try container.encode(Kind.document, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .artifactFile(let payload):
+            try container.encode(Kind.artifactFile, forKey: .kind)
+            try container.encode(payload, forKey: .value)
     }
+}
 }
 
 public struct ApplicationInfo: Codable, Equatable, Sendable, Identifiable {
@@ -184,6 +313,64 @@ public struct PingData: Codable, Equatable, Sendable {
     }
 }
 
+public struct DesktopFileInfo: Codable, Equatable, Sendable, Identifiable {
+    public let filename: String
+    public let byteCount: Int64
+    public let modifiedAt: Date?
+    public let isDirectory: Bool
+
+    public var id: String { filename }
+
+    public init(filename: String, byteCount: Int64, modifiedAt: Date?, isDirectory: Bool) {
+        self.filename = filename
+        self.byteCount = byteCount
+        self.modifiedAt = modifiedAt
+        self.isDirectory = isDirectory
+    }
+}
+
+public struct DesktopFileContent: Codable, Equatable, Sendable {
+    public let filename: String
+    public let content: String
+
+    public init(filename: String, content: String) {
+        self.filename = filename
+        self.content = content
+    }
+}
+
+public struct DocumentContent: Codable, Equatable, Sendable {
+    public let filename: String
+    public let format: DocumentFormat
+    public let text: String
+
+    public init(filename: String, format: DocumentFormat, text: String) {
+        self.filename = filename
+        self.format = format
+        self.text = text
+    }
+}
+
+public struct CalendarEventInfo: Codable, Equatable, Sendable, Identifiable {
+    public let identifier: String
+    public let title: String
+    public let startAt: Date
+    public let endAt: Date
+    public let calendarName: String
+    public let location: String?
+
+    public var id: String { identifier }
+
+    public init(identifier: String, title: String, startAt: Date, endAt: Date, calendarName: String, location: String?) {
+        self.identifier = identifier
+        self.title = title
+        self.startAt = startAt
+        self.endAt = endAt
+        self.calendarName = calendarName
+        self.location = location
+    }
+}
+
 public struct RovaError: Codable, Equatable, Sendable, Error {
     public let code: String
     public let message: String
@@ -226,9 +413,13 @@ public enum CommandData: Codable, Equatable, Sendable {
     case systemStatus(SystemStatus)
     case applications([ApplicationInfo])
     case ping(PingData)
+    case fileContent(DesktopFileContent)
+    case desktopFiles([DesktopFileInfo])
+    case calendarEvents([CalendarEventInfo])
+    case documentContent(DocumentContent)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case systemStatus, applications, ping }
+    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, documentContent }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -239,6 +430,14 @@ public enum CommandData: Codable, Equatable, Sendable {
             self = .applications(try container.decode([ApplicationInfo].self, forKey: .value))
         case .ping:
             self = .ping(try container.decode(PingData.self, forKey: .value))
+        case .fileContent:
+            self = .fileContent(try container.decode(DesktopFileContent.self, forKey: .value))
+        case .desktopFiles:
+            self = .desktopFiles(try container.decode([DesktopFileInfo].self, forKey: .value))
+        case .calendarEvents:
+            self = .calendarEvents(try container.decode([CalendarEventInfo].self, forKey: .value))
+        case .documentContent:
+            self = .documentContent(try container.decode(DocumentContent.self, forKey: .value))
         }
     }
 
@@ -254,8 +453,20 @@ public enum CommandData: Codable, Equatable, Sendable {
         case .ping(let value):
             try container.encode(Kind.ping, forKey: .kind)
             try container.encode(value, forKey: .value)
-        }
+        case .fileContent(let value):
+            try container.encode(Kind.fileContent, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .desktopFiles(let value):
+            try container.encode(Kind.desktopFiles, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .calendarEvents(let value):
+            try container.encode(Kind.calendarEvents, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .documentContent(let value):
+            try container.encode(Kind.documentContent, forKey: .kind)
+            try container.encode(value, forKey: .value)
     }
+}
 }
 
 public struct CommandRequest: Codable, Equatable, Sendable {
@@ -296,6 +507,10 @@ public struct DeviceInfo: Codable, Equatable, Sendable, Identifiable {
     /// available capabilities) without another protocol change.
     public let platform: String
 
+    private enum CodingKeys: String, CodingKey {
+        case id, displayName, hostname, localIPAddress, port, serviceStatus, availableApplications, platform
+    }
+
     public init(
         id: UUID,
         displayName: String,
@@ -314,6 +529,19 @@ public struct DeviceInfo: Codable, Equatable, Sendable, Identifiable {
         self.serviceStatus = serviceStatus
         self.availableApplications = availableApplications
         self.platform = platform
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        hostname = try container.decode(String.self, forKey: .hostname)
+        localIPAddress = try container.decode(String.self, forKey: .localIPAddress)
+        port = try container.decode(UInt16.self, forKey: .port)
+        serviceStatus = try container.decode(String.self, forKey: .serviceStatus)
+        availableApplications = try container.decode([ApplicationInfo].self, forKey: .availableApplications)
+        // Older companions did not send platform. macOS remains the safe legacy default.
+        platform = try container.decodeIfPresent(String.self, forKey: .platform) ?? "macOS"
     }
 }
 

@@ -20,6 +20,10 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Rova, Mac’i kilitlemek, medya oynatımını kontrol etmek ve uygulamaları yönetmek için sistem izinlerini kullanır.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Rova, istediğinizde yaklaşan etkinlikleri göstermek ve onayınızla yeni etkinlik oluşturmak için Takvim erişimini kullanır.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Rova, istediğinizde yaklaşan etkinlikleri göstermek ve onayınızla yeni etkinlik oluşturmak için Takvim erişimini kullanır.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Rova, iPhone’unuzdan gelen yerel bağlantıları kabul etmek için yerel ağınızı kullanır.</string>
 </dict>
