@@ -236,8 +236,13 @@ struct CopilotView: View {
         statusText = "Düşünüyor…"
         defer { isSending = false }
 
+        // Only the recent window goes to the model - a long-running chat otherwise resends its
+        // entire history (including big replies) on every single new message, which is what
+        // drove token usage into Groq's per-minute rate limit during testing. Anything that
+        // needs to survive past this window is what the memory/task tools are for.
         let history = bubbles
             .filter { $0.role != .system }
+            .suffix(16)
             .map { RovaBackendClient.ChatTurn(role: $0.role == .user ? "user" : "assistant", content: $0.text) }
 
         do {
