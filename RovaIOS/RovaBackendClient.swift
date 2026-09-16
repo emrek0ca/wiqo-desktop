@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// A single step of an AI-generated plan, already translated into the exact same
@@ -35,7 +36,7 @@ enum RovaBackendError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notAuthenticated: return "Önce Rova hesabına giriş yap."
+        case .notAuthenticated: return "Önce Wiqo hesabına giriş yap."
         case .network(let message): return message
         case .invalidResponse: return "Sunucudan geçersiz yanıt alındı."
         case .declined(let reason): return reason
@@ -50,6 +51,13 @@ enum RovaBackendError: Error, LocalizedError {
 /// the AI copilot feature.
 enum RovaBackendClient {
     private static let tokenAccount = "rova-backend-token"
+    static let apnsBundleID = "com.rova.ios"
+
+    #if DEBUG
+    static let apnsEnvironment = "development"
+    #else
+    static let apnsEnvironment = "production"
+    #endif
 
     static var isAuthenticated: Bool { token != nil }
 
@@ -58,8 +66,50 @@ enum RovaBackendClient {
         return String(data: data, encoding: .utf8)
     }
 
+    /// Stable per-account key for namespacing anything cached locally (conversation history,
+    /// etc.) so one signed-in account can never read another account's data on a shared device.
+    /// Read from the session JWT's own payload - not re-verified here, only used as a local
+    /// storage key, exactly like the token itself is already trusted for that JWT's lifetime.
+    static var currentUserID: String? {
+        guard let id = tokenPayload?["userId"] else { return nil }
+        if let value = id as? Int { return String(value) }
+        return id as? String
+    }
+
+    static var currentUserEmail: String? { tokenPayload?["email"] as? String }
+
+    private static var tokenPayload: [String: Any]? {
+        guard let token else { return nil }
+        let segments = token.split(separator: ".")
+        guard segments.count >= 2 else { return nil }
+        var base64 = String(segments[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while base64.count % 4 != 0 { base64.append("=") }
+        guard let data = Data(base64Encoded: base64) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
     static func signOut() {
         try? RovaKeychainStore.delete(account: tokenAccount)
+    }
+
+    static func registerAPNsToken(_ token: String) async throws {
+        struct Response: Decodable { let ok: Bool }
+        _ = try await authorizedPost(
+            "notifications/apns-token",
+            body: [
+                "token": token,
+                "environment": apnsEnvironment,
+                "bundleId": apnsBundleID
+            ],
+            as: Response.self
+        )
+    }
+
+    static func revokeAPNsToken(_ token: String? = nil) async throws {
+        struct Response: Decodable { let ok: Bool }
+        var body: [String: Any] = [:]
+        if let token { body["token"] = token }
+        _ = try await authorizedPost("notifications/apns-token/revoke", body: body, as: Response.self)
     }
 
     @discardableResult
@@ -97,7 +147,7 @@ enum RovaBackendClient {
         let dataBase64: String
     }
 
-    struct ArtifactDescriptor: Decodable, Identifiable, Equatable {
+    struct ArtifactDescriptor: Codable, Identifiable, Equatable, Hashable {
         let id: String
         let kind: String
         let filename: String
@@ -113,6 +163,46 @@ enum RovaBackendClient {
         let steps: [PlannedCommand]
         let executionState: String?
         let artifacts: [ArtifactDescriptor]
+    }
+
+    /// Result of running code on the canvas (`/canvas/run`) - the same sandbox run_python uses,
+    /// but invoked directly from the composer's canvas sheet rather than through a model turn.
+    struct CanvasRunResult: Decodable {
+        let exitCode: Int
+        let timedOut: Bool
+        let truncated: Bool
+        let durationMs: Int
+        let stdout: String
+        let stderr: String
+        let artifacts: [ArtifactDescriptor]
+    }
+
+    struct MemoryCandidate: Decodable, Identifiable {
+        let id: Int
+        let kind: String
+        let content: String
+        let sourceText: String
+        let status: String
+        let similarity: Double?
+        let createdAt: String
+    }
+
+    /// A learned "always allow" - Wiqo stopped asking to confirm this exact action because the
+    /// user already approved it once. Only ever created for non-destructive action types; see
+    /// the backend's groq/trust.ts for the full list. Revoking one makes Wiqo ask again.
+    struct TrustGrant: Decodable, Identifiable {
+        let id: Int
+        let label: String
+        let grantedAt: String
+    }
+
+    struct DeviceStatus: Decodable, Identifiable {
+        let id: String
+        let displayName: String
+        let platform: String
+        let capabilities: [String]
+        let online: Bool
+        let lastSeenAt: String?
     }
 
     struct ProactiveSuggestion: Decodable, Identifiable {
@@ -137,12 +227,20 @@ enum RovaBackendClient {
     static func converse(
         messages: [ChatTurn],
         availableApps: [ApplicationID],
+        applicationTargets: [DeviceApplicationTarget] = [],
+        availableCapabilities: [String] = [],
+        authorities: [DeviceCapabilityAuthority] = [],
+        deviceID: UUID? = nil,
         conversationID: String = "default",
         turnCount: Int? = nil,
         deviceResults: [DeviceExecutionResult] = [],
         requestID: UUID = UUID(),
         attachments: [ChatAttachment] = [],
-        onStatus: @escaping @Sendable (String) -> Void = { _ in }
+        // Awaited on the main actor in stream order - separate `Task { @MainActor }` hops per event
+        // are not guaranteed to run in order, which would scramble streamed text.
+        onStatus: @escaping @MainActor @Sendable (String) -> Void = { _ in },
+        onDelta: @escaping @MainActor @Sendable (String) -> Void = { _ in },
+        onReset: @escaping @MainActor @Sendable () -> Void = {}
     ) async throws -> ConverseResult {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("copilot/chat"))
@@ -150,12 +248,30 @@ enum RovaBackendClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        // The backend caps its own work at 45s and always emits a terminal event by then; this
+        // The backend caps its own work at 75s and always emits a terminal event by then; this
         // just needs enough margin on top of that for a slow mobile network.
         request.timeoutInterval = 90
         let body: [String: Any] = [
             "messages": messages.map { ["role": $0.role, "content": $0.content] },
             "availableApps": availableApps.map(\.rawValue),
+            "applicationTargets": applicationTargets.map { target in
+                [
+                    "name": target.name,
+                    "bundleIdentifier": target.bundleIdentifier ?? NSNull(),
+                    "isRunning": target.isRunning,
+                    "supportedActions": target.supportedActions.map(\.rawValue)
+                ] as [String: Any]
+            },
+            "availableCapabilities": availableCapabilities,
+            "authorities": authorities.map { authority in
+                [
+                    "capability": authority.capability,
+                    "displayName": authority.displayName,
+                    "access": authority.access.rawValue,
+                    "requiredPermissions": authority.requiredPermissions,
+                    "message": authority.message ?? ""
+                ] as [String: Any]
+            },
             "conversationId": conversationID,
             "requestId": requestID.uuidString,
             "attachments": attachments.map { [
@@ -170,12 +286,15 @@ enum RovaBackendClient {
                     "status": result.status.rawValue,
                     "message": result.message
                 ]
+                if let summary = result.summary { value["summary"] = summary }
                 if let error = result.error { value["error"] = error.message }
                 if let dataText = result.dataText { value["dataText"] = dataText }
+                if let imageBase64 = result.imageBase64 { value["imageBase64"] = imageBase64 }
                 return value
             }
         ]
         var requestBody = body
+        if let deviceID { requestBody["deviceId"] = deviceID.uuidString }
         if let turnCount { requestBody["turnCount"] = turnCount }
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [.fragmentsAllowed])
 
@@ -192,7 +311,10 @@ enum RovaBackendClient {
             throw RovaBackendError.notAuthenticated
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw RovaBackendError.network("İstek başarısız oldu (kod \(http.statusCode)).")
+            var body = Data()
+            for try await chunk in bytes { body.append(chunk) }
+            let serverMessage = (try? JSONDecoder().decode(BackendErrorEnvelope.self, from: body))?.error.message
+            throw RovaBackendError.network(serverMessage ?? "İstek başarısız oldu (kod \(http.statusCode)).")
         }
 
         struct StepResponse: Decodable {
@@ -204,6 +326,7 @@ enum RovaBackendClient {
             let requiresUserPresence: Bool?
         }
         struct StatusEvent: Decodable { let text: String }
+        struct DeltaEvent: Decodable { let text: String }
         struct DoneEvent: Decodable { let reply: String; let steps: [StepResponse]; let executionState: String?; let artifacts: [ArtifactDescriptor]? }
         struct ErrorEvent: Decodable { let message: String }
         struct EventKind: Decodable { let type: String }
@@ -218,18 +341,26 @@ enum RovaBackendClient {
                 switch kind.type {
                 case "status":
                     if let event = try? decoder.decode(StatusEvent.self, from: json) {
-                        onStatus(event.text)
+                        await onStatus(event.text)
                     }
+                case "delta":
+                    if let event = try? decoder.decode(DeltaEvent.self, from: json) {
+                        await onDelta(event.text)
+                    }
+                case "reset":
+                    await onReset()
                 case "done":
                     let event = try decoder.decode(DoneEvent.self, from: json)
-                    let steps = event.steps.map {
-                        PlannedCommand(
-                            id: $0.id ?? UUID(),
-                            type: $0.type,
-                            payload: $0.payload,
-                            summary: $0.summary,
-                            isDestructive: $0.isDestructive,
-                            requiresUserPresence: $0.requiresUserPresence == true || $0.isDestructive || requiresLocalPresence(for: $0.type)
+                    let steps = event.steps.map { step in
+                        let localDestructive = RovaCommandAuthority.isDestructive(type: step.type, payload: step.payload)
+                        let localPresence = RovaCommandAuthority.requiresUserPresence(type: step.type, payload: step.payload)
+                        return PlannedCommand(
+                            id: step.id ?? UUID(),
+                            type: step.type,
+                            payload: step.payload,
+                            summary: step.summary,
+                            isDestructive: step.isDestructive || localDestructive,
+                            requiresUserPresence: step.requiresUserPresence == true || step.isDestructive || localDestructive || localPresence
                         )
                     }
                     return ConverseResult(reply: event.reply, steps: steps, executionState: event.executionState, artifacts: event.artifacts ?? [])
@@ -251,20 +382,271 @@ enum RovaBackendClient {
     struct DeviceExecutionResult: Codable {
         let stepID: UUID
         let type: CommandType
+        let summary: String?
         let status: CommandStatus
         let message: String
         let error: RovaError?
         let dataText: String?
+        let imageBase64: String?
 
-        init(stepID: UUID, type: CommandType, status: CommandStatus, message: String, error: RovaError?, dataText: String? = nil) {
+        init(stepID: UUID, type: CommandType, summary: String? = nil, status: CommandStatus, message: String, error: RovaError?, dataText: String? = nil, imageBase64: String? = nil) {
             self.stepID = stepID
             self.type = type
+            self.summary = summary
             self.status = status
             self.message = message
             self.error = error
             self.dataText = dataText
+            self.imageBase64 = imageBase64
         }
     }
+
+    struct AudioConverseResult {
+        let transcript: String
+        let reply: String
+        let steps: [PlannedCommand]
+        let executionState: String?
+        let artifacts: [ArtifactDescriptor]
+        let audioData: Data?
+        let audioError: String?
+    }
+
+    static func converseAudio(
+        audioData: Data,
+        mimeType: String,
+        messages: [ChatTurn],
+        availableApps: [ApplicationID],
+        applicationTargets: [DeviceApplicationTarget] = [],
+        availableCapabilities: [String] = [],
+        authorities: [DeviceCapabilityAuthority] = [],
+        deviceID: UUID? = nil,
+        conversationID: String = "default",
+        turnCount: Int? = nil,
+        requestID: UUID = UUID(),
+        respondWithAudio: Bool = true
+    ) async throws -> AudioConverseResult {
+        guard !audioData.isEmpty, audioData.count <= 12_000_000 else { throw RovaBackendError.declined("Ses dosyası desteklenen boyut sınırını aşıyor.") }
+        var body: [String: Any] = [
+            "audioBase64": audioData.base64EncodedString(),
+            "mimeType": mimeType,
+            "messages": messages.map { ["role": $0.role, "content": $0.content] },
+            "availableApps": availableApps.map(\.rawValue),
+            "applicationTargets": applicationTargets.map { target in
+                [
+                    "name": target.name,
+                    "bundleIdentifier": target.bundleIdentifier ?? NSNull(),
+                    "isRunning": target.isRunning,
+                    "supportedActions": target.supportedActions.map(\.rawValue)
+                ] as [String: Any]
+            },
+            "availableCapabilities": availableCapabilities,
+            "authorities": authorities.map { authority in
+                [
+                    "capability": authority.capability,
+                    "displayName": authority.displayName,
+                    "access": authority.access.rawValue,
+                    "requiredPermissions": authority.requiredPermissions,
+                    "message": authority.message ?? ""
+                ] as [String: Any]
+            },
+            "conversationId": conversationID,
+            "requestId": requestID.uuidString,
+            "respondWithAudio": respondWithAudio
+        ]
+        if let deviceID { body["deviceId"] = deviceID.uuidString }
+        if let turnCount { body["turnCount"] = turnCount }
+        struct StepResponse: Decodable {
+            let id: UUID?
+            let type: CommandType
+            let payload: CommandPayload
+            let summary: String
+            let isDestructive: Bool
+            let requiresUserPresence: Bool?
+        }
+        struct Response: Decodable {
+            let transcript: String
+            let reply: String
+            let steps: [StepResponse]
+            let executionState: String?
+            let artifacts: [ArtifactDescriptor]
+            let audioBase64: String?
+            let audioError: String?
+        }
+        let response = try await authorizedPost("copilot/audio", body: body, as: Response.self)
+        let steps = response.steps.map { step in
+            let localDestructive = RovaCommandAuthority.isDestructive(type: step.type, payload: step.payload)
+            let localPresence = RovaCommandAuthority.requiresUserPresence(type: step.type, payload: step.payload)
+            return PlannedCommand(
+                id: step.id ?? UUID(),
+                type: step.type,
+                payload: step.payload,
+                summary: step.summary,
+                isDestructive: step.isDestructive || localDestructive,
+                requiresUserPresence: step.requiresUserPresence == true || step.isDestructive || localDestructive || localPresence
+            )
+        }
+        let generatedAudio = response.audioBase64.flatMap { Data(base64Encoded: $0) }
+        return AudioConverseResult(transcript: response.transcript, reply: response.reply, steps: steps, executionState: response.executionState, artifacts: response.artifacts, audioData: generatedAudio, audioError: response.audioError)
+    }
+
+    static func fetchMemoryCandidates() async throws -> [MemoryCandidate] {
+        struct Response: Decodable { let candidates: [MemoryCandidate] }
+        return try await authorizedGet("memory/candidates", as: Response.self).candidates
+    }
+
+    static func acceptMemoryCandidate(id: Int) async throws {
+        _ = try await authorizedMutate("memory/candidates/\(id)/accept", method: "POST")
+    }
+
+    static func dismissMemoryCandidate(id: Int) async throws {
+        _ = try await authorizedMutate("memory/candidates/\(id)/dismiss", method: "POST")
+    }
+
+    static func fetchTrustGrants() async throws -> [TrustGrant] {
+        struct Response: Decodable { let grants: [TrustGrant] }
+        return try await authorizedGet("trust-grants", as: Response.self).grants
+    }
+
+    static func revokeTrustGrant(id: Int) async throws {
+        _ = try await authorizedMutate("trust-grants/\(id)", method: "DELETE")
+    }
+
+    /// Explicit "always allow" from the confirmation sheet - only ever called right after the
+    /// same biometric prompt a one-time confirm already requires. The backend accepts this only
+    /// for a small allowlisted set of step types (see USER_GRANTABLE_TRUST_TYPES server-side);
+    /// anything else is rejected there rather than silently ignored.
+    @discardableResult
+    static func grantTrust(type: String, summary: String) async throws -> TrustGrant {
+        try await authorizedPost("trust-grants", body: ["type": type, "summary": summary], as: TrustGrant.self)
+    }
+
+    // MARK: - Profile & account
+
+    static func fetchProfile() async throws -> UserProfile {
+        try await authorizedGet("profile", as: UserProfile.self)
+    }
+
+    /// `body` is a JSON object of only the fields that changed; `null` clears a field.
+    static func updateProfile(body: Data) async throws -> UserProfile {
+        let data = try await authorizedJSON("profile", method: "PUT", body: body)
+        do { return try JSONDecoder().decode(UserProfile.self, from: data) } catch { throw RovaBackendError.invalidResponse }
+    }
+
+    /// Permanently deletes the account and all of its server-side data. The caller signs out
+    /// afterwards, once it has cleared the account's local caches.
+    static func deleteAccount(password: String) async throws {
+        _ = try await authorizedJSON("profile", method: "DELETE", body: try JSONSerialization.data(withJSONObject: ["password": password]))
+    }
+
+    // MARK: - Conversation history (server-side backup of chat history)
+
+    struct RemoteConversationSummary: Decodable {
+        let id: String
+        let title: String
+        let preview: String
+        let updatedAt: String
+        let turnCount: Int
+    }
+
+    struct RemoteConversationMessage: Decodable {
+        let role: String
+        let content: String
+        let createdAt: String
+        let artifacts: [ArtifactDescriptor]
+    }
+
+    static func fetchConversations() async throws -> [RemoteConversationSummary] {
+        struct Response: Decodable { let conversations: [RemoteConversationSummary] }
+        return try await authorizedGet("conversations", as: Response.self).conversations
+    }
+
+    static func fetchConversationMessages(id: String) async throws -> [RemoteConversationMessage] {
+        struct Response: Decodable { let messages: [RemoteConversationMessage] }
+        return try await authorizedGet("conversations/\(id)/messages", as: Response.self).messages
+    }
+
+    static func deleteConversationRemote(id: String) async throws {
+        _ = try await authorizedMutate("conversations/\(id)", method: "DELETE")
+    }
+
+    // MARK: - Canvas
+
+    static func runCanvasCode(language: String, code: String, timeoutSeconds: Int = 15) async throws -> CanvasRunResult {
+        try await authorizedPost(
+            "canvas/run",
+            body: ["language": language, "code": code, "timeoutSeconds": timeoutSeconds],
+            as: CanvasRunResult.self
+        )
+    }
+
+    // MARK: - Billing
+
+    static func fetchSubscription() async throws -> SubscriptionInfo {
+        try await authorizedGet("billing/subscription", as: SubscriptionInfo.self)
+    }
+
+    /// Forwards a StoreKit transaction's raw JWS to the backend right after a purchase - the
+    /// backend independently re-verifies it against Apple's root certificate before granting
+    /// anything (see rova-backend/src/billing/subscriptions.ts); this call only starts that.
+    static func verifyStoreKitTransaction(_ signedTransaction: String) async throws {
+        struct Response: Decodable { let ok: Bool; let tier: String; let expiresAt: String }
+        _ = try await authorizedPost("billing/storekit/verify", body: ["signedTransaction": signedTransaction], as: Response.self)
+    }
+
+    static func fetchDevices() async throws -> [DeviceStatus] {
+        struct Response: Decodable { let devices: [DeviceStatus] }
+        return try await authorizedGet("devices", as: Response.self).devices
+    }
+
+    /// Sets (or, with `nil`/empty, clears) a user-chosen name for one paired PC - lets more than
+    /// one paired PC be told apart ("Ofis PC", "Ev PC") instead of both showing the same
+    /// hostname-derived name.
+    @discardableResult
+    static func renameDevice(id: String, name: String?) async throws -> DeviceStatus {
+        struct Response: Decodable { let device: DeviceStatus }
+        let value: Any = name ?? NSNull()
+        let body = try JSONSerialization.data(withJSONObject: ["displayName": value])
+        let data = try await authorizedJSON("devices/\(id)", method: "PATCH", body: body)
+        guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else { throw RovaBackendError.invalidResponse }
+        return decoded.device
+    }
+
+    /// Removes a PC from this account's "Bağlı cihazlar" list - the backend relay registry only,
+    /// not the phone's own direct pairing (see IOSConnectionModel.forgetPairing for that).
+    static func deleteDevice(id: String) async throws {
+        _ = try await authorizedMutate("devices/\(id)", method: "DELETE")
+    }
+
+    /// The interactive fallback used when the direct local connection to the paired PC isn't
+    /// available (different network, PC just woke up, etc.) - relays the same already-confirmed
+    /// CommandRequest through the PC's own persistent backend connection (the one automations
+    /// already use) and returns the real CommandResult once the PC replies. `deviceId` targets a
+    /// specific paired PC when known; omitted, the backend picks the first one online.
+    static func sendDeviceCommand(_ request: CommandRequest, deviceId: String?) async throws -> CommandResult {
+        let body = try Self.iso8601Encoder.encode(request)
+        let path = "devices/\(deviceId ?? "default")/command"
+        let data = try await authorizedJSON(path, method: "POST", body: body)
+        do {
+            return try Self.iso8601Decoder.decode(CommandResult.self, from: data)
+        } catch {
+            throw RovaBackendError.invalidResponse
+        }
+    }
+
+    /// CommandRequest/CommandResult carry Date fields encoded as ISO-8601 strings everywhere else
+    /// in this protocol (see RovaShared/Framing.swift's RovaWireCodec) - matched here so this
+    /// relay path round-trips the same values the direct connection would have produced.
+    private static let iso8601Encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
+
+    private static let iso8601Decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
 
     static func refreshProactiveSuggestions() async throws -> [ProactiveSuggestion] {
         struct Response: Decodable { let suggestions: [ProactiveSuggestion] }
@@ -274,17 +656,6 @@ enum RovaBackendClient {
     static func updateProactiveSuggestion(id: Int, action: String) async throws {
         guard action == "accept" || action == "dismiss" else { return }
         _ = try await authorizedMutate("proactive/suggestions/\(id)/\(action)", method: "POST")
-    }
-
-    private static func requiresLocalPresence(for type: CommandType) -> Bool {
-        switch type {
-        case .lockMac, .sleepMac, .displaySleep, .quitApplication, .saveTextFile,
-             .sendMessage, .createCalendarEvent, .moveDesktopFile, .renameDesktopFile,
-             .saveArtifact, .editDocument:
-            return true
-        default:
-            return false
-        }
     }
 
     // MARK: - Tasks & automations (created conversationally; managed here)
@@ -304,6 +675,39 @@ enum RovaBackendClient {
         let isActive: Bool
         let lastRunAt: String?
         let nextRunAt: String?
+    }
+
+    /// One step of a past automation run.
+    struct AutomationRunStep: Decodable, Identifiable {
+        let id: Int
+        let stepIndex: Int
+        let kind: String
+        let status: String
+        let inputSummary: String?
+        let outputSummary: String?
+        let error: String?
+        let attemptCount: Int
+        let maxAttempts: Int
+        let isDestructive: Bool
+        let requiresUserPresence: Bool
+        let startedAt: String?
+        let finishedAt: String?
+    }
+
+    struct AutomationRun: Decodable, Identifiable {
+        let id: Int
+        let status: String
+        let reply: String?
+        let error: String?
+        let delivered: Bool
+        let startedAt: String
+        let finishedAt: String?
+        let steps: [AutomationRunStep]
+    }
+
+    static func fetchAutomationRuns(id: Int) async throws -> [AutomationRun] {
+        struct Response: Decodable { let runs: [AutomationRun] }
+        return try await authorizedGet("automations/\(id)/runs", as: Response.self).runs
     }
 
     static func fetchTasks() async throws -> [RovaTask] {
@@ -360,7 +764,61 @@ enum RovaBackendClient {
         return data
     }
 
+    private static func authorizedJSON(_ path: String, method: String, body: Data) async throws -> Data {
+        guard let token else { throw RovaBackendError.notAuthenticated }
+        var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = body
+        let (data, response) = try await send(request)
+        if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
+        guard (200..<300).contains(response.statusCode) else {
+            let message = (try? JSONDecoder().decode(BackendErrorEnvelope.self, from: data))?.error.message
+            throw RovaBackendError.network(message ?? "İstek başarısız oldu (kod \(response.statusCode)).")
+        }
+        return data
+    }
+
     // MARK: - Shared plumbing
+
+    /// Downloads a generated document/image into a per-account cache folder so it can be opened
+    /// with Quick Look (PDF, Word, Excel, CSV, images...). The backend's artifact URL requires the
+    /// session token, which a plain file/web preview could not send. The file is verified against
+    /// the artifact's SHA-256 before it is handed to the viewer, and reused if already cached.
+    static func downloadArtifact(_ artifact: ArtifactDescriptor) async throws -> URL {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wiqo-artifacts", isDirectory: true)
+            .appendingPathComponent(currentUserID ?? "anon", isDirectory: true)
+            .appendingPathComponent(artifact.id, isDirectory: true)
+        let safeName = artifact.filename
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        let destination = folder.appendingPathComponent(safeName.isEmpty ? "dosya" : safeName)
+        if FileManager.default.fileExists(atPath: destination.path),
+           let cached = try? Data(contentsOf: destination),
+           sha256Hex(cached) == artifact.sha256.lowercased() {
+            return destination
+        }
+        guard let token else { throw RovaBackendError.notAuthenticated }
+        var request = URLRequest(url: artifact.downloadURL)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await send(request)
+        if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
+        guard (200..<300).contains(response.statusCode) else {
+            throw RovaBackendError.network(response.statusCode == 404 ? "Dosyanın süresi dolmuş; yeniden oluşturmamı isteyebilirsin." : "Dosya indirilemedi.")
+        }
+        guard sha256Hex(data) == artifact.sha256.lowercased() else {
+            throw RovaBackendError.network("Dosya bütünlük doğrulamasını geçemedi.")
+        }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try data.write(to: destination, options: [.atomic])
+        return destination
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
 
     private static func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let data: Data

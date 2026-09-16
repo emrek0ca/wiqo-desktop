@@ -8,39 +8,34 @@ struct MacMenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Rova").font(.headline)
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(runtime.connectedDeviceID == nil ? .orange : .green)
+                    .frame(width: 8, height: 8)
+                Text("Wiqo").font(.headline)
+            }
             Label(connectionStatusText, systemImage: connectionStatusIcon)
+                .font(.subheadline)
             Divider()
-            Text("This Mac").font(.subheadline.weight(.semibold))
-            Text(Host.current().localizedName ?? "Mac")
-            Text(runtime.localIPAddress).font(.caption).foregroundStyle(.secondary)
-            Text("Service: \(runtime.serviceState.rawValue.capitalized)").font(.caption).foregroundStyle(.secondary)
-            Divider()
-            Text("Pairing").font(.subheadline.weight(.semibold))
-            Text("Kod: \(runtime.pairingCode)").monospacedDigit()
             Button {
                 openWindow(id: RovaWindowID.pairingQR)
                 bringPairingWindowToFront()
             } label: {
-                Label("Show Pairing QR", systemImage: "qrcode")
+                Label("Eşleşme QR'ı", systemImage: "qrcode")
             }
             if let name = runtime.pairedDeviceName {
-                Divider()
-                Text("Paired Device").font(.subheadline.weight(.semibold))
-                Text(name)
-                Text(runtime.connectedDeviceID == nil ? "Not connected" : "Connected")
+                Label(name, systemImage: "iphone")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button("Revoke Device", role: .destructive) { runtime.revokeCurrentDevice() }
+            }
+            SettingsLink {
+                Label("Ayarları Aç", systemImage: "gearshape")
             }
             Divider()
-            SettingsLink {
-                Label("Settings…", systemImage: "gearshape")
-            }
-            Button("Quit Rova") { NSApplication.shared.terminate(nil) }
+            Button("Wiqo'yu kapat") { NSApplication.shared.terminate(nil) }
         }
         .padding(14)
-        .frame(width: 240)
+        .frame(width: 250)
     }
 
     private func bringPairingWindowToFront() {
@@ -49,7 +44,7 @@ struct MacMenuView: View {
         for delay in [0.0, 0.1, 0.3, 0.6] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 NSApp.activate(ignoringOtherApps: true)
-                guard let window = NSApp.windows.first(where: { $0.title == "Pairing QR" }) else { return }
+                guard let window = NSApp.windows.first(where: { $0.title == "Wiqo eşleşme QR'ı" }) else { return }
                 window.level = .floating
                 window.orderFrontRegardless()
                 window.makeKey()
@@ -58,14 +53,15 @@ struct MacMenuView: View {
     }
 
     private var connectionStatusText: String {
-        if runtime.connectedDeviceID != nil { return "Connected" }
-        if runtime.serviceState == .running { return "Service Running" }
-        if runtime.serviceState == .starting { return "Starting Service…" }
-        return "Service unavailable"
+        if runtime.connectedDeviceID != nil { return "iPhone bağlı" }
+        if runtime.pairedDeviceID != nil { return "iPhone bağlı değil" }
+        if runtime.serviceState == .running { return "Eşleşmeye hazır" }
+        if runtime.serviceState == .starting { return "Servis başlıyor…" }
+        return "Servis kullanılamıyor"
     }
 
     private var connectionStatusIcon: String {
-        if runtime.connectedDeviceID != nil || runtime.serviceState == .running {
+        if runtime.connectedDeviceID != nil {
             return "checkmark.circle.fill"
         }
         return "exclamationmark.triangle"
@@ -77,7 +73,7 @@ struct PairingQRView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Text("Pair this iPhone").font(.title3.weight(.semibold))
+            Text("iPhone'u eşleştir").font(.title3.weight(.semibold))
             if let payload = runtime.pairingPayload, let value = try? RovaQRCodec.encode(payload), let image = makeQRCode(value) {
                 Image(nsImage: image)
                     .interpolation(.none)
@@ -85,9 +81,9 @@ struct PairingQRView: View {
                     .scaledToFit()
                     .frame(width: 260, height: 260)
                 Text("Kod: \(payload.pairingCode)").font(.title2.monospacedDigit())
-                Text("Bu kod 5 dakika geçerli.").font(.caption).foregroundStyle(.secondary)
+                Text("Kod 5 dakika geçerli.").font(.caption).foregroundStyle(.secondary)
             } else {
-                ProgressView("TLS identity hazırlanıyor…")
+                ProgressView("Güvenli bağlantı hazırlanıyor…")
             }
         }
         .padding(24)
@@ -99,7 +95,7 @@ struct PairingQRView: View {
             runtime.regeneratePairing()
             DispatchQueue.main.async {
                 NSApp.activate(ignoringOtherApps: true)
-                guard let window = NSApp.windows.first(where: { $0.title == "Pairing QR" }) else { return }
+                guard let window = NSApp.windows.first(where: { $0.title == "Wiqo eşleşme QR'ı" }) else { return }
                 window.level = .floating
                 window.orderFrontRegardless()
                 window.makeKey()
@@ -121,37 +117,244 @@ struct PairingQRView: View {
 
 struct MacSettingsView: View {
     @ObservedObject var runtime: MacRuntime
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var permissionRefresh = 0
 
     var body: some View {
+        TabView {
+            generalTab
+                .tabItem { Label("Genel", systemImage: "slider.horizontal.3") }
+            devicesTab
+                .tabItem { Label("Cihazlar", systemImage: "iphone.and.arrow.forward") }
+            automationsTab
+                .tabItem { Label("Otomasyonlar", systemImage: "clock.arrow.circlepath") }
+            permissionsTab
+                .tabItem { Label("İzinler", systemImage: "lock.shield") }
+            CapabilitiesSettingsView()
+                .tabItem { Label("Yetenekler", systemImage: "switch.2") }
+            advancedTab
+                .tabItem { Label("Gelişmiş", systemImage: "gearshape.2") }
+        }
+        .padding(20)
+        .frame(minWidth: 620, minHeight: 450)
+    }
+
+    private var generalTab: some View {
         Form {
-            Section("General") {
-                Toggle("Launch at Login", isOn: Binding(
+            Section("Wiqo") {
+                Toggle("Girişte aç", isOn: Binding(
                     get: { runtime.launchAtLogin },
                     set: { value in runtime.setLaunchAtLogin(value) }
                 ))
+                LabeledContent("Hesap", value: runtime.backendSessionActive ? "Bağlı" : "iPhone bekleniyor")
             }
-            Section("Devices") {
-                if let name = runtime.pairedDeviceName {
-                    LabeledContent("Paired", value: name)
-                    Button("Revoke Device", role: .destructive) { runtime.revokeCurrentDevice() }
-                } else {
-                    Text("No paired devices")
-                }
-            }
-            Section("Network") {
-                LabeledContent("Service", value: runtime.serviceState.rawValue.capitalized)
-                LabeledContent("Connection", value: runtime.connectedDeviceID == nil ? "Not connected" : "Connected")
-                LabeledContent("Port", value: String(runtime.port))
-                LabeledContent("Local IP", value: runtime.localIPAddress)
-                if let error = runtime.serviceError { Text(error).foregroundStyle(.red) }
-            }
-            Section("Security") {
-                Button("Regenerate Pairing") { runtime.regeneratePairing() }
-                Button("Revoke All Devices", role: .destructive) { runtime.revokeAllDevices() }
+            if let error = runtime.serviceError {
+                Section("Durum") { Text(error).foregroundStyle(.red) }
             }
         }
         .formStyle(.grouped)
-        .padding(20)
-        .frame(width: 440)
     }
+
+    private var devicesTab: some View {
+        Form {
+            Section("Eşleşmiş cihaz") {
+                if let name = runtime.pairedDeviceName {
+                    LabeledContent("iPhone", value: name)
+                    LabeledContent("Bağlantı", value: runtime.connectedDeviceID == nil ? "Bağlı değil" : "Bağlı")
+                    Button("Cihaz yetkisini kaldır", role: .destructive) { runtime.revokeCurrentDevice() }
+                } else {
+                    Text("Eşleşmiş cihaz yok").foregroundStyle(.secondary)
+                }
+            }
+            Section("Eşleşme") {
+                Button("Yeni QR oluştur") { runtime.regeneratePairing() }
+                Button("Tüm cihazların yetkisini kaldır", role: .destructive) { runtime.revokeAllDevices() }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var permissionsTab: some View {
+        Form {
+            Section("Gizlilik izinleri") {
+                ForEach(permissionRows) { permission in
+                    HStack(spacing: 10) {
+                        Image(systemName: permission.granted ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundStyle(permission.granted ? .green : .red)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(permission.title).font(.body.weight(.medium))
+                            Text(permission.detail).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Aç") { openSettings(permission.url) }
+                            .buttonStyle(.borderless)
+                    }
+                    .padding(.vertical, 3)
+                }
+            }
+            Section("Uygulama izinleri") {
+                if runtime.automationPermissions.isEmpty && runtime.isRefreshingPermissions {
+                    ProgressView("İzin durumu okunuyor…")
+                } else {
+                    ForEach(runtime.automationPermissions) { permission in
+                        HStack(spacing: 10) {
+                            Image(systemName: automationPermissionIcon(permission.status))
+                                .foregroundStyle(automationPermissionColor(permission.status))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(permission.title).font(.body.weight(.medium))
+                                Text(permission.message ?? permission.bundleIdentifier)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Aç") { openSettings("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") }
+                                .buttonStyle(.borderless)
+                        }
+                        .padding(.vertical, 3)
+                    }
+                }
+                Button {
+                    Task { await runtime.warmUpAutomationPermissions() }
+                } label: {
+                    if runtime.isWarmingAutomationPermissions {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text("Tüm İzinleri Şimdi İste")
+                }
+                .disabled(runtime.isWarmingAutomationPermissions)
+                if let message = runtime.permissionActionMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Section("Wiqo Shortcuts") {
+                Button("Shortcuts'ı Kur") { runtime.installWiqoShortcuts() }
+                ForEach(WiqoShortcut.allCases, id: \.self) { shortcut in
+                    LabeledContent(shortcut.displayName, value: runtime.installedWiqoShortcuts.contains(shortcut) ? "Kurulu" : "Eksik")
+                        .foregroundStyle(runtime.installedWiqoShortcuts.contains(shortcut) ? .green : .secondary)
+                }
+                if let message = runtime.shortcutInstallMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                Button("Durumu yenile") {
+                    permissionRefresh += 1
+                    runtime.refreshPermissions()
+                }
+                .disabled(runtime.isRefreshingPermissions)
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear {
+            permissionRefresh += 1
+            runtime.refreshPermissions()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            permissionRefresh += 1
+            runtime.refreshPermissions()
+        }
+        .id(permissionRefresh)
+    }
+
+    private var automationsTab: some View {
+        Form {
+            Section("Otomasyonlar") {
+                if runtime.isLoadingAutomations {
+                    ProgressView("Yükleniyor…")
+                } else if let error = runtime.automationsError {
+                    Text(error).foregroundStyle(.red)
+                    Button("Tekrar dene") {
+                        Task { await runtime.refreshAutomations() }
+                    }
+                } else if runtime.automations.isEmpty {
+                    Text("Kayıtlı otomasyon yok").foregroundStyle(.secondary)
+                } else {
+                    ForEach(runtime.automations) { automation in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(automation.prompt)
+                                .font(.body.weight(.medium))
+                                .lineLimit(2)
+                            HStack {
+                                Label(automation.cron == "@trigger" ? "Koşul" : automation.cron, systemImage: "clock")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(automation.isActive ? "Aktif" : "Kapalı")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(automation.isActive ? .green : .secondary)
+                                Button("İptal", role: .destructive) {
+                                    Task { await runtime.cancelAutomation(automation) }
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .task { await runtime.refreshAutomations() }
+    }
+
+    private var advancedTab: some View {
+        Form {
+            Section("Servis") {
+                LabeledContent("Durum", value: serviceStateText)
+                LabeledContent("Port", value: String(runtime.port))
+                LabeledContent("Yerel adres", value: runtime.localIPAddress)
+                LabeledContent("iPhone bağlantısı", value: runtime.connectedDeviceID == nil ? "Bağlı değil" : "Bağlı")
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var serviceStateText: String {
+        switch runtime.serviceState {
+        case .running: return "Çalışıyor"
+        case .starting: return "Başlıyor"
+        case .stopped: return "Durduruldu"
+        case .failed: return "Hatalı"
+        }
+    }
+
+    private func automationPermissionIcon(_ status: MacAutomationPermissionStatus) -> String {
+        switch status {
+        case .granted: return "checkmark.circle.fill"
+        case .denied, .unavailable: return "xmark.circle.fill"
+        case .notChecked: return "questionmark.circle.fill"
+        }
+    }
+
+    private func automationPermissionColor(_ status: MacAutomationPermissionStatus) -> Color {
+        switch status {
+        case .granted: return .green
+        case .denied, .unavailable: return .red
+        case .notChecked: return .orange
+        }
+    }
+
+    private var permissionRows: [MacPermission] {
+        [
+            MacPermission(id: "accessibility", title: "Erişilebilirlik", detail: "Arayüz kontrolü ve ekran tıklaması için", granted: MacSystem.hasAccessibilityAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"),
+            MacPermission(id: "full-disk", title: "Tam Disk Erişimi", detail: "Belgeleri okuyup kaydetmek için", granted: MacSystem.hasFullDiskAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"),
+            MacPermission(id: "screen-recording", title: "Ekran Kaydı", detail: "Ekran gözlemi için", granted: MacSystem.hasScreenRecordingAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"),
+            MacPermission(id: "calendar", title: "Takvim", detail: "Takvim adımları için", granted: MacSystem.hasCalendarAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")
+        ]
+    }
+
+    private func openSettings(_ rawURL: String) {
+        guard let url = URL(string: rawURL) else { return }
+        NSWorkspace.shared.open(url)
+    }
+}
+
+private struct MacPermission: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    let granted: Bool
+    let url: String
 }

@@ -63,6 +63,12 @@ final class IOSConnectionModel: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var isPaired = false
     @Published private(set) var isPairing = false
+    @Published private(set) var isReconnecting = false
+    /// Set right after a command succeeds through the backend relay instead of the direct local
+    /// connection (see sendViaBackendRelay) - lets the UI say "bağlı, internet üzerinden" instead
+    /// of quietly leaving the user thinking they're on the fast local path, or worse, "offline"
+    /// even though the command just worked.
+    @Published private(set) var isUsingRelay = false
 
     private let deviceID: UUID
     private var token: String?
@@ -108,13 +114,14 @@ final class IOSConnectionModel: ObservableObject {
             return
         }
         guard payload.expiresAt > Date() else {
-            fail("Pairing QR kodunun süresi doldu.")
+            fail("Eşleşme QR kodunun süresi doldu.")
             return
         }
         connectionGeneration += 1
         let currentGen = connectionGeneration
         pairingTimeoutTask?.cancel()
         isPairing = true
+        isReconnecting = false
         mode = .pairing(payload)
         lastError = nil
 
@@ -137,7 +144,7 @@ final class IOSConnectionModel: ObservableObject {
         authenticated = false
         state = .failed
         lastError = "Eşleşme zaman aşımına uğradı."
-        appendActivity(title: "Pairing", detail: "Zaman aşımına uğradı")
+        appendActivity(title: "Eşleşme", detail: "Zaman aşımına uğradı")
     }
 
     func connect() {
@@ -166,6 +173,7 @@ final class IOSConnectionModel: ObservableObject {
         reconnectTask?.cancel()
         reconnectTask = nil
         reconnectAttempt = 0
+        isReconnecting = false
         stopHeartbeat()
         connection?.cancel()
         connection = nil
@@ -183,6 +191,7 @@ final class IOSConnectionModel: ObservableObject {
         isPairing = false
         reconnectTask?.cancel()
         reconnectTask = nil
+        isReconnecting = false
         stopHeartbeat()
         connection?.cancel()
         connection = nil
@@ -204,9 +213,10 @@ final class IOSConnectionModel: ObservableObject {
         systemStatus = nil
         lastPingLatencyMs = nil
         connectionQuality = .unknown
+        isReconnecting = false
     }
 
-    func authenticateBiometrics(reason: String = "Rova komutunu onaylayın") async -> Bool {
+    func authenticateBiometrics(reason: String = "Wiqo komutunu onaylayın") async -> Bool {
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) ||
@@ -221,10 +231,13 @@ final class IOSConnectionModel: ObservableObject {
     }
 
     func send(_ type: CommandType, payload: CommandPayload = .none, commandID: UUID? = nil) async -> CommandResult {
-        guard isPaired else { return failureResult(id: UUID(), error: RovaError(code: "NOT_PAIRED", message: "Önce Mac ile pair olun.")) }
+        guard isPaired else { return failureResult(id: UUID(), error: RovaError(code: "NOT_PAIRED", message: "Önce PC ile eşleşin.")) }
         guard authenticated, let connection else {
             connect()
-            return failureResult(id: UUID(), error: RovaError(code: "OFFLINE", message: "Mac bağlı değil."))
+            // Same local network isn't a hard requirement any more: if the PC is reachable
+            // through its own backend connection (the one automations already rely on), the
+            // command still goes through - just a little slower than the direct path.
+            return await sendViaBackendRelay(type: type, payload: payload, commandID: commandID)
         }
         let now = Date()
         let resolvedCommandID = commandID ?? UUID()
@@ -251,6 +264,15 @@ final class IOSConnectionModel: ObservableObject {
                     try? await Task.sleep(nanoseconds: 10_000_000_000)
                     self?.timeout(request.id, message: "Komut zaman aşımına uğradı.")
                 }
+            }
+            // The socket looked alive (authenticated, non-nil connection) but a 10s timeout means
+            // it was actually dead (sleep/wake, Wi-Fi handoff, NAT drop) - timeout() has already
+            // torn the direct connection down by this point, so retry exactly the way a command
+            // that started with no connection at all already does, instead of surfacing a failure
+            // the relay could have avoided. Ping is exempt: it exists to measure the direct path
+            // itself, so a relay retry would misreport connection quality rather than fix it.
+            if type != .ping, result.error?.code == "TIMEOUT" {
+                return await sendViaBackendRelay(type: type, payload: payload, commandID: commandID)
             }
             if let error = result.error {
                 self.lastError = error.message
@@ -312,6 +334,13 @@ final class IOSConnectionModel: ObservableObject {
 
     func quitApplication(_ id: ApplicationID) async -> CommandResult {
         await send(.quitApplication, payload: .application(id))
+    }
+
+    func controlApplication(_ action: ApplicationControlAction, target: String, bundleIdentifier: String? = nil, force: Bool = false) async -> CommandResult {
+        await send(
+            .controlApplication,
+            payload: .applicationControl(ApplicationControlPayload(action: action, target: target, bundleIdentifier: bundleIdentifier, force: force))
+        )
     }
 
     private func connect(host: String, port: UInt16, fingerprint: String) {
@@ -390,6 +419,7 @@ final class IOSConnectionModel: ObservableObject {
             reconnectAttempt = 0
             reconnectTask?.cancel()
             reconnectTask = nil
+            isReconnecting = false
             receiveNext(on: source)
             if let remote = source.currentPath?.remoteEndpoint, case let .hostPort(host, port) = remote {
                 let hostString: String
@@ -420,8 +450,10 @@ final class IOSConnectionModel: ObservableObject {
                 )
             }
         case .waiting:
-            // Explicitly handle waiting state when network interface changes or path is pending
-            lastError = "Ağ bağlantısı bekleniyor..."
+            // Transient (Wi-Fi handoff, path still pending) - state/isReconnecting already
+            // reflect this in the UI. PC connectivity is optional, so this never interrupts the
+            // user with a message there's nothing for them to do about.
+            break
         case .failed(let error):
             connectTimeoutTask?.cancel()
             connectTimeoutTask = nil
@@ -430,7 +462,11 @@ final class IOSConnectionModel: ObservableObject {
             stopHeartbeat()
             state = .failed
             authenticated = false
-            fail(error.localizedDescription.isEmpty ? "Bağlantı kurulamadı." : "Mac bağlantısı kurulamadı.")
+            // Loud only while the user is actively watching a pairing attempt; once paired, every
+            // later reconnect is automatic and silent - chat keeps working from the phone either
+            // way, so "can't reach the PC right now" is a status, not an error to nag about.
+            let isActivePairingAttempt: Bool = { if case .pairing = mode { return true } else { return false } }()
+            fail(error.localizedDescription.isEmpty ? "Bağlantı kurulamadı." : "PC bağlantısı kurulamadı.", silent: !isActivePairingAttempt)
             scheduleReconnect()
         case .cancelled:
             connectTimeoutTask?.cancel()
@@ -500,10 +536,11 @@ final class IOSConnectionModel: ObservableObject {
             state = .disconnected
             connection?.cancel()
             mode = .authenticated
-            appendActivity(title: "Pairing", detail: "Tamamlandı")
+            appendActivity(title: "Eşleşme", detail: "Tamamlandı")
             connect()
         case .authenticated(let response):
             authenticated = true
+            isUsingRelay = false
             deviceInfo = response.deviceInfo
             state = .connected
             startHeartbeat()
@@ -569,7 +606,6 @@ final class IOSConnectionModel: ObservableObject {
             connection = nil
             authenticated = false
             state = .disconnected
-            lastError = message
             scheduleReconnect()
         }
     }
@@ -604,6 +640,7 @@ final class IOSConnectionModel: ObservableObject {
         let delays = [1, 2, 4, 8, 16, 30]
         let delay = delays[min(reconnectAttempt, delays.count - 1)]
         reconnectAttempt += 1
+        isReconnecting = true
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000)
             guard !Task.isCancelled else { return }
@@ -616,8 +653,12 @@ final class IOSConnectionModel: ObservableObject {
         connect()
     }
 
-    private func fail(_ message: String) {
-        lastError = message
+    /// `silent` skips surfacing `message` to the UI - used for a routine background reconnect
+    /// failure of an already-paired PC, which chat doesn't need PC connectivity to keep working
+    /// through anyway, as opposed to a failure the user is actively watching for (pairing a PC
+    /// for the first time).
+    private func fail(_ message: String, silent: Bool = false) {
+        if !silent { lastError = message }
         state = .failed
         isPairing = false
         stopHeartbeat()
@@ -632,36 +673,85 @@ final class IOSConnectionModel: ObservableObject {
 
     private func title(for request: CommandRequest) -> String {
         switch request.type {
-        case .getSystemStatus: return "System Status"
-        case .openApplication: return "Open Application"
-        case .quitApplication: return "Quit App"
-        case .openURL: return "Open URL"
-        case .lockMac: return "Lock Mac"
-        case .sleepMac: return "Sleep Mac"
-        case .displaySleep: return "Display Sleep"
-        case .setBrightness: return "Brightness"
-        case .setVolume: return "Set Volume"
-        case .toggleMute: return "Mute"
-        case .mediaControl: return "Media Control"
-        case .setClipboardText: return "Clipboard"
-        case .saveTextFile: return "Save File"
-        case .ping: return "Ping"
-        case .sendMessage: return "Send Message"
-        case .listCalendarEvents: return "List Calendar"
-        case .createCalendarEvent: return "Create Calendar Event"
-        case .listDesktopFiles: return "List Desktop Files"
-        case .readDesktopFile: return "Read Desktop File"
-        case .moveDesktopFile: return "Move Desktop File"
-        case .renameDesktopFile: return "Rename Desktop File"
-        case .saveArtifact: return "Save Artifact"
-        case .readDocument: return "Read Document"
-        case .editDocument: return "Edit Document"
+        case .getSystemStatus: return "Sistem durumu"
+        case .openApplication: return "Uygulama aç"
+        case .controlApplication: return "Uygulama kontrolü"
+        case .quitApplication: return "Uygulamayı kapat"
+        case .openURL: return "URL aç"
+        case .lockMac: return "PC'yi kilitle"
+        case .sleepMac: return "PC'yi uyut"
+        case .displaySleep: return "Ekranı uyut"
+        case .setBrightness: return "Parlaklık"
+        case .setVolume: return "Ses"
+        case .toggleMute: return "Sessiz"
+        case .mediaControl: return "Medya"
+        case .setClipboardText: return "Pano"
+        case .saveTextFile: return "Dosya kaydet"
+        case .ping: return "Bağlantı"
+        case .sendMessage: return "Mesaj gönder"
+        case .listCalendarEvents: return "Takvim listesi"
+        case .createCalendarEvent: return "Takvim etkinliği oluştur"
+        case .listReminders: return "Hatırlatıcılar"
+        case .createReminder: return "Hatırlatıcı oluştur"
+        case .completeReminder: return "Hatırlatıcıyı tamamla"
+        case .getClipboardText: return "Panoyu oku"
+        case .getClipboardHistory: return "Pano geçmişi"
+        case .createNote: return "Not oluştur"
+        case .sendEmail: return "E-posta gönder"
+        case .listDesktopFiles: return "Masaüstü dosyaları"
+        case .readDesktopFile: return "Masaüstü dosyası oku"
+        case .moveDesktopFile: return "Masaüstü dosyası taşı"
+        case .renameDesktopFile: return "Masaüstü dosyası adlandır"
+        case .saveArtifact: return "Belge kaydet"
+        case .readDocument: return "Belge oku"
+        case .editDocument: return "Belge düzenle"
+        case .openApplicationByName: return "Uygulama aç"
+        case .listFiles: return "Dosyaları listele"
+        case .readFile: return "Dosya oku"
+        case .writeFile: return "Dosya yaz"
+        case .moveFile: return "Dosya taşı"
+        case .copyFile: return "Dosya kopyala"
+        case .deleteFile: return "Dosya sil"
+        case .executeCode: return "Kod çalıştır"
+        case .captureScreen: return "Ekran görüntüsü"
+        case .runShortcut: return "Shortcut çalıştır"
+        case .controlUIElement: return "Arayüz kontrolü"
+        case .clickScreen: return "Ekrana tıkla"
         }
     }
 
     private func failureResult(id: UUID, error: RovaError) -> CommandResult {
         let now = Date()
         return CommandResult(commandID: id, status: .failed, message: error.message, startedAt: now, finishedAt: now, error: error)
+    }
+
+    /// Builds and validates the exact same CommandRequest the direct path would send, then routes
+    /// it through the backend relay (see RovaBackendClient.sendDeviceCommand) instead. Used only
+    /// when the direct local connection isn't up; a signed-in Wiqo account is enough for this to
+    /// work; needing a signature (device-pairing-token trust) is specific to the direct path, so
+    /// this leaves it unsigned exactly like an automation step already does.
+    private func sendViaBackendRelay(type: CommandType, payload: CommandPayload, commandID: UUID?) async -> CommandResult {
+        guard RovaBackendClient.isAuthenticated else {
+            return failureResult(id: commandID ?? UUID(), error: RovaError(code: "OFFLINE", message: "PC bağlı değil."))
+        }
+        let request = CommandRequest(id: commandID ?? UUID(), type: type, payload: payload)
+        if let validationError = RovaValidation.validate(request) {
+            return failureResult(id: request.id, error: validationError)
+        }
+        appendActivity(title: title(for: request), detail: "PC yerel ağda değil, sunucu üzerinden deneniyor…")
+        do {
+            let result = try await RovaBackendClient.sendDeviceCommand(request, deviceId: deviceInfo?.id.uuidString)
+            isUsingRelay = result.error == nil
+            if let error = result.error { self.lastError = error.message }
+            appendActivity(title: title(for: request), detail: result.message)
+            return result
+        } catch {
+            isUsingRelay = false
+            let message = (error as? LocalizedError)?.errorDescription ?? "PC'ye ulaşılamadı."
+            self.lastError = message
+            appendActivity(title: title(for: request), detail: message)
+            return failureResult(id: request.id, error: RovaError(code: "RELAY_FAILED", message: message))
+        }
     }
 
     private func startDiscovery() {
@@ -679,7 +769,7 @@ final class IOSConnectionModel: ObservableObject {
             if case let .service(serviceName, _, _, _) = endpoint {
                 name = serviceName
             } else {
-                name = "Rova Mac"
+                name = "Wiqo PC"
             }
             Task { @MainActor in
                 self?.handleDiscoveryResult(endpoint: endpoint, serviceName: name)

@@ -11,10 +11,10 @@ struct RovaMacApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Rova", systemImage: "arrow.triangle.2.circlepath") {
+        MenuBarExtra("Wiqo", systemImage: "arrow.triangle.2.circlepath") {
             MacMenuView(runtime: runtime)
         }
-        Window("Pairing QR", id: RovaWindowID.pairingQR) {
+        Window("Wiqo eşleşme QR'ı", id: RovaWindowID.pairingQR) {
             PairingQRView(runtime: runtime)
         }
         .windowResizability(.contentSize)

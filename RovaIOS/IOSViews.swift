@@ -8,20 +8,398 @@ struct RootView: View {
         Group {
             if !authSession.isAuthenticated {
                 AuthView { authSession.refresh() }
-            } else if model.isPaired {
-                TabView {
-                    CopilotView(model: model, authSession: authSession)
-                        .tabItem { Label("Rova", systemImage: "sparkles") }
-                    HomeView(model: model, authSession: authSession)
-                        .tabItem { Label("Mac", systemImage: "laptopcomputer") }
-                }
             } else {
-                PairingView(model: model)
+                // Chatting with Wiqo never requires a paired Mac - exactly like asking ChatGPT or
+                // Gemini a question. Pairing only gates the Mac-specific tools themselves; a
+                // device action without a paired Mac simply fails with a clear message instead of
+                // blocking the whole app upfront.
+                WiqoHomeView(model: model, authSession: authSession)
             }
         }
+        .tint(RovaDesign.ink)
         .onChange(of: authSession.isAuthenticated) { _, isAuthenticated in
-            if isAuthenticated { model.sendBackendTokenIfAvailable() }
+            if isAuthenticated {
+                model.sendBackendTokenIfAvailable()
+            } else {
+                // A signed-out account must never leave its paired Mac (or anything else
+                // device-scoped) reachable to whoever signs in next on this phone - covers every
+                // sign-out path (menu button, an expired-token auto sign-out) from one place.
+                model.forgetPairing()
+            }
         }
+    }
+}
+
+/// Wiqo's main surface, ChatGPT-style: opens straight into a new conversation, a top bar (not a
+/// bottom tab bar) carries the sidebar toggle, the connection status, and "new chat", and the
+/// conversation history lives in a sliding sidebar instead of its own tab.
+struct WiqoHomeView: View {
+    @ObservedObject var model: IOSConnectionModel
+    @ObservedObject var authSession: AuthSessionStore
+    @Environment(\.scenePhase) private var scenePhase
+
+    @StateObject private var profileStore = ProfileStore()
+    @StateObject private var subscriptionStore = SubscriptionStore()
+    @State private var conversationID = CopilotConversationStore.newIdentifier()
+    @State private var conversations = CopilotConversationStore.all()
+    @State private var showSidebar = false
+    @State private var showSettings = false
+    @State private var showPCSettings = false
+    @State private var showTemplates = false
+    @State private var draftPrompt: String?
+
+    var body: some View {
+        NavigationStack {
+            CopilotView(model: model, authSession: authSession, conversationID: conversationID, draftPrompt: draftPrompt)
+                .id(conversationID)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        HStack(spacing: 6) {
+                            Image("WiqoMark")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 20, height: 20)
+                            Text("Wiqo").font(.headline)
+                        }
+                    }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            dismissKeyboard()
+                            conversations = CopilotConversationStore.all()
+                            withAnimation(.snappy(duration: 0.25)) { showSidebar = true }
+                            Task { await refreshConversationsFromServer() }
+                        } label: {
+                            Image(systemName: "line.3.horizontal")
+                                .fontWeight(.medium)
+                        }
+                        .accessibilityLabel("Sohbet geçmişi")
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        HStack(spacing: 16) {
+                            Button {
+                                dismissKeyboard()
+                                showPCSettings = true
+                            } label: {
+                                RovaConnectionIcon(model: model)
+                            }
+                            .accessibilityLabel("PC ayarları")
+                            Button {
+                                dismissKeyboard()
+                                showTemplates = true
+                            } label: {
+                                Image(systemName: "clock.badge")
+                            }
+                            .accessibilityLabel("Otomasyon şablonları")
+                            Button {
+                                startNewChat()
+                            } label: {
+                                Image(systemName: "square.and.pencil")
+                            }
+                            .accessibilityLabel("Yeni sohbet")
+                        }
+                    }
+                }
+        }
+        .task {
+            model.connect()
+            await profileStore.refresh()
+            await subscriptionStore.refresh()
+            await refreshConversationsFromServer()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                model.connect()
+                Task { await subscriptionStore.refresh() }
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            // General account settings only - PC control lives in its own screen (below), reached
+            // from the chat toolbar's connection icon instead of being buried in this list.
+            SettingsView(model: model, authSession: authSession, profileStore: profileStore, subscriptionStore: subscriptionStore)
+        }
+        .sheet(isPresented: $showPCSettings) {
+            PCSettingsView(model: model, subscriptionStore: subscriptionStore)
+        }
+        .sheet(isPresented: $showTemplates) {
+            AutomationTemplatesView { prompt in
+                showTemplates = false
+                conversations = CopilotConversationStore.all()
+                draftPrompt = prompt
+                conversationID = CopilotConversationStore.newIdentifier()
+            }
+        }
+        .overlay {
+            if showSidebar {
+                SidebarOverlay(
+                    conversations: conversations,
+                    currentID: conversationID,
+                    profile: profileStore.profile,
+                    avatarImage: profileStore.avatarImage,
+                    onSelect: { id in
+                        closeSidebar()
+                        draftPrompt = nil
+                        conversationID = id
+                    },
+                    onNewChat: {
+                        closeSidebar()
+                        startNewChat()
+                    },
+                    onDelete: { id in
+                        if id == conversationID { conversationID = CopilotConversationStore.newIdentifier() }
+                        CopilotConversationStore.delete(id: id)
+                        withAnimation { conversations = CopilotConversationStore.all() }
+                        Task { try? await RovaBackendClient.deleteConversationRemote(id: id) }
+                    },
+                    onDismiss: closeSidebar,
+                    onOpenSettings: {
+                        closeSidebar()
+                        showSettings = true
+                    }
+                )
+                .transition(.opacity)
+            }
+        }
+    }
+
+    private func startNewChat() {
+        conversations = CopilotConversationStore.all()
+        draftPrompt = nil
+        conversationID = CopilotConversationStore.newIdentifier()
+    }
+
+    /// Pulls this account's conversation list from the backend and folds it into the local cache -
+    /// what brings history back after a reinstall or a new device, since full chat history used to
+    /// live only in this device's UserDefaults. Safe to call often: it only ever fetches the cheap
+    /// summary list, never full message bodies (those load lazily per-conversation, see
+    /// CopilotView.loadRemoteMessagesIfNeeded).
+    private func refreshConversationsFromServer() async {
+        guard let remote = try? await RovaBackendClient.fetchConversations() else { return }
+        conversations = CopilotConversationStore.mergeRemoteSummaries(remote)
+    }
+
+    private func closeSidebar() {
+        withAnimation(.snappy(duration: 0.22)) { showSidebar = false }
+    }
+}
+
+/// Standard, reliable app-wide keyboard dismissal - works regardless of which field currently
+/// holds focus, so the sidebar/settings entry points don't need to know about the chat's own
+/// input state.
+@MainActor
+private func dismissKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+}
+
+private struct SidebarOverlay: View {
+    let conversations: [CopilotConversationSummary]
+    let currentID: String
+    let profile: UserProfile
+    let avatarImage: UIImage?
+    let onSelect: (String) -> Void
+    let onNewChat: () -> Void
+    let onDelete: (String) -> Void
+    let onDismiss: () -> Void
+    let onOpenSettings: () -> Void
+
+    @State private var query = ""
+    @State private var appeared = false
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Color.black.opacity(appeared ? 0.32 : 0)
+                .ignoresSafeArea()
+                .onTapGesture(perform: dismiss)
+
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                searchField
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
+
+                if filtered.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: query.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass")
+                            .font(.title2)
+                            .foregroundStyle(.tertiary)
+                        Text(query.isEmpty ? "Henüz sohbet yok" : "Sonuç bulunamadı")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 48)
+                    Spacer()
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 2, pinnedViews: []) {
+                            ForEach(sections, id: \.title) { section in
+                                Text(section.title)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 24)
+                                    .padding(.top, 14)
+                                    .padding(.bottom, 4)
+                                ForEach(section.items) { conversation in
+                                    Button { onSelect(conversation.id) } label: {
+                                        ConversationRow(conversation: conversation, isSelected: conversation.id == currentID)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .contextMenu {
+                                        Button(role: .destructive) { onDelete(conversation.id) } label: {
+                                            Label("Sohbeti sil", systemImage: "trash")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.bottom, 8)
+                    }
+                    .scrollDismissesKeyboard(.immediately)
+                }
+
+                Divider()
+                profileRow
+            }
+            .frame(width: 304, alignment: .leading)
+            .frame(maxHeight: .infinity)
+            .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+            .offset(x: appeared ? 0 : -320)
+            .gesture(
+                DragGesture(minimumDistance: 20)
+                    .onEnded { value in if value.translation.width < -60 { dismiss() } }
+            )
+        }
+        .onAppear {
+            withAnimation(.snappy(duration: 0.25)) { appeared = true }
+        }
+    }
+
+    private func dismiss() {
+        withAnimation(.snappy(duration: 0.2)) { appeared = false }
+        let onDismiss = onDismiss
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            onDismiss()
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Image("WiqoMark")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 26, height: 26)
+            Text("Wiqo")
+                .font(.title3.weight(.bold))
+            Spacer()
+            Button(action: onNewChat) {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .frame(width: 36, height: 36)
+                    .background(Color(.tertiarySystemFill), in: Circle())
+            }
+            .accessibilityLabel("Yeni sohbet")
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Sohbetlerde ara", text: $query)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .font(.subheadline)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var profileRow: some View {
+        Button(action: onOpenSettings) {
+            HStack(spacing: 12) {
+                AvatarView(profile: profile, image: avatarImage, size: 36)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(profile.visibleName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(profile.email)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "gearshape")
+                    .font(.system(size: 17))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Profil ve ayarlar")
+    }
+
+    private var filtered: [CopilotConversationSummary] {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return conversations }
+        return conversations.filter {
+            $0.title.localizedCaseInsensitiveContains(needle) || $0.preview.localizedCaseInsensitiveContains(needle)
+        }
+    }
+
+    /// History grouped the way chat apps do: Today, Yesterday, last 7 days, older.
+    private var sections: [(title: String, items: [CopilotConversationSummary])] {
+        let calendar = Calendar.current
+        let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        var today: [CopilotConversationSummary] = []
+        var yesterday: [CopilotConversationSummary] = []
+        var week: [CopilotConversationSummary] = []
+        var older: [CopilotConversationSummary] = []
+        for conversation in filtered {
+            if calendar.isDateInToday(conversation.updatedAt) { today.append(conversation) }
+            else if calendar.isDateInYesterday(conversation.updatedAt) { yesterday.append(conversation) }
+            else if conversation.updatedAt > weekAgo { week.append(conversation) }
+            else { older.append(conversation) }
+        }
+        return [("Bugün", today), ("Dün", yesterday), ("Son 7 gün", week), ("Daha eski", older)].filter { !$0.1.isEmpty }
+    }
+}
+
+private struct ConversationRow: View {
+    let conversation: CopilotConversationSummary
+    var isSelected: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(conversation.title)
+                .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Text(conversation.preview)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(isSelected ? Color(.tertiarySystemFill) : Color.clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(Rectangle())
+        .padding(.horizontal, 12)
     }
 }
 
@@ -29,6 +407,7 @@ struct PairingView: View {
     @ObservedObject var model: IOSConnectionModel
     @State private var showingScanner = false
     @State private var scanError: String?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -36,26 +415,26 @@ struct PairingView: View {
                 Image(systemName: "laptopcomputer.and.iphone")
                     .font(.system(size: 54, weight: .medium))
                     .foregroundStyle(.tint)
-                Text("Connect to your Mac")
+                Text("PC'ye bağlan")
                     .font(.title2.weight(.semibold))
-                Text("Rova Mac’te gösterilen QR kodu tarayarak güvenli bağlantı kur.")
+                Text("Wiqo PC'de gösterilen QR kodu tara.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                 Button {
                     showingScanner = true
                 } label: {
-                    Label("Scan Pairing QR", systemImage: "qrcode.viewfinder")
+                        Label("QR tara", systemImage: "qrcode.viewfinder")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                if model.isPairing { ProgressView("Pairing…") }
+                if model.isPairing { ProgressView("Eşleşiyor…") }
                 if let error = scanError ?? model.lastError {
                     Text(error).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center)
                 }
                 Spacer()
             }
             .padding(28)
-            .navigationTitle("Rova")
+            .navigationTitle("Wiqo")
             .sheet(isPresented: $showingScanner) {
                 QRScannerView { value in
                     showingScanner = false
@@ -63,7 +442,7 @@ struct PairingView: View {
                         model.pair(using: try RovaQRCodec.decode(value))
                         scanError = nil
                     } catch {
-                        scanError = "Geçersiz Rova QR kodu."
+                        scanError = "Geçersiz Wiqo QR kodu."
                     }
                 } onCancel: {
                     showingScanner = false
@@ -71,22 +450,255 @@ struct PairingView: View {
                 .ignoresSafeArea()
             }
         }
+        // The scanner sheet already closes itself the instant a code is captured; this is what
+        // closes the *outer* "PC'ye bağlan" screen once that scan actually finishes pairing -
+        // without it, a successful pairing left the user staring at a screen that had already
+        // done its job, with no obvious next step but to swipe it away manually.
+        .onChange(of: model.isPaired) { _, paired in
+            if paired { dismiss() }
+        }
     }
 }
 
-struct HomeView: View {
+/// Wiqo's single settings surface - profile, Mac connection and controls, automations, and
+/// account actions all live here (Claude-app style: one scrollable settings screen, no separate
+/// "Mac" tab/page). Every control below is unchanged from the previous Mac page; only the
+/// container and the account actions' visibility changed.
+/// Shared plain-row style for a tappable settings-style action (used by both the general and
+/// PC-specific settings screens).
+private func settingsRow(title: String, systemImage: String, isDestructive: Bool = false) -> some View {
+    HStack(spacing: 10) {
+        Image(systemName: systemImage).frame(width: 22)
+        Text(title).font(.subheadline.weight(.medium))
+        Spacer()
+    }
+    .foregroundStyle(isDestructive ? Color.red : Color.primary)
+    .contentShape(Rectangle())
+}
+
+/// General account settings only - profile, plan, background tasks/automations, and sign-out.
+/// PC pairing/control lives entirely in PCSettingsView (reached from the chat toolbar's
+/// connection icon, or from the "PC ayarları" row below) so this screen never needs to load or
+/// react to device/connection state at all.
+struct SettingsView: View {
     @ObservedObject var model: IOSConnectionModel
     @ObservedObject var authSession: AuthSessionStore
+    @ObservedObject var profileStore: ProfileStore
+    @ObservedObject var subscriptionStore: SubscriptionStore
+    @State private var showingPaywall = false
+    @State private var showingSignOutConfirmation = false
+    @State private var showingPCSettings = false
+    @State private var tasks: [RovaBackendClient.RovaTask] = []
+    @State private var automations: [RovaBackendClient.RovaAutomation] = []
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: RovaDesign.cardSpacing) {
+                    profileCard
+                    subscriptionCard
+                    pcSettingsCard
+                    if !pendingTasks.isEmpty || !activeAutomations.isEmpty { tasksAutomationsCard }
+                    accountCard
+                }
+                .padding(RovaDesign.screenPadding)
+            }
+            .background(RovaDesign.canvas)
+            .navigationTitle("Ayarlar")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { dismiss() } label: { Text("Kapat").font(.body.weight(.medium)) }
+                }
+            }
+            .sheet(isPresented: $showingPaywall) {
+                PaywallView(subscriptionStore: subscriptionStore)
+            }
+            .sheet(isPresented: $showingPCSettings) {
+                PCSettingsView(model: model, subscriptionStore: subscriptionStore)
+            }
+        }
+        .task {
+            await loadTasksAndAutomations()
+            await subscriptionStore.refresh()
+        }
+    }
+
+    private var profileCard: some View {
+        NavigationLink {
+            ProfileSettingsView(profileStore: profileStore, authSession: authSession)
+        } label: {
+            RovaCard {
+                HStack(spacing: 14) {
+                    AvatarView(profile: profileStore.profile, image: profileStore.avatarImage, size: 56)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(profileStore.profile.visibleName)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(profileStore.profile.email)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Text("Profili düzenle")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.tint)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Current plan and today's usage, straight from the backend (`GET /billing/subscription`) -
+    /// the same numbers copilot.ts/creativeTools.ts actually enforce, so this can never promise
+    /// more than the backend will allow. See docs/abonelik.md for the full billing design.
+    private var subscriptionCard: some View {
+        let info = subscriptionStore.info
+        return RovaCard {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(info.label).font(.subheadline.weight(.semibold))
+                    Text("\(info.usage.messages.used)/\(info.usage.messages.limit) mesaj • \(info.usage.images.used)/\(info.usage.images.limit) görsel (bugün)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Button(info.tier == "free" ? "Yükselt" : "Planlar") { showingPaywall = true }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    /// Entry point into PCSettingsView - the same screen the chat toolbar's connection icon
+    /// opens, so there's exactly one PC-control surface reachable two ways instead of two.
+    private var pcSettingsCard: some View {
+        Button { showingPCSettings = true } label: {
+            RovaCard {
+                HStack(spacing: 14) {
+                    Image(systemName: "laptopcomputer")
+                        .font(.title2)
+                        .foregroundStyle(.tint)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("PC ayarları").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                        Text(model.isPaired ? "Bağlantı, kilit/uyku, ses ve daha fazlası" : "PC ekle ve kontrol et")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var accountCard: some View {
+        RovaCard {
+            Text("Hesap").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            Button(role: .destructive) {
+                showingSignOutConfirmation = true
+            } label: {
+                settingsRow(title: "Wiqo hesabından çıkış", systemImage: "rectangle.portrait.and.arrow.right", isDestructive: true)
+            }
+        }
+        .confirmationDialog("Wiqo hesabından çıkmak istediğine emin misin?", isPresented: $showingSignOutConfirmation, titleVisibility: .visible) {
+            Button("Çıkış yap", role: .destructive) { authSession.signOut(); dismiss() }
+            Button("Vazgeç", role: .cancel) { }
+        }
+    }
+
+    private var pendingTasks: [RovaBackendClient.RovaTask] {
+        tasks.filter { $0.status == "pending" }
+    }
+
+    private var activeAutomations: [RovaBackendClient.RovaAutomation] {
+        automations.filter(\.isActive)
+    }
+
+    private var tasksAutomationsCard: some View {
+        RovaCard {
+            if !pendingTasks.isEmpty {
+                Text("Görevler").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(pendingTasks) { task in
+                    HStack {
+                        Image(systemName: "circle").foregroundStyle(.secondary)
+                        Text(task.title).font(.subheadline)
+                        Spacer()
+                    }
+                }
+            }
+            if !activeAutomations.isEmpty {
+                if !pendingTasks.isEmpty { Divider() }
+                Text("Otomasyonlar").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(activeAutomations) { automation in
+                    HStack(alignment: .top) {
+                        NavigationLink {
+                            AutomationDetailView(automation: automation)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(automation.prompt).font(.subheadline).foregroundStyle(.primary)
+                                Text(automation.cron).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
+                        Button {
+                            Task {
+                                try? await RovaBackendClient.cancelAutomation(id: automation.id)
+                                await loadTasksAndAutomations()
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle").foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+        }
+    }
+
+    private func loadTasksAndAutomations() async {
+        async let fetchedTasks = try? RovaBackendClient.fetchTasks()
+        async let fetchedAutomations = try? RovaBackendClient.fetchAutomations()
+        tasks = (await fetchedTasks) ?? []
+        automations = (await fetchedAutomations) ?? []
+    }
+}
+
+/// Everything about the paired Mac: pairing, live status, quick actions, media/display, apps,
+/// clipboard/URL, trust grants, and connection activity. Reached either from the chat toolbar's
+/// connection icon or from the "PC ayarları" row in general Settings - kept as its own screen so
+/// PC control reads as one dedicated surface instead of being buried in a long general list, and
+/// so PC connection state/polling never has to be set up just to open general Settings.
+struct PCSettingsView: View {
+    @ObservedObject var model: IOSConnectionModel
+    @ObservedObject var subscriptionStore: SubscriptionStore
     @State private var showingLockConfirmation = false
     @State private var showingSleepConfirmation = false
     @State private var showingDisplaySleepConfirmation = false
+    @State private var showingForgetMacConfirmation = false
+    @State private var showingPairing = false
+    @State private var showingPaywall = false
     @State private var volume: Double = 50
     @State private var brightness: Double = 80
-    @State private var urlText = "https://www.apple.com"
+    @State private var urlText = ""
     @State private var clipboardText = ""
-    @State private var tasks: [RovaBackendClient.RovaTask] = []
-    @State private var automations: [RovaBackendClient.RovaAutomation] = []
+    @State private var backendDevices: [RovaBackendClient.DeviceStatus] = []
+    @State private var deletingDeviceID: String?
+    @State private var renamingDeviceID: String?
+    @State private var renameText = ""
+    @State private var trustGrants: [RovaBackendClient.TrustGrant] = []
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
 
     private var availableApps: [ApplicationInfo] {
         model.deviceInfo?.availableApplications ?? []
@@ -96,43 +708,53 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: RovaDesign.cardSpacing) {
-                    statusCard
-                    quickActionsCard
-                    mediaCard
-                    displayCard
-                    appsCard
-                    clipboardCard
-                    urlCard
-                    if !pendingTasks.isEmpty || !activeAutomations.isEmpty { tasksAutomationsCard }
+                    if subscriptionStore.info.pcAllowed {
+                        if model.isPaired {
+                            statusCard
+                            if !backendDevices.isEmpty { devicesCard }
+                            quickActionsCard
+                            mediaCard
+                            displayCard
+                            appsCard
+                            clipboardCard
+                            urlCard
+                            connectionActionsCard
+                        } else {
+                            pairingPromptCard
+                        }
+                    } else {
+                        pcUpsellCard
+                    }
+                    if !trustGrants.isEmpty { trustGrantsCard }
                     activityCard
                     if let error = model.lastError { errorCard(error) }
                 }
                 .padding(RovaDesign.screenPadding)
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Mac")
+            .background(RovaDesign.canvas)
+            .navigationTitle("PC Ayarları")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { model.retry() } label: { Image(systemName: "arrow.clockwise") }
-                        .accessibilityLabel("Retry connection")
+                    Button { dismiss() } label: { Text("Kapat").font(.body.weight(.medium)) }
                 }
-                ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        Button("Ping") { Task { _ = await model.send(.ping) } }
-                        Button("Refresh Status") { Task { _ = await model.send(.getSystemStatus) } }
-                        Divider()
-                        Button("Forget Mac", role: .destructive) { model.forgetPairing() }
-                        Button("Rova Hesabından Çıkış Yap", role: .destructive) { authSession.signOut() }
-                    } label: { Image(systemName: "ellipsis.circle") }
-                }
+            }
+            .sheet(isPresented: $showingPairing) {
+                PairingView(model: model)
+            }
+            .sheet(isPresented: $showingPaywall) {
+                PaywallView(subscriptionStore: subscriptionStore)
             }
         }
         .task {
             model.connect()
-            await loadTasksAndAutomations()
+            await loadDevicesAndTrust()
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { model.connect() }
+            if phase == .active {
+                model.connect()
+                Task { await loadDevicesAndTrust() }
+            }
         }
         .onChange(of: model.systemStatus) { _, status in
             if let level = status?.volumePercentage { volume = Double(level) }
@@ -140,7 +762,152 @@ struct HomeView: View {
         }
     }
 
+    /// Shown instead of every other card when the current plan doesn't include PC access (Free) -
+    /// the backend already refuses to hand the model any PC tools for these accounts (see
+    /// rova-backend's ToolRegistry.forRequest), so this is purely about not showing controls that
+    /// would just fail or mislead.
+    private var pcUpsellCard: some View {
+        RovaCard {
+            HStack(spacing: 14) {
+                Image(systemName: "lock.laptopcomputer")
+                    .font(.title2)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("PC bağlantısı").font(.subheadline.weight(.semibold))
+                    Text("PC'ni kontrol edebilmek için Pro veya Business'a geç.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Button("Yükselt") { showingPaywall = true }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    private var connectionActionsCard: some View {
+        RovaCard {
+            Text("Bağlantı").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            Button {
+                Task { _ = await model.send(.ping) }
+            } label: {
+                settingsRow(title: "Bağlantıyı ölç", systemImage: "waveform.path.ecg")
+            }
+            Button {
+                Task { _ = await model.send(.getSystemStatus) }
+            } label: {
+                settingsRow(title: "Durumu yenile", systemImage: "arrow.clockwise")
+            }
+            Divider()
+            Button(role: .destructive) {
+                showingForgetMacConfirmation = true
+            } label: {
+                settingsRow(title: "PC'yi unut", systemImage: "laptopcomputer.slash", isDestructive: true)
+            }
+        }
+        .confirmationDialog("PC'yi unutmak istediğine emin misin?", isPresented: $showingForgetMacConfirmation, titleVisibility: .visible) {
+            Button("PC'yi unut", role: .destructive) { model.forgetPairing(); dismiss() }
+            Button("Vazgeç", role: .cancel) { }
+        }
+    }
+
     // MARK: - Cards
+
+    private var devicesCard: some View {
+        RovaCard {
+            Label("Bağlı cihazlar", systemImage: "rectangle.3.group")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ForEach(backendDevices) { device in
+                Button {
+                    renameText = device.displayName
+                    renamingDeviceID = device.id
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: device.online ? "circle.fill" : "circle")
+                            .foregroundStyle(device.online ? .green : .secondary)
+                            .font(.caption)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(device.displayName).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                            Text("\(device.platform) • \(device.capabilities.count) yetenek")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(device.online ? "Bağlı" : "Çevrimdışı")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(device.online ? .green : .secondary)
+                        Image(systemName: "pencil")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button(role: .destructive) {
+                        deletingDeviceID = device.id
+                    } label: {
+                        Label("Sil", systemImage: "trash")
+                    }
+                }
+            }
+            if backendDevices.count > 1 {
+                Text("Birden fazla PC'n varsa isim vererek ayırt edebilirsin (\"Ofis PC\" gibi).")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .alert("PC'yi yeniden adlandır", isPresented: Binding(
+            get: { renamingDeviceID != nil },
+            set: { if !$0 { renamingDeviceID = nil } }
+        )) {
+            TextField("Örn. Ofis PC", text: $renameText)
+            Button("Kaydet") {
+                guard let id = renamingDeviceID else { return }
+                let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                Task {
+                    if let updated = try? await RovaBackendClient.renameDevice(id: id, name: name.isEmpty ? nil : name) {
+                        if let index = backendDevices.firstIndex(where: { $0.id == id }) { backendDevices[index] = updated }
+                    }
+                }
+            }
+            Button("Vazgeç", role: .cancel) {}
+        }
+        .confirmationDialog("Bu cihazı listeden kaldırmak istediğine emin misin?", isPresented: Binding(
+            get: { deletingDeviceID != nil },
+            set: { if !$0 { deletingDeviceID = nil } }
+        ), titleVisibility: .visible) {
+            Button("Cihazı sil", role: .destructive) {
+                guard let id = deletingDeviceID else { return }
+                deletingDeviceID = nil
+                backendDevices.removeAll { $0.id == id }
+                Task { try? await RovaBackendClient.deleteDevice(id: id) }
+            }
+            Button("Vazgeç", role: .cancel) {}
+        }
+    }
+
+    private var pairingPromptCard: some View {
+        RovaCard {
+            HStack(spacing: 14) {
+                Image(systemName: "laptopcomputer.and.iphone")
+                    .font(.title2)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("PC ekle").font(.subheadline.weight(.semibold))
+                    Text("Wiqo'nun PC'sini kontrol edebilmesi için QR kod ile eşleştir.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Button("Ekle") { showingPairing = true }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+        }
+    }
 
     private var statusCard: some View {
         RovaCard {
@@ -149,7 +916,7 @@ struct HomeView: View {
                     .font(.title2)
                     .foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(model.deviceInfo?.displayName ?? "My Mac").font(.headline)
+                    Text(model.deviceInfo?.displayName ?? "PC").font(.headline)
                     HStack(spacing: 6) {
                         Text(statusText).font(.subheadline).foregroundStyle(statusColor)
                         if model.state == .connected {
@@ -214,32 +981,32 @@ struct HomeView: View {
             }
             .disabled(model.state != .connected)
         }
-        .confirmationDialog("Mac kilitlenecek. Devam et?", isPresented: $showingLockConfirmation, titleVisibility: .visible) {
-            Button("Lock Mac", role: .destructive) {
+        .confirmationDialog("PC kilitlenecek. Devam et?", isPresented: $showingLockConfirmation, titleVisibility: .visible) {
+            Button("PC'yi kilitle", role: .destructive) {
                 hapticImpact()
                 Task {
-                    let ok = await model.authenticateBiometrics(reason: "Mac'i kilitlemek için kimliğinizi doğrulayın")
+                    let ok = await model.authenticateBiometrics(reason: "PC'yi kilitlemek için kimliğinizi doğrulayın")
                     if ok { _ = await model.send(.lockMac) }
                 }
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Vazgeç", role: .cancel) { }
         }
-        .confirmationDialog("Mac uyku moduna alınacak. Devam et?", isPresented: $showingSleepConfirmation, titleVisibility: .visible) {
-            Button("Sleep Mac", role: .destructive) {
+        .confirmationDialog("PC uyku moduna alınacak. Devam et?", isPresented: $showingSleepConfirmation, titleVisibility: .visible) {
+            Button("PC'yi uyut", role: .destructive) {
                 hapticImpact()
                 Task {
-                    let ok = await model.authenticateBiometrics(reason: "Mac'i uykuya almak için kimliğinizi doğrulayın")
+                    let ok = await model.authenticateBiometrics(reason: "PC'yi uykuya almak için kimliğinizi doğrulayın")
                     if ok { _ = await model.sleepMac() }
                 }
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Vazgeç", role: .cancel) { }
         }
-        .confirmationDialog("Mac ekranı uyutulacak. Devam et?", isPresented: $showingDisplaySleepConfirmation, titleVisibility: .visible) {
-            Button("Display Sleep", role: .destructive) {
+        .confirmationDialog("PC ekranı uyutulacak. Devam et?", isPresented: $showingDisplaySleepConfirmation, titleVisibility: .visible) {
+            Button("Ekranı uyut", role: .destructive) {
                 hapticImpact()
                 Task { _ = await model.displaySleep() }
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Vazgeç", role: .cancel) { }
         }
     }
 
@@ -331,57 +1098,72 @@ struct HomeView: View {
     private var urlCard: some View {
         RovaCard {
             Text("URL Aç").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-            TextField("https://…", text: $urlText)
+            TextField("youtube.com", text: $urlText)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-            Button("Open in Browser") {
-                hapticImpact()
-                Task { _ = await model.send(.openURL, payload: .url(urlText)) }
+                .keyboardType(.URL)
+                .submitLabel(.go)
+                .onSubmit(openTypedURL)
+            if let resolved = normalizedURL(from: urlText), resolved.absoluteString != urlText {
+                Text(resolved.absoluteString)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
-            .disabled(model.state != .connected)
+            Button("Aç", action: openTypedURL)
+                .disabled(model.state != .connected || normalizedURL(from: urlText) == nil)
         }
     }
 
-    private var pendingTasks: [RovaBackendClient.RovaTask] {
-        tasks.filter { $0.status == "pending" }
+    /// Turns free-form input ("youtube", "youtube.com", "https://youtube.com/watch?v=…") into a
+    /// URL the Mac will actually accept - RovaValidation.isAllowedURL (the same check the Mac
+    /// re-applies on its side) requires an explicit http/https scheme and a real host, so a bare
+    /// word gets ".com" appended and a missing scheme gets "https://" prepended, the way a
+    /// browser's own address bar completes a typed site name. Returns nil for anything that still
+    /// can't resolve to a valid URL, which is what disables the "Aç" button.
+    private func normalizedURL(from input: String) -> URL? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var candidate = trimmed
+        if !candidate.lowercased().hasPrefix("http://"), !candidate.lowercased().hasPrefix("https://") {
+            candidate = "https://" + candidate
+        }
+        guard var components = URLComponents(string: candidate), let host = components.host, !host.isEmpty else { return nil }
+        if !host.contains(".") {
+            components.host = host + ".com"
+        }
+        guard let url = components.url, RovaValidation.isAllowedURL(url.absoluteString) else { return nil }
+        return url
     }
 
-    private var activeAutomations: [RovaBackendClient.RovaAutomation] {
-        automations.filter(\.isActive)
+    private func openTypedURL() {
+        guard let resolved = normalizedURL(from: urlText) else { return }
+        hapticImpact()
+        Task { _ = await model.send(.openURL, payload: .url(resolved.absoluteString)) }
     }
 
-    private var tasksAutomationsCard: some View {
+    private var trustGrantsCard: some View {
         RovaCard {
-            if !pendingTasks.isEmpty {
-                Text("Görevler").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                ForEach(pendingTasks) { task in
-                    HStack {
-                        Image(systemName: "circle").foregroundStyle(.secondary)
-                        Text(task.title).font(.subheadline)
-                        Spacer()
+            Text("Onaylı Eylemler").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            Text("Wiqo bunları daha önce onayladığın için artık sormadan yapıyor.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(trustGrants) { grant in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(grant.label).font(.subheadline)
+                        Text(grant.grantedAt).font(.caption2).foregroundStyle(.tertiary)
                     }
-                }
-            }
-            if !activeAutomations.isEmpty {
-                if !pendingTasks.isEmpty { Divider() }
-                Text("Otomasyonlar").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                ForEach(activeAutomations) { automation in
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(automation.prompt).font(.subheadline)
-                            Text(automation.cron).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        Task {
+                            try? await RovaBackendClient.revokeTrustGrant(id: grant.id)
+                            trustGrants.removeAll { $0.id == grant.id }
                         }
-                        Spacer()
-                        Button {
-                            Task {
-                                try? await RovaBackendClient.cancelAutomation(id: automation.id)
-                                await loadTasksAndAutomations()
-                            }
-                        } label: {
-                            Image(systemName: "xmark.circle").foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.borderless)
+                    } label: {
+                        Image(systemName: "xmark.circle").foregroundStyle(.secondary)
                     }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("\(grant.label) için onayı geri al")
                 }
             }
         }
@@ -409,19 +1191,19 @@ struct HomeView: View {
         }
     }
 
-    private func loadTasksAndAutomations() async {
-        async let fetchedTasks = try? RovaBackendClient.fetchTasks()
-        async let fetchedAutomations = try? RovaBackendClient.fetchAutomations()
-        tasks = (await fetchedTasks) ?? []
-        automations = (await fetchedAutomations) ?? []
+    private func loadDevicesAndTrust() async {
+        async let fetchedDevices = try? RovaBackendClient.fetchDevices()
+        async let fetchedTrustGrants = try? RovaBackendClient.fetchTrustGrants()
+        backendDevices = (await fetchedDevices) ?? []
+        trustGrants = (await fetchedTrustGrants) ?? []
     }
 
     private var statusText: String {
         switch model.state {
-        case .connected: return "Online"
-        case .connecting: return "Connecting…"
-        case .failed: return "Connection failed"
-        case .disconnected: return "Mac Offline"
+        case .connected: return "Bağlı"
+        case .connecting: return "Bağlanıyor…"
+        case .failed: return "Bağlantı hatası"
+        case .disconnected: return "Çevrimdışı"
         }
     }
 

@@ -1,0 +1,5 @@
+/* Wiqo'nun kendi arayüz metinleri doğrudan Türkçe yazılıyor, NSLocalizedString üzerinden değil -
+   bu dosya sadece uygulama paketinin "tr" desteğini resmen bildirmesi için var. Bu bildirim
+   olmadan iOS, uygulama içindeki kendi sistem arayüzlerini (bağlam menüleri, paylaşım sayfası,
+   fotoğraf seçici, izin uyarıları) cihaz dili Türkçe olsa bile her zaman İngilizce gösteriyordu -
+   çünkü paket hiçbir zaman "tr"yi desteklediğini beyan etmemişti. */

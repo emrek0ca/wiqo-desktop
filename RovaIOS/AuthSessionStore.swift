@@ -9,13 +9,16 @@ final class AuthSessionStore: ObservableObject {
 
     init() {
         isAuthenticated = RovaBackendClient.isAuthenticated
+        if isAuthenticated { RovaPushCoordinator.shared.requestRegistrationIfAuthenticated() }
     }
 
     func refresh() {
         isAuthenticated = RovaBackendClient.isAuthenticated
+        if isAuthenticated { RovaPushCoordinator.shared.requestRegistrationIfAuthenticated() }
     }
 
     func signOut() {
+        RovaPushCoordinator.shared.revokeCurrentToken()
         RovaBackendClient.signOut()
         isAuthenticated = false
     }

@@ -3,28 +3,32 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Rova</string>
+	<string>Wiqo</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.rova.mac</string>
 	<key>CFBundleName</key>
-	<string>Rova</string>
+	<string>Wiqo</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Rova, Mac’i kilitlemek, medya oynatımını kontrol etmek ve uygulamaları yönetmek için sistem izinlerini kullanır.</string>
+	<string>Wiqo, Mac’i kilitlemek, medya oynatımını kontrol etmek ve uygulamaları yönetmek için sistem izinlerini kullanır.</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>Rova, istediğinizde yaklaşan etkinlikleri göstermek ve onayınızla yeni etkinlik oluşturmak için Takvim erişimini kullanır.</string>
+	<string>Wiqo, istediğinizde yaklaşan etkinlikleri göstermek ve onayınızla yeni etkinlik oluşturmak için Takvim erişimini kullanır.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Wiqo, istediğinizde hatırlatıcılarınızı göstermek ve onayınızla yeni hatırlatıcı oluşturmak için Hatırlatıcılar erişimini kullanır.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Rova, istediğinizde yaklaşan etkinlikleri göstermek ve onayınızla yeni etkinlik oluşturmak için Takvim erişimini kullanır.</string>
+	<string>Wiqo, istediğinizde yaklaşan etkinlikleri göstermek ve onayınızla yeni etkinlik oluşturmak için Takvim erişimini kullanır.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Rova, iPhone’unuzdan gelen yerel bağlantıları kabul etmek için yerel ağınızı kullanır.</string>
+	<string>Wiqo, iPhone’unuzdan gelen yerel bağlantıları kabul etmek için yerel ağınızı kullanır.</string>
 </dict>
 </plist>

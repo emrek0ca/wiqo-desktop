@@ -401,7 +401,16 @@ enum DocumentEngine {
     }
 
     private static func makeError(_ code: String, _ message: String) -> RovaError {
-        RovaError(code: code, message: message)
+        let category: String
+        switch code {
+        case "FILE_EXISTS", "INVALID_FILENAME", "FULL_DISK_ACCESS_REQUIRED":
+            category = "permission"
+        case "DOCUMENT_ENGINE_UNAVAILABLE", "DESKTOP_UNAVAILABLE":
+            category = "tool_failure"
+        default:
+            category = "tool_failure"
+        }
+        return RovaError(code: code, message: message, category: category)
     }
 
     private struct DocumentFailure: Error {

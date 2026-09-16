@@ -37,7 +37,7 @@ final class ScannerViewController: UIViewController, @preconcurrency AVCaptureMe
         view.addSubview(statusLabel)
         configureCapture()
         let close = UIButton(type: .system)
-        close.setTitle("Cancel", for: .normal)
+        close.setTitle("Vazgeç", for: .normal)
         close.tintColor = .white
         close.addAction(UIAction { [weak self] _ in self?.onCancel?() }, for: .touchUpInside)
         close.translatesAutoresizingMaskIntoConstraints = false
@@ -77,15 +77,15 @@ final class ScannerViewController: UIViewController, @preconcurrency AVCaptureMe
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 guard let self else { return }
                 guard granted else {
-                    Task { @MainActor in self.showCameraError("Camera access is required to scan the pairing QR.") }
+                    Task { @MainActor in self.showCameraError("Eşleşme QR'ını taramak için kamera izni gerekli.") }
                     return
                 }
                 self.sessionQueue.async { [weak self] in self?.configureCaptureOnQueue() }
             }
         case .denied, .restricted:
-            showCameraError("Camera access is disabled. Enable it in Settings to scan a QR code.")
+            showCameraError("Kamera izni kapalı. QR taramak için Ayarlar'dan açın.")
         @unknown default:
-            showCameraError("Camera is unavailable.")
+            showCameraError("Kamera kullanılamıyor.")
         }
     }
 

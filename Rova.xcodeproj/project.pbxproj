@@ -7,12 +7,26 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0389568031C30301F5AA9324 /* AutomationDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 700F9BED6A26B2075241440C /* AutomationDetailView.swift */; };
 		1D26C79A99868523A4ECB1D0 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3316E23CDB65A96A8283CF08 /* AuthView.swift */; };
+		2113ACCAC0B15E6D73621D1B /* ReplyBlocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB41EC457885DC642E7B033 /* ReplyBlocks.swift */; };
+		49B373C9F593CC5E80FE77F8 /* CanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E470424BA1B9926C7F1169F /* CanvasView.swift */; };
 		3C44106B0048C66ECF01156E /* CopilotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */; };
 		4FDC30AA70FBC8AD06EAAEAF /* AuthSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDEB5E8610087C8CA0CC13D /* AuthSessionStore.swift */; };
+		5881451312769523475482A3 /* CapabilitySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CB2D3456C2FC772030765F9 /* CapabilitySettings.swift */; };
+		68E520CA7B6A6DA7B8CE3AE2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6E83CFEFCD81E067708F22DC /* Assets.xcassets */; };
 		6C2FB4A549AEFF241332DB4B /* RovaBackendClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */; };
+		6C369710154A1D68C1CCC4A7 /* AutomationTemplatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E027010A9289E389FE2FC646 /* AutomationTemplatesView.swift */; };
+		701B311C77C0CDA1CAFCAB78 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 06A62B7FB2C6453A366C1B38 /* Assets.xcassets */; };
+		9D40EDE574A60751916C8895 /* wiqo.icon in Resources */ = {isa = PBXBuildFile; fileRef = 6583CED070EAE8D63AAB075A /* wiqo.icon */; };
+		7A591C26FAD5E71C69CA3830 /* ClipboardWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF3CBEDDCB158AA6FF7347F /* ClipboardWatcher.swift */; };
 		98D7CE60A345E6E8CBEE8D65 /* MacBackendChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3072ACE850F6012D34640ABF /* MacBackendChannel.swift */; };
 		9A799AC24B4407A68BB153AE /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E4E100FCB3F1A506A081F9 /* DesignSystem.swift */; };
+		9D4EB581866295D210CBC5E7 /* ArtifactPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAFA55B3331D4116B3819B3 /* ArtifactPreview.swift */; };
+		61D8FCE0A1D986DE1A0BF730 /* Billing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 395FF78233CB35CC80BB3B64 /* Billing.swift */; };
+		3B3989760AB287C6DF759DA5 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91687FA6CF10762A30145E6C /* PaywallView.swift */; };
+		CC224180A9C29B5B70DB3EC0 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = D40ECA86D390584A080B280F /* Localizable.strings */; };
+		91FC1A39E2559C299823B0D0 /* ThinkingOrbsPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5F30A017B62C04E038CFA1A /* ThinkingOrbsPill.swift */; };
 		B001 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001 /* Protocol.swift */; };
 		B002 /* Validation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F002 /* Validation.swift */; };
 		B003 /* Framing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F003 /* Framing.swift */; };
@@ -34,6 +48,17 @@
 		B020 /* IOSViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F020 /* IOSViews.swift */; };
 		B026 /* ProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F026 /* ProtocolTests.swift */; };
 		B027 /* MacCommandEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F027 /* MacCommandEngineTests.swift */; };
+		C100 /* WiqoFocusDoNotDisturbOn.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C110 /* WiqoFocusDoNotDisturbOn.shortcut */; };
+		C101 /* WiqoFocusDoNotDisturbOff.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C111 /* WiqoFocusDoNotDisturbOff.shortcut */; };
+		C102 /* WiqoFocusPersonalOn.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C112 /* WiqoFocusPersonalOn.shortcut */; };
+		C103 /* WiqoFocusPersonalOff.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C113 /* WiqoFocusPersonalOff.shortcut */; };
+		C104 /* WiqoFocusWorkOn.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C114 /* WiqoFocusWorkOn.shortcut */; };
+		C105 /* WiqoFocusWorkOff.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C115 /* WiqoFocusWorkOff.shortcut */; };
+		C106 /* WiqoWiFiOn.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C116 /* WiqoWiFiOn.shortcut */; };
+		C107 /* WiqoWiFiOff.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C117 /* WiqoWiFiOff.shortcut */; };
+		C108 /* WiqoBluetoothOn.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C118 /* WiqoBluetoothOn.shortcut */; };
+		C109 /* WiqoBluetoothOff.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C119 /* WiqoBluetoothOff.shortcut */; };
+		EE9F65B1C5A752BA29FF8E47 /* ProfileViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9455A32B68BDA0E97B92804B /* ProfileViews.swift */; };
 		FF28DCBE30573E6C0006FF82 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001 /* Protocol.swift */; };
 		FF28DCBF30573E6C0006FF82 /* Validation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F002 /* Validation.swift */; };
 		FF28DCC030573E6C0006FF82 /* Framing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F003 /* Framing.swift */; };
@@ -60,11 +85,37 @@
 
 /* Begin PBXFileReference section */
 		05E4E100FCB3F1A506A081F9 /* DesignSystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		06A62B7FB2C6453A366C1B38 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RovaBackendClient.swift; sourceTree = "<group>"; };
 		0EDEB5E8610087C8CA0CC13D /* AuthSessionStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AuthSessionStore.swift; sourceTree = "<group>"; };
 		3072ACE850F6012D34640ABF /* MacBackendChannel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacBackendChannel.swift; sourceTree = "<group>"; };
 		3316E23CDB65A96A8283CF08 /* AuthView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotView.swift; sourceTree = "<group>"; };
+		4CB2D3456C2FC772030765F9 /* CapabilitySettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CapabilitySettings.swift; sourceTree = "<group>"; };
+		6583CED070EAE8D63AAB075A /* wiqo.icon */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.iconcomposer.icon; name = wiqo.icon; path = wiqo.icon; sourceTree = "<group>"; };
+		6E83CFEFCD81E067708F22DC /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = Assets.xcassets; sourceTree = "<group>"; };
+		700F9BED6A26B2075241440C /* AutomationDetailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AutomationDetailView.swift; sourceTree = "<group>"; };
+		7CB41EC457885DC642E7B033 /* ReplyBlocks.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReplyBlocks.swift; sourceTree = "<group>"; };
+		8E470424BA1B9926C7F1169F /* CanvasView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CanvasView.swift; sourceTree = "<group>"; };
+		9455A32B68BDA0E97B92804B /* ProfileViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProfileViews.swift; sourceTree = "<group>"; };
+		AAAFA55B3331D4116B3819B3 /* ArtifactPreview.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ArtifactPreview.swift; sourceTree = "<group>"; };
+		395FF78233CB35CC80BB3B64 /* Billing.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Billing.swift; sourceTree = "<group>"; };
+		91687FA6CF10762A30145E6C /* PaywallView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
+		1A06D4F2764954EF2BCC3AEF /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		A3518EEF288C92C6435BA855 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/Localizable.strings; sourceTree = "<group>"; };
+		C5F30A017B62C04E038CFA1A /* ThinkingOrbsPill.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThinkingOrbsPill.swift; sourceTree = "<group>"; };
+		C110 /* WiqoFocusDoNotDisturbOn.shortcut */ = {isa = PBXFileReference; lastKnownFileType = file; path = WiqoFocusDoNotDisturbOn.shortcut; sourceTree = "<group>"; };
+		C111 /* WiqoFocusDoNotDisturbOff.shortcut */ = {isa = PBXFileReference; lastKnownFileType = file; path = WiqoFocusDoNotDisturbOff.shortcut; sourceTree = "<group>"; };
+		C112 /* WiqoFocusPersonalOn.shortcut */ = {isa = PBXFileReference; lastKnownFileType = file; path = WiqoFocusPersonalOn.shortcut; sourceTree = "<group>"; };
+		C113 /* WiqoFocusPersonalOff.shortcut */ = {isa = PBXFileReference; lastKnownFileType = file; path = WiqoFocusPersonalOff.shortcut; sourceTree = "<group>"; };
+		C114 /* WiqoFocusWorkOn.shortcut */ = {isa = PBXFileReference; lastKnownFileType = file; path = WiqoFocusWorkOn.shortcut; sourceTree = "<group>"; };
+		C115 /* WiqoFocusWorkOff.shortcut */ = {isa = PBXFileReference; lastKnownFileType = file; path = WiqoFocusWorkOff.shortcut; sourceTree = "<group>"; };
+		C116 /* WiqoWiFiOn.shortcut */ = {isa = PBXFileReference; lastKnownFileType = file; path = WiqoWiFiOn.shortcut; sourceTree = "<group>"; };
+		C117 /* WiqoWiFiOff.shortcut */ = {isa = PBXFileReference; lastKnownFileType = file; path = WiqoWiFiOff.shortcut; sourceTree = "<group>"; };
+		C118 /* WiqoBluetoothOn.shortcut */ = {isa = PBXFileReference; lastKnownFileType = file; path = WiqoBluetoothOn.shortcut; sourceTree = "<group>"; };
+		C119 /* WiqoBluetoothOff.shortcut */ = {isa = PBXFileReference; lastKnownFileType = file; path = WiqoBluetoothOff.shortcut; sourceTree = "<group>"; };
+		E027010A9289E389FE2FC646 /* AutomationTemplatesView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AutomationTemplatesView.swift; sourceTree = "<group>"; };
+		EBF3CBEDDCB158AA6FF7347F /* ClipboardWatcher.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipboardWatcher.swift; sourceTree = "<group>"; };
 		F001 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
 		F002 /* Validation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Validation.swift; sourceTree = "<group>"; };
 		F003 /* Framing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Framing.swift; sourceTree = "<group>"; };
@@ -86,7 +137,7 @@
 		F019 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		F020 /* IOSViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSViews.swift; sourceTree = "<group>"; };
 		F021 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		F022 /* Rova.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rova.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F022 /* Wiqo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Wiqo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F023 /* Rova.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rova.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F024 /* RovaSharedTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RovaSharedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F025 /* RovaMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RovaMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -95,7 +146,20 @@
 		F028 /* project.pbxproj */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = project.pbxproj; sourceTree = "<group>"; };
 		F029 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = README.md; sourceTree = "<group>"; };
 		F030 /* DocumentEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentEngine.swift; sourceTree = "<group>"; };
+		FF28DCCA305883720006FF82 /* RovaIOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RovaIOS.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXVariantGroup section */
+		D40ECA86D390584A080B280F /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				1A06D4F2764954EF2BCC3AEF /* en */,
+				A3518EEF288C92C6435BA855 /* tr */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		P005 /* Frameworks */ = {
@@ -170,6 +234,10 @@
 				F015 /* Info.plist */,
 				F016 /* RovaMac.entitlements */,
 				3072ACE850F6012D34640ABF /* MacBackendChannel.swift */,
+				G008 /* Shortcuts */,
+				6E83CFEFCD81E067708F22DC /* Assets.xcassets */,
+				EBF3CBEDDCB158AA6FF7347F /* ClipboardWatcher.swift */,
+				4CB2D3456C2FC772030765F9 /* CapabilitySettings.swift */,
 			);
 			path = RovaMac;
 			sourceTree = "<group>";
@@ -177,6 +245,7 @@
 		G003 /* RovaIOS */ = {
 			isa = PBXGroup;
 			children = (
+				FF28DCCA305883720006FF82 /* RovaIOS.entitlements */,
 				F017 /* RovaIOSApp.swift */,
 				F018 /* IOSConnectionModel.swift */,
 				F019 /* QRScannerView.swift */,
@@ -187,6 +256,18 @@
 				3316E23CDB65A96A8283CF08 /* AuthView.swift */,
 				0EDEB5E8610087C8CA0CC13D /* AuthSessionStore.swift */,
 				05E4E100FCB3F1A506A081F9 /* DesignSystem.swift */,
+				06A62B7FB2C6453A366C1B38 /* Assets.xcassets */,
+				7CB41EC457885DC642E7B033 /* ReplyBlocks.swift */,
+				9455A32B68BDA0E97B92804B /* ProfileViews.swift */,
+				700F9BED6A26B2075241440C /* AutomationDetailView.swift */,
+				E027010A9289E389FE2FC646 /* AutomationTemplatesView.swift */,
+				6583CED070EAE8D63AAB075A /* wiqo.icon */,
+				AAAFA55B3331D4116B3819B3 /* ArtifactPreview.swift */,
+				395FF78233CB35CC80BB3B64 /* Billing.swift */,
+				91687FA6CF10762A30145E6C /* PaywallView.swift */,
+				8E470424BA1B9926C7F1169F /* CanvasView.swift */,
+				D40ECA86D390584A080B280F /* Localizable.strings */,
+				C5F30A017B62C04E038CFA1A /* ThinkingOrbsPill.swift */,
 			);
 			path = RovaIOS;
 			sourceTree = "<group>";
@@ -203,7 +284,7 @@
 		G005 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				F022 /* Rova.app */,
+				F022 /* Wiqo.app */,
 				F023 /* Rova.app */,
 				F024 /* RovaSharedTests.xctest */,
 				F025 /* RovaMacTests.xctest */,
@@ -227,6 +308,23 @@
 			path = RovaMacTests;
 			sourceTree = "<group>";
 		};
+		G008 /* Shortcuts */ = {
+			isa = PBXGroup;
+			children = (
+				C110 /* WiqoFocusDoNotDisturbOn.shortcut */,
+				C111 /* WiqoFocusDoNotDisturbOff.shortcut */,
+				C112 /* WiqoFocusPersonalOn.shortcut */,
+				C113 /* WiqoFocusPersonalOff.shortcut */,
+				C114 /* WiqoFocusWorkOn.shortcut */,
+				C115 /* WiqoFocusWorkOff.shortcut */,
+				C116 /* WiqoWiFiOn.shortcut */,
+				C117 /* WiqoWiFiOff.shortcut */,
+				C118 /* WiqoBluetoothOn.shortcut */,
+				C119 /* WiqoBluetoothOff.shortcut */,
+			);
+			path = Shortcuts;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -244,7 +342,7 @@
 			);
 			name = RovaMac;
 			productName = RovaMac;
-			productReference = F022 /* Rova.app */;
+			productReference = F022 /* Wiqo.app */;
 			productType = "com.apple.product-type.application";
 		};
 		T002 /* RovaIOS */ = {
@@ -310,6 +408,7 @@
 				TargetAttributes = {
 					T001 = {
 						CreatedOnToolsVersion = 26.6;
+						DevelopmentTeam = 7SRKKF75MC;
 						ProvisioningStyle = Automatic;
 					};
 					T002 = {
@@ -353,6 +452,17 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C100 /* WiqoFocusDoNotDisturbOn.shortcut in Resources */,
+				C101 /* WiqoFocusDoNotDisturbOff.shortcut in Resources */,
+				C102 /* WiqoFocusPersonalOn.shortcut in Resources */,
+				C103 /* WiqoFocusPersonalOff.shortcut in Resources */,
+				C104 /* WiqoFocusWorkOn.shortcut in Resources */,
+				C105 /* WiqoFocusWorkOff.shortcut in Resources */,
+				C106 /* WiqoWiFiOn.shortcut in Resources */,
+				C107 /* WiqoWiFiOff.shortcut in Resources */,
+				C108 /* WiqoBluetoothOn.shortcut in Resources */,
+				C109 /* WiqoBluetoothOff.shortcut in Resources */,
+				68E520CA7B6A6DA7B8CE3AE2 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -360,6 +470,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				701B311C77C0CDA1CAFCAB78 /* Assets.xcassets in Resources */,
+				9D40EDE574A60751916C8895 /* wiqo.icon in Resources */,
+				CC224180A9C29B5B70DB3EC0 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -400,6 +513,8 @@
 				B005 /* CryptoSupport.swift in Sources */,
 				B006 /* QRPairing.swift in Sources */,
 				98D7CE60A345E6E8CBEE8D65 /* MacBackendChannel.swift in Sources */,
+				7A591C26FAD5E71C69CA3830 /* ClipboardWatcher.swift in Sources */,
+				5881451312769523475482A3 /* CapabilitySettings.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -422,6 +537,15 @@
 				1D26C79A99868523A4ECB1D0 /* AuthView.swift in Sources */,
 				4FDC30AA70FBC8AD06EAAEAF /* AuthSessionStore.swift in Sources */,
 				9A799AC24B4407A68BB153AE /* DesignSystem.swift in Sources */,
+				2113ACCAC0B15E6D73621D1B /* ReplyBlocks.swift in Sources */,
+				EE9F65B1C5A752BA29FF8E47 /* ProfileViews.swift in Sources */,
+				0389568031C30301F5AA9324 /* AutomationDetailView.swift in Sources */,
+				6C369710154A1D68C1CCC4A7 /* AutomationTemplatesView.swift in Sources */,
+				9D4EB581866295D210CBC5E7 /* ArtifactPreview.swift in Sources */,
+				61D8FCE0A1D986DE1A0BF730 /* Billing.swift in Sources */,
+				3B3989760AB287C6DF759DA5 /* PaywallView.swift in Sources */,
+				49B373C9F593CC5E80FE77F8 /* CanvasView.swift in Sources */,
+				91FC1A39E2559C299823B0D0 /* ThinkingOrbsPill.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -479,14 +603,16 @@
 		D010 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = RovaMac/RovaMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 7SRKKF75MC;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_TESTABILITY = YES;
 				INFOPLIST_FILE = RovaMac/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.rova.mac;
-				PRODUCT_NAME = Rova;
+				PRODUCT_NAME = Wiqo;
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_MODULE_NAME = RovaMac;
 				SWIFT_STRICT_CONCURRENCY = complete;
@@ -497,13 +623,15 @@
 		D011 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = RovaMac/RovaMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 7SRKKF75MC;
+				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = RovaMac/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.rova.mac;
-				PRODUCT_NAME = Rova;
+				PRODUCT_NAME = Wiqo;
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_MODULE_NAME = RovaMac;
 				SWIFT_STRICT_CONCURRENCY = complete;
@@ -514,6 +642,9 @@
 		D020 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APS_ENVIRONMENT = development;
+				ASSETCATALOG_COMPILER_APPICON_NAME = wiqo;
+				CODE_SIGN_ENTITLEMENTS = RovaIOS/RovaIOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 7SRKKF75MC;
 				INFOPLIST_FILE = RovaIOS/Info.plist;
@@ -531,6 +662,9 @@
 		D021 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APS_ENVIRONMENT = production;
+				ASSETCATALOG_COMPILER_APPICON_NAME = wiqo;
+				CODE_SIGN_ENTITLEMENTS = RovaIOS/RovaIOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 7SRKKF75MC;
 				INFOPLIST_FILE = RovaIOS/Info.plist;
@@ -579,7 +713,7 @@
 				PRODUCT_NAME = RovaMacTests;
 				SWIFT_MODULE_NAME = RovaMacTests;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Rova.app/Contents/MacOS/Rova";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Wiqo.app/Contents/MacOS/Wiqo";
 			};
 			name = Debug;
 		};
@@ -593,7 +727,7 @@
 				PRODUCT_NAME = RovaMacTests;
 				SWIFT_MODULE_NAME = RovaMacTests;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Rova.app/Contents/MacOS/Rova";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Wiqo.app/Contents/MacOS/Wiqo";
 			};
 			name = Release;
 		};

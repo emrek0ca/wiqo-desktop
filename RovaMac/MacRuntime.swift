@@ -18,9 +18,18 @@ final class MacRuntime: ObservableObject {
     @Published private(set) var pairedDeviceID: UUID?
     @Published private(set) var connectedDeviceName: String?
     @Published private(set) var connectedDeviceID: UUID?
-    @Published private(set) var localIPAddress = "Unavailable"
+    @Published private(set) var localIPAddress = "Kullanılamıyor"
     @Published private(set) var certificateFingerprint = ""
     @Published var launchAtLogin = false
+    @Published private(set) var automations: [MacAutomation] = []
+    @Published private(set) var isLoadingAutomations = false
+    @Published private(set) var automationsError: String?
+    @Published private(set) var automationPermissions: [MacAutomationPermission] = []
+    @Published private(set) var isRefreshingPermissions = false
+    @Published private(set) var isWarmingAutomationPermissions = false
+    @Published private(set) var permissionActionMessage: String?
+    @Published private(set) var installedWiqoShortcuts: Set<WiqoShortcut> = []
+    @Published private(set) var shortcutInstallMessage: String?
 
     let port: UInt16 = 47831
     let deviceID: UUID
@@ -29,11 +38,16 @@ final class MacRuntime: ObservableObject {
     private var identity: RovaTLSIdentity?
     private var token: String?
     private var startTask: Task<Void, Never>?
+    private var shortcutInstallRefreshTask: Task<Void, Never>?
     private var sessions: [ObjectIdentifier: MacClientSession] = [:]
     private var authenticatedSessionID: ObjectIdentifier?
     private var sessionFailedPairingAttempts: [ObjectIdentifier: Int] = [:]
     private static let maxPairingAttemptsPerSession = 3
-    private lazy var backendChannel = MacBackendChannel(engine: engine, runtimeStatus: { [weak self] in self?.serviceState.rawValue ?? "unknown" })
+    private lazy var backendChannel = MacBackendChannel(
+        engine: engine,
+        runtimeStatus: { [weak self] in self?.serviceState.rawValue ?? "unknown" },
+        deviceInfo: { [weak self] in self?.deviceInfo ?? DeviceInfo(id: UUID(), displayName: "Wiqo Mac", hostname: "Mac", localIPAddress: "Kullanılamıyor", port: 47831, serviceStatus: "unknown", availableApplications: []) }
+    )
 
     init() {
         let key = "rova.mac.device-id"
@@ -50,10 +64,12 @@ final class MacRuntime: ObservableObject {
         launchAtLogin = SMAppService.mainApp.status == .enabled
         refreshPairingCode()
         backendChannel.connectWithStoredTokenIfAvailable()
+        refreshPermissions()
     }
 
     func start() {
         guard startTask == nil else { return }
+        ClipboardWatcher.shared.start()
         startTask = Task { @MainActor [weak self] in
             guard let self else { return }
             let result = await Task.detached(priority: .userInitiated) {
@@ -82,6 +98,69 @@ final class MacRuntime: ObservableObject {
 
     func regeneratePairing() {
         refreshPairingCode()
+    }
+
+    func refreshPermissions() {
+        guard !isRefreshingPermissions else { return }
+        isRefreshingPermissions = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let snapshot = await Task.detached(priority: .utility) {
+                (
+                    MacSystem.automationPermissionSnapshot(),
+                    MacSystem.installedWiqoShortcuts()
+                )
+            }.value
+            self.automationPermissions = snapshot.0
+            self.installedWiqoShortcuts = snapshot.1
+            self.isRefreshingPermissions = false
+        }
+    }
+
+    func warmUpAutomationPermissions() async {
+        guard !isWarmingAutomationPermissions else { return }
+        isWarmingAutomationPermissions = true
+        permissionActionMessage = "İzin istekleri hazırlanıyor…"
+        let accessibilityGranted = MacSystem.requestAccessibilityAccess()
+        let screenRecordingGranted = MacSystem.requestScreenRecordingAccess()
+        let results = await Task.detached(priority: .userInitiated) {
+            MacSystem.warmUpAutomationPermissions()
+        }.value
+        let calendarGranted = await MacSystem.requestCalendarAccessForWarmUp()
+        let fullDiskGranted = MacSystem.hasFullDiskAccess()
+        automationPermissions = results
+        installedWiqoShortcuts = await Task.detached(priority: .utility) {
+            MacSystem.installedWiqoShortcuts()
+        }.value
+        isWarmingAutomationPermissions = false
+        let granted = results.filter(\.granted).count
+        permissionActionMessage = "Otomasyon \(granted)/\(results.count), Erişilebilirlik: \(accessibilityGranted ? "açık" : "kapalı"), Ekran: \(screenRecordingGranted ? "açık" : "kapalı"), Tam Disk: \(fullDiskGranted ? "açık" : "kapalı"), Takvim: \(calendarGranted ? "açık" : "kapalı")."
+    }
+
+    func installWiqoShortcuts() {
+        let result = MacSystem.openWiqoShortcutsForInstallation()
+        installedWiqoShortcuts = MacSystem.installedWiqoShortcuts()
+        if !result.missingResources.isEmpty {
+            shortcutInstallMessage = "Shortcut kaynakları eksik: \(result.missingResources.map(\.displayName).joined(separator: ", "))."
+        } else if !result.openedForApproval.isEmpty {
+            shortcutInstallMessage = "Shortcuts uygulamasında \(result.openedForApproval.count) Shortcut için ekleme onayı bekleniyor."
+        } else if !result.alreadyInstalled.isEmpty {
+            shortcutInstallMessage = "Wiqo Shortcut'ları zaten kurulu."
+        } else {
+            shortcutInstallMessage = "Kurulacak Shortcut bulunamadı."
+        }
+        shortcutInstallRefreshTask?.cancel()
+        shortcutInstallRefreshTask = Task { @MainActor [weak self] in
+            for delay in [1, 3, 7, 12] {
+                try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000)
+                guard !Task.isCancelled, let self else { return }
+                let installed = await Task.detached(priority: .utility) {
+                    MacSystem.installedWiqoShortcuts()
+                }.value
+                self.installedWiqoShortcuts = installed
+                if installed.count == WiqoShortcut.allCases.count { return }
+            }
+        }
     }
 
     func revokeCurrentDevice() {
@@ -120,15 +199,56 @@ final class MacRuntime: ObservableObject {
         )
     }
 
+    var backendSessionActive: Bool {
+        guard let data = try? RovaKeychainStore.load(account: "rova-backend-token"),
+              let backendToken = String(data: data, encoding: .utf8) else { return false }
+        return !backendToken.isEmpty
+    }
+
+    func refreshAutomations() async {
+        guard backendSessionActive else {
+            automations = []
+            automationsError = "Wiqo hesabı iPhone üzerinden bağlanmamış."
+            return
+        }
+        isLoadingAutomations = true
+        automationsError = nil
+        defer { isLoadingAutomations = false }
+        do {
+            automations = try await backendChannel.fetchAutomations()
+        } catch {
+            automationsError = (error as? LocalizedError)?.errorDescription ?? "Otomasyonlar alınamadı."
+        }
+    }
+
+    func cancelAutomation(_ automation: MacAutomation) async {
+        do {
+            try await backendChannel.cancelAutomation(id: automation.id)
+            automations.removeAll { $0.id == automation.id }
+        } catch {
+            automationsError = (error as? LocalizedError)?.errorDescription ?? "Otomasyon iptal edilemedi."
+        }
+    }
+
     var deviceInfo: DeviceInfo {
         DeviceInfo(
             id: deviceID,
-            displayName: Host.current().localizedName ?? "This Mac",
+            displayName: Host.current().localizedName ?? "Bu Mac",
             hostname: Host.current().name ?? "Mac",
             localIPAddress: localIPAddress,
             port: port,
             serviceStatus: serviceState.rawValue,
-            availableApplications: MacSystem.availableApplications()
+            availableApplications: MacSystem.availableApplications(),
+            applicationTargets: MacSystem.applicationTargets(),
+            // The full set comes from RovaCommandAuthority.allCapabilities (derived from
+            // CommandType itself, see Validation.swift) rather than a second hand-typed list here -
+            // adding a new command type can no longer silently forget to also advertise it.
+            // "runtime.status" is never user-toggleable (harmless read-only status), so it's
+            // exempted from filtering; every other capability respects the Yetenekler settings.
+            capabilities: ["runtime.status"] + CapabilityStore.shared.filter(
+                Array(RovaCommandAuthority.allCapabilities.subtracting(["runtime.status"]))
+            ),
+            authorities: MacSystem.capabilityAuthorities()
         )
     }
 
@@ -175,7 +295,7 @@ final class MacRuntime: ObservableObject {
             guard isPairingCodeValid(request.code) else {
                 sessionFailedPairingAttempts[sessionID] = attempts + 1
                 authLogger.warning("Pairing rejected: expired or invalid code")
-                session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "PAIRING_EXPIRED", message: "Pairing kodunun süresi doldu veya geçersiz."))))
+                session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "PAIRING_EXPIRED", message: "Eşleşme kodunun süresi doldu veya geçersiz."))))
                 if attempts + 1 >= Self.maxPairingAttemptsPerSession {
                     session.close()
                 }
@@ -202,7 +322,7 @@ final class MacRuntime: ObservableObject {
                 authLogger.info("Pairing accepted")
             } catch {
                 errorLogger.error("Pairing failed")
-                session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "PAIRING_FAILED", message: "Pairing tamamlanamadı."))))
+                session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "PAIRING_FAILED", message: "Eşleşme tamamlanamadı."))))
             }
         case .authenticate(let request):
             guard let token, let pairedDeviceID,

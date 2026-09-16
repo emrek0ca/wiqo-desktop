@@ -11,6 +11,8 @@ public enum CommandStatus: String, Codable, CaseIterable, Sendable {
 public enum CommandType: String, Codable, CaseIterable, Sendable {
     case getSystemStatus
     case openApplication
+    case openApplicationByName
+    case controlApplication
     case openURL
     case lockMac
     case sleepMac
@@ -26,6 +28,13 @@ public enum CommandType: String, Codable, CaseIterable, Sendable {
     case sendMessage
     case listCalendarEvents
     case createCalendarEvent
+    case listReminders
+    case createReminder
+    case completeReminder
+    case getClipboardText
+    case getClipboardHistory
+    case createNote
+    case sendEmail
     case listDesktopFiles
     case readDesktopFile
     case moveDesktopFile
@@ -33,6 +42,17 @@ public enum CommandType: String, Codable, CaseIterable, Sendable {
     case saveArtifact
     case readDocument
     case editDocument
+    case listFiles
+    case readFile
+    case writeFile
+    case moveFile
+    case copyFile
+    case deleteFile
+    case executeCode
+    case captureScreen
+    case runShortcut
+    case controlUIElement
+    case clickScreen
 }
 
 public enum MediaAction: String, Codable, CaseIterable, Sendable {
@@ -41,12 +61,150 @@ public enum MediaAction: String, Codable, CaseIterable, Sendable {
     case previousTrack
 }
 
+/// Shortcuts that Wiqo is allowed to invoke. The raw values are the exact names used by the
+/// macOS Shortcuts app; keeping this as an enum prevents a model response from becoming an
+/// arbitrary `shortcuts run <name>` command.
+public enum WiqoShortcut: String, Codable, CaseIterable, Sendable {
+    case focusDoNotDisturbOn = "Wiqo Focus - Rahatsız Etme Aç"
+    case focusDoNotDisturbOff = "Wiqo Focus - Rahatsız Etme Kapat"
+    case focusPersonalOn = "Wiqo Focus - Kişisel Aç"
+    case focusPersonalOff = "Wiqo Focus - Kişisel Kapat"
+    case focusWorkOn = "Wiqo Focus - İş Aç"
+    case focusWorkOff = "Wiqo Focus - İş Kapat"
+    case wifiOn = "Wiqo Wi-Fi Aç"
+    case wifiOff = "Wiqo Wi-Fi Kapat"
+    case bluetoothOn = "Wiqo Bluetooth Aç"
+    case bluetoothOff = "Wiqo Bluetooth Kapat"
+
+    public var expectedState: String {
+        switch self {
+        case .focusDoNotDisturbOn, .focusPersonalOn, .focusWorkOn, .wifiOn, .bluetoothOn:
+            return "on"
+        case .focusDoNotDisturbOff, .focusPersonalOff, .focusWorkOff, .wifiOff, .bluetoothOff:
+            return "off"
+        }
+    }
+
+    public var displayName: String { rawValue }
+
+    public var resourceName: String {
+        switch self {
+        case .focusDoNotDisturbOn: return "WiqoFocusDoNotDisturbOn"
+        case .focusDoNotDisturbOff: return "WiqoFocusDoNotDisturbOff"
+        case .focusPersonalOn: return "WiqoFocusPersonalOn"
+        case .focusPersonalOff: return "WiqoFocusPersonalOff"
+        case .focusWorkOn: return "WiqoFocusWorkOn"
+        case .focusWorkOff: return "WiqoFocusWorkOff"
+        case .wifiOn: return "WiqoWiFiOn"
+        case .wifiOff: return "WiqoWiFiOff"
+        case .bluetoothOn: return "WiqoBluetoothOn"
+        case .bluetoothOff: return "WiqoBluetoothOff"
+        }
+    }
+}
+
+public struct ShortcutPayload: Codable, Equatable, Sendable {
+    public let shortcut: WiqoShortcut
+    public let timeoutSeconds: Int
+
+    public init(shortcut: WiqoShortcut, timeoutSeconds: Int = 15) {
+        self.shortcut = shortcut
+        self.timeoutSeconds = timeoutSeconds
+    }
+}
+
+public enum UIElementAction: String, Codable, CaseIterable, Sendable {
+    case press
+    case setValue
+}
+
+/// A bounded Accessibility request. The Mac only searches a running application and never
+/// launches an arbitrary target as a side effect of this command.
+public struct UIElementPayload: Codable, Equatable, Sendable {
+    public let bundleIdentifier: String
+    public let windowTitle: String?
+    public let label: String
+    public let role: String?
+    public let action: UIElementAction
+    public let value: String?
+    public let expectedValue: String?
+
+    public init(
+        bundleIdentifier: String,
+        windowTitle: String? = nil,
+        label: String,
+        role: String? = nil,
+        action: UIElementAction,
+        value: String? = nil,
+        expectedValue: String? = nil
+    ) {
+        self.bundleIdentifier = bundleIdentifier
+        self.windowTitle = windowTitle
+        self.label = label
+        self.role = role
+        self.action = action
+        self.value = value
+        self.expectedValue = expectedValue
+    }
+}
+
+/// Coordinates are normalized against the exact screenshot dimensions the model observed. This
+/// prevents a stale pixel coordinate from silently targeting a different display layout.
+public struct ScreenClickPayload: Codable, Equatable, Sendable {
+    public let displayID: UInt32?
+    public let normalizedX: Double
+    public let normalizedY: Double
+    public let screenshotWidth: Int
+    public let screenshotHeight: Int
+    public let expectedTarget: String?
+
+    public init(
+        displayID: UInt32? = nil,
+        normalizedX: Double,
+        normalizedY: Double,
+        screenshotWidth: Int,
+        screenshotHeight: Int,
+        expectedTarget: String? = nil
+    ) {
+        self.displayID = displayID
+        self.normalizedX = normalizedX
+        self.normalizedY = normalizedY
+        self.screenshotWidth = screenshotWidth
+        self.screenshotHeight = screenshotHeight
+        self.expectedTarget = expectedTarget
+    }
+}
+
 public struct MessagePayload: Codable, Equatable, Sendable {
     public let recipient: String
     public let body: String
 
     public init(recipient: String, body: String) {
         self.recipient = recipient
+        self.body = body
+    }
+}
+
+public struct NotePayload: Codable, Equatable, Sendable {
+    public let title: String
+    public let body: String
+    public let folderName: String?
+
+    public init(title: String, body: String, folderName: String? = nil) {
+        self.title = title
+        self.body = body
+        self.folderName = folderName
+    }
+}
+
+public struct EmailPayload: Codable, Equatable, Sendable {
+    public let to: String
+    public let subject: String
+    public let body: String
+
+    public init(to: String, subject: String, body: String) {
+        self.to = to
+        self.subject = subject
         self.body = body
     }
 }
@@ -107,6 +265,82 @@ public enum ApplicationID: String, Codable, CaseIterable, Sendable {
     }
 }
 
+/// Semantic application lifecycle operations. Unlike `ApplicationID`, the target is not a
+/// compile-time list: the companion resolves a human name or bundle identifier against the
+/// applications that are actually installed/running on that Mac.
+public enum ApplicationControlAction: String, Codable, CaseIterable, Sendable {
+    case open
+    case activate
+    case quit
+}
+
+public struct ApplicationControlPayload: Codable, Equatable, Sendable {
+    public let action: ApplicationControlAction
+    public let target: String
+    public let bundleIdentifier: String?
+    /// A graceful quit is always attempted first. Force termination is only allowed when the
+    /// user explicitly requested it and the interactive presence gate has approved the step.
+    public let force: Bool
+
+    public init(action: ApplicationControlAction, target: String, bundleIdentifier: String? = nil, force: Bool = false) {
+        self.action = action
+        self.target = target
+        self.bundleIdentifier = bundleIdentifier
+        self.force = force
+    }
+}
+
+public struct DeviceApplicationTarget: Codable, Equatable, Sendable, Identifiable {
+    public let name: String
+    public let bundleIdentifier: String?
+    public let isRunning: Bool
+    public let supportedActions: [ApplicationControlAction]
+
+    public var id: String { bundleIdentifier ?? name }
+
+    public init(name: String, bundleIdentifier: String?, isRunning: Bool, supportedActions: [ApplicationControlAction]) {
+        self.name = name
+        self.bundleIdentifier = bundleIdentifier
+        self.isRunning = isRunning
+        self.supportedActions = supportedActions
+    }
+}
+
+public enum CapabilityAuthorityAccess: String, Codable, CaseIterable, Sendable {
+    /// The authenticated paired-device request may run without another confirmation.
+    case automatic
+    /// The iPhone must perform the explicit local-presence/biometric approval step.
+    case confirmation
+    /// The user disabled this scope in Wiqo/macOS.
+    case denied
+    /// A required macOS TCC permission or dependency is not currently available.
+    case unavailable
+}
+
+public struct DeviceCapabilityAuthority: Codable, Equatable, Sendable, Identifiable {
+    public let capability: String
+    public let displayName: String
+    public let access: CapabilityAuthorityAccess
+    public let requiredPermissions: [String]
+    public let message: String?
+
+    public var id: String { capability }
+
+    public init(
+        capability: String,
+        displayName: String,
+        access: CapabilityAuthorityAccess,
+        requiredPermissions: [String] = [],
+        message: String? = nil
+    ) {
+        self.capability = capability
+        self.displayName = displayName
+        self.access = access
+        self.requiredPermissions = requiredPermissions
+        self.message = message
+    }
+}
+
 public struct TextFilePayload: Codable, Equatable, Sendable {
     public let filename: String
     public let content: String
@@ -162,9 +396,215 @@ public struct ArtifactFilePayload: Codable, Equatable, Sendable {
     }
 }
 
+/// A path-based local operation. Paths are deliberately kept as strings on the wire; the Mac
+/// validates and resolves them after symlink expansion immediately before touching the file
+/// system. `page`/`pageSize` keep directory enumeration bounded.
+public struct LocalFileOperationPayload: Codable, Equatable, Sendable {
+    public let path: String
+    public let destination: String?
+    public let content: String?
+    public let overwrite: Bool
+    public let recursive: Bool
+    public let page: Int
+    public let pageSize: Int
+
+    public init(
+        path: String,
+        destination: String? = nil,
+        content: String? = nil,
+        overwrite: Bool = false,
+        recursive: Bool = false,
+        page: Int = 0,
+        pageSize: Int = 100
+    ) {
+        self.path = path
+        self.destination = destination
+        self.content = content
+        self.overwrite = overwrite
+        self.recursive = recursive
+        self.page = page
+        self.pageSize = pageSize
+    }
+}
+
+public struct CodeExecutionPayload: Codable, Equatable, Sendable {
+    public let language: String
+    public let code: String
+    public let arguments: [String]
+    public let timeoutSeconds: Int
+    public let allowNetwork: Bool
+
+    public init(language: String, code: String, arguments: [String] = [], timeoutSeconds: Int = 30, allowNetwork: Bool = false) {
+        self.language = language
+        self.code = code
+        self.arguments = arguments
+        self.timeoutSeconds = timeoutSeconds
+        self.allowNetwork = allowNetwork
+    }
+}
+
+public struct ScreenCapturePayload: Codable, Equatable, Sendable {
+    public let displayID: UInt32?
+    public let maxWidth: Int
+
+    public init(displayID: UInt32? = nil, maxWidth: Int = 1600) {
+        self.displayID = displayID
+        self.maxWidth = maxWidth
+    }
+}
+
+public struct InstalledApplicationInfo: Codable, Equatable, Sendable, Identifiable {
+    public let name: String
+    public let bundleIdentifier: String?
+    public let path: String
+
+    public var id: String { path }
+
+    public init(name: String, bundleIdentifier: String?, path: String) {
+        self.name = name
+        self.bundleIdentifier = bundleIdentifier
+        self.path = path
+    }
+}
+
+public struct FileDataContent: Codable, Equatable, Sendable {
+    public let path: String
+    public let mimeType: String
+    public let text: String?
+    public let base64: String?
+    public let truncated: Bool
+
+    public init(path: String, mimeType: String, text: String? = nil, base64: String? = nil, truncated: Bool = false) {
+        self.path = path
+        self.mimeType = mimeType
+        self.text = text
+        self.base64 = base64
+        self.truncated = truncated
+    }
+}
+
+public struct ProcessOutputContent: Codable, Equatable, Sendable {
+    public let language: String
+    public let exitCode: Int32
+    public let stdout: String
+    public let stderr: String
+    public let truncated: Bool
+    public let durationMs: Int
+
+    public init(language: String, exitCode: Int32, stdout: String, stderr: String, truncated: Bool, durationMs: Int) {
+        self.language = language
+        self.exitCode = exitCode
+        self.stdout = stdout
+        self.stderr = stderr
+        self.truncated = truncated
+        self.durationMs = durationMs
+    }
+}
+
+public struct ScreenshotContent: Codable, Equatable, Sendable {
+    public let filename: String
+    public let mimeType: String
+    public let dataBase64: String
+    public let width: Int
+    public let height: Int
+
+    public init(filename: String, mimeType: String, dataBase64: String, width: Int, height: Int) {
+        self.filename = filename
+        self.mimeType = mimeType
+        self.dataBase64 = dataBase64
+        self.width = width
+        self.height = height
+    }
+}
+
+public struct ShortcutExecutionContent: Codable, Equatable, Sendable {
+    public let shortcut: WiqoShortcut
+    public let output: String
+    public let expectedState: String
+    public let observedState: String?
+    public let verified: Bool
+
+    public init(shortcut: WiqoShortcut, output: String, expectedState: String, observedState: String?, verified: Bool) {
+        self.shortcut = shortcut
+        self.output = output
+        self.expectedState = expectedState
+        self.observedState = observedState
+        self.verified = verified
+    }
+}
+
+public struct UIElementContent: Codable, Equatable, Sendable {
+    public let bundleIdentifier: String
+    public let title: String?
+    public let role: String?
+    public let value: String?
+    public let description: String?
+    public let enabled: Bool?
+    public let matchedCount: Int
+    public let verified: Bool
+
+    public init(bundleIdentifier: String, title: String?, role: String?, value: String?, description: String?, enabled: Bool?, matchedCount: Int, verified: Bool) {
+        self.bundleIdentifier = bundleIdentifier
+        self.title = title
+        self.role = role
+        self.value = value
+        self.description = description
+        self.enabled = enabled
+        self.matchedCount = matchedCount
+        self.verified = verified
+    }
+}
+
+public struct ScreenClickContent: Codable, Equatable, Sendable {
+    public let displayID: UInt32
+    public let x: Double
+    public let y: Double
+    public let expectedTarget: String?
+
+    public init(displayID: UInt32, x: Double, y: Double, expectedTarget: String?) {
+        self.displayID = displayID
+        self.x = x
+        self.y = y
+        self.expectedTarget = expectedTarget
+    }
+}
+
+public struct ApplicationControlContent: Codable, Equatable, Sendable {
+    public let action: ApplicationControlAction
+    public let resolvedName: String
+    public let bundleIdentifier: String?
+    public let stateBefore: String
+    public let stateAfter: String
+    public let changed: Bool
+    public let verified: Bool
+    public let candidates: [String]
+
+    public init(
+        action: ApplicationControlAction,
+        resolvedName: String,
+        bundleIdentifier: String?,
+        stateBefore: String,
+        stateAfter: String,
+        changed: Bool,
+        verified: Bool,
+        candidates: [String] = []
+    ) {
+        self.action = action
+        self.resolvedName = resolvedName
+        self.bundleIdentifier = bundleIdentifier
+        self.stateBefore = stateBefore
+        self.stateAfter = stateAfter
+        self.changed = changed
+        self.verified = verified
+        self.candidates = candidates
+    }
+}
+
 public enum CommandPayload: Codable, Equatable, Sendable {
     case none
     case application(ApplicationID)
+    case applicationQuery(String)
+    case applicationControl(ApplicationControlPayload)
     case url(String)
     case volume(Int)
     case media(MediaAction)
@@ -177,9 +617,19 @@ public enum CommandPayload: Codable, Equatable, Sendable {
     case fileMove(DesktopFileMovePayload)
     case document(DocumentPayload)
     case artifactFile(ArtifactFilePayload)
+    case fileOperation(LocalFileOperationPayload)
+    case codeExecution(CodeExecutionPayload)
+    case screenCapture(ScreenCapturePayload)
+    case shortcut(ShortcutPayload)
+    case uiElement(UIElementPayload)
+    case screenClick(ScreenClickPayload)
+    case reminder(ReminderPayload)
+    case completeReminder(CompleteReminderPayload)
+    case note(NotePayload)
+    case email(EmailPayload)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case none, application, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile }
+    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, codeExecution, screenCapture, shortcut, uiElement, screenClick, reminder, completeReminder, note, email }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -189,6 +639,10 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             self = .none
         case .application:
             self = .application(try container.decode(ApplicationID.self, forKey: .value))
+        case .applicationQuery:
+            self = .applicationQuery(try container.decode(String.self, forKey: .value))
+        case .applicationControl:
+            self = .applicationControl(try container.decode(ApplicationControlPayload.self, forKey: .value))
         case .url:
             self = .url(try container.decode(String.self, forKey: .value))
         case .volume:
@@ -213,6 +667,26 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             self = .document(try container.decode(DocumentPayload.self, forKey: .value))
         case .artifactFile:
             self = .artifactFile(try container.decode(ArtifactFilePayload.self, forKey: .value))
+        case .fileOperation:
+            self = .fileOperation(try container.decode(LocalFileOperationPayload.self, forKey: .value))
+        case .codeExecution:
+            self = .codeExecution(try container.decode(CodeExecutionPayload.self, forKey: .value))
+        case .screenCapture:
+            self = .screenCapture(try container.decode(ScreenCapturePayload.self, forKey: .value))
+        case .shortcut:
+            self = .shortcut(try container.decode(ShortcutPayload.self, forKey: .value))
+        case .uiElement:
+            self = .uiElement(try container.decode(UIElementPayload.self, forKey: .value))
+        case .screenClick:
+            self = .screenClick(try container.decode(ScreenClickPayload.self, forKey: .value))
+        case .reminder:
+            self = .reminder(try container.decode(ReminderPayload.self, forKey: .value))
+        case .completeReminder:
+            self = .completeReminder(try container.decode(CompleteReminderPayload.self, forKey: .value))
+        case .note:
+            self = .note(try container.decode(NotePayload.self, forKey: .value))
+        case .email:
+            self = .email(try container.decode(EmailPayload.self, forKey: .value))
         }
     }
 
@@ -224,6 +698,12 @@ public enum CommandPayload: Codable, Equatable, Sendable {
         case .application(let id):
             try container.encode(Kind.application, forKey: .kind)
             try container.encode(id, forKey: .value)
+        case .applicationQuery(let query):
+            try container.encode(Kind.applicationQuery, forKey: .kind)
+            try container.encode(query, forKey: .value)
+        case .applicationControl(let payload):
+            try container.encode(Kind.applicationControl, forKey: .kind)
+            try container.encode(payload, forKey: .value)
         case .url(let value):
             try container.encode(Kind.url, forKey: .kind)
             try container.encode(value, forKey: .value)
@@ -260,8 +740,38 @@ public enum CommandPayload: Codable, Equatable, Sendable {
         case .artifactFile(let payload):
             try container.encode(Kind.artifactFile, forKey: .kind)
             try container.encode(payload, forKey: .value)
+        case .fileOperation(let payload):
+            try container.encode(Kind.fileOperation, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .codeExecution(let payload):
+            try container.encode(Kind.codeExecution, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .screenCapture(let payload):
+            try container.encode(Kind.screenCapture, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .shortcut(let payload):
+            try container.encode(Kind.shortcut, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .uiElement(let payload):
+            try container.encode(Kind.uiElement, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .screenClick(let payload):
+            try container.encode(Kind.screenClick, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .reminder(let payload):
+            try container.encode(Kind.reminder, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .completeReminder(let payload):
+            try container.encode(Kind.completeReminder, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .note(let payload):
+            try container.encode(Kind.note, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .email(let payload):
+            try container.encode(Kind.email, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        }
     }
-}
 }
 
 public struct ApplicationInfo: Codable, Equatable, Sendable, Identifiable {
@@ -329,6 +839,24 @@ public struct DesktopFileInfo: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+public struct FileSystemEntry: Codable, Equatable, Sendable, Identifiable {
+    public let path: String
+    public let name: String
+    public let byteCount: Int64
+    public let modifiedAt: Date?
+    public let isDirectory: Bool
+
+    public var id: String { path }
+
+    public init(path: String, name: String, byteCount: Int64, modifiedAt: Date?, isDirectory: Bool) {
+        self.path = path
+        self.name = name
+        self.byteCount = byteCount
+        self.modifiedAt = modifiedAt
+        self.isDirectory = isDirectory
+    }
+}
+
 public struct DesktopFileContent: Codable, Equatable, Sendable {
     public let filename: String
     public let content: String
@@ -348,6 +876,60 @@ public struct DocumentContent: Codable, Equatable, Sendable {
         self.filename = filename
         self.format = format
         self.text = text
+    }
+}
+
+public struct ClipboardHistoryEntry: Codable, Equatable, Sendable, Identifiable {
+    public let text: String
+    public let copiedAt: Date
+
+    public var id: Date { copiedAt }
+
+    public init(text: String, copiedAt: Date) {
+        self.text = text
+        self.copiedAt = copiedAt
+    }
+}
+
+public struct ReminderPayload: Codable, Equatable, Sendable {
+    public let title: String
+    public let dueAt: Date?
+    public let notes: String?
+    public let listName: String?
+
+    public init(title: String, dueAt: Date? = nil, notes: String? = nil, listName: String? = nil) {
+        self.title = title
+        self.dueAt = dueAt
+        self.notes = notes
+        self.listName = listName
+    }
+}
+
+public struct CompleteReminderPayload: Codable, Equatable, Sendable {
+    public let identifier: String
+
+    public init(identifier: String) {
+        self.identifier = identifier
+    }
+}
+
+public struct ReminderInfo: Codable, Equatable, Sendable, Identifiable {
+    public let identifier: String
+    public let title: String
+    public let dueAt: Date?
+    public let notes: String?
+    public let listName: String
+    public let isCompleted: Bool
+
+    public var id: String { identifier }
+
+    public init(identifier: String, title: String, dueAt: Date?, notes: String?, listName: String, isCompleted: Bool) {
+        self.identifier = identifier
+        self.title = title
+        self.dueAt = dueAt
+        self.notes = notes
+        self.listName = listName
+        self.isCompleted = isCompleted
     }
 }
 
@@ -374,10 +956,12 @@ public struct CalendarEventInfo: Codable, Equatable, Sendable, Identifiable {
 public struct RovaError: Codable, Equatable, Sendable, Error {
     public let code: String
     public let message: String
+    public let category: String?
 
-    public init(code: String, message: String) {
+    public init(code: String, message: String, category: String? = nil) {
         self.code = code
         self.message = message
+        self.category = category
     }
 }
 
@@ -416,10 +1000,22 @@ public enum CommandData: Codable, Equatable, Sendable {
     case fileContent(DesktopFileContent)
     case desktopFiles([DesktopFileInfo])
     case calendarEvents([CalendarEventInfo])
+    case reminders([ReminderInfo])
+    case clipboardText(String)
+    case clipboardHistory([ClipboardHistoryEntry])
     case documentContent(DocumentContent)
+    case installedApplications([InstalledApplicationInfo])
+    case files([FileSystemEntry])
+    case fileData(FileDataContent)
+    case processOutput(ProcessOutputContent)
+    case screenshot(ScreenshotContent)
+    case shortcutResult(ShortcutExecutionContent)
+    case uiElement(UIElementContent)
+    case screenClick(ScreenClickContent)
+    case applicationControl(ApplicationControlContent)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, documentContent }
+    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileData, processOutput, screenshot, shortcutResult, uiElement, screenClick, applicationControl }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -436,8 +1032,32 @@ public enum CommandData: Codable, Equatable, Sendable {
             self = .desktopFiles(try container.decode([DesktopFileInfo].self, forKey: .value))
         case .calendarEvents:
             self = .calendarEvents(try container.decode([CalendarEventInfo].self, forKey: .value))
+        case .reminders:
+            self = .reminders(try container.decode([ReminderInfo].self, forKey: .value))
+        case .clipboardText:
+            self = .clipboardText(try container.decode(String.self, forKey: .value))
+        case .clipboardHistory:
+            self = .clipboardHistory(try container.decode([ClipboardHistoryEntry].self, forKey: .value))
         case .documentContent:
             self = .documentContent(try container.decode(DocumentContent.self, forKey: .value))
+        case .installedApplications:
+            self = .installedApplications(try container.decode([InstalledApplicationInfo].self, forKey: .value))
+        case .files:
+            self = .files(try container.decode([FileSystemEntry].self, forKey: .value))
+        case .fileData:
+            self = .fileData(try container.decode(FileDataContent.self, forKey: .value))
+        case .processOutput:
+            self = .processOutput(try container.decode(ProcessOutputContent.self, forKey: .value))
+        case .screenshot:
+            self = .screenshot(try container.decode(ScreenshotContent.self, forKey: .value))
+        case .shortcutResult:
+            self = .shortcutResult(try container.decode(ShortcutExecutionContent.self, forKey: .value))
+        case .uiElement:
+            self = .uiElement(try container.decode(UIElementContent.self, forKey: .value))
+        case .screenClick:
+            self = .screenClick(try container.decode(ScreenClickContent.self, forKey: .value))
+        case .applicationControl:
+            self = .applicationControl(try container.decode(ApplicationControlContent.self, forKey: .value))
         }
     }
 
@@ -462,11 +1082,47 @@ public enum CommandData: Codable, Equatable, Sendable {
         case .calendarEvents(let value):
             try container.encode(Kind.calendarEvents, forKey: .kind)
             try container.encode(value, forKey: .value)
+        case .reminders(let value):
+            try container.encode(Kind.reminders, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .clipboardText(let value):
+            try container.encode(Kind.clipboardText, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .clipboardHistory(let value):
+            try container.encode(Kind.clipboardHistory, forKey: .kind)
+            try container.encode(value, forKey: .value)
         case .documentContent(let value):
             try container.encode(Kind.documentContent, forKey: .kind)
             try container.encode(value, forKey: .value)
+        case .installedApplications(let value):
+            try container.encode(Kind.installedApplications, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .files(let value):
+            try container.encode(Kind.files, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .fileData(let value):
+            try container.encode(Kind.fileData, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .processOutput(let value):
+            try container.encode(Kind.processOutput, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .screenshot(let value):
+            try container.encode(Kind.screenshot, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .shortcutResult(let value):
+            try container.encode(Kind.shortcutResult, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .uiElement(let value):
+            try container.encode(Kind.uiElement, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .screenClick(let value):
+            try container.encode(Kind.screenClick, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .applicationControl(let value):
+            try container.encode(Kind.applicationControl, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        }
     }
-}
 }
 
 public struct CommandRequest: Codable, Equatable, Sendable {
@@ -502,13 +1158,18 @@ public struct DeviceInfo: Codable, Equatable, Sendable, Identifiable {
     public let port: UInt16
     public let serviceStatus: String
     public let availableApplications: [ApplicationInfo]
+    /// A privacy-bounded, path-free catalog of real applications on this Mac. It is advisory for
+    /// semantic resolution; the Mac re-resolves and validates every target immediately before use.
+    public let applicationTargets: [DeviceApplicationTarget]
+    public let capabilities: [String]
+    public let authorities: [DeviceCapabilityAuthority]
     /// "macOS" today; a future Windows companion reports "windows" here. Nothing in the wire
     /// protocol keys off this yet - it exists so a client can eventually branch on it (icons,
     /// available capabilities) without another protocol change.
     public let platform: String
 
     private enum CodingKeys: String, CodingKey {
-        case id, displayName, hostname, localIPAddress, port, serviceStatus, availableApplications, platform
+        case id, displayName, hostname, localIPAddress, port, serviceStatus, availableApplications, applicationTargets, capabilities, authorities, platform
     }
 
     public init(
@@ -519,6 +1180,9 @@ public struct DeviceInfo: Codable, Equatable, Sendable, Identifiable {
         port: UInt16,
         serviceStatus: String,
         availableApplications: [ApplicationInfo],
+        applicationTargets: [DeviceApplicationTarget] = [],
+        capabilities: [String] = [],
+        authorities: [DeviceCapabilityAuthority] = [],
         platform: String = "macOS"
     ) {
         self.id = id
@@ -528,6 +1192,9 @@ public struct DeviceInfo: Codable, Equatable, Sendable, Identifiable {
         self.port = port
         self.serviceStatus = serviceStatus
         self.availableApplications = availableApplications
+        self.applicationTargets = applicationTargets
+        self.capabilities = capabilities
+        self.authorities = authorities
         self.platform = platform
     }
 
@@ -540,6 +1207,9 @@ public struct DeviceInfo: Codable, Equatable, Sendable, Identifiable {
         port = try container.decode(UInt16.self, forKey: .port)
         serviceStatus = try container.decode(String.self, forKey: .serviceStatus)
         availableApplications = try container.decode([ApplicationInfo].self, forKey: .availableApplications)
+        applicationTargets = try container.decodeIfPresent([DeviceApplicationTarget].self, forKey: .applicationTargets) ?? []
+        capabilities = try container.decodeIfPresent([String].self, forKey: .capabilities) ?? []
+        authorities = try container.decodeIfPresent([DeviceCapabilityAuthority].self, forKey: .authorities) ?? []
         // Older companions did not send platform. macOS remains the safe legacy default.
         platform = try container.decodeIfPresent(String.self, forKey: .platform) ?? "macOS"
     }
