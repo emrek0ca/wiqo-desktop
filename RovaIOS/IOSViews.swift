@@ -50,7 +50,7 @@ struct WiqoHomeView: View {
 
     var body: some View {
         NavigationStack {
-            CopilotView(model: model, authSession: authSession, conversationID: conversationID, draftPrompt: draftPrompt, onOpenPCSettings: { showPCSettings = true })
+            CopilotView(model: model, authSession: authSession, conversationID: conversationID, draftPrompt: draftPrompt)
                 .id(conversationID)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
@@ -482,6 +482,7 @@ struct SettingsView: View {
     @State private var showingPCSettings = false
     @State private var tasks: [RovaBackendClient.RovaTask] = []
     @State private var automations: [RovaBackendClient.RovaAutomation] = []
+    @State private var taskAutomationError: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -491,7 +492,7 @@ struct SettingsView: View {
                     profileCard
                     subscriptionCard
                     pcSettingsCard
-                    if !pendingTasks.isEmpty || !activeAutomations.isEmpty { tasksAutomationsCard }
+                    if taskAutomationError != nil || !pendingTasks.isEmpty || !activeAutomations.isEmpty { tasksAutomationsCard }
                     legalCard
                     accountCard
                 }
@@ -637,6 +638,9 @@ struct SettingsView: View {
 
     private var tasksAutomationsCard: some View {
         RovaCard {
+            if let taskAutomationError {
+                Text(taskAutomationError).font(.footnote).foregroundStyle(.red)
+            }
             if !pendingTasks.isEmpty {
                 Text("Görevler").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                 ForEach(pendingTasks) { task in
@@ -664,8 +668,12 @@ struct SettingsView: View {
                         Spacer()
                         Button {
                             Task {
-                                try? await RovaBackendClient.cancelAutomation(id: automation.id)
-                                await loadTasksAndAutomations()
+                                do {
+                                    try await RovaBackendClient.cancelAutomation(id: automation.id)
+                                    await loadTasksAndAutomations()
+                                } catch {
+                                    taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Otomasyon iptal edilemedi."
+                                }
                             }
                         } label: {
                             Image(systemName: "xmark.circle").foregroundStyle(.secondary)
@@ -678,10 +686,15 @@ struct SettingsView: View {
     }
 
     private func loadTasksAndAutomations() async {
-        async let fetchedTasks = try? RovaBackendClient.fetchTasks()
-        async let fetchedAutomations = try? RovaBackendClient.fetchAutomations()
-        tasks = (await fetchedTasks) ?? []
-        automations = (await fetchedAutomations) ?? []
+        do {
+            async let fetchedTasks = RovaBackendClient.fetchTasks()
+            async let fetchedAutomations = RovaBackendClient.fetchAutomations()
+            tasks = try await fetchedTasks
+            automations = try await fetchedAutomations
+            taskAutomationError = nil
+        } catch {
+            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Görev ve otomasyonlar yüklenemedi."
+        }
     }
 }
 

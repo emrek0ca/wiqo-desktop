@@ -357,14 +357,14 @@ public enum RovaCommandAuthority {
 
     public static func isDestructive(type: CommandType, payload: CommandPayload) -> Bool {
         switch type {
-        case .lockMac, .sleepMac, .displaySleep, .quitApplication, .sendMessage, .sendEmail, .createNote,
+        case .lockMac, .sleepMac, .displaySleep, .sendMessage, .sendEmail, .createNote,
              .createCalendarEvent, .createReminder, .completeReminder, .moveDesktopFile, .renameDesktopFile, .saveArtifact,
              .editDocument, .writeFile, .moveFile, .copyFile, .deleteFile, .executeCode,
              .clickScreen, .runShortcut:
             return true
         case .controlApplication:
             guard case .applicationControl(let application) = payload else { return true }
-            return application.action == .quit || application.force
+            return application.force
         case .controlUIElement:
             guard case .uiElement(let element) = payload else { return true }
             return RovaValidation.uiElementRequiresUserPresence(element)
@@ -394,7 +394,7 @@ public enum RovaCommandAuthority {
         switch type {
         case .readDocument, .listFiles, .readFile, .captureScreen, .controlUIElement, .clickScreen:
             return false
-        case .controlApplication, .runShortcut:
+        case .controlApplication, .quitApplication, .runShortcut:
             return false
         default:
             return true

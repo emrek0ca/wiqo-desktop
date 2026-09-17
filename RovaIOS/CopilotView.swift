@@ -14,6 +14,7 @@ private struct ChatBubble: Identifiable {
     var steps: [PlannedCommand] = []
     var needsConfirmation = false
     var executedStepIDs: Set<UUID> = []
+    var inFlightStepIDs: Set<UUID> = []
     var artifacts: [RovaBackendClient.ArtifactDescriptor] = []
     /// Small (max-240px-side) JPEG thumbnails of what the user attached to this message - kept
     /// deliberately tiny since these persist in local chat history (see CopilotStoredMessage)
@@ -27,11 +28,6 @@ private struct ChatBubble: Identifiable {
     /// Populated only for `.executeCode` steps once the Mac returns a result - drives the
     /// collapsible code/output card instead of dumping raw stdout into the reply text.
     var codeRuns: [UUID: ProcessOutputContent] = [:]
-    /// Snapshot of Mac pairing/online status from when this specific reply was composed (see
-    /// RovaBackendClient.DeviceConnectivity) - nil for user/system bubbles, or for an assistant
-    /// reply from before this existed. Drives the actionable "Mac'e bağlan" chip below a reply
-    /// where the assistant had to say it couldn't reach the Mac.
-    var deviceConnectivity: RovaBackendClient.DeviceConnectivity?
 }
 
 /// What a user attached shows as small thumbnails sitting above their own message bubble, exactly
@@ -236,6 +232,7 @@ private struct CodeExecutionCard: View {
 private struct ConfirmationSheetView: View {
     let bubble: ChatBubble
     let isGranting: Bool
+    let isProcessing: Bool
     let onCancel: () -> Void
     let onConfirm: () -> Void
     let onConfirmAndAlwaysAllow: () -> Void
@@ -243,7 +240,7 @@ private struct ConfirmationSheetView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var qualifiesForAlwaysAllow: Bool {
-        bubble.steps.contains { CopilotView.userGrantableTypes.contains($0.type) }
+        bubble.steps.contains(where: CopilotView.canGrantTrust)
     }
 
     var body: some View {
@@ -279,6 +276,7 @@ private struct ConfirmationSheetView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("İptal", role: .cancel) { onCancel() }
+                        .disabled(isProcessing)
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -286,11 +284,16 @@ private struct ConfirmationSheetView: View {
                     Button {
                         onConfirm()
                     } label: {
-                        Label("Onayla ve Çalıştır", systemImage: "checkmark.shield")
-                            .frame(maxWidth: .infinity)
+                        if isProcessing {
+                            ProgressView().frame(maxWidth: .infinity)
+                        } else {
+                            Label("Onayla ve Çalıştır", systemImage: "checkmark.shield")
+                                .frame(maxWidth: .infinity)
+                        }
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                    .disabled(isProcessing)
 
                     if qualifiesForAlwaysAllow {
                         Button {
@@ -305,7 +308,7 @@ private struct ConfirmationSheetView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.large)
-                        .disabled(isGranting)
+                        .disabled(isProcessing || isGranting)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -315,6 +318,7 @@ private struct ConfirmationSheetView: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(isProcessing)
     }
 }
 
@@ -329,21 +333,13 @@ private let suggestions: [(title: String, icon: String)] = [
 /// message (from either side) is kept in `bubbles` and the full history is resent with each new
 /// message so the model has context (the backend itself is stateless).
 ///
-/// Non-destructive steps the model decides on (volume, brightness, opening an app, ...) run
-/// immediately and silently once the reply is shown, exactly like the model just "did the
-/// thing" - no extra screen in between. Destructive or presence-gated steps (lock, sleep, quit
-/// app, file writes, messages, calendar writes) still show an inline confirmation under that
-/// message and require Face ID/Touch ID, matching the manual buttons on the Mac tab.
+/// Non-destructive steps the model decides on (volume, brightness, opening or gracefully closing
+/// an app, ...) run immediately once the reply is shown. Destructive or presence-gated steps
+/// (lock, sleep, force quit, file writes, messages, calendar writes) require Face ID/Touch ID.
 struct CopilotView: View {
     @ObservedObject var model: IOSConnectionModel
     @ObservedObject var authSession: AuthSessionStore
     @Environment(\.scenePhase) private var scenePhase
-    /// Lets the inline "Mac'e bağlan" chip (shown under a reply that had to say the Mac wasn't
-    /// reachable - see ChatBubble.deviceConnectivity) jump straight to PC settings, without
-    /// CopilotView needing its own copy of PCSettingsView's dependencies (it already lives one
-    /// level up, in WiqoHomeView).
-    var onOpenPCSettings: () -> Void = {}
-
     @State private var bubbles: [ChatBubble] = []
     @State private var inputText = ""
     @State private var isSending = false
@@ -386,17 +382,17 @@ struct CopilotView: View {
     /// `onDismiss` (which also fires for a plain swipe-down) can tell the two apart.
     @State private var confirmationHandledExplicitly = false
     @State private var isGrantingTrust = false
+    @State private var isConfirming = false
 
     /// Set only when this conversation should open with one prompt already sitting in the
     /// composer - e.g. picking an automation template. Pre-fills and focuses the composer so the
     /// user can still edit it before sending; never sent on their behalf. Consumed once in `.task`.
     private let draftPrompt: String?
 
-    init(model: IOSConnectionModel, authSession: AuthSessionStore, conversationID: String? = nil, draftPrompt: String? = nil, onOpenPCSettings: @escaping () -> Void = {}) {
+    init(model: IOSConnectionModel, authSession: AuthSessionStore, conversationID: String? = nil, draftPrompt: String? = nil) {
         self.model = model
         self.authSession = authSession
         self.draftPrompt = draftPrompt
-        self.onOpenPCSettings = onOpenPCSettings
         let resolvedID = conversationID ?? CopilotConversationStore.currentIdentifier()
         _conversationID = State(initialValue: resolvedID)
         _turnCount = State(initialValue: CopilotConversationStore.turnCount(for: resolvedID))
@@ -479,7 +475,7 @@ struct CopilotView: View {
                 if !isPresented, let bubbleID = confirmationBubbleID, !confirmationHandledExplicitly {
                     // A plain swipe-down, not one of the sheet's own buttons - treat exactly like
                     // "İptal" so the bubble is never left silently stuck awaiting confirmation.
-                    setBubble(bubbleID) { $0.needsConfirmation = false; $0.steps = [] }
+                    cancelConfirmation(for: bubbleID)
                 }
                 confirmationBubbleID = nil
                 confirmationHandledExplicitly = false
@@ -699,9 +695,6 @@ struct CopilotView: View {
                 // No bubble chrome for the assistant, matching ChatGPT/Gemini: clean, full-width,
                 // block-structured content rather than a colored speech bubble.
                 ReplyBlocksView(text: bubble.text, artifacts: bubble.artifacts)
-                if let connectivity = bubble.deviceConnectivity, !connectivity.online {
-                    deviceStatusChip(hasPairedDevice: connectivity.hasPairedDevice)
-                }
             } else {
                 HStack {
                     if bubble.role == .user { Spacer(minLength: 40) }
@@ -713,9 +706,6 @@ struct CopilotView: View {
                         .textSelection(.enabled)
                     if bubble.role != .user { Spacer(minLength: 40) }
                 }
-            }
-            if !bubble.needsConfirmation && !bubble.failedSteps.isEmpty {
-                failureCard(for: bubble)
             }
             codeExecutionCards(for: bubble)
             if !bubble.artifacts.isEmpty {
@@ -729,27 +719,6 @@ struct CopilotView: View {
         .padding(.horizontal)
     }
 
-    /// Tied to one specific reply (see ChatBubble.deviceConnectivity), not the toolbar's ambient
-    /// connection dot - shown exactly when a reply had to say it couldn't reach the Mac, right
-    /// where that matters, with a one-tap way to fix it instead of making the user go hunt for
-    /// the connection icon themselves.
-    private func deviceStatusChip(hasPairedDevice: Bool) -> some View {
-        Button {
-            onOpenPCSettings()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "laptopcomputer.slash")
-                Text(hasPairedDevice ? "Mac bağlı değil, bağlanmak için dokun" : "Mac ekle ve kontrol et")
-                    .font(.caption.weight(.medium))
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.orange.opacity(0.15), in: Capsule())
-            .foregroundStyle(.orange)
-        }
-        .buttonStyle(.plain)
-    }
-
     /// One collapsible card per `.executeCode` step in this bubble - shown both while a step is
     /// still awaiting confirmation (so the sheet's summary line isn't the only place to see what
     /// will actually run) and afterwards, once the Mac has returned real stdout/stderr.
@@ -761,7 +730,7 @@ struct CopilotView: View {
                     summary: step.summary,
                     run: bubble.codeRuns[step.id],
                     failureMessage: bubble.failedSteps[step.id],
-                    isPending: bubble.needsConfirmation
+                    isPending: bubble.needsConfirmation || bubble.inFlightStepIDs.contains(step.id)
                 )
             }
         }
@@ -770,27 +739,6 @@ struct CopilotView: View {
     private func codePayload(_ step: PlannedCommand) -> CodeExecutionPayload? {
         guard case .codeExecution(let payload) = step.payload else { return nil }
         return payload
-    }
-
-    /// Shown for auto-run (non-destructive) steps that actually failed - these otherwise have no
-    /// visible trace at all once the reply text is on screen.
-    private func failureCard(for bubble: ChatBubble) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(bubble.steps.filter { bubble.failedSteps[$0.id] != nil }) { step in
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(step.summary).font(.subheadline.weight(.medium))
-                        if let message = bubble.failedSteps[step.id] {
-                            Text(message).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(12)
-        .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
-        .padding(.top, 2)
     }
 
     private func bubbleBackground(_ role: ChatBubble.Role) -> Color {
@@ -805,8 +753,13 @@ struct CopilotView: View {
     /// USER_GRANTABLE_TRUST_TYPES (groq/trust.ts) or the grant call just 400s harmlessly.
     fileprivate static let userGrantableTypes: Set<CommandType> = [.executeCode, .controlApplication, .quitApplication]
 
+    fileprivate static func canGrantTrust(_ step: PlannedCommand) -> Bool {
+        guard userGrantableTypes.contains(step.type) else { return false }
+        return !(step.type == .controlApplication && step.summary.localizedCaseInsensitiveContains("zorla kapat"))
+    }
+
     private func grantableSteps(_ bubble: ChatBubble) -> [PlannedCommand] {
-        bubble.steps.filter { Self.userGrantableTypes.contains($0.type) }
+        bubble.steps.filter(Self.canGrantTrust)
     }
 
     private func presentConfirmation(for bubbleID: UUID) {
@@ -822,18 +775,16 @@ struct CopilotView: View {
                 ConfirmationSheetView(
                     bubble: bubble,
                     isGranting: isGrantingTrust,
+                    isProcessing: isConfirming,
                     onCancel: {
                         confirmationHandledExplicitly = true
-                        setBubble(bubbleID) { $0.needsConfirmation = false; $0.steps = [] }
+                        cancelConfirmation(for: bubbleID)
                         confirmationBubbleID = nil
                     },
                     onConfirm: {
-                        confirmationHandledExplicitly = true
-                        confirmationBubbleID = nil
                         Task { await confirmAndExecute(bubbleID: bubbleID) }
                     },
                     onConfirmAndAlwaysAllow: {
-                        confirmationHandledExplicitly = true
                         Task { await grantTrustThenExecute(bubbleID: bubbleID) }
                     }
                 )
@@ -845,7 +796,6 @@ struct CopilotView: View {
     /// choosing "always allow" never asks Face ID/Touch ID twice - the grant itself happens
     /// inside that same gate, right before this run's steps execute.
     private func grantTrustThenExecute(bubbleID: UUID) async {
-        confirmationBubbleID = nil
         await confirmAndExecute(
             bubbleID: bubbleID,
             reason: "Bu tür eylemleri onaysız çalıştırmaya izin vermek için kimliğinizi doğrulayın"
@@ -1036,13 +986,18 @@ struct CopilotView: View {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingAttachments.isEmpty
     }
 
+    private var hasInFlightDeviceWork: Bool {
+        bubbles.contains { !$0.inFlightStepIDs.isEmpty }
+    }
+
     private var availableApps: [ApplicationID] {
         model.deviceInfo?.availableApplications.map(\.id) ?? []
     }
 
     private func sendMessage(textOverride: String? = nil) async {
         let typedText = (textOverride ?? inputText).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !typedText.isEmpty || !pendingAttachments.isEmpty else { return }
+        guard !isSending, confirmationBubbleID == nil, !hasInFlightDeviceWork,
+              !typedText.isEmpty || !pendingAttachments.isEmpty else { return }
         let text = typedText.isEmpty ? (pendingAttachments.count > 1 ? "Bu görselleri analiz et." : "Bu görseli analiz et.") : typedText
         let attachments = pendingAttachments
         let thumbnails = attachmentPreviews.compactMap(makeThumbnailData)
@@ -1054,6 +1009,9 @@ struct CopilotView: View {
         liveReply.reset()
         isSending = true
         statusMessages = ["Anlıyorum…"]
+        // Results belong to the turn that produced them; never let an older device outcome alter
+        // the model's interpretation of a new user message.
+        recentDeviceResults.removeAll(keepingCapacity: true)
         scrollToLatestRequest += 1
         defer { isSending = false }
 
@@ -1088,7 +1046,7 @@ struct CopilotView: View {
             )
             let replyText = result.reply.isEmpty ? "…" : result.reply
             await liveReply.finish(with: replyText)
-            var reply = ChatBubble(role: .assistant, text: replyText, steps: result.steps, artifacts: result.artifacts, deviceConnectivity: result.deviceConnectivity)
+            var reply = ChatBubble(role: .assistant, text: replyText, steps: result.steps, artifacts: result.artifacts)
             if result.steps.contains(where: { $0.isDestructive || $0.requiresUserPresence }) {
                 reply.needsConfirmation = true
                 bubbles.append(reply)
@@ -1097,10 +1055,11 @@ struct CopilotView: View {
             } else {
                 bubbles.append(reply)
                 liveReply.reset()
-                recentDeviceResults.removeAll(keepingCapacity: true)
                 await execute(result.steps, bubbleID: reply.id)
                 if result.steps.contains(where: needsLocalResultFollowUp) {
                     await continueAfterLocalExecution(history: history, initialReply: result.reply, bubbleID: reply.id)
+                } else {
+                    recentDeviceResults.removeAll(keepingCapacity: true)
                 }
             }
             persistConversation()
@@ -1118,25 +1077,51 @@ struct CopilotView: View {
     }
 
     private func confirmAndExecute(bubbleID: UUID, reason: String = "Bu eylemleri PC'de çalıştırmak için kimliğinizi doğrulayın", beforeExecute: () async -> Void = {}) async {
+        guard !isConfirming else { return }
+        isConfirming = true
+        defer {
+            isConfirming = false
+            isGrantingTrust = false
+        }
         let ok = await model.authenticateBiometrics(reason: reason)
-        guard ok else { return }
-        await beforeExecute()
-        setBubble(bubbleID) { $0.needsConfirmation = false }
-        guard let steps = bubbles.first(where: { $0.id == bubbleID })?.steps else { return }
+        guard ok, let bubble = bubbles.first(where: { $0.id == bubbleID }) else { return }
+        let steps = bubble.steps
         let shouldContinue = steps.contains(where: needsLocalResultFollowUp)
-        let initialReply = bubbles.first(where: { $0.id == bubbleID })?.text ?? ""
+        let initialReply = executionNoticeFreeText(bubble.text)
         let history = bubbles
             .filter { $0.role != .system }
             .suffix(16)
             .map { RovaBackendClient.ChatTurn(role: $0.role == .user ? "user" : "assistant", content: $0.text) }
+        await beforeExecute()
+        confirmationHandledExplicitly = true
+        setBubble(bubbleID) { bubble in
+            bubble.needsConfirmation = false
+            bubble.text = executionStartedText(bubble.text)
+        }
+        confirmationBubbleID = nil
+        recentDeviceResults.removeAll(keepingCapacity: true)
         await execute(steps, bubbleID: bubbleID)
-        if shouldContinue { await continueAfterLocalExecution(history: history, initialReply: initialReply, bubbleID: bubbleID) }
+        if shouldContinue {
+            await continueAfterLocalExecution(history: history, initialReply: initialReply, bubbleID: bubbleID)
+        } else {
+            recentDeviceResults.removeAll(keepingCapacity: true)
+        }
         persistConversation()
     }
 
     private func execute(_ steps: [PlannedCommand], bubbleID: UUID) async {
         var outcomeLines: [String] = []
+        var startedAnyStep = false
         for step in steps {
+            guard let bubble = bubbles.first(where: { $0.id == bubbleID }),
+                  !bubble.executedStepIDs.contains(step.id),
+                  !bubble.inFlightStepIDs.contains(step.id) else { continue }
+            setBubble(bubbleID) { $0.inFlightStepIDs.insert(step.id) }
+            if !startedAnyStep {
+                startedAnyStep = true
+                setBubble(bubbleID) { $0.text = executionStartedText($0.text) }
+            }
+
             let result: CommandResult
             if step.type == .captureScreen {
                 guard screenshotObservationCount < 3 else {
@@ -1151,6 +1136,7 @@ struct CopilotView: View {
                     )
                     outcomeLines.append(localOutcomeLine(step: step, result: result))
                     setBubble(bubbleID) { bubble in
+                        bubble.inFlightStepIDs.remove(step.id)
                         bubble.executedStepIDs.insert(step.id)
                         bubble.failedSteps[step.id] = result.error?.message ?? result.message
                     }
@@ -1173,6 +1159,7 @@ struct CopilotView: View {
             recentDeviceResults = Array(recentDeviceResults.suffix(12))
             outcomeLines.append(localOutcomeLine(step: step, result: result))
             setBubble(bubbleID) { bubble in
+                bubble.inFlightStepIDs.remove(step.id)
                 bubble.executedStepIDs.insert(step.id)
                 if result.status != .completed {
                     bubble.failedSteps[step.id] = result.error?.message ?? result.message
@@ -1184,7 +1171,9 @@ struct CopilotView: View {
         }
         if !outcomeLines.isEmpty {
             setBubble(bubbleID) { bubble in
-                bubble.text += "\n\nYerel PC sonucu:\n" + outcomeLines.joined(separator: "\n")
+                bubble.text = executionNoticeFreeText(bubble.text)
+                    + "\n\nYerel PC sonucu:\n"
+                    + outcomeLines.joined(separator: "\n")
             }
         }
         persistConversation()
@@ -1207,6 +1196,7 @@ struct CopilotView: View {
             RovaBackendClient.ChatTurn(role: "user", content: "Yerel PC sonuçları hazır. Bu sonuçları kullanarak önceki isteği şimdi tamamla; belge içeriğini yeniden isteme.")
         ]
         let localResults = Array(recentDeviceResults.suffix(12))
+        recentDeviceResults.removeAll(keepingCapacity: true)
         do {
             let result = try await RovaBackendClient.converse(
                 messages: continuationHistory,
@@ -1225,7 +1215,7 @@ struct CopilotView: View {
             )
             let replyText = result.reply.isEmpty ? "…" : result.reply
             await liveReply.finish(with: replyText)
-            var followUp = ChatBubble(role: .assistant, text: replyText, steps: result.steps, artifacts: result.artifacts, deviceConnectivity: result.deviceConnectivity)
+            var followUp = ChatBubble(role: .assistant, text: replyText, steps: result.steps, artifacts: result.artifacts)
             bubbles.append(followUp)
             liveReply.reset()
             if result.steps.contains(where: { $0.isDestructive || $0.requiresUserPresence }) {
@@ -1233,7 +1223,6 @@ struct CopilotView: View {
                 setBubble(followUp.id) { $0.needsConfirmation = true }
                 presentConfirmation(for: followUp.id)
             } else {
-                recentDeviceResults.removeAll(keepingCapacity: true)
                 await execute(result.steps, bubbleID: followUp.id)
                 if result.steps.contains(where: needsLocalResultFollowUp), remainingRounds > 1 {
                     await continueAfterLocalExecution(
@@ -1242,6 +1231,8 @@ struct CopilotView: View {
                         bubbleID: followUp.id,
                         remainingRounds: remainingRounds - 1
                     )
+                } else {
+                    recentDeviceResults.removeAll(keepingCapacity: true)
                 }
             }
             persistConversation()
@@ -1264,7 +1255,12 @@ struct CopilotView: View {
     }
 
     private func localOutcomeLine(step: PlannedCommand, result: CommandResult) -> String {
-        let prefix = result.status == .completed ? "✓" : "✗"
+        let prefix: String
+        switch result.status {
+        case .completed: prefix = "✓"
+        case .unknown: prefix = "?"
+        default: prefix = "✗"
+        }
         var line = "\(prefix) \(step.summary): \(result.error?.message ?? result.message)"
         switch result.data {
         case .fileContent(let content):
@@ -1532,7 +1528,7 @@ struct CopilotView: View {
     private func needsLocalResultFollowUp(_ step: PlannedCommand) -> Bool {
         switch step.type {
         case .readDocument, .readDesktopFile, .readFile, .listFiles, .captureScreen,
-             .runShortcut, .controlUIElement, .clickScreen, .controlApplication:
+             .runShortcut, .controlUIElement, .clickScreen:
             return true
         default:
             return false
@@ -1546,6 +1542,36 @@ struct CopilotView: View {
     private func setBubble(_ id: UUID, _ mutate: (inout ChatBubble) -> Void) {
         guard let index = bubbles.firstIndex(where: { $0.id == id }) else { return }
         mutate(&bubbles[index])
+    }
+
+    private func executionNoticeFreeText(_ text: String) -> String {
+        let notices = [
+            "\n\nOnayını bekliyor; onay verdiğinde PC'de çalıştırılacak.",
+            "\n\nBu cihaz eylemleri henüz çalıştırılmadı; önce uygulamadaki onayını bekliyor.",
+            "\n\nBu PC komutları hazırlanıp yerel cihaza gönderilecek; gerçek sonucu henüz doğrulamadım.",
+            "\n\nPC'de çalıştırılıyor; gerçek sonuç doğrulanınca burada gösterilecek.",
+            "\n\nPC'de çalıştırılıyor…",
+            " için onayını bekliyorum.",
+            " isteği PC'de çalıştırılıyor; gerçek sonuç doğrulanınca burada göstereceğim.",
+            " başlatılıyor."
+        ]
+        var result = text
+        for notice in notices { result = result.replacingOccurrences(of: notice, with: "") }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func executionStartedText(_ text: String) -> String {
+        let base = executionNoticeFreeText(text)
+        return base.isEmpty ? "PC'de çalıştırılıyor…" : base + "\n\nPC'de çalıştırılıyor…"
+    }
+
+    private func cancelConfirmation(for bubbleID: UUID) {
+        setBubble(bubbleID) { bubble in
+            bubble.needsConfirmation = false
+            bubble.steps = []
+            let base = executionNoticeFreeText(bubble.text)
+            bubble.text = base.isEmpty ? "İşlem iptal edildi." : base + "\n\nİşlem iptal edildi."
+        }
     }
 
     private func persistConversation() {

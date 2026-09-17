@@ -355,7 +355,7 @@ final class MacRuntime: ObservableObject {
             let currentStatus = serviceState.rawValue
             Task { [engine, errorLogger] in
                 let result = await engine.execute(request, runtimeStatus: currentStatus)
-                if result.status == .failed || result.status == .denied {
+                if result.status == .failed || result.status == .denied || result.status == .unknown {
                     errorLogger.error("Capability \(request.type.rawValue, privacy: .public) \(result.status.rawValue, privacy: .public): \(result.message, privacy: .public)")
                 }
                 session.send(WireEnvelope(requestID: envelope.requestID, message: .result(result)))

@@ -231,16 +231,16 @@ final class IOSConnectionModel: ObservableObject {
     }
 
     func send(_ type: CommandType, payload: CommandPayload = .none, commandID: UUID? = nil) async -> CommandResult {
-        guard isPaired else { return failureResult(id: UUID(), error: RovaError(code: "NOT_PAIRED", message: "Önce PC ile eşleşin.")) }
+        let resolvedCommandID = commandID ?? UUID()
+        guard isPaired else { return failureResult(id: resolvedCommandID, error: RovaError(code: "NOT_PAIRED", message: "Önce PC ile eşleşin.")) }
         guard authenticated, let connection else {
             connect()
             // Same local network isn't a hard requirement any more: if the PC is reachable
             // through its own backend connection (the one automations already rely on), the
             // command still goes through - just a little slower than the direct path.
-            return await sendViaBackendRelay(type: type, payload: payload, commandID: commandID)
+            return await sendViaBackendRelay(type: type, payload: payload, commandID: resolvedCommandID)
         }
         let now = Date()
-        let resolvedCommandID = commandID ?? UUID()
         let nonce = try? RovaCrypto.randomToken()
         let signature = token.map { RovaValidation.signRequest(id: resolvedCommandID, type: type, nonce: nonce ?? "", token: $0) }
         let request = CommandRequest(id: resolvedCommandID, type: type, payload: payload, createdAt: now, signature: signature, nonce: nonce)
@@ -272,7 +272,7 @@ final class IOSConnectionModel: ObservableObject {
             // the relay could have avoided. Ping is exempt: it exists to measure the direct path
             // itself, so a relay retry would misreport connection quality rather than fix it.
             if type != .ping, result.error?.code == "TIMEOUT" {
-                return await sendViaBackendRelay(type: type, payload: payload, commandID: commandID)
+                return await sendViaBackendRelay(type: type, payload: payload, commandID: resolvedCommandID)
             }
             if let error = result.error {
                 self.lastError = error.message
@@ -730,11 +730,11 @@ final class IOSConnectionModel: ObservableObject {
     /// when the direct local connection isn't up; a signed-in Wiqo account is enough for this to
     /// work; needing a signature (device-pairing-token trust) is specific to the direct path, so
     /// this leaves it unsigned exactly like an automation step already does.
-    private func sendViaBackendRelay(type: CommandType, payload: CommandPayload, commandID: UUID?) async -> CommandResult {
+    private func sendViaBackendRelay(type: CommandType, payload: CommandPayload, commandID: UUID) async -> CommandResult {
         guard RovaBackendClient.isAuthenticated else {
-            return failureResult(id: commandID ?? UUID(), error: RovaError(code: "OFFLINE", message: "PC bağlı değil."))
+            return failureResult(id: commandID, error: RovaError(code: "OFFLINE", message: "PC bağlı değil."))
         }
-        let request = CommandRequest(id: commandID ?? UUID(), type: type, payload: payload)
+        let request = CommandRequest(id: commandID, type: type, payload: payload)
         if let validationError = RovaValidation.validate(request) {
             return failureResult(id: request.id, error: validationError)
         }

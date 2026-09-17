@@ -30,10 +30,11 @@ struct AutomationDetailView: View {
                     }
                 }
 
-                if isLoading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 24)
-                } else if let loadError {
+                if let loadError {
                     Text(loadError).font(.subheadline).foregroundStyle(.red)
+                }
+                if isLoading && runs.isEmpty {
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 24)
                 } else if runs.isEmpty {
                     Text("Henüz çalışma kaydı yok.")
                         .font(.subheadline)
@@ -51,11 +52,20 @@ struct AutomationDetailView: View {
         .background(RovaDesign.canvas)
         .navigationTitle("Otomasyon")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
+        .task {
+            await load()
+            while !Task.isCancelled {
+                guard runs.contains(where: { $0.status == "pending" || $0.status == "running" }) else { break }
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard !Task.isCancelled else { break }
+                await load(silent: true)
+            }
+        }
         .refreshable { await load() }
     }
 
-    private func load() async {
+    private func load(silent: Bool = false) async {
+        if !silent { isLoading = true }
         do {
             runs = try await RovaBackendClient.fetchAutomationRuns(id: automation.id)
             loadError = nil
@@ -86,6 +96,12 @@ private struct RunCard: View {
                         } else if let reply = run.reply, !reply.isEmpty {
                             Text(reply).font(.caption).foregroundStyle(.secondary).lineLimit(expanded ? nil : 2)
                         }
+                        if let lastProgressAt = run.lastProgressAt {
+                            Text("Son ilerleme: \(lastProgressAt)").font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        if (run.status == "pending" || run.status == "running"), let deadlineAt = run.deadlineAt {
+                            Text("Süre sonu: \(deadlineAt)").font(.caption2).foregroundStyle(.tertiary)
+                        }
                     }
                     Spacer(minLength: 8)
                     if !run.steps.isEmpty {
@@ -97,6 +113,17 @@ private struct RunCard: View {
                 }
             }
             .buttonStyle(.plain)
+
+            if let delivery = run.completionDeliveryState {
+                Label(completionDeliveryLabel(delivery), systemImage: "arrow.up.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            if let pushState = run.pushState, pushState != "accepted" {
+                Text(run.pushError ?? pushDeliveryLabel(pushState))
+                    .font(.caption2)
+                    .foregroundStyle(pushState == "failed" ? .red : .secondary)
+            }
 
             if expanded && !run.steps.isEmpty {
                 Divider().padding(.vertical, 2)
@@ -113,6 +140,9 @@ private struct RunCard: View {
                             }
                             if let error = step.error, !error.isEmpty {
                                 Text(error).font(.caption2).foregroundStyle(.red)
+                            }
+                            if let deliveryState = step.deliveryState, step.kind == "device" {
+                                Text(deliveryLabel(deliveryState)).font(.caption2).foregroundStyle(.secondary)
                             }
                             if step.attemptCount > 1 {
                                 Text("\(step.attemptCount)/\(step.maxAttempts) deneme")
@@ -133,6 +163,7 @@ private struct RunCard: View {
         case "done": return "checkmark.circle.fill"
         case "failed": return "xmark.circle.fill"
         case "running", "pending": return "clock.fill"
+        case "unknown": return "exclamationmark.triangle.fill"
         default: return "questionmark.circle"
         }
     }
@@ -142,6 +173,7 @@ private struct RunCard: View {
         case "done": return .green
         case "failed": return .red
         case "running", "pending": return .orange
+        case "unknown": return .orange
         default: return .secondary
         }
     }
@@ -152,25 +184,58 @@ private struct RunCard: View {
         case "failed": return "Başarısız"
         case "running": return "Çalışıyor"
         case "pending": return "Bekliyor"
-        default: return run.status
+        case "unknown": return "Sonuç doğrulanamadı"
+        default: return "Bilinmeyen durum"
         }
     }
 
     private func stepIcon(_ step: RovaBackendClient.AutomationRunStep) -> String {
         switch step.status {
-        case "done": return "checkmark"
+        case "completed": return "checkmark"
         case "failed": return "xmark"
         case "running": return "arrow.triangle.2.circlepath"
+        case "unknown": return "exclamationmark.triangle"
         default: return "circle"
         }
     }
 
     private func stepColor(_ step: RovaBackendClient.AutomationRunStep) -> Color {
         switch step.status {
-        case "done": return .green
+        case "completed": return .green
         case "failed": return .red
         case "running": return .orange
+        case "unknown": return .orange
         default: return .secondary
+        }
+    }
+
+    private func deliveryLabel(_ state: String) -> String {
+        switch state {
+        case "not_sent": return "PC'ye henüz gönderilmedi"
+        case "sent": return "PC'ye gönderildi; alındı bilgisi bekleniyor"
+        case "acknowledged": return "PC komutu aldı; sonuç bekleniyor"
+        case "completed": return "PC sonucu doğruladı"
+        case "failed": return "PC komutu başarısız oldu"
+        case "unknown": return "Komutun sonucu doğrulanamadı"
+        default: return "Cihaz durumu bilinmiyor"
+        }
+    }
+
+    private func completionDeliveryLabel(_ state: String) -> String {
+        switch state {
+        case "accepted": return "Sonuç PC'ye iletildi"
+        case "pending": return "Sonuç PC'ye iletilmeyi bekliyor"
+        default: return "Sonuç iletim durumu bilinmiyor"
+        }
+    }
+
+    private func pushDeliveryLabel(_ state: String) -> String {
+        switch state {
+        case "pending": return "Bildirim henüz gönderilmedi."
+        case "retrying": return "Bildirim gönderilemedi; tekrar denenecek."
+        case "failed": return "Bildirim gönderilemedi."
+        case "not_configured": return "Telefon bildirimi servisi yapılandırılmamış."
+        default: return "Bildirim durumu bilinmiyor."
         }
     }
 }

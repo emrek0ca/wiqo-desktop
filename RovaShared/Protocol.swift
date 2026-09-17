@@ -6,6 +6,7 @@ public enum CommandStatus: String, Codable, CaseIterable, Sendable {
     case completed
     case failed
     case denied
+    case unknown
 }
 
 public enum CommandType: String, Codable, CaseIterable, Sendable {

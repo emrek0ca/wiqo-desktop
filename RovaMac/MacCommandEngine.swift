@@ -3,25 +3,37 @@ import Foundation
 actor MacCommandEngine {
     private let ledger: CommandLedger
     private var completed: [UUID: CommandResult]
-    private var running: [UUID: Date] = [:]
+    private var inFlight: [UUID: Task<CommandResult, Never>] = [:]
 
     init(ledger: CommandLedger = CommandLedger()) {
         self.ledger = ledger
         self.completed = ledger.load()
     }
 
+    func persistedResults() -> [CommandResult] {
+        completed.values.sorted { $0.finishedAt > $1.finishedAt }
+    }
+
     func execute(_ request: CommandRequest, runtimeStatus: String) async -> CommandResult {
         // 1. Duplicate check takes highest priority: regardless of payload/type changes, same ID is never re-executed.
         if let previous = completed[request.id] { return previous }
-        if let startedAt = running[request.id] {
-            return CommandResult(
-                commandID: request.id,
-                status: .running,
-                message: "Komut çalışıyor.",
-                startedAt: startedAt,
-                finishedAt: startedAt
-            )
+        if let task = inFlight[request.id] {
+            // A relay retry must receive the original outcome, not a second execution or a
+            // synthetic "running" result that leaves the phone unsure whether it finished.
+            return await task.value
         }
+
+        let task = Task { [self] in
+            await executeFresh(request, runtimeStatus: runtimeStatus)
+        }
+        inFlight[request.id] = task
+        let result = await task.value
+        inFlight.removeValue(forKey: request.id)
+        return result
+    }
+
+    private func executeFresh(_ request: CommandRequest, runtimeStatus: String) async -> CommandResult {
+        if let previous = completed[request.id] { return previous }
 
         // 2. Validate timestamp skew and payload/command type fail-closed.
         if !RovaValidation.isRequestTimestampValid(request.createdAt) {
@@ -40,7 +52,6 @@ actor MacCommandEngine {
 
         // 3. Write-ahead persist 'running' state BEFORE performing any side-effect on macOS.
         let startedAt = Date()
-        running[request.id] = startedAt
         ledger.recordRunning(commandID: request.id, startedAt: startedAt, currentCompleted: completed)
 
         // 4. Perform actual side-effect on MainActor.
@@ -55,7 +66,6 @@ actor MacCommandEngine {
             data: outcome.data,
             error: outcome.error
         )
-        running.removeValue(forKey: request.id)
         completed[request.id] = result
         ledger.save(completed)
         return result

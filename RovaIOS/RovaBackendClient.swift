@@ -38,7 +38,7 @@ enum RovaBackendError: Error, LocalizedError {
         switch self {
         case .notAuthenticated: return "Önce Wiqo hesabına giriş yap."
         case .network(let message): return message
-        case .invalidResponse: return "Sunucudan geçersiz yanıt alındı."
+        case .invalidResponse: return "Sunucudan geçersiz bir yanıt alındı. Lütfen tekrar dene."
         case .declined(let reason): return reason
         }
     }
@@ -122,17 +122,19 @@ enum RovaBackendClient {
         try await authenticate(path: "auth/login", email: email, password: password)
     }
 
-    /// Always succeeds from the caller's point of view (the backend deliberately never reveals
-    /// whether the email is registered) - the UI's job is just to say "check your inbox", not to
-    /// interpret this response.
+    /// The backend returns a natural-language error for unknown accounts and delivery failures;
+    /// keeping the response decoding here means every auth surface presents the same message.
     static func forgotPassword(email: String) async throws {
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("auth/forgot-password"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["email": email])
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["email": email.trimmingCharacters(in: .whitespacesAndNewlines)])
         let (data, response) = try await send(request)
-        struct Response: Decodable { let ok: Bool }
-        _ = try decode(Response.self, from: data, response: response)
+        struct Response: Decodable { let ok: Bool; let message: String? }
+        let decoded = try decode(Response.self, from: data, response: response)
+        guard decoded.ok else {
+            throw RovaBackendError.declined(nonEmptyMessage(decoded.message, fallback: "Şifre sıfırlama isteği tamamlanamadı."))
+        }
     }
 
     @discardableResult
@@ -184,21 +186,11 @@ enum RovaBackendClient {
         let expiresAt: String
     }
 
-    /// Whether the Mac this reply was composed with in mind is actually reachable right now - a
-    /// snapshot from when the turn started, echoed back so the chat UI can show something
-    /// actionable ("Mac'i bağla") tied to this specific reply, instead of relying only on the
-    /// toolbar's ambient connection dot (see RovaConnectionIcon).
-    struct DeviceConnectivity: Decodable {
-        let hasPairedDevice: Bool
-        let online: Bool
-    }
-
     struct ConverseResult {
         let reply: String
         let steps: [PlannedCommand]
         let executionState: String?
         let artifacts: [ArtifactDescriptor]
-        let deviceConnectivity: DeviceConnectivity?
     }
 
     /// Result of running code on the canvas (`/canvas/run`) - the same sandbox run_python uses,
@@ -211,6 +203,50 @@ enum RovaBackendClient {
         let stdout: String
         let stderr: String
         let artifacts: [ArtifactDescriptor]
+    }
+
+    struct QueueTask: Decodable {
+        let id: Int
+        let kind: String
+        let status: String
+        let progress: String?
+        let result: CanvasRunResult?
+        let error: String?
+        let retryCount: Int
+        let createdAt: String
+        let startedAt: String?
+        let finishedAt: String?
+        let lastHeartbeatAt: String?
+        let deadlineAt: String?
+    }
+
+    private struct CopilotStepResponse: Decodable {
+        let id: UUID?
+        let type: CommandType
+        let payload: CommandPayload
+        let summary: String
+        let isDestructive: Bool
+        let requiresUserPresence: Bool?
+    }
+
+    private struct CopilotServerResponse: Decodable {
+        let reply: String
+        let steps: [CopilotStepResponse]
+        let executionState: String?
+        let artifacts: [ArtifactDescriptor]?
+    }
+
+    private struct CopilotErrorResponse: Decodable {
+        let code: String?
+        let category: String?
+        let message: String?
+    }
+
+    private struct CopilotStatusResponse: Decodable {
+        let requestId: String
+        let status: String
+        let response: CopilotServerResponse?
+        let error: CopilotErrorResponse?
     }
 
     struct MemoryCandidate: Decodable, Identifiable {
@@ -284,8 +320,8 @@ enum RovaBackendClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        // The backend caps its own work at 75s and always emits a terminal event by then; this
-        // just needs enough margin on top of that for a slow mobile network.
+        // The backend keeps the result in its request ledger; this timeout only bounds the live
+        // stream. A dropped stream is resumed through copilot/requests below.
         request.timeoutInterval = 90
         let body: [String: Any] = [
             "messages": messages.map { ["role": $0.role, "content": $0.content] },
@@ -339,7 +375,7 @@ enum RovaBackendClient {
         do {
             (bytes, response) = try await URLSession.shared.bytes(for: request)
         } catch {
-            throw RovaBackendError.network(error.localizedDescription)
+            return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus)
         }
         guard let http = response as? HTTPURLResponse else { throw RovaBackendError.invalidResponse }
         if http.statusCode == 401 {
@@ -349,21 +385,13 @@ enum RovaBackendClient {
         guard (200..<300).contains(http.statusCode) else {
             var body = Data()
             for try await chunk in bytes { body.append(chunk) }
-            let serverMessage = (try? JSONDecoder().decode(BackendErrorEnvelope.self, from: body))?.error.message
-            throw RovaBackendError.network(serverMessage ?? "İstek başarısız oldu (kod \(http.statusCode)).")
+            let serverMessage = serverErrorMessage(from: body)
+            throw RovaBackendError.network(serverMessage ?? userFacingHTTPMessage(for: http.statusCode))
         }
 
-        struct StepResponse: Decodable {
-            let id: UUID?
-            let type: CommandType
-            let payload: CommandPayload
-            let summary: String
-            let isDestructive: Bool
-            let requiresUserPresence: Bool?
-        }
         struct StatusEvent: Decodable { let text: String }
         struct DeltaEvent: Decodable { let text: String }
-        struct DoneEvent: Decodable { let reply: String; let steps: [StepResponse]; let executionState: String?; let artifacts: [ArtifactDescriptor]?; let deviceConnectivity: DeviceConnectivity? }
+        struct DoneEvent: Decodable { let reply: String; let steps: [CopilotStepResponse]; let executionState: String?; let artifacts: [ArtifactDescriptor]? }
         struct ErrorEvent: Decodable { let message: String }
         struct EventKind: Decodable { let type: String }
         let decoder = JSONDecoder()
@@ -387,22 +415,10 @@ enum RovaBackendClient {
                     await onReset()
                 case "done":
                     let event = try decoder.decode(DoneEvent.self, from: json)
-                    let steps = event.steps.map { step in
-                        let localDestructive = RovaCommandAuthority.isDestructive(type: step.type, payload: step.payload)
-                        let localPresence = RovaCommandAuthority.requiresUserPresence(type: step.type, payload: step.payload)
-                        return PlannedCommand(
-                            id: step.id ?? UUID(),
-                            type: step.type,
-                            payload: step.payload,
-                            summary: step.summary,
-                            isDestructive: step.isDestructive || localDestructive,
-                            requiresUserPresence: step.requiresUserPresence == true || step.isDestructive || localDestructive || localPresence
-                        )
-                    }
-                    return ConverseResult(reply: event.reply, steps: steps, executionState: event.executionState, artifacts: event.artifacts ?? [])
+                    return makeConverseResult(reply: event.reply, steps: event.steps, executionState: event.executionState, artifacts: event.artifacts ?? [])
                 case "error":
                     let event = try? decoder.decode(ErrorEvent.self, from: json)
-                    throw RovaBackendError.declined(event?.message ?? "İstek anlaşılamadı.")
+                    throw RovaBackendError.declined(nonEmptyMessage(event?.message, fallback: "İstek anlaşılamadı."))
                 default:
                     continue
                 }
@@ -410,9 +426,65 @@ enum RovaBackendClient {
         } catch let error as RovaBackendError {
             throw error
         } catch {
-            throw RovaBackendError.network(error.localizedDescription)
+            return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus)
         }
-        throw RovaBackendError.invalidResponse
+        return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus)
+    }
+
+    private static func makeConverseResult(
+        reply: String,
+        steps: [CopilotStepResponse],
+        executionState: String?,
+        artifacts: [ArtifactDescriptor]
+    ) -> ConverseResult {
+        let planned = steps.map { step in
+            let localDestructive = RovaCommandAuthority.isDestructive(type: step.type, payload: step.payload)
+            let localPresence = RovaCommandAuthority.requiresUserPresence(type: step.type, payload: step.payload)
+            return PlannedCommand(
+                id: step.id ?? UUID(),
+                type: step.type,
+                payload: step.payload,
+                summary: step.summary,
+                isDestructive: step.isDestructive || localDestructive,
+                requiresUserPresence: step.requiresUserPresence == true || step.isDestructive || localDestructive || localPresence
+            )
+        }
+        return ConverseResult(reply: reply, steps: planned, executionState: executionState, artifacts: artifacts)
+    }
+
+    private static func waitForCopilotRequest(
+        requestID: UUID,
+        onStatus: @escaping @MainActor @Sendable (String) -> Void
+    ) async throws -> ConverseResult {
+        await onStatus("Bağlantı koptu; Wiqo işlemin sonucunu koruyor…")
+        let deadline = Date().addingTimeInterval(150)
+        var missingCount = 0
+        while Date() < deadline {
+            if Task.isCancelled { throw CancellationError() }
+            do {
+                let state = try await authorizedGet("copilot/requests/\(requestID.uuidString)", as: CopilotStatusResponse.self)
+                switch state.status {
+                case "done":
+                    guard let response = state.response else { throw RovaBackendError.invalidResponse }
+                    return makeConverseResult(
+                        reply: response.reply,
+                        steps: response.steps,
+                        executionState: response.executionState,
+                        artifacts: response.artifacts ?? []
+                    )
+                case "failed":
+                    throw RovaBackendError.declined(nonEmptyMessage(state.error?.message, fallback: "İşlem tamamlanamadı."))
+                default:
+                    await onStatus("İşlem bağlantıdan bağımsız devam ediyor…")
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                }
+            } catch RovaBackendError.network(let message) where message == "İşlem bulunamadı." {
+                missingCount += 1
+                if missingCount >= 3 { throw RovaBackendError.network(message) }
+                try await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
+        throw RovaBackendError.network("İşlem sunucuda devam ediyor olabilir. Sohbete dönüp tekrar kontrol edebilirsin.")
     }
 
     struct DeviceExecutionResult: Codable {
@@ -607,12 +679,49 @@ enum RovaBackendClient {
 
     // MARK: - Canvas
 
-    static func runCanvasCode(language: String, code: String, timeoutSeconds: Int = 15) async throws -> CanvasRunResult {
-        try await authorizedPost(
+    static func runCanvasCode(
+        language: String,
+        code: String,
+        timeoutSeconds: Int = 15,
+        onTaskID: @escaping @MainActor @Sendable (Int) -> Void = { _ in },
+        onProgress: @escaping @MainActor @Sendable (String) -> Void = { _ in }
+    ) async throws -> CanvasRunResult {
+        struct Submission: Decodable { let taskId: Int; let status: String; let message: String }
+        let submission = try await authorizedPost(
             "canvas/run",
             body: ["language": language, "code": code, "timeoutSeconds": timeoutSeconds],
-            as: CanvasRunResult.self
+            as: Submission.self
         )
+        await onTaskID(submission.taskId)
+        let deadline = Date().addingTimeInterval(120)
+        while Date() < deadline {
+            if Task.isCancelled {
+                try? await cancelCanvasRun(taskID: submission.taskId)
+                throw CancellationError()
+            }
+            let task = try await fetchQueueTask(id: submission.taskId)
+            switch task.status {
+            case "done":
+                guard let result = task.result else { throw RovaBackendError.invalidResponse }
+                return result
+            case "failed", "unknown":
+                throw RovaBackendError.declined(nonEmptyMessage(task.error, fallback: "Kod çalıştırma tamamlanamadı."))
+            case "cancelled":
+                throw RovaBackendError.declined("Kod çalıştırma iptal edildi.")
+            default:
+                if let progress = task.progress, !progress.isEmpty { await onProgress(progress) }
+                try await Task.sleep(nanoseconds: 350_000_000)
+            }
+        }
+        throw RovaBackendError.network("Kod çalıştırma beklenenden uzun sürdü. İstersen tekrar deneyebilirsin.")
+    }
+
+    private static func fetchQueueTask(id: Int) async throws -> QueueTask {
+        try await authorizedGet("queue/\(id)", as: QueueTask.self)
+    }
+
+    static func cancelCanvasRun(taskID: Int) async throws {
+        _ = try await authorizedMutate("queue/\(taskID)/cancel", method: "POST")
     }
 
     // MARK: - Billing
@@ -728,6 +837,13 @@ enum RovaBackendClient {
         let requiresUserPresence: Bool
         let startedAt: String?
         let finishedAt: String?
+        let commandId: String?
+        let deliveryState: String?
+        let acknowledgedAt: String?
+        let lastProgressAt: String?
+        let deadlineAt: String?
+        let lastErrorCode: String?
+        let lastErrorCategory: String?
     }
 
     struct AutomationRun: Decodable, Identifiable {
@@ -736,6 +852,13 @@ enum RovaBackendClient {
         let reply: String?
         let error: String?
         let delivered: Bool
+        let completionDeliveryState: String?
+        let pushState: String?
+        let pushError: String?
+        let currentStep: Int?
+        let checkpointAt: String?
+        let lastProgressAt: String?
+        let deadlineAt: String?
         let startedAt: String
         let finishedAt: String?
         let steps: [AutomationRunStep]
@@ -794,8 +917,8 @@ enum RovaBackendClient {
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
         guard (200..<300).contains(response.statusCode) else {
-            let message = (try? JSONDecoder().decode(BackendErrorEnvelope.self, from: data))?.error.message
-            throw RovaBackendError.network(message ?? "İstek başarısız oldu (kod \(response.statusCode)).")
+            let message = serverErrorMessage(from: data)
+            throw RovaBackendError.network(message ?? userFacingHTTPMessage(for: response.statusCode))
         }
         return data
     }
@@ -810,8 +933,8 @@ enum RovaBackendClient {
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
         guard (200..<300).contains(response.statusCode) else {
-            let message = (try? JSONDecoder().decode(BackendErrorEnvelope.self, from: data))?.error.message
-            throw RovaBackendError.network(message ?? "İstek başarısız oldu (kod \(response.statusCode)).")
+            let message = serverErrorMessage(from: data)
+            throw RovaBackendError.network(message ?? userFacingHTTPMessage(for: response.statusCode))
         }
         return data
     }
@@ -862,7 +985,7 @@ enum RovaBackendClient {
         do {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch {
-            throw RovaBackendError.network(error.localizedDescription)
+            throw RovaBackendError.network(userFacingNetworkMessage(for: error))
         }
         guard let http = response as? HTTPURLResponse else { throw RovaBackendError.invalidResponse }
         return (data, http)
@@ -870,11 +993,11 @@ enum RovaBackendClient {
 
     private static func decode<T: Decodable>(_ type: T.Type, from data: Data, response: HTTPURLResponse) throws -> T {
         guard (200..<300).contains(response.statusCode) else {
-            let message = (try? JSONDecoder().decode(BackendErrorEnvelope.self, from: data))?.error.message
+            let message = serverErrorMessage(from: data)
             if response.statusCode == 422 {
-                throw RovaBackendError.declined(message ?? "İstek anlaşılamadı.")
+                throw RovaBackendError.declined(message ?? userFacingHTTPMessage(for: response.statusCode))
             }
-            throw RovaBackendError.network(message ?? "İstek başarısız oldu (kod \(response.statusCode)).")
+            throw RovaBackendError.network(message ?? userFacingHTTPMessage(for: response.statusCode))
         }
         do {
             return try JSONDecoder().decode(T.self, from: data)
@@ -882,9 +1005,82 @@ enum RovaBackendClient {
             throw RovaBackendError.invalidResponse
         }
     }
+
+    private static func userFacingNetworkMessage(for error: Error) -> String {
+        guard let urlError = error as? URLError else {
+            return "Wiqo sunucusuna ulaşılamadı. Lütfen internet bağlantını kontrol edip tekrar dene."
+        }
+        switch urlError.code {
+        case .notConnectedToInternet:
+            return "İnternet bağlantısı yok. Bağlantını kontrol edip tekrar dene."
+        case .timedOut:
+            return "Wiqo sunucusu zamanında yanıt vermedi. Biraz sonra tekrar dene."
+        case .cannotFindHost, .cannotConnectToHost, .networkConnectionLost, .dnsLookupFailed:
+            return "Wiqo sunucusuna bağlanılamadı. Biraz sonra tekrar dene."
+        default:
+            return "Wiqo sunucusuna bağlanırken bir sorun oluştu. Lütfen tekrar dene."
+        }
+    }
+
+    private static func userFacingHTTPMessage(for statusCode: Int) -> String {
+        switch statusCode {
+        case 400:
+            return "Gönderdiğin bilgiler geçersiz. Lütfen kontrol edip tekrar dene."
+        case 401:
+            return "Oturumun geçersiz veya süresi dolmuş. Lütfen tekrar giriş yap."
+        case 403:
+            return "Bu işlem için yetkin yok."
+        case 404:
+            return "İstenen Wiqo kaydı bulunamadı."
+        case 409:
+            return "Bu istek zaten işleniyor. Biraz sonra tekrar dene."
+        case 429:
+            return "Çok fazla istek yapıldı. Biraz sonra tekrar dene."
+        case 500:
+            return "Wiqo sunucusunda beklenmeyen bir hata oluştu. Lütfen tekrar dene."
+        case 502, 503, 504:
+            return "Wiqo sunucusu şu anda kullanılamıyor. Biraz sonra tekrar dene."
+        default:
+            return "Wiqo sunucusu isteği tamamlayamadı. Lütfen tekrar dene."
+        }
+    }
+
+    private static func nonEmptyMessage(_ message: String?, fallback: String) -> String {
+        let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? fallback : trimmed
+    }
+
+    private static func serverErrorMessage(from data: Data) -> String? {
+        guard let envelope = try? JSONDecoder().decode(BackendErrorEnvelope.self, from: data) else { return nil }
+        let message = envelope.error?.message ?? envelope.message
+        let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }
 
 private struct BackendErrorEnvelope: Decodable {
-    struct Detail: Decodable { let message: String }
-    let error: Detail
+    struct Detail: Decodable {
+        let code: String?
+        let message: String?
+    }
+
+    let error: Detail?
+    let message: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        if let detail = try? container.decode(Detail.self, forKey: .error) {
+            error = detail
+        } else if let text = try? container.decode(String.self, forKey: .error) {
+            error = Detail(code: nil, message: text)
+        } else {
+            error = nil
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case error
+        case message
+    }
 }

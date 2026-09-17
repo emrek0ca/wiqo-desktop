@@ -109,6 +109,7 @@ final class MacBackendChannel: NSObject {
         let info = deviceInfo()
         let value: [String: Any] = [
             "type": "register",
+            "protocolVersion": 2,
             "deviceId": info.id.uuidString,
             "displayName": info.displayName,
             "platform": info.platform,
@@ -132,7 +133,13 @@ final class MacBackendChannel: NSObject {
             }
         ]
         guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value), let text = String(data: data, encoding: .utf8) else { return }
-        task.send(.string(text)) { _ in }
+        task.send(.string(text)) { [weak self] error in
+            guard error == nil else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.task === task else { return }
+                self.sendAutomationReceipts(on: task)
+            }
+        }
     }
 
     private func receiveNext(on task: URLSessionWebSocketTask) {
@@ -158,6 +165,7 @@ final class MacBackendChannel: NSObject {
         switch type {
         case "automationStep":
             guard let payload = try? JSONDecoder().decode(AutomationStepPayload.self, from: data) else { return }
+            sendAutomationStepAck(payload, on: task)
             executeAutomationStep(payload, on: task)
         case "automationRun":
             guard let payload = try? JSONDecoder().decode(AutomationRunPayload.self, from: data) else { return }
@@ -245,6 +253,30 @@ final class MacBackendChannel: NSObject {
         }
     }
 
+    private func sendAutomationStepAck(_ payload: AutomationStepPayload, on task: URLSessionWebSocketTask) {
+        let value = AutomationStepAckPayload(runId: payload.runId, stepId: payload.stepId, commandId: payload.commandId)
+        guard let data = try? JSONEncoder().encode(value), let text = String(data: data, encoding: .utf8) else { return }
+        task.send(.string(text)) { _ in }
+    }
+
+    private func sendAutomationReceipts(on task: URLSessionWebSocketTask) {
+        Task { @MainActor [weak self, engine] in
+            let results = await engine.persistedResults()
+            guard let self, self.task === task, !results.isEmpty else { return }
+            let receipts = results.prefix(128).map { result in
+                AutomationReceiptPayload(
+                    commandId: result.commandID.uuidString,
+                    status: result.status.rawValue,
+                    message: result.message,
+                    error: result.error
+                )
+            }
+            let payload = AutomationReceiptsPayload(receipts: Array(receipts))
+            guard let data = try? JSONEncoder().encode(payload), let text = String(data: data, encoding: .utf8) else { return }
+            task.send(.string(text)) { _ in }
+        }
+    }
+
     private func executeLegacyAutomation(_ payload: AutomationRunPayload) {
         Task { [engine, runtimeStatus] in
             for step in payload.steps where Self.canRunUnattended(step) {
@@ -264,7 +296,8 @@ final class MacBackendChannel: NSObject {
         error: RovaError?,
         on task: URLSessionWebSocketTask
     ) {
-        guard self.task === task else { return }
+        let targetTask = self.task === task ? task : self.task
+        guard let targetTask else { return }
         let payload = AutomationStepResultPayload(
             runId: runID,
             stepId: stepID,
@@ -274,7 +307,7 @@ final class MacBackendChannel: NSObject {
             error: error
         )
         guard let data = try? JSONEncoder().encode(payload), let text = String(data: data, encoding: .utf8) else { return }
-        task.send(.string(text)) { _ in }
+        targetTask.send(.string(text)) { _ in }
     }
 
     private static func canRunUnattended(_ step: AutomationStep) -> Bool {
@@ -358,12 +391,34 @@ private struct AutomationStepPayload: Decodable {
 
 private struct AutomationStepResultPayload: Encodable {
     let type = "automationStepResult"
+    let protocolVersion = 2
     let runId: Int
     let stepId: Int
     let commandId: String
     let status: String
     let message: String
     let error: RovaError?
+}
+
+private struct AutomationStepAckPayload: Encodable {
+    let type = "automationStepAck"
+    let protocolVersion = 2
+    let runId: Int
+    let stepId: Int
+    let commandId: String
+}
+
+private struct AutomationReceiptPayload: Encodable {
+    let commandId: String
+    let status: String
+    let message: String
+    let error: RovaError?
+}
+
+private struct AutomationReceiptsPayload: Encodable {
+    let type = "automationReceipts"
+    let protocolVersion = 2
+    let receipts: [AutomationReceiptPayload]
 }
 
 private struct InteractiveCommandPayload: Decodable {

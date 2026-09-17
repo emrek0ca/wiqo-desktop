@@ -146,7 +146,7 @@ struct AuthView: View {
             }
             onAuthenticated()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "İşlem tamamlanamadı. Lütfen tekrar dene."
         }
     }
 }
@@ -178,6 +178,8 @@ struct ForgotPasswordView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var infoMessage: String?
+    @State private var resendCooldownSecondsRemaining = 0
+    @FocusState private var isCodeFieldFocused: Bool
 
     private enum Step { case requestCode, resetPassword }
 
@@ -203,6 +205,14 @@ struct ForgotPasswordView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Kapat") { dismiss() }
                 }
+            }
+        }
+        .task(id: resendCooldownSecondsRemaining > 0) {
+            guard resendCooldownSecondsRemaining > 0 else { return }
+            while !Task.isCancelled && resendCooldownSecondsRemaining > 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled, resendCooldownSecondsRemaining > 0 else { return }
+                resendCooldownSecondsRemaining -= 1
             }
         }
     }
@@ -247,8 +257,13 @@ struct ForgotPasswordView: View {
             TextField("6 haneli kod", text: $code)
                 .keyboardType(.numberPad)
                 .textFieldStyle(RovaAuthFieldStyle())
+                .focused($isCodeFieldFocused)
                 .onChange(of: code) { _, newValue in
-                    code = String(newValue.filter(\.isNumber).prefix(6))
+                    let sanitizedCode = String(newValue.filter(\.isNumber).prefix(6))
+                    code = sanitizedCode
+                    if sanitizedCode.count == 6 {
+                        isCodeFieldFocused = false
+                    }
                 }
 
             SecureField("Yeni şifre (en az 8 karakter)", text: $newPassword)
@@ -271,14 +286,16 @@ struct ForgotPasswordView: View {
             .controlSize(.large)
             .disabled(code.count != 6 || newPassword.count < 8 || isSubmitting)
 
-            Button("Kodu tekrar gönder") {
+            Button(resendCooldownSecondsRemaining > 0 ? "Tekrar gönder (\(resendCooldownSecondsRemaining)sn)" : "Kodu tekrar gönder") {
                 withAnimation(.easeInOut(duration: 0.18)) { step = .requestCode }
                 errorMessage = nil
                 code = ""
+                resendCooldownSecondsRemaining = 0
             }
             .buttonStyle(.plain)
             .font(.footnote)
             .foregroundStyle(.secondary)
+            .disabled(resendCooldownSecondsRemaining > 0)
         }
     }
 
@@ -289,9 +306,10 @@ struct ForgotPasswordView: View {
         do {
             try await RovaBackendClient.forgotPassword(email: email)
             infoMessage = "\(email) adresine bir kod gönderildi. Gelmediyse spam/gereksiz klasörünü kontrol et."
+            resendCooldownSecondsRemaining = 30
             withAnimation(.easeInOut(duration: 0.18)) { step = .resetPassword }
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Şifre sıfırlama kodu istenemedi. Lütfen tekrar dene."
         }
     }
 
@@ -303,7 +321,7 @@ struct ForgotPasswordView: View {
             try await RovaBackendClient.resetPassword(email: email, code: code, newPassword: newPassword)
             onCompleted()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Şifre sıfırlanamadı. Lütfen tekrar dene."
         }
     }
 }

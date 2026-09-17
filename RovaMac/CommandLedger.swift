@@ -58,16 +58,15 @@ struct CommandLedger: Sendable {
         var hasUnfinished = false
         for entry in entries {
             if entry.status == .running {
-                // Application restarted while this command was in progress.
-                // Fail-closed with outcome unknown / duplicate denied to prevent double execution.
+                // The side effect may have happened before the restart, so never replay this ID.
                 hasUnfinished = true
                 results[entry.commandID] = CommandResult(
                     commandID: entry.commandID,
-                    status: .denied,
-                    message: "Outcome unknown; duplicate denied.",
+                    status: .unknown,
+                    message: "Komutun sonucu doğrulanamadı; tekrar çalıştırılmadı.",
                     startedAt: entry.recordedAt,
                     finishedAt: entry.recordedAt,
-                    error: RovaError(code: "DUPLICATE_DENIED", message: "Komut durumu belirsiz; tekrar engellendi.")
+                    error: RovaError(code: "OUTCOME_UNKNOWN", message: "Komut durumu belirsiz; tekrar çalıştırılmadı.", category: "delivery")
                 )
             } else if let result = entry.result {
                 results[entry.commandID] = result

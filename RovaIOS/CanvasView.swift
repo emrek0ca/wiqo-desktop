@@ -9,8 +9,8 @@ import WebKit
 ///   This is how a GUI request ("hesap makinesi", a small website, a game) is actually shown to
 ///   the user; Python/JS in this app have no window system to render into, so the system prompt
 ///   steers Wiqo to write GUI requests as self-contained HTML precisely so this path can run them.
-/// - anything else (python/javascript/shell): runs on Wiqo's server (the same stateless sandbox
-///   run_python uses - see RovaBackendClient.runCanvasCode / backend routes/canvas.ts) and shows
+/// - anything else (python/javascript/shell): runs on Wiqo's isolated server sandbox (see
+///   RovaBackendClient.runCanvasCode / backend routes/canvas.ts) and shows
 ///   stdout, stderr, and any produced files/charts inline.
 ///
 /// Either way this is opened from a code block's "Çalıştır" button (CodeBlockView in
@@ -24,8 +24,11 @@ struct CanvasView: View {
     @State private var language: String
     @State private var code: String
     @State private var isRunning = false
+    @State private var activeTaskID: Int?
+    @State private var runStatusMessage: String?
     @State private var result: RovaBackendClient.CanvasRunResult?
     @State private var errorMessage: String?
+    @State private var artifactErrorMessage: String?
     @State private var previewURL: URL?
     /// True when opened from a code block's "Çalıştır" button (see CodeBlockView) instead of the
     /// composer - runs once automatically on appear so tapping "Çalıştır" really does go straight
@@ -114,6 +117,7 @@ struct CanvasView: View {
     private var htmlDocument: String {
         let width = deviceMode == .mobile ? "390" : "1280"
         let viewportTag = "<meta name=\"viewport\" content=\"width=\(width)\">"
+        let securityTag = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:; connect-src 'none'\">"
         let stripped = code.replacingOccurrences(
             of: #"<meta[^>]*name=["']viewport["'][^>]*>"#,
             with: "",
@@ -122,17 +126,17 @@ struct CanvasView: View {
         if let headTagRange = stripped.range(of: "<head", options: .caseInsensitive),
            let headCloseRange = stripped.range(of: ">", range: headTagRange.upperBound..<stripped.endIndex) {
             var result = stripped
-            result.insert(contentsOf: viewportTag, at: headCloseRange.upperBound)
+            result.insert(contentsOf: securityTag + viewportTag, at: headCloseRange.upperBound)
             return result
         }
         if let htmlTagRange = stripped.range(of: "<html", options: .caseInsensitive),
            let htmlCloseRange = stripped.range(of: ">", range: htmlTagRange.upperBound..<stripped.endIndex) {
             var result = stripped
-            result.insert(contentsOf: "<head><meta charset=\"utf-8\">\(viewportTag)</head>", at: htmlCloseRange.upperBound)
+            result.insert(contentsOf: "<head><meta charset=\"utf-8\">\(securityTag)\(viewportTag)</head>", at: htmlCloseRange.upperBound)
             return result
         }
         // Wiqo wrote a bare fragment (no <html>/<head> boilerplate) - wrap it fully.
-        return "<!doctype html><html><head><meta charset=\"utf-8\">\(viewportTag)</head><body>\(stripped)</body></html>"
+        return "<!doctype html><html><head><meta charset=\"utf-8\">\(securityTag)\(viewportTag)</head><body>\(stripped)</body></html>"
     }
 
     private var codeRunnerBody: some View {
@@ -149,7 +153,11 @@ struct CanvasView: View {
                     codeEditor
 
                     Button {
-                        Task { await run() }
+                        if isRunning {
+                            Task { await cancelRun() }
+                        } else {
+                            Task { await run() }
+                        }
                     } label: {
                         HStack {
                             if isRunning {
@@ -157,17 +165,29 @@ struct CanvasView: View {
                             } else {
                                 Image(systemName: "play.fill")
                             }
-                            Text(isRunning ? "Çalışıyor..." : "Çalıştır")
+                            Text(isRunning ? "Durdur" : "Çalıştır")
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(RovaDesign.ink)
-                    .disabled(isRunning || code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .tint(isRunning ? .orange : RovaDesign.ink)
+                    .disabled(!isRunning && code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    if let runStatusMessage {
+                        Label(runStatusMessage, systemImage: "ellipsis.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
 
                     if let errorMessage {
                         Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+
+                    if let artifactErrorMessage {
+                        Text(artifactErrorMessage)
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }
@@ -246,11 +266,11 @@ struct CanvasView: View {
             ForEach(result.artifacts) { artifact in
                 if case .none = ArtifactInlineKind(mimeType: artifact.mimeType) {
                     ArtifactFileRow(artifact: artifact, isBusy: false) {
-                        Task { previewURL = try? await RovaBackendClient.downloadArtifact(artifact) }
+                        Task { await openArtifact(artifact) }
                     }
                 } else {
                     InlineArtifactPreview(artifact: artifact) {
-                        Task { previewURL = try? await RovaBackendClient.downloadArtifact(artifact) }
+                        Task { await openArtifact(artifact) }
                     }
                 }
             }
@@ -288,16 +308,49 @@ struct CanvasView: View {
 
     private func run() async {
         isRunning = true
+        activeTaskID = nil
+        runStatusMessage = "Kuyruğa alınıyor…"
         errorMessage = nil
+        artifactErrorMessage = nil
         defer { isRunning = false }
         do {
-            result = try await RovaBackendClient.runCanvasCode(language: language, code: code)
+            result = try await RovaBackendClient.runCanvasCode(
+                language: language,
+                code: code,
+                onTaskID: { taskID in activeTaskID = taskID },
+                onProgress: { message in runStatusMessage = message }
+            )
+            runStatusMessage = "Çalıştırma tamamlandı."
         } catch RovaBackendError.declined(let message) {
             errorMessage = message
         } catch RovaBackendError.network(let message) {
             errorMessage = message
+        } catch is CancellationError {
+            runStatusMessage = "Çalıştırma iptal edildi."
         } catch {
             errorMessage = "Kod çalıştırılamadı."
+        }
+        activeTaskID = nil
+    }
+
+    private func cancelRun() async {
+        guard let taskID = activeTaskID else {
+            runStatusMessage = "Çalıştırma başlatılıyor…"
+            return
+        }
+        do {
+            try await RovaBackendClient.cancelCanvasRun(taskID: taskID)
+            runStatusMessage = "İptal ediliyor…"
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Çalıştırma iptal edilemedi."
+        }
+    }
+
+    private func openArtifact(_ artifact: RovaBackendClient.ArtifactDescriptor) async {
+        do {
+            previewURL = try await RovaBackendClient.downloadArtifact(artifact)
+        } catch {
+            artifactErrorMessage = (error as? LocalizedError)?.errorDescription ?? "Dosya açılamadı."
         }
     }
 }
@@ -309,14 +362,24 @@ struct CanvasView: View {
 private struct HTMLPreviewWebView: UIViewRepresentable {
     let html: String
 
-    final class Coordinator {
+    final class Coordinator: NSObject, WKNavigationDelegate {
         var lastLoaded: String?
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            decisionHandler(navigationAction.navigationType == .other ? .allow : .cancel)
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
-        WKWebView(frame: .zero)
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
