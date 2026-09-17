@@ -343,6 +343,23 @@ private struct CodeBlockView: View {
     let language: String?
     let code: String
     @State private var copied = false
+    @State private var showingRun = false
+
+    /// The fence tag on a code block can be any of the common spellings/aliases for what canvas
+    /// can actually do, or something else entirely (swift, json, sql, ...) that isn't runnable at
+    /// all. Returns the canonical language canvas expects, or nil to hide the "Çalıştır" button
+    /// rather than offer a run that can only fail. "html" is rendered live on-device (CanvasView's
+    /// isHTMLPreview path) instead of going through the server sandbox (routes/canvas.ts) that
+    /// python/javascript/shell use - it's the one language with an actual interface to show.
+    private var runnableLanguage: String? {
+        switch language?.lowercased() {
+        case "python", "py", "python3": return "python"
+        case "javascript", "js", "node", "nodejs", "mjs": return "javascript"
+        case "shell", "bash", "sh", "zsh", "shellscript", "console", "terminal": return "shell"
+        case "html", "htm": return "html"
+        default: return nil
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -351,6 +368,19 @@ private struct CodeBlockView: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                 Spacer()
+                if let runnableLanguage {
+                    Button {
+                        showingRun = true
+                    } label: {
+                        Label("Çalıştır", systemImage: "play.fill")
+                            .font(.caption.weight(.medium))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .sheet(isPresented: $showingRun) {
+                        CanvasView(language: runnableLanguage, code: code, autoRun: true)
+                    }
+                }
                 Button {
                     UIPasteboard.general.string = code
                     copied = true

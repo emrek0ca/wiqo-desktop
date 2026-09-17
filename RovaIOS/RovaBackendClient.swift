@@ -122,6 +122,32 @@ enum RovaBackendClient {
         try await authenticate(path: "auth/login", email: email, password: password)
     }
 
+    /// Always succeeds from the caller's point of view (the backend deliberately never reveals
+    /// whether the email is registered) - the UI's job is just to say "check your inbox", not to
+    /// interpret this response.
+    static func forgotPassword(email: String) async throws {
+        var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("auth/forgot-password"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["email": email])
+        let (data, response) = try await send(request)
+        struct Response: Decodable { let ok: Bool }
+        _ = try decode(Response.self, from: data, response: response)
+    }
+
+    @discardableResult
+    static func resetPassword(email: String, code: String, newPassword: String) async throws -> String {
+        var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("auth/reset-password"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["email": email, "code": code, "newPassword": newPassword])
+        let (data, response) = try await send(request)
+        struct AuthResponse: Decodable { let token: String }
+        let decoded = try decode(AuthResponse.self, from: data, response: response)
+        try RovaKeychainStore.save(Data(decoded.token.utf8), account: tokenAccount)
+        return decoded.token
+    }
+
     private static func authenticate(path: String, email: String, password: String) async throws -> String {
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
         request.httpMethod = "POST"
@@ -158,11 +184,21 @@ enum RovaBackendClient {
         let expiresAt: String
     }
 
+    /// Whether the Mac this reply was composed with in mind is actually reachable right now - a
+    /// snapshot from when the turn started, echoed back so the chat UI can show something
+    /// actionable ("Mac'i bağla") tied to this specific reply, instead of relying only on the
+    /// toolbar's ambient connection dot (see RovaConnectionIcon).
+    struct DeviceConnectivity: Decodable {
+        let hasPairedDevice: Bool
+        let online: Bool
+    }
+
     struct ConverseResult {
         let reply: String
         let steps: [PlannedCommand]
         let executionState: String?
         let artifacts: [ArtifactDescriptor]
+        let deviceConnectivity: DeviceConnectivity?
     }
 
     /// Result of running code on the canvas (`/canvas/run`) - the same sandbox run_python uses,
@@ -327,7 +363,7 @@ enum RovaBackendClient {
         }
         struct StatusEvent: Decodable { let text: String }
         struct DeltaEvent: Decodable { let text: String }
-        struct DoneEvent: Decodable { let reply: String; let steps: [StepResponse]; let executionState: String?; let artifacts: [ArtifactDescriptor]? }
+        struct DoneEvent: Decodable { let reply: String; let steps: [StepResponse]; let executionState: String?; let artifacts: [ArtifactDescriptor]?; let deviceConnectivity: DeviceConnectivity? }
         struct ErrorEvent: Decodable { let message: String }
         struct EventKind: Decodable { let type: String }
         let decoder = JSONDecoder()

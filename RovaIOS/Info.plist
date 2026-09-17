@@ -6,10 +6,10 @@
 	<string>Wiqo</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
-	<key>CFBundleIdentifier</key>
-	<string>com.rova.ios</string>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.rova.ios</string>
 	<key>CFBundleName</key>
 	<string>Wiqo</string>
 	<key>CFBundlePackageType</key>
@@ -18,22 +18,24 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>UILaunchScreen</key>
-	<dict/>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Wiqo, aynı ağdaki Mac’inizi bulup komut göndermek için yerel ağınızı kullanır.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_rova._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Wiqo, Mac’te gösterilen eşleşme QR kodunu taramak için kamerayı kullanır.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Wiqo, aynı ağdaki Mac’inizi bulup komut göndermek için yerel ağınızı kullanır.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır.</string>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Wiqo, sesli komutunuzu iPhone’unuzda metne dönüştürmek için konuşma tanımayı kullanır.</string>
+	<key>UILaunchScreen</key>
+	<dict/>
 </dict>
 </plist>

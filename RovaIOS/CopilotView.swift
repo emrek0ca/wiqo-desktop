@@ -1,6 +1,7 @@
 import AVFoundation
 import PhotosUI
 import QuickLook
+import Speech
 import SwiftUI
 import UIKit
 
@@ -26,6 +27,11 @@ private struct ChatBubble: Identifiable {
     /// Populated only for `.executeCode` steps once the Mac returns a result - drives the
     /// collapsible code/output card instead of dumping raw stdout into the reply text.
     var codeRuns: [UUID: ProcessOutputContent] = [:]
+    /// Snapshot of Mac pairing/online status from when this specific reply was composed (see
+    /// RovaBackendClient.DeviceConnectivity) - nil for user/system bubbles, or for an assistant
+    /// reply from before this existed. Drives the actionable "Mac'e bağlan" chip below a reply
+    /// where the assistant had to say it couldn't reach the Mac.
+    var deviceConnectivity: RovaBackendClient.DeviceConnectivity?
 }
 
 /// What a user attached shows as small thumbnails sitting above their own message bubble, exactly
@@ -332,6 +338,11 @@ struct CopilotView: View {
     @ObservedObject var model: IOSConnectionModel
     @ObservedObject var authSession: AuthSessionStore
     @Environment(\.scenePhase) private var scenePhase
+    /// Lets the inline "Mac'e bağlan" chip (shown under a reply that had to say the Mac wasn't
+    /// reachable - see ChatBubble.deviceConnectivity) jump straight to PC settings, without
+    /// CopilotView needing its own copy of PCSettingsView's dependencies (it already lives one
+    /// level up, in WiqoHomeView).
+    var onOpenPCSettings: () -> Void = {}
 
     @State private var bubbles: [ChatBubble] = []
     @State private var inputText = ""
@@ -350,8 +361,6 @@ struct CopilotView: View {
     @State private var pendingAttachments: [RovaBackendClient.ChatAttachment] = []
     @State private var attachmentPreviews: [UIImage] = []
     @State private var isPreparingAttachment = false
-    @State private var isPhotosPickerPresented = false
-    @State private var showCanvas = false
     @FocusState private var isComposerFocused: Bool
     /// Mirrors the backend's own per-message cap (routes/copilot.ts's chatRequestSchema) - the
     /// picker and the strip both enforce it so the UI never lets the user build a request the
@@ -359,9 +368,9 @@ struct CopilotView: View {
     private let maxAttachments = 4
     @State private var memoryCandidates: [RovaBackendClient.MemoryCandidate] = []
     @State private var screenshotObservationCount = 0
-    @StateObject private var audioRecorder = RovaAudioRecorder()
+    @StateObject private var audioRecorder = WiqoSpeechRecorder()
+    @State private var isStartingAudio = false
     @State private var showingMicPermissionAlert = false
-    @StateObject private var audioPlayer = RovaAudioPlayer()
     @StateObject private var liveReply = LiveReplyText()
     /// Follows the conversation's end only while the reader is already there: dragging up to read
     /// stops following, reaching the bottom again resumes it. Nothing ever yanks the view down.
@@ -383,10 +392,11 @@ struct CopilotView: View {
     /// user can still edit it before sending; never sent on their behalf. Consumed once in `.task`.
     private let draftPrompt: String?
 
-    init(model: IOSConnectionModel, authSession: AuthSessionStore, conversationID: String? = nil, draftPrompt: String? = nil) {
+    init(model: IOSConnectionModel, authSession: AuthSessionStore, conversationID: String? = nil, draftPrompt: String? = nil, onOpenPCSettings: @escaping () -> Void = {}) {
         self.model = model
         self.authSession = authSession
         self.draftPrompt = draftPrompt
+        self.onOpenPCSettings = onOpenPCSettings
         let resolvedID = conversationID ?? CopilotConversationStore.currentIdentifier()
         _conversationID = State(initialValue: resolvedID)
         _turnCount = State(initialValue: CopilotConversationStore.turnCount(for: resolvedID))
@@ -447,12 +457,21 @@ struct CopilotView: View {
             guard !items.isEmpty else { return }
             Task { await prepareAttachments(items) }
         }
+        .onChange(of: audioRecorder.transcript) { _, transcript in
+            guard !transcript.isEmpty else { return }
+            inputText = transcript
+        }
+        .onChange(of: audioRecorder.lastErrorMessage) { _, message in
+            guard let message, !message.isEmpty else { return }
+            bubbles.append(ChatBubble(role: .system, text: message))
+            persistConversation()
+        }
         .quickLookPreview($previewURL)
-        .alert("Mikrofon izni gerekli", isPresented: $showingMicPermissionAlert) {
+        .alert("Sesli giriş izni gerekli", isPresented: $showingMicPermissionAlert) {
             Button("Ayarları Aç") { openSystemSettings() }
             Button("Vazgeç", role: .cancel) {}
         } message: {
-            Text("Sesli mesaj gönderebilmek için Ayarlar'dan Wiqo'ya mikrofon izni vermen gerekiyor.")
+            Text("Wiqo'nun konuşmanızı cihazda metne çevirebilmesi için Ayarlar'dan Wiqo'ya mikrofon ve konuşma tanıma izinlerini vermen gerekiyor.")
         }
         .sheet(isPresented: Binding(
             get: { confirmationBubbleID != nil },
@@ -680,6 +699,9 @@ struct CopilotView: View {
                 // No bubble chrome for the assistant, matching ChatGPT/Gemini: clean, full-width,
                 // block-structured content rather than a colored speech bubble.
                 ReplyBlocksView(text: bubble.text, artifacts: bubble.artifacts)
+                if let connectivity = bubble.deviceConnectivity, !connectivity.online {
+                    deviceStatusChip(hasPairedDevice: connectivity.hasPairedDevice)
+                }
             } else {
                 HStack {
                     if bubble.role == .user { Spacer(minLength: 40) }
@@ -705,6 +727,27 @@ struct CopilotView: View {
         }
         .frame(maxWidth: .infinity, alignment: bubble.role == .user ? .trailing : .leading)
         .padding(.horizontal)
+    }
+
+    /// Tied to one specific reply (see ChatBubble.deviceConnectivity), not the toolbar's ambient
+    /// connection dot - shown exactly when a reply had to say it couldn't reach the Mac, right
+    /// where that matters, with a one-tap way to fix it instead of making the user go hunt for
+    /// the connection icon themselves.
+    private func deviceStatusChip(hasPairedDevice: Bool) -> some View {
+        Button {
+            onOpenPCSettings()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "laptopcomputer.slash")
+                Text(hasPairedDevice ? "Mac bağlı değil, bağlanmak için dokun" : "Mac ekle ve kontrol et")
+                    .font(.caption.weight(.medium))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.orange.opacity(0.15), in: Capsule())
+            .foregroundStyle(.orange)
+        }
+        .buttonStyle(.plain)
     }
 
     /// One collapsible card per `.executeCode` step in this bubble - shown both while a step is
@@ -867,37 +910,23 @@ struct CopilotView: View {
                 attachmentStrip
             }
             HStack(alignment: .bottom, spacing: 8) {
-                Menu {
-                    Button {
-                        isPhotosPickerPresented = true
-                    } label: {
-                        Label("Fotoğraf ekle", systemImage: "photo")
-                    }
-                    .disabled(pendingAttachments.count >= maxAttachments)
-
-                    Button {
-                        showCanvas = true
-                    } label: {
-                        Label("Kod çalıştır", systemImage: "curlybraces")
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 34, height: 34)
-                }
-                .disabled(isSending || isPreparingAttachment)
-                .accessibilityLabel("Ekle")
-                .photosPicker(
-                    isPresented: $isPhotosPickerPresented,
+                // Code execution moved to a "Çalıştır" button right on each code block Wiqo writes
+                // (see CodeBlockView in ReplyBlocks.swift) - that's where code actually exists to
+                // run, so this "+" goes back to being a plain attach-a-photo trigger instead of a
+                // menu with an item that never had any code to act on yet.
+                PhotosPicker(
                     selection: $selectedPhotos,
                     maxSelectionCount: max(1, maxAttachments - pendingAttachments.count),
                     matching: .images,
                     photoLibrary: .shared()
-                )
-                .sheet(isPresented: $showCanvas) {
-                    CanvasView()
+                ) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(pendingAttachments.count >= maxAttachments ? Color(.tertiaryLabel) : .primary)
+                        .frame(width: 34, height: 34)
                 }
+                .disabled(isSending || isPreparingAttachment || pendingAttachments.count >= maxAttachments)
+                .accessibilityLabel("Görsel ekle")
 
                 TextField(audioRecorder.isRecording ? "Dinliyorum…" : "Wiqo'ya yaz", text: $inputText, axis: .vertical)
                     .lineLimit(1...6)
@@ -972,7 +1001,7 @@ struct CopilotView: View {
 
     @ViewBuilder
     private var trailingComposerButton: some View {
-        if isPreparingAttachment || isSending {
+        if isPreparingAttachment || isSending || isStartingAudio {
             ProgressView()
                 .controlSize(.small)
                 .frame(width: 30, height: 30)
@@ -1011,8 +1040,8 @@ struct CopilotView: View {
         model.deviceInfo?.availableApplications.map(\.id) ?? []
     }
 
-    private func sendMessage() async {
-        let typedText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func sendMessage(textOverride: String? = nil) async {
+        let typedText = (textOverride ?? inputText).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !typedText.isEmpty || !pendingAttachments.isEmpty else { return }
         let text = typedText.isEmpty ? (pendingAttachments.count > 1 ? "Bu görselleri analiz et." : "Bu görseli analiz et.") : typedText
         let attachments = pendingAttachments
@@ -1059,7 +1088,7 @@ struct CopilotView: View {
             )
             let replyText = result.reply.isEmpty ? "…" : result.reply
             await liveReply.finish(with: replyText)
-            var reply = ChatBubble(role: .assistant, text: replyText, steps: result.steps, artifacts: result.artifacts)
+            var reply = ChatBubble(role: .assistant, text: replyText, steps: result.steps, artifacts: result.artifacts, deviceConnectivity: result.deviceConnectivity)
             if result.steps.contains(where: { $0.isDestructive || $0.requiresUserPresence }) {
                 reply.needsConfirmation = true
                 bubbles.append(reply)
@@ -1196,7 +1225,7 @@ struct CopilotView: View {
             )
             let replyText = result.reply.isEmpty ? "…" : result.reply
             await liveReply.finish(with: replyText)
-            var followUp = ChatBubble(role: .assistant, text: replyText, steps: result.steps, artifacts: result.artifacts)
+            var followUp = ChatBubble(role: .assistant, text: replyText, steps: result.steps, artifacts: result.artifacts, deviceConnectivity: result.deviceConnectivity)
             bubbles.append(followUp)
             liveReply.reset()
             if result.steps.contains(where: { $0.isDestructive || $0.requiresUserPresence }) {
@@ -1461,24 +1490,36 @@ struct CopilotView: View {
     }
 
     private func toggleAudioRecording() {
+        guard !isStartingAudio else { return }
         if audioRecorder.isRecording {
-            guard let data = audioRecorder.stop() else {
-                bubbles.append(ChatBubble(role: .system, text: "Ses kaydı okunamadı."))
-                return
+            isStartingAudio = true
+            Task { @MainActor in
+                defer { isStartingAudio = false }
+                let transcript = await audioRecorder.stop()
+                guard !transcript.isEmpty else {
+                    bubbles.append(ChatBubble(role: .system, text: "Ses net anlaşılamadı. Lütfen tekrar dene."))
+                    return
+                }
+                await sendMessage(textOverride: transcript)
             }
-            Task { await sendAudio(data) }
             return
         }
-        Task {
+        isStartingAudio = true
+        Task { @MainActor in
+            defer { isStartingAudio = false }
             switch await audioRecorder.start() {
             case .started:
+                break
+            case .startedWithNetworkFallback:
                 break
             case .permissionDenied:
                 // iOS won't show its own prompt again once a decision is recorded - Settings is
                 // the only remaining path, so offer it directly instead of a dead-end error line.
                 showingMicPermissionAlert = true
+            case .speechUnavailable:
+                bubbles.append(ChatBubble(role: .system, text: "Konuşma tanıma şu anda kullanılamıyor - Siri ve Dikte'nin Ayarlar'dan açık olduğundan ve internete bağlı olduğundan emin ol. Ses sunucuya gönderilmedi; bu arada metni yazabilirsin."))
             case .setupFailed:
-                bubbles.append(ChatBubble(role: .system, text: "Mikrofon kaydı başlatılamadı; başka bir uygulama mikrofonu kullanıyor olabilir."))
+                bubbles.append(ChatBubble(role: .system, text: "Mikrofon başlatılamadı; başka bir uygulama mikrofonu kullanıyor olabilir. Lütfen tekrar dene."))
             }
         }
     }
@@ -1486,70 +1527,6 @@ struct CopilotView: View {
     private func openSystemSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
-    }
-
-    private func sendAudio(_ data: Data) async {
-        guard !data.isEmpty, !isSending else { return }
-        screenshotObservationCount = 0
-        bubbles.append(ChatBubble(role: .user, text: "🎙️ Sesli mesaj"))
-        persistConversation()
-        liveReply.reset()
-        isSending = true
-        statusMessages = ["Sesi çözüyorum…"]
-        scrollToLatestRequest += 1
-        defer { isSending = false }
-        let history = bubbles
-            .filter { $0.role != .system }
-            .suffix(16)
-            .map { RovaBackendClient.ChatTurn(role: $0.role == .user ? "user" : "assistant", content: $0.text) }
-        turnCount += 1
-        CopilotConversationStore.saveTurnCount(turnCount, for: conversationID)
-        do {
-            let result = try await RovaBackendClient.converseAudio(
-                audioData: data,
-                mimeType: "audio/m4a",
-                messages: history,
-                availableApps: availableApps,
-                applicationTargets: model.deviceInfo?.applicationTargets ?? [],
-                availableCapabilities: model.deviceInfo?.capabilities ?? [],
-                authorities: model.deviceInfo?.authorities ?? [],
-                deviceID: model.deviceInfo?.id,
-                conversationID: conversationID,
-                turnCount: turnCount,
-                requestID: UUID(),
-                respondWithAudio: true
-            )
-            if let id = bubbles.last?.id {
-                setBubble(id) { $0.text = "🎙️ \(result.transcript)" }
-            }
-            let replyText = result.reply.isEmpty ? "…" : result.reply
-            await liveReply.finish(with: replyText)
-            let reply = ChatBubble(role: .assistant, text: replyText, steps: result.steps, artifacts: result.artifacts)
-            bubbles.append(reply)
-            liveReply.reset()
-            if let audioError = result.audioError {
-                bubbles.append(ChatBubble(role: .system, text: audioError))
-            }
-            if let audio = result.audioData { audioPlayer.play(audio) }
-            if result.steps.contains(where: { $0.isDestructive || $0.requiresUserPresence }) {
-                setBubble(reply.id) { $0.needsConfirmation = true }
-                presentConfirmation(for: reply.id)
-            } else {
-                recentDeviceResults.removeAll(keepingCapacity: true)
-                await execute(result.steps, bubbleID: reply.id)
-                if result.steps.contains(where: needsLocalResultFollowUp) {
-                    await continueAfterLocalExecution(history: history, initialReply: result.reply, bubbleID: reply.id)
-                }
-            }
-            persistConversation()
-        } catch RovaBackendError.notAuthenticated {
-            liveReply.reset()
-            authSession.signOut()
-        } catch {
-            liveReply.reset()
-            bubbles.append(ChatBubble(role: .system, text: (error as? LocalizedError)?.errorDescription ?? "Ses isteği tamamlanamadı."))
-            persistConversation()
-        }
     }
 
     private func needsLocalResultFollowUp(_ step: PlannedCommand) -> Bool {
@@ -1591,7 +1568,7 @@ struct CopilotView: View {
 }
 
 @MainActor
-private final class RovaAudioRecorder: NSObject, ObservableObject {
+private final class WiqoSpeechRecorder: NSObject, ObservableObject {
     enum StartResult {
         case started
         /// The user tapped Don't Allow (this time, or on a previous launch). iOS never shows its
@@ -1599,14 +1576,33 @@ private final class RovaAudioRecorder: NSObject, ObservableObject {
         /// forward is Settings - the caller shows that path explicitly instead of silently
         /// re-attempting a request that's guaranteed to fail the same way again.
         case permissionDenied
+        /// The selected locale cannot be constructed at all. The normal unsupported-on-device
+        /// case uses Apple's own recognizer as a controlled network fallback below.
+        case speechUnavailable
+        /// The device can use Apple's recognizer, but not its on-device model for this locale.
+        /// This is deliberately not the Groq/server audio path.
+        case startedWithNetworkFallback
         /// Permission is fine; something about configuring the audio session/recorder itself
         /// failed (e.g. another app holding exclusive audio hardware access).
         case setupFailed
     }
 
     @Published private(set) var isRecording = false
-    private var recorder: AVAudioRecorder?
-    private var recordingURL: URL?
+    @Published private(set) var transcript = ""
+    @Published private(set) var lastErrorMessage: String?
+
+    private let speechRecognizer: SFSpeechRecognizer?
+    private var audioEngine: AVAudioEngine?
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private var inputTapInstalled = false
+    private var audioSessionIsActive = false
+    private var isFinishing = false
+
+    override init() {
+        speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "tr-TR"))
+        super.init()
+    }
 
     func start() async -> StartResult {
         // Checked before ever calling requestRecordPermission: iOS only shows its native prompt
@@ -1619,66 +1615,179 @@ private final class RovaAudioRecorder: NSObject, ObservableObject {
         case .denied:
             return .permissionDenied
         case .undetermined:
-            let granted = await withCheckedContinuation { continuation in
-                AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
-            }
+            // AVAudioApplication's native async overload handles its arbitrary callback queue
+            // without inheriting this recorder's MainActor isolation.
+            let granted = await AVAudioApplication.requestRecordPermission()
             guard granted else { return .permissionDenied }
         case .granted:
             break
         @unknown default:
-            break
+            return .permissionDenied
         }
+
+        guard let speechRecognizer, speechRecognizer.isAvailable else {
+            // isAvailable (not just the locale existing) is what actually reflects whether a
+            // recognition task can run right now - false here almost always means Siri/Dictation
+            // is off system-wide (Settings > Siri & Search, or no network and no on-device model
+            // ready), and no amount of retrying the request will change that.
+            return .speechUnavailable
+        }
+        // supportsOnDeviceRecognition reports the DEVICE CLASS's general capability, not whether
+        // this specific language's on-device model is actually downloaded and ready right now -
+        // forcing requiresOnDeviceRecognition based on it alone (as this used to) disables
+        // SFSpeechRecognizer's own automatic network fallback, so an unready-but-"supported"
+        // on-device model fails outright instead of transparently using the network path. Leaving
+        // the request's default (false) lets the framework pick on-device when it's truly ready
+        // and fall back to network itself - this is what actually made recognition fail before.
+        let usesOnDeviceRecognition = speechRecognizer.supportsOnDeviceRecognition
+
+        switch await requestSpeechAuthorization() {
+        case .authorized:
+            break
+        case .denied, .restricted, .notDetermined:
+            return .permissionDenied
+        @unknown default:
+            return .permissionDenied
+        }
+
+        transcript = ""
+        lastErrorMessage = nil
+        isFinishing = false
+
         do {
             let session = AVAudioSession.sharedInstance()
-            // .spokenAudio is a PLAYBACK-only mode (podcasts/audiobooks); pairing it with the
-            // .record category is an invalid combination that AVAudioSession rejects at runtime -
-            // setCategory throws, every recording attempt silently fails here, and the resulting
-            // "permission denied" message the caller used to show was misleading (permission was
-            // never the problem). .default is valid for every category, including .record.
-            try session.setCategory(.record, mode: .default, options: [.allowBluetoothHFP])
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("rova-\(UUID().uuidString).m4a")
-            let settings: [String: Any] = [
-                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-                AVSampleRateKey: 44_100,
-                AVNumberOfChannelsKey: 1,
-                AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
-            ]
-            let recorder = try AVAudioRecorder(url: url, settings: settings)
-            recorder.prepareToRecord()
-            guard recorder.record() else { return .setupFailed }
-            self.recorder = recorder
-            recordingURL = url
+            try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+            // setActive(_:) is synchronous and can block for the duration of an audio route
+            // negotiation (e.g. a Bluetooth headset) - AVFoundation's own runtime warning flags
+            // calling it on the main thread ("can lead to UI unresponsiveness"). Off-loading it to
+            // a detached task keeps the actual system call off the main thread while `start()`
+            // (already async) still correctly waits for it before installing the tap/starting the
+            // engine below, which need the session already active.
+            try await Task.detached(priority: .userInitiated) {
+                try AVAudioSession.sharedInstance().setActive(true)
+            }.value
+            audioSessionIsActive = true
+
+            let engine = AVAudioEngine()
+            let inputNode = engine.inputNode
+            let format = inputNode.outputFormat(forBus: 0)
+            guard format.channelCount > 0 else {
+                cleanupCapture()
+                return .setupFailed
+            }
+
+            let request = SFSpeechAudioBufferRecognitionRequest()
+            request.shouldReportPartialResults = true
+            // Deliberately NOT forced to usesOnDeviceRecognition - see the comment above where
+            // that capability is read. Leaving this false lets SFSpeechRecognizer choose on-device
+            // when it's actually ready and fall back to network transparently, instead of a hard
+            // failure when the capability check said "yes" but the model wasn't ready yet.
+            audioEngine = engine
+            recognitionRequest = request
             isRecording = true
-            return .started
+
+            recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
+                let text = result?.bestTranscription.formattedString
+                let isFinal = result?.isFinal == true
+                let didFail = error != nil
+                Task { @MainActor [weak self] in
+                    self?.handleRecognitionUpdate(text: text, isFinal: isFinal, didFail: didFail)
+                }
+            }
+
+            // The tap block runs on AVAudioEngine's own realtime audio thread, never on the main
+            // actor - a closure literal written directly here would still lexically inherit this
+            // method's @MainActor isolation under Swift 6 strict concurrency, so the compiler
+            // attaches a dynamic executor check to it. AVAudioEngine then invokes it from the
+            // realtime thread, the check finds it's NOT running on the main actor's queue, and
+            // Swift traps with dispatch_assert_queue_fail (EXC_BREAKPOINT) on the very first audio
+            // buffer - exactly the "says Dinliyorum then gets stuck" crash this fixes. Building
+            // the block in a `nonisolated` factory instead means the closure is lexically declared
+            // in a context with no actor isolation to inherit, so no such check is attached.
+            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format, block: Self.makeTapBlock(for: request))
+            inputTapInstalled = true
+            engine.prepare()
+            try engine.start()
+            return usesOnDeviceRecognition ? .started : .startedWithNetworkFallback
         } catch {
+            cleanupCapture()
             return .setupFailed
         }
     }
 
-    func stop() -> Data? {
-        recorder?.stop()
-        recorder = nil
-        isRecording = false
-        defer {
-            if let recordingURL { try? FileManager.default.removeItem(at: recordingURL) }
-            recordingURL = nil
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    func stop() async -> String {
+        guard isRecording else { return normalizedTranscript }
+
+        isFinishing = true
+        audioEngine?.stop()
+        if inputTapInstalled {
+            audioEngine?.inputNode.removeTap(onBus: 0)
+            inputTapInstalled = false
         }
-        guard let recordingURL else { return nil }
-        return try? Data(contentsOf: recordingURL)
+        recognitionRequest?.endAudio()
+
+        // The last partial result arrives asynchronously after endAudio(). This short, bounded
+        // wait keeps the final Turkish word without blocking the main thread or polling forever.
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        let finalTranscript = normalizedTranscript
+        cleanupCapture()
+        return finalTranscript
     }
-}
 
-@MainActor
-private final class RovaAudioPlayer: NSObject, ObservableObject {
-    private var player: AVAudioPlayer?
+    private var normalizedTranscript: String {
+        transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
-    func play(_ data: Data) {
-        guard let player = try? AVAudioPlayer(data: data) else { return }
-        self.player = player
-        player.prepareToPlay()
-        player.play()
+    /// `nonisolated` so the closure it returns is declared in a context with no actor to inherit -
+    /// see the long comment at the installTap call site for why that's what actually matters here
+    /// (isolation is a property of a closure's lexical declaration site, not of what it does
+    /// inside). `SFSpeechAudioBufferRecognitionRequest.append(_:)` being called from the realtime
+    /// audio thread while the rest of the request's lifecycle runs on the main actor is Apple's
+    /// own documented pattern for this API, not a real data race this happens to paper over.
+    nonisolated private static func makeTapBlock(for request: SFSpeechAudioBufferRecognitionRequest) -> (AVAudioPCMBuffer, AVAudioTime) -> Void {
+        { buffer, _ in request.append(buffer) }
+    }
+
+    private func requestSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
+        let status = SFSpeechRecognizer.authorizationStatus()
+        guard status == .notDetermined else { return status }
+        return await WiqoSpeechPermissionBridge.requestSpeechRecognition()
+    }
+
+    private func handleRecognitionUpdate(text: String?, isFinal: Bool, didFail: Bool) {
+        if let text, !text.isEmpty {
+            transcript = text
+        }
+        guard isRecording else { return }
+        if didFail, !isFinishing {
+            lastErrorMessage = "Konuşma tanıma durdu. Lütfen tekrar dene."
+            cleanupCapture()
+        } else if isFinal {
+            cleanupCapture()
+        }
+    }
+
+    private func cleanupCapture() {
+        isRecording = false
+        isFinishing = false
+        if inputTapInstalled {
+            audioEngine?.inputNode.removeTap(onBus: 0)
+            inputTapInstalled = false
+        }
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        recognitionRequest = nil
+        audioEngine = nil
+        if audioSessionIsActive {
+            audioSessionIsActive = false
+            // cleanupCapture() itself stays synchronous (called from non-async contexts too, like
+            // the recognition task's completion handling) - the deactivate call doesn't need to be
+            // awaited by anything here, so it's just moved off the main thread rather than made
+            // blocking-async, for the same reason as the activate call in start() above.
+            Task.detached(priority: .utility) {
+                try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            }
+        }
     }
 }
 

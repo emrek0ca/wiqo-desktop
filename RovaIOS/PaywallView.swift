@@ -23,6 +23,7 @@ struct PaywallView: View {
                     proCard
                     businessCard
                     restoreButton
+                    legalFooter
                 }
                 .padding(RovaDesign.screenPadding)
             }
@@ -128,6 +129,26 @@ struct PaywallView: View {
         .font(.footnote.weight(.medium))
         .disabled(isRestoring)
         .padding(.top, 4)
+    }
+
+    /// Required by App Store Review Guideline 3.1.2: auto-renewal terms spelled out in the
+    /// purchase flow itself, plus working links to the Privacy Policy and Terms of Use right next
+    /// to the purchase buttons - not just somewhere else in the app.
+    private var legalFooter: some View {
+        VStack(spacing: 10) {
+            Text("Pro, aylık 9,99 $ karşılığında otomatik yenilenen bir abonelik ürünüdür. Ödeme, satın alma onayıyla Apple ID hesabınızdan tahsil edilir; mevcut dönemin bitiminden en az 24 saat önce iptal etmediğiniz sürece abonelik aynı ücretle otomatik olarak yenilenir. Aboneliğinizi Ayarlar > [Adınız] > Abonelikler yolundan istediğiniz zaman yönetebilirsiniz.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 14) {
+                Link("Gizlilik Politikası", destination: WiqoWebsite.privacyPolicyURL)
+                Link("Kullanım Şartları", destination: WiqoWebsite.termsOfServiceURL)
+            }
+            .font(.caption2.weight(.medium))
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 6)
     }
 
     @ViewBuilder

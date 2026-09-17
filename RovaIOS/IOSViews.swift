@@ -50,19 +50,11 @@ struct WiqoHomeView: View {
 
     var body: some View {
         NavigationStack {
-            CopilotView(model: model, authSession: authSession, conversationID: conversationID, draftPrompt: draftPrompt)
+            CopilotView(model: model, authSession: authSession, conversationID: conversationID, draftPrompt: draftPrompt, onOpenPCSettings: { showPCSettings = true })
                 .id(conversationID)
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        HStack(spacing: 6) {
-                            Image("WiqoMark")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 20, height: 20)
-                            Text("Wiqo").font(.headline)
-                        }
-                    }
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
                             dismissKeyboard()
@@ -500,6 +492,7 @@ struct SettingsView: View {
                     subscriptionCard
                     pcSettingsCard
                     if !pendingTasks.isEmpty || !activeAutomations.isEmpty { tasksAutomationsCard }
+                    legalCard
                     accountCard
                 }
                 .padding(RovaDesign.screenPadding)
@@ -599,6 +592,24 @@ struct SettingsView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    /// App Store Connect's Support URL is required to actually resolve to something useful, and
+    /// Guideline 5.1.1 expects the same legal documents referenced at signup/purchase to also be
+    /// reachable from within the app proper - not just at the point of purchase.
+    private var legalCard: some View {
+        RovaCard {
+            Text("Yasal").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+            Link(destination: WiqoWebsite.privacyPolicyURL) {
+                settingsRow(title: "Gizlilik Politikası", systemImage: "hand.raised")
+            }
+            Link(destination: WiqoWebsite.termsOfServiceURL) {
+                settingsRow(title: "Kullanım Şartları", systemImage: "doc.text")
+            }
+            Link(destination: WiqoWebsite.supportURL) {
+                settingsRow(title: "Destek", systemImage: "questionmark.circle")
+            }
+        }
     }
 
     private var accountCard: some View {

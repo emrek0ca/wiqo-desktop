@@ -1,6 +1,21 @@
 import XCTest
 
 final class ProtocolTests: XCTestCase {
+    func testSpeechPermissionBridgeHandlesBackgroundCompletion() async {
+        let task = Task { @MainActor in
+            let granted: Bool = await WiqoSpeechPermissionBridge.resolve { completion in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    completion(true)
+                }
+            }
+            MainActor.preconditionIsolated()
+            return granted
+        }
+
+        let granted = await task.value
+        XCTAssertTrue(granted)
+    }
+
     func testCommandEncodeDecode() throws {
         let request = CommandRequest(type: .openURL, payload: .url("https://example.com"), createdAt: Date(timeIntervalSince1970: 1_000_000))
         let envelope = WireEnvelope(message: .command(request))
