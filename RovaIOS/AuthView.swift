@@ -12,6 +12,8 @@ struct AuthView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var showingForgotPassword = false
+    @State private var acceptedPrivacyPolicy = false
+    @State private var acceptedTerms = false
     @FocusState private var focusedField: Field?
 
     private enum Field { case email, password }
@@ -19,14 +21,25 @@ struct AuthView: View {
     var body: some View {
         ZStack {
             RovaDesign.canvas.ignoresSafeArea()
-            VStack(spacing: 0) {
-                Spacer(minLength: 32)
-                brandHeader
-                Spacer()
-                formCard
+
+            // Keep the decorative layer fixed while only the interactive content reflows for the keyboard.
+            GeometryReader { proxy in
+                authBackground(size: proxy.size)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
+            .ignoresSafeArea()
+
+            GeometryReader { proxy in
+                VStack(spacing: 0) {
+                    Spacer(minLength: 32)
+                    brandHeader
+                        .offset(y: -brandHeaderLift(for: proxy.size.height))
+                    Spacer()
+                    formCard
+                        .offset(y: -formCardLift(for: proxy.size.height))
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture { focusedField = nil }
@@ -38,17 +51,47 @@ struct AuthView: View {
         }
     }
 
+    private func authBackground(size: CGSize) -> some View {
+        return Image("WiqoBackground")
+            .resizable()
+            .scaledToFill()
+            .frame(width: size.width, height: size.height)
+            .clipped()
+            // The image belongs to the lower canvas; its upper edge should dissolve naturally.
+            .mask(
+                LinearGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black.opacity(0.28), location: 0.08),
+                        .init(color: .black, location: 0.24),
+                        .init(color: .black, location: 1)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .opacity(0.78)
+            .allowsHitTesting(false)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+    }
+
+    private func brandHeaderLift(for height: CGFloat) -> CGFloat {
+        min(max(height * 0.07, 28), 56)
+    }
+
+    private func formCardLift(for height: CGFloat) -> CGFloat {
+        min(max(height * 0.08, 32), 72)
+    }
+
     private var brandHeader: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 6) {
             Image("WiqoMark")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 60, height: 60)
+                .frame(width: 84, height: 84)
+                .shadow(color: RovaDesign.ink.opacity(0.2), radius: 7, y: 3)
             Text("Wiqo")
                 .font(.system(size: 32, weight: .bold, design: .rounded))
-            Text("Kişisel AI asistanın, her yerde.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -86,6 +129,10 @@ struct AuthView: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
+            if isRegistering {
+                registrationConsents
+            }
+
             if let errorMessage {
                 Text(errorMessage)
                     .font(.footnote)
@@ -121,7 +168,11 @@ struct AuthView: View {
             .foregroundStyle(.secondary)
         }
         .padding(20)
-        .background(RovaDesign.cardSurface, in: RoundedRectangle(cornerRadius: RovaDesign.cardRadius, style: .continuous))
+        .background(RovaDesign.cardSurface.opacity(0.92), in: RoundedRectangle(cornerRadius: RovaDesign.cardRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: RovaDesign.cardRadius, style: .continuous)
+                .strokeBorder(.white.opacity(0.45), lineWidth: 1)
+        }
         .shadow(color: .black.opacity(0.06), radius: 16, y: 6)
     }
 
@@ -130,11 +181,62 @@ struct AuthView: View {
             + Text(isRegistering ? "Giriş yap" : "Kayıt ol").fontWeight(.semibold).foregroundStyle(RovaDesign.ink)
     }
 
+    private var registrationConsents: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            consentRow(
+                title: "Gizlilik Politikası'nı okudum ve kabul ediyorum.",
+                linkTitle: "Gizlilik Politikası'nı aç",
+                destination: WiqoWebsite.privacyPolicyURL,
+                isAccepted: $acceptedPrivacyPolicy
+            )
+            consentRow(
+                title: "Kullanım Şartları'nı okudum ve kabul ediyorum.",
+                linkTitle: "Kullanım Şartları'nı aç",
+                destination: WiqoWebsite.termsOfServiceURL,
+                isAccepted: $acceptedTerms
+            )
+        }
+    }
+
+    private func consentRow(
+        title: String,
+        linkTitle: String,
+        destination: URL,
+        isAccepted: Binding<Bool>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                isAccepted.wrappedValue.toggle()
+            } label: {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: isAccepted.wrappedValue ? "checkmark.square.fill" : "square")
+                        .font(.title3)
+                        .foregroundStyle(RovaDesign.ink)
+                    Text(title)
+                        .font(.footnote)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .accessibilityLabel(title)
+            .accessibilityValue(isAccepted.wrappedValue ? "Seçili" : "Seçili değil")
+
+            Link(linkTitle, destination: destination)
+                .font(.caption.weight(.medium))
+                .padding(.leading, 32)
+        }
+    }
+
     private var canSubmit: Bool {
-        !email.trimmingCharacters(in: .whitespaces).isEmpty && password.count >= 8 && !isSubmitting
+        let credentialsAreValid = !email.trimmingCharacters(in: .whitespaces).isEmpty && password.count >= 8
+        let consentsAreValid = !isRegistering || (acceptedPrivacyPolicy && acceptedTerms)
+        return credentialsAreValid && consentsAreValid && !isSubmitting
     }
 
     private func submit() async {
+        guard canSubmit else { return }
         errorMessage = nil
         isSubmitting = true
         defer { isSubmitting = false }
