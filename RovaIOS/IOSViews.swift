@@ -582,14 +582,25 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: RovaDesign.cardSpacing) {
-                    profileCard
-                    subscriptionCard
-                    referralCard
-                    connectedAccountsCard
+                    pcStatusCard
                     pcSettingsCard
-                    if taskAutomationError != nil || !pendingTasks.isEmpty || !activeAutomations.isEmpty { tasksAutomationsCard }
-                    legalCard
-                    accountCard
+                    RovaCard {
+                        DisclosureGroup {
+                            VStack(spacing: RovaDesign.cardSpacing) {
+                                profileCard
+                                subscriptionCard
+                                referralCard
+                                connectedAccountsCard
+                                if taskAutomationError != nil || !pendingTasks.isEmpty || !activeAutomations.isEmpty { tasksAutomationsCard }
+                                legalCard
+                                accountCard
+                            }
+                            .padding(.top, 8)
+                        } label: {
+                            Label("Gelişmiş", systemImage: "slider.horizontal.3")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
                 }
                 .padding(RovaDesign.screenPadding)
             }
@@ -620,6 +631,40 @@ struct SettingsView: View {
         async let fetchedCodes = try? RovaBackendClient.fetchInviteCodes()
         accountInfo = await fetchedAccount
         inviteCodes = (await fetchedCodes) ?? []
+    }
+
+    private var pcStatusCard: some View {
+        RovaCard {
+            HStack(spacing: 12) {
+                Image(systemName: "laptopcomputer")
+                    .font(.title2)
+                    .foregroundStyle(model.state == .connected ? .green : .secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("PC durumu")
+                        .font(.subheadline.weight(.semibold))
+                    Text(model.isPaired ? settingsPCStatusText : "PC henüz bağlanmadı")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if model.state == .connecting || model.isReconnecting {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    private var settingsPCStatusText: String {
+        switch model.state {
+        case .connected: return model.isUsingRelay ? "Bağlı • internet üzerinden" : "Bağlı"
+        case .connecting: return "Bağlanıyor…"
+        case .failed: return model.isReconnecting ? "Yeniden bağlanıyor…" : "PC'ye ulaşılamıyor"
+        case .disconnected: return "Çevrimdışı"
+        }
     }
 
     /// The whole point is that Wiqo spreads through people who already use it: a founding-member
@@ -893,24 +938,16 @@ struct PCSettingsView: View {
                     if subscriptionStore.info.pcAllowed {
                         if model.isPaired {
                             statusCard
-                            if !backendDevices.isEmpty { devicesCard }
-                            capabilitiesCard
                             quickActionsCard
                             mediaCard
                             displayCard
-                            appsCard
-                            clipboardCard
-                            urlCard
-                            connectionActionsCard
+                            advancedPCSettingsSection
                         } else {
                             pairingPromptCard
                         }
                     } else {
                         pcUpsellCard
                     }
-                    if !trustGrants.isEmpty { trustGrantsCard }
-                    activityCard
-                    if let error = model.lastError { errorCard(error) }
                 }
                 .padding(RovaDesign.screenPadding)
             }
@@ -1140,6 +1177,29 @@ struct PCSettingsView: View {
                 Spacer()
                 if model.state == .connecting { ProgressView() }
             }
+            if model.state != .connected {
+                Divider()
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "wifi.exclamationmark")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(model.isReconnecting ? "Bağlantıyı yeniden kuruyorum…" : "PC'ye ulaşılamıyor.")
+                            .font(.caption.weight(.medium))
+                        Text("PC'nin açık ve internette olduğundan emin ol.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    if !model.isReconnecting {
+                        Button("Tekrar dene") {
+                            model.retry()
+                        }
+                        .font(.caption.weight(.medium))
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+            }
             if let status = model.systemStatus {
                 Divider()
                 HStack {
@@ -1153,6 +1213,28 @@ struct PCSettingsView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var advancedPCSettingsSection: some View {
+        RovaCard {
+            DisclosureGroup {
+                VStack(spacing: RovaDesign.cardSpacing) {
+                    if !backendDevices.isEmpty { devicesCard }
+                    capabilitiesCard
+                    appsCard
+                    clipboardCard
+                    urlCard
+                    connectionActionsCard
+                    if !trustGrants.isEmpty { trustGrantsCard }
+                    activityCard
+                    if let error = model.lastError { errorCard(error) }
+                }
+                .padding(.top, 8)
+            } label: {
+                Label("Gelişmiş PC ayarları", systemImage: "slider.horizontal.3")
+                    .font(.subheadline.weight(.semibold))
             }
         }
     }
@@ -1393,7 +1475,15 @@ struct PCSettingsView: View {
 
     private func errorCard(_ error: String) -> some View {
         RovaCard {
-            Text(error).foregroundStyle(.red).font(.subheadline)
+            DisclosureGroup("Ayrıntı") {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .padding(.top, 3)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -1406,9 +1496,9 @@ struct PCSettingsView: View {
 
     private var statusText: String {
         switch model.state {
-        case .connected: return "Bağlı"
+        case .connected: return model.isUsingRelay ? "Bağlı • internet üzerinden" : "Bağlı"
         case .connecting: return "Bağlanıyor…"
-        case .failed: return "Bağlantı hatası"
+        case .failed: return model.isReconnecting ? "Yeniden bağlanıyor…" : "Bağlantı hatası"
         case .disconnected: return "Çevrimdışı"
         }
     }

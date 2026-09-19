@@ -71,6 +71,7 @@ private struct BackendConfirmationRow: Identifiable, Equatable {
     var confirmation: RovaBackendClient.BackendConfirmation
     var status: BackendConfirmationStatus = .pending
     var resultText: String?
+    var resultDetail: String? = nil
     var artifacts: [RovaBackendClient.ArtifactDescriptor] = []
 
     var id: UUID { confirmation.id }
@@ -82,6 +83,7 @@ private struct ChatBubble: Identifiable {
     let id = UUID()
     let role: Role
     var text: String
+    var errorDetail: String? = nil
     var steps: [PlannedCommand] = []
     var needsConfirmation = false
     var executedStepIDs: Set<UUID> = []
@@ -471,6 +473,9 @@ struct CopilotView: View {
     /// Results are sent with the next stateless backend turn, so the model can distinguish a
     /// command that was merely queued from one the paired Mac actually completed.
     @State private var recentDeviceResults: [RovaBackendClient.DeviceExecutionResult] = []
+    /// One task-level recovery budget. Safe multi-step continuations may still use their normal
+    /// round budget, but a failed local device step gets at most one alternative attempt.
+    @State private var localRecoveryAttemptsRemaining = 1
     @State private var proactiveSuggestions: [RovaBackendClient.ProactiveSuggestion] = []
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var pendingAttachments: [RovaBackendClient.ChatAttachment] = []
@@ -848,6 +853,8 @@ struct CopilotView: View {
                 // No bubble chrome for the assistant, matching ChatGPT/Gemini: clean, full-width,
                 // block-structured content rather than a colored speech bubble.
                 ReplyBlocksView(text: bubble.text, artifacts: bubble.artifacts)
+            } else if bubble.role == .system {
+                systemErrorView(for: bubble)
             } else {
                 HStack {
                     if bubble.role == .user { Spacer(minLength: 40) }
@@ -871,6 +878,28 @@ struct CopilotView: View {
         }
         .frame(maxWidth: .infinity, alignment: bubble.role == .user ? .trailing : .leading)
         .padding(.horizontal)
+    }
+
+    private func systemErrorView(for bubble: ChatBubble) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label(bubble.text, systemImage: "exclamationmark.triangle.fill")
+                .font(.subheadline)
+                .foregroundStyle(.red)
+            if let detail = bubble.errorDetail, !detail.isEmpty {
+                DisclosureGroup("Ayrıntı") {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .padding(.top, 3)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
     }
 
     private func executionWidget(for bubble: ChatBubble) -> some View {
@@ -1045,6 +1074,18 @@ struct CopilotView: View {
                     .textSelection(.enabled)
             }
 
+            if let resultDetail = row.resultDetail, !resultDetail.isEmpty {
+                DisclosureGroup("Ayrıntı") {
+                    Text(resultDetail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .padding(.top, 3)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
             if row.status == .pending {
                 HStack(spacing: 8) {
                     Button {
@@ -1135,6 +1176,7 @@ struct CopilotView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(step.summary)
                     .font(.subheadline)
+                    .lineLimit(1)
                 deviceStepStatus(step: step, bubble: bubble)
             }
             Spacer(minLength: 0)
@@ -1151,7 +1193,7 @@ struct CopilotView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(update.summary)
                     .font(.subheadline)
-                    .lineLimit(2)
+                    .lineLimit(1)
                 if let status = LiveExecutionStatus(rawValue: update.status) {
                     liveExecutionStatus(status, message: update.message)
                 }
@@ -1163,22 +1205,44 @@ struct CopilotView: View {
     @ViewBuilder
     private func deviceStepStatus(step: PlannedCommand, bubble: ChatBubble) -> some View {
         if let result = bubble.stepResults[step.id] {
+            let title = result.status == .completed ? "Tamamlandı" : result.status == .denied ? "Reddedildi" : result.status == .unknown ? "Bilinmiyor" : "Başarısız"
+            let color: Color = result.status == .completed ? .green : result.status == .unknown ? .orange : .red
             VStack(alignment: .leading, spacing: 2) {
-                Label(result.error?.message ?? result.message, systemImage: result.status == .completed ? "checkmark.circle.fill" : result.status == .unknown ? "questionmark.circle.fill" : "xmark.circle.fill")
+                Label(title, systemImage: result.status == .completed ? "checkmark.circle.fill" : result.status == .unknown ? "questionmark.circle.fill" : "xmark.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(result.status == .completed ? .green : result.status == .unknown ? .orange : .red)
-                if let detail = stepResultDataDetail(result.data) {
-                    Text(detail)
+                    .foregroundStyle(color)
+                if let error = result.error {
+                    DisclosureGroup("Ayrıntı") {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(error.message)
+                            Text("Kod: \(error.code)")
+                                .font(.caption2.monospaced())
+                        }
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .lineLimit(4)
+                        .textSelection(.enabled)
+                        .padding(.top, 3)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else if let detail = stepResultDataDetail(result.data) {
+                    DisclosureGroup("Ayrıntı") {
+                        Text(detail)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(6)
+                            .textSelection(.enabled)
+                            .padding(.top, 3)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
         } else if let failure = bubble.failedSteps[step.id] {
-            Label(failure, systemImage: "xmark.circle.fill")
+            Label("Başarısız", systemImage: "xmark.circle.fill")
                 .font(.caption)
                 .foregroundStyle(.red)
-                .lineLimit(2)
+                .accessibilityValue(failure)
         } else if let update = bubble.executionUpdates[step.id],
                   let status = LiveExecutionStatus(rawValue: update.status) {
             liveExecutionStatus(status, message: update.message)
@@ -1211,10 +1275,16 @@ struct CopilotView: View {
             .font(.caption)
             .foregroundStyle(status.color)
             if let message, !message.isEmpty, status == .failed || status == .denied || status == .blocked {
-                Text(message)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                DisclosureGroup("Ayrıntı") {
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(4)
+                        .textSelection(.enabled)
+                        .padding(.top, 3)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
     }
@@ -1281,12 +1351,15 @@ struct CopilotView: View {
         case LiveExecutionStatus.succeeded.rawValue:
             row.status = .completed
             row.resultText = update.message
+            row.resultDetail = nil
         case LiveExecutionStatus.denied.rawValue:
             row.status = .cancelled
             row.resultText = update.message
+            row.resultDetail = nil
         case LiveExecutionStatus.failed.rawValue, LiveExecutionStatus.blocked.rawValue:
             row.status = .failed
             row.resultText = update.message
+            row.resultDetail = nil
         default:
             break
         }
@@ -1408,6 +1481,7 @@ struct CopilotView: View {
             guard let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) else { return }
             bubble.backendConfirmations[index].status = .processing
             bubble.backendConfirmations[index].resultText = nil
+            bubble.backendConfirmations[index].resultDetail = nil
         }
 
         do {
@@ -1430,6 +1504,7 @@ struct CopilotView: View {
                     bubble.backendConfirmations[index].status = .failed
                 }
                 bubble.backendConfirmations[index].resultText = resultText
+                bubble.backendConfirmations[index].resultDetail = nil
                 bubble.backendConfirmations[index].artifacts = resultArtifacts
             }
             persistConversation()
@@ -1438,15 +1513,17 @@ struct CopilotView: View {
                 if let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) {
                     bubble.backendConfirmations[index].status = .failed
                     bubble.backendConfirmations[index].resultText = "Oturumun geçersiz veya süresi dolmuş."
+                    bubble.backendConfirmations[index].resultDetail = nil
                 }
             }
             authSession.signOut()
         } catch {
-            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            let presentation = errorPresentation(error)
             setBubble(bubbleID) { bubble in
                 if let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) {
                     bubble.backendConfirmations[index].status = .failed
-                    bubble.backendConfirmations[index].resultText = message
+                    bubble.backendConfirmations[index].resultText = presentation.message
+                    bubble.backendConfirmations[index].resultDetail = presentation.detail
                 }
             }
             persistConversation()
@@ -1489,8 +1566,8 @@ struct CopilotView: View {
         } catch RovaBackendError.notAuthenticated {
             authSession.signOut()
         } catch {
-            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            bubbles.append(ChatBubble(role: .system, text: message))
+            let presentation = errorPresentation(error)
+            bubbles.append(ChatBubble(role: .system, text: presentation.message, errorDetail: presentation.detail))
         }
     }
 
@@ -1656,6 +1733,7 @@ struct CopilotView: View {
         // Results belong to the turn that produced them; never let an older device outcome alter
         // the model's interpretation of a new user message.
         recentDeviceResults.removeAll(keepingCapacity: true)
+        localRecoveryAttemptsRemaining = 1
         scrollToLatestRequest += 1
         defer { isSending = false }
 
@@ -1720,11 +1798,16 @@ struct CopilotView: View {
                 bubbles[index].needsConfirmation = false
                 liveReply.reset()
                 let advance = await advanceLocalExecution(bubbleID: earlyID)
-                if case .completed = advance, result.steps.contains(where: needsLocalResultFollowUp) {
-                    await continueAfterLocalExecution(history: history, initialReply: result.reply, bubbleID: earlyID)
-                } else if case .awaitingConfirmation = advance {
+                if case .awaitingConfirmation = advance {
                     // The next local step owns the confirmation sheet. Its approval continues
                     // this same bubble; no second assistant message is created.
+                } else if shouldContinueAfterLocalExecution(bubbleID: earlyID) {
+                    await continueAfterLocalExecution(
+                        history: history,
+                        initialReply: result.reply,
+                        bubbleID: earlyID,
+                        recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
+                    )
                 } else {
                     recentDeviceResults.removeAll(keepingCapacity: true)
                 }
@@ -1742,10 +1825,15 @@ struct CopilotView: View {
             bubbles.append(reply)
             liveReply.reset()
             let advance = await advanceLocalExecution(bubbleID: reply.id)
-            if case .completed = advance, result.steps.contains(where: needsLocalResultFollowUp) {
-                await continueAfterLocalExecution(history: history, initialReply: result.reply, bubbleID: reply.id)
-            } else if case .awaitingConfirmation = advance {
+            if case .awaitingConfirmation = advance {
                 // The sheet is presented by advanceLocalExecution for the next gated step.
+            } else if shouldContinueAfterLocalExecution(bubbleID: reply.id) {
+                await continueAfterLocalExecution(
+                    history: history,
+                    initialReply: result.reply,
+                    bubbleID: reply.id,
+                    recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
+                )
             } else {
                 recentDeviceResults.removeAll(keepingCapacity: true)
             }
@@ -1757,8 +1845,8 @@ struct CopilotView: View {
             authSession.signOut()
         } catch {
             liveReply.reset()
-            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            bubbles.append(ChatBubble(role: .system, text: message))
+            let presentation = errorPresentation(error)
+            bubbles.append(ChatBubble(role: .system, text: presentation.message, errorDetail: presentation.detail))
             persistConversation()
         }
     }
@@ -1833,7 +1921,6 @@ struct CopilotView: View {
             return
         }
         let stepsThroughGate = Array(pending.prefix(through: gateIndex))
-        let shouldContinue = bubble.steps.contains(where: needsLocalResultFollowUp)
         let initialReply = executionNoticeFreeText(bubble.text)
         let history = bubbles
             .filter { $0.role != .system }
@@ -1849,10 +1936,15 @@ struct CopilotView: View {
         recentDeviceResults.removeAll(keepingCapacity: true)
         await execute(stepsThroughGate, bubbleID: bubbleID)
         let advance = await advanceLocalExecution(bubbleID: bubbleID)
-        if case .completed = advance, shouldContinue {
-            await continueAfterLocalExecution(history: history, initialReply: initialReply, bubbleID: bubbleID)
-        } else if case .awaitingConfirmation = advance {
+        if case .awaitingConfirmation = advance {
             // The next gated step presents its own sheet from advanceLocalExecution.
+        } else if shouldContinueAfterLocalExecution(bubbleID: bubbleID) {
+            await continueAfterLocalExecution(
+                history: history,
+                initialReply: initialReply,
+                bubbleID: bubbleID,
+                recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
+            )
         } else {
             recentDeviceResults.removeAll(keepingCapacity: true)
         }
@@ -1949,15 +2041,23 @@ struct CopilotView: View {
         history: [RovaBackendClient.ChatTurn],
         initialReply: String,
         bubbleID: UUID,
-        remainingRounds: Int = 3
+        remainingRounds: Int = 3,
+        recoveryAttemptsRemaining: Int
     ) async {
         guard remainingRounds > 0 else { return }
-        guard !recentDeviceResults.isEmpty, model.state == .connected else { return }
+        guard !recentDeviceResults.isEmpty else { return }
+        let localResults = Array(recentDeviceResults.suffix(12))
+        let hasFailure = localResults.contains { $0.status != .completed || $0.error != nil }
+        guard !hasFailure || recoveryAttemptsRemaining > 0 else {
+            recentDeviceResults.removeAll(keepingCapacity: true)
+            return
+        }
+        let nextRecoveryBudget = hasFailure ? recoveryAttemptsRemaining - 1 : recoveryAttemptsRemaining
+        localRecoveryAttemptsRemaining = nextRecoveryBudget
         let continuationHistory = history + [
             RovaBackendClient.ChatTurn(role: "assistant", content: initialReply),
             RovaBackendClient.ChatTurn(role: "user", content: "Yerel PC sonuçları hazır. Bu sonuçları kullanarak önceki isteği şimdi tamamla; belge içeriğini yeniden isteme.")
         ]
-        let localResults = Array(recentDeviceResults.suffix(12))
         recentDeviceResults.removeAll(keepingCapacity: true)
         var earlyConfirmationBubbleID: UUID?
         do {
@@ -1991,54 +2091,19 @@ struct CopilotView: View {
             )
             let replyText = result.reply.isEmpty ? "…" : result.reply
             await liveReply.finish(with: replyText)
-            if let earlyID = earlyConfirmationBubbleID, let index = bubbles.firstIndex(where: { $0.id == earlyID }) {
-                bubbles[index].text = replyText
-                bubbles[index].steps = result.steps
-                bubbles[index].executionState = result.executionState
-                bubbles[index].artifacts = result.artifacts
-                bubbles[index].backendConfirmations = mergedBackendConfirmations(
-                    existing: bubbles[index].backendConfirmations,
-                    incoming: result.backendConfirmations,
-                    executionUpdates: bubbles[index].executionUpdates
-                )
-                bubbles[index].needsConfirmation = false
-                liveReply.reset()
-                let advance = await advanceLocalExecution(bubbleID: earlyID)
-                if case .completed = advance, result.steps.contains(where: needsLocalResultFollowUp), remainingRounds > 1 {
-                    await continueAfterLocalExecution(
-                        history: continuationHistory,
-                        initialReply: result.reply,
-                        bubbleID: earlyID,
-                        remainingRounds: remainingRounds - 1
-                    )
-                } else if case .awaitingConfirmation = advance {
-                    // The next local step owns the confirmation sheet and resumes this bubble.
-                } else {
-                    recentDeviceResults.removeAll(keepingCapacity: true)
-                }
-                persistConversation()
-                return
-            }
-            let followUp = ChatBubble(
-                role: .assistant,
-                text: replyText,
-                steps: result.steps,
-                artifacts: result.artifacts,
-                executionState: result.executionState,
-                backendConfirmations: result.backendConfirmations.map { BackendConfirmationRow(confirmation: $0) }
-            )
-            bubbles.append(followUp)
+            mergeContinuationResult(result, into: bubbleID, streamBubbleID: earlyConfirmationBubbleID, text: replyText)
             liveReply.reset()
-            let advance = await advanceLocalExecution(bubbleID: followUp.id)
-            if case .completed = advance, result.steps.contains(where: needsLocalResultFollowUp), remainingRounds > 1 {
+            let advance = await advanceLocalExecution(bubbleID: bubbleID)
+            if case .awaitingConfirmation = advance {
+                // The next gated step presents its own sheet and continues this same bubble.
+            } else if shouldContinueAfterLocalExecution(bubbleID: bubbleID), remainingRounds > 1 {
                 await continueAfterLocalExecution(
                     history: continuationHistory,
                     initialReply: result.reply,
-                    bubbleID: followUp.id,
-                    remainingRounds: remainingRounds - 1
+                    bubbleID: bubbleID,
+                    remainingRounds: remainingRounds - 1,
+                    recoveryAttemptsRemaining: nextRecoveryBudget
                 )
-            } else if case .awaitingConfirmation = advance {
-                // The sheet is presented by advanceLocalExecution for the next gated step.
             } else {
                 recentDeviceResults.removeAll(keepingCapacity: true)
             }
@@ -2047,8 +2112,46 @@ struct CopilotView: View {
             liveReply.reset()
             // The first local read already succeeded and is visible in the original bubble. Keep
             // that evidence rather than replacing it with a generic network failure.
-            setBubble(bubbleID) { $0.text += "\n\nYerel sonuç alındı; yanıtın tamamlanması için tekrar deneyebilirsin." }
+            setBubble(bubbleID) { $0.text = executionNoticeFreeText($0.text) + "\n\nYerel sonuç alındı; kalan adımı tamamlayamadım." }
             persistConversation()
+        }
+    }
+
+    private func shouldContinueAfterLocalExecution(bubbleID: UUID) -> Bool {
+        if recentDeviceResults.contains(where: { $0.status != .completed || $0.error != nil }) { return true }
+        guard let bubble = bubbles.first(where: { $0.id == bubbleID }) else { return false }
+        return bubble.steps.contains(where: needsLocalResultFollowUp)
+    }
+
+    private func mergeContinuationResult(
+        _ result: RovaBackendClient.ConverseResult,
+        into bubbleID: UUID,
+        streamBubbleID: UUID?,
+        text: String
+    ) {
+        let streamBubble = streamBubbleID.flatMap { id in bubbles.first(where: { $0.id == id }) }
+        setBubble(bubbleID) { bubble in
+            if let streamBubble, streamBubble.id != bubbleID {
+                for (id, update) in streamBubble.executionUpdates { bubble.executionUpdates[id] = update }
+                for row in streamBubble.backendConfirmations where !bubble.backendConfirmations.contains(where: { $0.id == row.id }) {
+                    bubble.backendConfirmations.append(row)
+                }
+            }
+            let existingStepIDs = Set(bubble.steps.map(\.id))
+            bubble.steps.append(contentsOf: result.steps.filter { !existingStepIDs.contains($0.id) })
+            let existingArtifactIDs = Set(bubble.artifacts.map(\.id))
+            bubble.artifacts.append(contentsOf: result.artifacts.filter { !existingArtifactIDs.contains($0.id) })
+            bubble.text = text
+            bubble.executionState = result.executionState
+            bubble.backendConfirmations = mergedBackendConfirmations(
+                existing: bubble.backendConfirmations,
+                incoming: result.backendConfirmations,
+                executionUpdates: bubble.executionUpdates
+            )
+            bubble.needsConfirmation = false
+        }
+        if let streamBubbleID, streamBubbleID != bubbleID {
+            bubbles.removeAll { $0.id == streamBubbleID }
         }
     }
 
@@ -2336,6 +2439,17 @@ struct CopilotView: View {
     private func setBubble(_ id: UUID, _ mutate: (inout ChatBubble) -> Void) {
         guard let index = bubbles.firstIndex(where: { $0.id == id }) else { return }
         mutate(&bubbles[index])
+    }
+
+    private func errorPresentation(_ error: Error) -> (message: String, detail: String?) {
+        let raw = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        let marker = " (kod: "
+        guard let range = raw.range(of: marker), raw.hasSuffix(")") else {
+            return (raw, nil)
+        }
+        let message = String(raw[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = String(raw[range.lowerBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (message.isEmpty ? raw : message, detail.isEmpty ? nil : detail)
     }
 
     private func executionNoticeFreeText(_ text: String) -> String {
