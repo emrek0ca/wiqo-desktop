@@ -666,7 +666,15 @@ final class IOSConnectionModel: ObservableObject {
         failPending(IOSConnectionError.failed)
     }
 
+    /// Collapses a repeat of the exact same state (title AND detail unchanged - "Bağlantı:
+    /// Çalışıyor..." after a reconnect attempt is the common case) into the existing top row
+    /// instead of piling up an identical one - the log is meant to show what CHANGED, and a wall
+    /// of duplicate lines buries the one row (a real error) someone's actually looking for.
     private func appendActivity(title: String, detail: String) {
+        if let first = activities.first, first.title == title, first.detail == detail {
+            activities[0] = IOSActivity(title: title, detail: detail)
+            return
+        }
         activities.insert(IOSActivity(title: title, detail: detail), at: 0)
         if activities.count > 20 { activities.removeLast() }
     }
@@ -717,6 +725,7 @@ final class IOSConnectionModel: ObservableObject {
         case .runShortcut: return "Shortcut çalıştır"
         case .controlUIElement: return "Arayüz kontrolü"
         case .clickScreen: return "Ekrana tıkla"
+        case .listRunningApplications: return "Açık uygulamalar"
         }
     }
 
@@ -727,14 +736,17 @@ final class IOSConnectionModel: ObservableObject {
 
     /// Builds and validates the exact same CommandRequest the direct path would send, then routes
     /// it through the backend relay (see RovaBackendClient.sendDeviceCommand) instead. Used only
-    /// when the direct local connection isn't up; a signed-in Wiqo account is enough for this to
-    /// work; needing a signature (device-pairing-token trust) is specific to the direct path, so
-    /// this leaves it unsigned exactly like an automation step already does.
+    /// when the direct local connection isn't up; a signed-in Wiqo account gets the request as far
+    /// as the Mac's persistent backend socket, but the Mac itself only trusts the device-pairing
+    /// token - so this signs the request exactly like the direct path does, rather than relying on
+    /// account auth alone to stand in for device-pairing trust the Mac never actually granted it.
     private func sendViaBackendRelay(type: CommandType, payload: CommandPayload, commandID: UUID) async -> CommandResult {
         guard RovaBackendClient.isAuthenticated else {
             return failureResult(id: commandID, error: RovaError(code: "OFFLINE", message: "PC bağlı değil."))
         }
-        let request = CommandRequest(id: commandID, type: type, payload: payload)
+        let nonce = try? RovaCrypto.randomToken()
+        let signature = token.map { RovaValidation.signRequest(id: commandID, type: type, nonce: nonce ?? "", token: $0) }
+        let request = CommandRequest(id: commandID, type: type, payload: payload, signature: signature, nonce: nonce)
         if let validationError = RovaValidation.validate(request) {
             return failureResult(id: request.id, error: validationError)
         }
@@ -818,7 +830,19 @@ private enum ConnectionMode {
     case authenticated
 }
 
-private enum IOSConnectionError: Error {
+/// Conforms to LocalizedError specifically so `error.localizedDescription` (the fallback `send()`
+/// uses for any error that isn't already a RovaError - see its catch block) never falls through to
+/// Foundation's default NSError bridging, which for a plain enum with no Error/CustomNSError
+/// conformance produces exactly the raw, undebuggable-looking text a user reported seeing:
+/// "(RovaIOS.(unknown context at $ADDRESS).IOSConnectionError hatası 0.)".
+private enum IOSConnectionError: LocalizedError {
     case disconnected
     case failed
+
+    var errorDescription: String? {
+        switch self {
+        case .disconnected: return "Mac ile bağlantı kesildi."
+        case .failed: return "Mac ile bağlantı kurulamadı."
+        }
+    }
 }

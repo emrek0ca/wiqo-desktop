@@ -68,6 +68,72 @@ struct MacMenuView: View {
     }
 }
 
+struct MacWelcomeView: View {
+    let onComplete: () -> Void
+    @ObservedObject var runtime: MacRuntime
+
+    init(onComplete: @escaping () -> Void, runtime: MacRuntime) {
+        self.onComplete = onComplete
+        self.runtime = runtime
+    }
+
+    var body: some View {
+        HStack(spacing: 24) {
+            VStack(alignment: .leading, spacing: 16) {
+                Image(systemName: "laptopcomputer.and.iphone")
+                    .font(.system(size: 42, weight: .medium))
+                    .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
+
+                Text("Wiqo'ya hoş geldin")
+                    .font(.title2.weight(.bold))
+
+                Text("Bilgisayarını telefonundan, konuşarak yönet.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    instructionRow(number: "1", text: "iPhone'da Wiqo'yu aç.")
+                    instructionRow(number: "2", text: "Sağdaki QR kodu telefondan tara.")
+                    instructionRow(number: "3", text: "Bağlanınca ilk komutunu ver.")
+                }
+                .padding(.top, 4)
+
+                Text("Kurulum tamamlandığında bu pencereyi kapatabilirsin.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Button("Anladım") {
+                    onComplete()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+            .frame(width: 310, alignment: .leading)
+
+            Divider()
+
+            PairingQRView(runtime: runtime)
+        }
+        .padding(24)
+        .frame(width: 740, height: 450)
+    }
+
+    private func instructionRow(number: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(number)
+                .font(.caption.weight(.bold).monospacedDigit())
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22)
+                .background(Color.accentColor, in: Circle())
+
+            Text(text)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 struct PairingQRView: View {
     @ObservedObject var runtime: MacRuntime
 

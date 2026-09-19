@@ -86,8 +86,17 @@ enum RovaTLSIdentityStore {
     }
 }
 
-enum RovaTLSError: Error {
+/// LocalizedError so `error.localizedDescription` (MacServer.swift surfaces this directly as
+/// "TLS servisi başlatılamadı: ___" - see MacRuntime.swift) never falls back to Foundation's raw
+/// NSError bridging of a plain enum, the same message-quality bug found in IOSConnectionError.
+enum RovaTLSError: LocalizedError {
     case identityCreationFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .identityCreationFailed: return "Yerel eşleştirme sertifikası oluşturulamadı."
+        }
+    }
 }
 
 private enum DER {

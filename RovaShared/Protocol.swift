@@ -54,6 +54,7 @@ public enum CommandType: String, Codable, CaseIterable, Sendable {
     case runShortcut
     case controlUIElement
     case clickScreen
+    case listRunningApplications
 }
 
 public enum MediaAction: String, Codable, CaseIterable, Sendable {
@@ -1014,9 +1015,10 @@ public enum CommandData: Codable, Equatable, Sendable {
     case uiElement(UIElementContent)
     case screenClick(ScreenClickContent)
     case applicationControl(ApplicationControlContent)
+    case runningApplications([RunningApplicationInfo])
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileData, processOutput, screenshot, shortcutResult, uiElement, screenClick, applicationControl }
+    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileData, processOutput, screenshot, shortcutResult, uiElement, screenClick, applicationControl, runningApplications }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1059,6 +1061,8 @@ public enum CommandData: Codable, Equatable, Sendable {
             self = .screenClick(try container.decode(ScreenClickContent.self, forKey: .value))
         case .applicationControl:
             self = .applicationControl(try container.decode(ApplicationControlContent.self, forKey: .value))
+        case .runningApplications:
+            self = .runningApplications(try container.decode([RunningApplicationInfo].self, forKey: .value))
         }
     }
 
@@ -1122,7 +1126,27 @@ public enum CommandData: Codable, Equatable, Sendable {
         case .applicationControl(let value):
             try container.encode(Kind.applicationControl, forKey: .kind)
             try container.encode(value, forKey: .value)
+        case .runningApplications(let value):
+            try container.encode(Kind.runningApplications, forKey: .kind)
+            try container.encode(value, forKey: .value)
         }
+    }
+}
+
+/// What's actually open right now, as opposed to InstalledApplicationInfo (what's on disk,
+/// used only for name-resolution candidates) - `isActive` is the one currently in the
+/// foreground, since "which one am I looking at" is usually the follow-up question.
+public struct RunningApplicationInfo: Codable, Equatable, Sendable, Identifiable {
+    public let name: String
+    public let bundleIdentifier: String?
+    public let isActive: Bool
+
+    public var id: String { bundleIdentifier ?? name }
+
+    public init(name: String, bundleIdentifier: String?, isActive: Bool) {
+        self.name = name
+        self.bundleIdentifier = bundleIdentifier
+        self.isActive = isActive
     }
 }
 

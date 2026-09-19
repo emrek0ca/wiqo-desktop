@@ -8,6 +8,7 @@ struct AuthView: View {
 
     @State private var email = ""
     @State private var password = ""
+    @State private var inviteCode = ""
     @State private var isRegistering = false
     @State private var isSubmitting = false
     @State private var errorMessage: String?
@@ -16,7 +17,7 @@ struct AuthView: View {
     @State private var acceptedTerms = false
     @FocusState private var focusedField: Field?
 
-    private enum Field { case email, password }
+    private enum Field { case email, password, inviteCode }
 
     var body: some View {
         ZStack {
@@ -114,8 +115,27 @@ struct AuthView: View {
                 SecureField("Şifre", text: $password)
                     .textFieldStyle(RovaAuthFieldStyle())
                     .focused($focusedField, equals: .password)
-                    .submitLabel(.go)
-                    .onSubmit { if canSubmit { Task { await submit() } } }
+                    .submitLabel(isRegistering ? .next : .go)
+                    .onSubmit {
+                        if isRegistering { focusedField = .inviteCode } else if canSubmit { Task { await submit() } }
+                    }
+
+                if isRegistering {
+                    TextField("Davet kodu (opsiyonel)", text: $inviteCode)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(RovaAuthFieldStyle())
+                        .focused($focusedField, equals: .inviteCode)
+                        .submitLabel(.go)
+                        .onSubmit { if canSubmit { Task { await submit() } } }
+                }
+            }
+
+            if isRegistering && inviteCode.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text("Bir arkadaşının davet kodu varsa gir - ikiniz de 14 gün Pro kazanırsınız.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             if !isRegistering {
@@ -242,7 +262,7 @@ struct AuthView: View {
         defer { isSubmitting = false }
         do {
             if isRegistering {
-                try await RovaBackendClient.register(email: email, password: password)
+                try await RovaBackendClient.register(email: email, password: password, inviteCode: inviteCode)
             } else {
                 try await RovaBackendClient.login(email: email, password: password)
             }

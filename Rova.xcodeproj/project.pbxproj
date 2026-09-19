@@ -12,6 +12,10 @@
 		2113ACCAC0B15E6D73621D1B /* ReplyBlocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB41EC457885DC642E7B033 /* ReplyBlocks.swift */; };
 		3B3989760AB287C6DF759DA5 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91687FA6CF10762A30145E6C /* PaywallView.swift */; };
 		3C44106B0048C66ECF01156E /* CopilotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */; };
+		4B18DD33AE07432EA5D484B4 /* DiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 316BBB8D46F54C18809ADCAD /* DiscoveryView.swift */; };
+		1EB858DB70C74FAFB333639B /* ConnectedAccountsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90A85ECB961454CA0489481 /* ConnectedAccountsView.swift */; };
+		92543008EFD54FB88E87006F /* DeviceCapabilitiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A19CF80E5304FC2A06CD0CA /* DeviceCapabilitiesView.swift */; };
+		134499258EDC4B29A14A8CBA /* WiqoAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B328EA9F210844F1BEFB3599 /* WiqoAppIntents.swift */; };
 		49B373C9F593CC5E80FE77F8 /* CanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E470424BA1B9926C7F1169F /* CanvasView.swift */; };
 		4FDC30AA70FBC8AD06EAAEAF /* AuthSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDEB5E8610087C8CA0CC13D /* AuthSessionStore.swift */; };
 		5881451312769523475482A3 /* CapabilitySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CB2D3456C2FC772030765F9 /* CapabilitySettings.swift */; };
@@ -47,6 +51,7 @@
 		B018 /* IOSConnectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F018 /* IOSConnectionModel.swift */; };
 		B019 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F019 /* QRScannerView.swift */; };
 		B020 /* IOSViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F020 /* IOSViews.swift */; };
+		D10000000000000000000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* OnboardingView.swift */; };
 		B026 /* ProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F026 /* ProtocolTests.swift */; };
 		B027 /* MacCommandEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F027 /* MacCommandEngineTests.swift */; };
 		C100 /* WiqoFocusDoNotDisturbOn.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C110 /* WiqoFocusDoNotDisturbOn.shortcut */; };
@@ -95,6 +100,10 @@
 		3316E23CDB65A96A8283CF08 /* AuthView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		395FF78233CB35CC80BB3B64 /* Billing.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Billing.swift; sourceTree = "<group>"; };
 		40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotView.swift; sourceTree = "<group>"; };
+		316BBB8D46F54C18809ADCAD /* DiscoveryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiscoveryView.swift; sourceTree = "<group>"; };
+		F90A85ECB961454CA0489481 /* ConnectedAccountsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConnectedAccountsView.swift; sourceTree = "<group>"; };
+		1A19CF80E5304FC2A06CD0CA /* DeviceCapabilitiesView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceCapabilitiesView.swift; sourceTree = "<group>"; };
+		B328EA9F210844F1BEFB3599 /* WiqoAppIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoAppIntents.swift; sourceTree = "<group>"; };
 		4CB2D3456C2FC772030765F9 /* CapabilitySettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CapabilitySettings.swift; sourceTree = "<group>"; };
 		6583CED070EAE8D63AAB075A /* wiqo.icon */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.iconcomposer.icon; path = wiqo.icon; sourceTree = "<group>"; };
 		6E83CFEFCD81E067708F22DC /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -139,6 +148,7 @@
 		F018 /* IOSConnectionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSConnectionModel.swift; sourceTree = "<group>"; };
 		F019 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		F020 /* IOSViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSViews.swift; sourceTree = "<group>"; };
+		D10000000000000000000002 /* OnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		F021 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F022 /* Wiqo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Wiqo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F023 /* Rova.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rova.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -241,8 +251,13 @@
 				F018 /* IOSConnectionModel.swift */,
 				F019 /* QRScannerView.swift */,
 				F020 /* IOSViews.swift */,
+				D10000000000000000000002 /* OnboardingView.swift */,
 				F021 /* Info.plist */,
 				40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */,
+				316BBB8D46F54C18809ADCAD /* DiscoveryView.swift */,
+				F90A85ECB961454CA0489481 /* ConnectedAccountsView.swift */,
+				1A19CF80E5304FC2A06CD0CA /* DeviceCapabilitiesView.swift */,
+				B328EA9F210844F1BEFB3599 /* WiqoAppIntents.swift */,
 				A5C0DE000000000000000001 /* WiqoSpeechPermissionBridge.swift */,
 				091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */,
 				3316E23CDB65A96A8283CF08 /* AuthView.swift */,
@@ -518,6 +533,7 @@
 				B018 /* IOSConnectionModel.swift in Sources */,
 				B019 /* QRScannerView.swift in Sources */,
 				B020 /* IOSViews.swift in Sources */,
+				D10000000000000000000001 /* OnboardingView.swift in Sources */,
 				FF28DCBE30573E6C0006FF82 /* Protocol.swift in Sources */,
 				FF28DCBF30573E6C0006FF82 /* Validation.swift in Sources */,
 				FF28DCC030573E6C0006FF82 /* Framing.swift in Sources */,
@@ -525,6 +541,10 @@
 				FF28DCC230573E6C0006FF82 /* CryptoSupport.swift in Sources */,
 				FF28DCC330573E6C0006FF82 /* QRPairing.swift in Sources */,
 				3C44106B0048C66ECF01156E /* CopilotView.swift in Sources */,
+				4B18DD33AE07432EA5D484B4 /* DiscoveryView.swift in Sources */,
+				1EB858DB70C74FAFB333639B /* ConnectedAccountsView.swift in Sources */,
+				92543008EFD54FB88E87006F /* DeviceCapabilitiesView.swift in Sources */,
+				134499258EDC4B29A14A8CBA /* WiqoAppIntents.swift in Sources */,
 				A5C0DE000000000000000002 /* WiqoSpeechPermissionBridge.swift in Sources */,
 				6C2FB4A549AEFF241332DB4B /* RovaBackendClient.swift in Sources */,
 				1D26C79A99868523A4ECB1D0 /* AuthView.swift in Sources */,

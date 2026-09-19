@@ -18,15 +18,17 @@ final class MacBackendChannel: NSObject {
     private let engine: MacCommandEngine
     private let runtimeStatus: () -> String
     private let deviceInfo: () -> DeviceInfo
+    private let pairedDeviceToken: () -> String?
     private var task: URLSessionWebSocketTask?
     private var reconnectTask: Task<Void, Never>?
     private var reconnectAttempt = 0
     private var currentToken: String?
 
-    init(engine: MacCommandEngine, runtimeStatus: @escaping () -> String, deviceInfo: @escaping () -> DeviceInfo) {
+    init(engine: MacCommandEngine, runtimeStatus: @escaping () -> String, deviceInfo: @escaping () -> DeviceInfo, pairedDeviceToken: @escaping () -> String?) {
         self.engine = engine
         self.runtimeStatus = runtimeStatus
         self.deviceInfo = deviceInfo
+        self.pairedDeviceToken = pairedDeviceToken
     }
 
     /// Reconnects with a stored token, if any - call once at app launch.
@@ -184,7 +186,19 @@ final class MacBackendChannel: NSObject {
     /// A confirmed chat command relayed through the backend instead of the direct local
     /// connection - same request shape, same MacCommandEngine, no unattended-execution
     /// restriction, because the phone already gated this exactly as it would for the direct path.
+    /// Still requires the same per-command signature the direct path requires (see MacRuntime's
+    /// `.command` handling) - the backend relay only proves "a signed-in account," not "the device
+    /// that holds this Mac's pairing token," so skipping this check here would have let anyone
+    /// signed in to the account (or the backend itself, if it were ever compromised) run commands
+    /// this Mac never actually paired to accept unsigned.
     private func executeInteractiveCommand(_ payload: InteractiveCommandPayload, on task: URLSessionWebSocketTask) {
+        guard let token = pairedDeviceToken(), RovaValidation.verifyRequestSignature(request: payload.request, token: token) else {
+            let now = Date()
+            let error = RovaError(code: "INVALID_SIGNATURE", message: "Komut kriptografik imzası geçersiz.")
+            let result = CommandResult(commandID: payload.request.id, status: .failed, message: error.message, startedAt: now, finishedAt: now, error: error)
+            sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)
+            return
+        }
         Task { @MainActor [weak self, engine, runtimeStatus] in
             let result = await engine.execute(payload.request, runtimeStatus: runtimeStatus())
             self?.sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)

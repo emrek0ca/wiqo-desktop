@@ -9,7 +9,7 @@ public enum RovaValidation {
 
     public static func validate(_ request: CommandRequest) -> RovaError? {
         switch request.type {
-        case .getSystemStatus, .ping, .lockMac, .sleepMac, .displaySleep, .toggleMute, .listCalendarEvents, .listDesktopFiles, .listReminders, .getClipboardText, .getClipboardHistory:
+        case .getSystemStatus, .ping, .lockMac, .sleepMac, .displaySleep, .toggleMute, .listCalendarEvents, .listDesktopFiles, .listReminders, .getClipboardText, .getClipboardHistory, .listRunningApplications:
             guard request.payload == .none else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Bu komut payload kabul etmiyor.")
             }
@@ -343,6 +343,7 @@ public enum RovaCommandAuthority {
         case .runShortcut: return "device.shortcut.run"
         case .controlUIElement: return "device.ui.control"
         case .clickScreen: return "device.screen.click"
+        case .listRunningApplications: return "device.app.list"
         }
     }
 

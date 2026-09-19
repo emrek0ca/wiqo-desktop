@@ -46,11 +46,14 @@ struct WiqoHomeView: View {
     @State private var showSettings = false
     @State private var showPCSettings = false
     @State private var showTemplates = false
+    @State private var showWelcome = false
+    @State private var didCheckWelcome = false
+    @State private var openPCSettingsAfterWelcome = false
     @State private var draftPrompt: String?
 
     var body: some View {
         NavigationStack {
-            CopilotView(model: model, authSession: authSession, conversationID: conversationID, draftPrompt: draftPrompt)
+            CopilotView(model: model, authSession: authSession, subscriptionStore: subscriptionStore, conversationID: conversationID, draftPrompt: draftPrompt)
                 .id(conversationID)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
@@ -94,6 +97,7 @@ struct WiqoHomeView: View {
                 }
         }
         .task {
+            prepareWelcomeIfNeeded()
             model.connect()
             await profileStore.refresh()
             await subscriptionStore.refresh()
@@ -120,6 +124,15 @@ struct WiqoHomeView: View {
                 draftPrompt = prompt
                 conversationID = CopilotConversationStore.newIdentifier()
             }
+        }
+        .sheet(isPresented: $showWelcome, onDismiss: completeWelcome) {
+            WiqoWelcomeView(
+                onDismiss: { showWelcome = false },
+                onConnect: {
+                    openPCSettingsAfterWelcome = true
+                    showWelcome = false
+                }
+            )
         }
         .overlay {
             if showSidebar {
@@ -158,6 +171,29 @@ struct WiqoHomeView: View {
         conversations = CopilotConversationStore.all()
         draftPrompt = nil
         conversationID = CopilotConversationStore.newIdentifier()
+    }
+
+    private var welcomeCompletionKey: String? {
+        let identity = RovaBackendClient.currentUserID ?? RovaBackendClient.currentUserEmail
+        guard let identity, !identity.isEmpty else { return nil }
+        return "wiqo.welcome.completed.\(identity)"
+    }
+
+    private func prepareWelcomeIfNeeded() {
+        guard !didCheckWelcome else { return }
+        didCheckWelcome = true
+        guard let key = welcomeCompletionKey,
+              !UserDefaults.standard.bool(forKey: key) else { return }
+        showWelcome = true
+    }
+
+    private func completeWelcome() {
+        if let key = welcomeCompletionKey {
+            UserDefaults.standard.set(true, forKey: key)
+        }
+        guard openPCSettingsAfterWelcome else { return }
+        openPCSettingsAfterWelcome = false
+        showPCSettings = true
     }
 
     /// Pulls this account's conversation list from the backend and folds it into the local cache -
@@ -399,6 +435,10 @@ struct PairingView: View {
     @ObservedObject var model: IOSConnectionModel
     @State private var showingScanner = false
     @State private var scanError: String?
+    @State private var showingCelebration = false
+    // Once ever, not on every re-pair (a lost connection reconnecting, a second Mac being added)
+    // - the "show someone" moment only makes sense the very first time this account gets a PC.
+    @AppStorage("wiqo.hasSeenPairingCelebration") private var hasSeenPairingCelebration = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -415,7 +455,7 @@ struct PairingView: View {
                 Button {
                     showingScanner = true
                 } label: {
-                        Label("QR tara", systemImage: "qrcode.viewfinder")
+                    Label("QR tara", systemImage: "qrcode.viewfinder")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -447,8 +487,59 @@ struct PairingView: View {
         // without it, a successful pairing left the user staring at a screen that had already
         // done its job, with no obvious next step but to swipe it away manually.
         .onChange(of: model.isPaired) { _, paired in
-            if paired { dismiss() }
+            guard paired else { return }
+            if hasSeenPairingCelebration {
+                dismiss()
+            } else {
+                hasSeenPairingCelebration = true
+                showingCelebration = true
+            }
         }
+        .sheet(isPresented: $showingCelebration, onDismiss: { dismiss() }) {
+            PairingCelebrationView()
+        }
+    }
+}
+
+/// A one-time, one-shot "wow" moment right after the very first pairing - the whole product
+/// spreads best when someone sees this happen in person, so the app should say so out loud
+/// instead of leaving that realization to chance.
+private struct PairingCelebrationView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image(systemName: "sparkles")
+                .font(.system(size: 48))
+                .foregroundStyle(.tint)
+            Text("Mac'in Bağlandı!")
+                .font(.title2.weight(.bold))
+            Text("Şimdi yanındaki birine telefonundan söyle:")
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Text("\"Sesi kıs\"")
+                .font(.title3.weight(.semibold))
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground), in: Capsule())
+            Text("Wiqo telefonundan gerçekten PC'ni kontrol ediyor - bunu görmek en iyi anlatımdır.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+            Spacer()
+            Button {
+                dismiss()
+            } label: {
+                Text("Harika!").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.horizontal, 24)
+        }
+        .padding(.vertical, 32)
+        .presentationDetents([.medium])
     }
 }
 
@@ -483,6 +574,8 @@ struct SettingsView: View {
     @State private var tasks: [RovaBackendClient.RovaTask] = []
     @State private var automations: [RovaBackendClient.RovaAutomation] = []
     @State private var taskAutomationError: String?
+    @State private var accountInfo: RovaBackendClient.AccountInfo?
+    @State private var inviteCodes: [RovaBackendClient.InviteCode] = []
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -491,6 +584,8 @@ struct SettingsView: View {
                 VStack(spacing: RovaDesign.cardSpacing) {
                     profileCard
                     subscriptionCard
+                    referralCard
+                    connectedAccountsCard
                     pcSettingsCard
                     if taskAutomationError != nil || !pendingTasks.isEmpty || !activeAutomations.isEmpty { tasksAutomationsCard }
                     legalCard
@@ -516,7 +611,70 @@ struct SettingsView: View {
         .task {
             await loadTasksAndAutomations()
             await subscriptionStore.refresh()
+            await loadAccountAndInviteCodes()
         }
+    }
+
+    private func loadAccountAndInviteCodes() async {
+        async let fetchedAccount = try? RovaBackendClient.fetchAccountInfo()
+        async let fetchedCodes = try? RovaBackendClient.fetchInviteCodes()
+        accountInfo = await fetchedAccount
+        inviteCodes = (await fetchedCodes) ?? []
+    }
+
+    /// The whole point is that Wiqo spreads through people who already use it: a founding-member
+    /// badge for whoever got here early, and a code to hand a friend that credits both sides a
+    /// Pro bonus the moment it's redeemed (see rova-backend's grantReferralBonus).
+    private var referralCard: some View {
+        RovaCard {
+            if accountInfo?.isFoundingMember == true {
+                HStack(spacing: 8) {
+                    Image(systemName: "seal.fill").foregroundStyle(.yellow)
+                    Text("Kurucu Üye").font(.subheadline.weight(.semibold))
+                }
+                Divider()
+            }
+            Label("Arkadaşını davet et", systemImage: "gift.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text("Bir arkadaşın senin kodunla katılırsa ikiniz de \(14) gün Pro kazanır.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let code = inviteCodes.first(where: { !$0.used })?.code {
+                HStack {
+                    Text(code)
+                        .font(.system(.title3, design: .monospaced).weight(.semibold))
+                    Spacer()
+                    ShareLink(item: "Wiqo'yu deniyorum, davet kodumla katıl ve ikimiz de Pro kazanalım: \(code)") {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+                .padding(.top, 2)
+            }
+        }
+    }
+
+    /// Google Calendar/Gmail and Notion - real cloud accounts, entirely separate from the paired
+    /// Mac (see rova-backend's cloudIntegrationTools.ts). Works even for a Free user with no PC.
+    private var connectedAccountsCard: some View {
+        NavigationLink {
+            ConnectedAccountsView()
+        } label: {
+            RovaCard {
+                HStack(spacing: 14) {
+                    Image(systemName: "link.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.tint)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Bağlı Hesaplar").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                        Text("Google Takvim, Gmail, Notion").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var profileCard: some View {
@@ -736,6 +894,7 @@ struct PCSettingsView: View {
                         if model.isPaired {
                             statusCard
                             if !backendDevices.isEmpty { devicesCard }
+                            capabilitiesCard
                             quickActionsCard
                             mediaCard
                             displayCard
@@ -911,6 +1070,29 @@ struct PCSettingsView: View {
             }
             Button("Vazgeç", role: .cancel) {}
         }
+    }
+
+    /// A live status view of what Wiqo can actually do on this Mac right now - answers "neden
+    /// çalışmıyor" without needing to guess or wait for a failed attempt first.
+    private var capabilitiesCard: some View {
+        NavigationLink {
+            DeviceCapabilitiesView(authorities: model.deviceInfo?.authorities ?? [])
+        } label: {
+            RovaCard {
+                HStack(spacing: 14) {
+                    Image(systemName: "checklist")
+                        .font(.title3)
+                        .foregroundStyle(.tint)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("PC Yetenekleri").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                        Text("Şu an neyin hazır, neyin izin beklediğini gör").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var pairingPromptCard: some View {

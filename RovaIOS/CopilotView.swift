@@ -5,6 +5,77 @@ import Speech
 import SwiftUI
 import UIKit
 
+private enum BackendConfirmationStatus: Equatable {
+    case pending
+    case processing
+    case completed
+    case cancelled
+    case failed
+}
+
+private enum LiveExecutionStatus: String {
+    case ready
+    case awaitingConfirmation = "awaiting_confirmation"
+    case dispatching
+    case running
+    case succeeded
+    case failed
+    case denied
+    case blocked
+
+    var title: String {
+        switch self {
+        case .ready: return "Hazır"
+        case .awaitingConfirmation: return "Onay bekliyor"
+        case .dispatching: return "Sırada"
+        case .running: return "Çalışıyor…"
+        case .succeeded: return "Tamamlandı"
+        case .failed: return "Başarısız"
+        case .denied: return "Reddedildi"
+        case .blocked: return "Bekletildi"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .ready: return "circle"
+        case .awaitingConfirmation: return "clock"
+        case .dispatching: return "arrow.forward.circle"
+        case .running: return "arrow.triangle.2.circlepath"
+        case .succeeded: return "checkmark.circle.fill"
+        case .failed: return "xmark.circle.fill"
+        case .denied: return "xmark.circle"
+        case .blocked: return "pause.circle"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .ready, .dispatching, .blocked: return .secondary
+        case .awaitingConfirmation: return .orange
+        case .running: return .secondary
+        case .succeeded: return .green
+        case .failed: return .red
+        case .denied: return .secondary
+        }
+    }
+}
+
+private enum LocalExecutionAdvanceResult {
+    case awaitingConfirmation
+    case completed
+    case failed
+}
+
+private struct BackendConfirmationRow: Identifiable, Equatable {
+    var confirmation: RovaBackendClient.BackendConfirmation
+    var status: BackendConfirmationStatus = .pending
+    var resultText: String?
+    var artifacts: [RovaBackendClient.ArtifactDescriptor] = []
+
+    var id: UUID { confirmation.id }
+}
+
 private struct ChatBubble: Identifiable {
     enum Role { case user, assistant, system }
 
@@ -16,6 +87,9 @@ private struct ChatBubble: Identifiable {
     var executedStepIDs: Set<UUID> = []
     var inFlightStepIDs: Set<UUID> = []
     var artifacts: [RovaBackendClient.ArtifactDescriptor] = []
+    var executionState: String? = nil
+    var backendConfirmations: [BackendConfirmationRow] = []
+    var executionUpdates: [UUID: RovaBackendClient.ExecutionStepUpdate] = [:]
     /// Small (max-240px-side) JPEG thumbnails of what the user attached to this message - kept
     /// deliberately tiny since these persist in local chat history (see CopilotStoredMessage)
     /// rather than the full upload-quality copy already sent to the backend.
@@ -28,6 +102,11 @@ private struct ChatBubble: Identifiable {
     /// Populated only for `.executeCode` steps once the Mac returns a result - drives the
     /// collapsible code/output card instead of dumping raw stdout into the reply text.
     var codeRuns: [UUID: ProcessOutputContent] = [:]
+    /// The Mac's real CommandResult for every non-executeCode step, keyed by step id - what
+    /// drives each row's live detail/result line in executionWidget. In-memory only, exactly like
+    /// codeRuns/failedSteps above: after a restart, only the short summary line folded into
+    /// `text` (see execute()) survives, not this per-step detail.
+    var stepResults: [UUID: CommandResult] = [:]
 }
 
 /// What a user attached shows as small thumbnails sitting above their own message bubble, exactly
@@ -237,41 +316,71 @@ private struct ConfirmationSheetView: View {
     let onConfirm: () -> Void
     let onConfirmAndAlwaysAllow: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
+    private var currentStep: PlannedCommand? {
+        bubble.steps.first { step in
+            !bubble.executedStepIDs.contains(step.id)
+                && (step.isDestructive || step.requiresUserPresence)
+        }
+    }
+
+    private var laterConfirmationCount: Int {
+        guard let currentStep,
+              let index = bubble.steps.firstIndex(where: { $0.id == currentStep.id }) else { return 0 }
+        return bubble.steps.dropFirst(index + 1).filter { step in
+            !bubble.executedStepIDs.contains(step.id)
+                && (step.isDestructive || step.requiresUserPresence)
+        }.count
+    }
 
     private var qualifiesForAlwaysAllow: Bool {
-        bubble.steps.contains(where: CopilotView.canGrantTrust)
+        guard let currentStep else { return false }
+        return CopilotView.canGrantTrust(currentStep)
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    ForEach(bubble.steps) { step in
-                        if step.type == .executeCode, case .codeExecution(let payload) = step.payload {
-                            CodeExecutionCard(payload: payload, summary: step.summary, run: nil, failureMessage: nil, isPending: true)
+                VStack(alignment: .leading, spacing: 16) {
+                    if let currentStep {
+                        if currentStep.type == .executeCode, case .codeExecution(let payload) = currentStep.payload {
+                            CodeExecutionCard(payload: payload, summary: currentStep.summary, run: nil, failureMessage: nil, isPending: true)
                         } else {
-                            HStack(alignment: .top, spacing: 10) {
+                            HStack(alignment: .top, spacing: 12) {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundStyle(.orange)
-                                Text(step.summary)
-                                    .font(.subheadline)
-                                Spacer()
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Sıradaki adım")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(.secondary)
+                                    Text(currentStep.summary)
+                                        .font(.headline)
+                                }
+                                Spacer(minLength: 0)
                             }
-                            .padding(12)
+                            .padding(16)
                             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
                         }
-                    }
 
-                    if qualifiesForAlwaysAllow {
-                        Text("\"Her zaman izin ver\" seçilirse Wiqo bu tür eylemleri bundan sonra onay istemeden çalıştırır. Bunu istediğin zaman Ayarlar › Onaylı Eylemler'den geri alabilirsin.")
+                        Text(laterConfirmationCount > 0
+                             ? "İşlem sırayla ilerleyecek. Sonraki izin gerektiğinde ayrıca sorulacak."
+                             : "Onayından sonra bu adım çalıştırılacak.")
                             .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if qualifiesForAlwaysAllow {
+                            Text("Bu eylem türü için gelecekte onay istememeyi seçebilirsin.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("Onaylanacak adım bulunamadı.")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                 }
                 .padding(20)
             }
-            .navigationTitle("Onay gerekiyor")
+            .navigationTitle("Bu adım için onay")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -287,7 +396,7 @@ private struct ConfirmationSheetView: View {
                         if isProcessing {
                             ProgressView().frame(maxWidth: .infinity)
                         } else {
-                            Label("Onayla ve Çalıştır", systemImage: "checkmark.shield")
+                            Label("Onayla", systemImage: "checkmark.shield")
                                 .frame(maxWidth: .infinity)
                         }
                     }
@@ -322,11 +431,20 @@ private struct ConfirmationSheetView: View {
     }
 }
 
-private let suggestions: [(title: String, icon: String)] = [
-    ("Toplantıya hazırla", "person.2.fill"),
-    ("Sesi kıs", "speaker.wave.1.fill"),
-    ("Bugün hava nasıl?", "cloud.sun.fill"),
-    ("Ekranı kısarak odaklan", "moon.stars.fill")
+/// A suggestion tagged `requiresDevice: true` only makes sense with a Mac actually reachable
+/// right now - showing "Sesi kıs" to a Free-tier user (no PC access at all) or to someone whose
+/// Mac is unpaired/offline just produces a confused, doomed-to-fail first message. Ordered PC
+/// suggestions first, non-PC after, so filtering + prefix(4) below naturally fills the row with
+/// non-PC alternatives instead of coming up short when device suggestions get excluded.
+private struct QuickSuggestion { let title: String; let icon: String; let requiresDevice: Bool }
+
+private let allSuggestions: [QuickSuggestion] = [
+    QuickSuggestion(title: "Sesi kıs", icon: "speaker.wave.1.fill", requiresDevice: true),
+    QuickSuggestion(title: "Ekranı kısarak odaklan", icon: "moon.stars.fill", requiresDevice: true),
+    QuickSuggestion(title: "Bugün hava nasıl?", icon: "cloud.sun.fill", requiresDevice: false),
+    QuickSuggestion(title: "Basit bir hesap makinesi yap", icon: "function", requiresDevice: false),
+    QuickSuggestion(title: "Toplantıya hazırla", icon: "person.2.fill", requiresDevice: false),
+    QuickSuggestion(title: "Bu ayki bütçemi tabloya dök", icon: "tablecells.fill", requiresDevice: false)
 ]
 
 /// Wiqo's conversation surface. A real conversation, not a one-shot "type → plan → confirm" form - every
@@ -339,6 +457,7 @@ private let suggestions: [(title: String, icon: String)] = [
 struct CopilotView: View {
     @ObservedObject var model: IOSConnectionModel
     @ObservedObject var authSession: AuthSessionStore
+    @ObservedObject var subscriptionStore: SubscriptionStore
     @Environment(\.scenePhase) private var scenePhase
     @State private var bubbles: [ChatBubble] = []
     @State private var inputText = ""
@@ -367,6 +486,7 @@ struct CopilotView: View {
     @StateObject private var audioRecorder = WiqoSpeechRecorder()
     @State private var isStartingAudio = false
     @State private var showingMicPermissionAlert = false
+    @State private var showingDiscovery = false
     @StateObject private var liveReply = LiveReplyText()
     /// Follows the conversation's end only while the reader is already there: dragging up to read
     /// stops following, reaching the bottom again resumes it. Nothing ever yanks the view down.
@@ -389,9 +509,10 @@ struct CopilotView: View {
     /// user can still edit it before sending; never sent on their behalf. Consumed once in `.task`.
     private let draftPrompt: String?
 
-    init(model: IOSConnectionModel, authSession: AuthSessionStore, conversationID: String? = nil, draftPrompt: String? = nil) {
+    init(model: IOSConnectionModel, authSession: AuthSessionStore, subscriptionStore: SubscriptionStore, conversationID: String? = nil, draftPrompt: String? = nil) {
         self.model = model
         self.authSession = authSession
+        self.subscriptionStore = subscriptionStore
         self.draftPrompt = draftPrompt
         let resolvedID = conversationID ?? CopilotConversationStore.currentIdentifier()
         _conversationID = State(initialValue: resolvedID)
@@ -469,6 +590,12 @@ struct CopilotView: View {
         } message: {
             Text("Wiqo'nun konuşmanızı cihazda metne çevirebilmesi için Ayarlar'dan Wiqo'ya mikrofon ve konuşma tanıma izinlerini vermen gerekiyor.")
         }
+        .sheet(isPresented: $showingDiscovery) {
+            DiscoveryView(deviceReady: deviceSuggestionsReady) { prompt in
+                inputText = prompt
+                isComposerFocused = true
+            }
+        }
         .sheet(isPresented: Binding(
             get: { confirmationBubbleID != nil },
             set: { isPresented in
@@ -504,10 +631,21 @@ struct CopilotView: View {
         }
     }
 
+    /// A Mac suggestion is only actually actionable when one is paired, currently reachable, and
+    /// the account's tier allows PC control at all - any one of those missing means the same
+    /// "Sesi kıs" tap that works perfectly for another user would just fail or hang here.
+    private var deviceSuggestionsReady: Bool {
+        model.isPaired && model.state == .connected && subscriptionStore.info.pcAllowed
+    }
+
+    private var visibleSuggestions: [QuickSuggestion] {
+        Array(allSuggestions.filter { deviceSuggestionsReady || !$0.requiresDevice }.prefix(4))
+    }
+
     private var suggestionRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(suggestions, id: \.title) { suggestion in
+                ForEach(visibleSuggestions, id: \.title) { suggestion in
                     Button {
                         inputText = suggestion.title
                         Task { await sendMessage() }
@@ -526,6 +664,21 @@ struct CopilotView: View {
                     }
                     .buttonStyle(.plain)
                 }
+                Button {
+                    showingDiscovery = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                        Text("Neler yapabilirim?")
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color(.secondarySystemBackground), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 12)
         }
@@ -707,6 +860,7 @@ struct CopilotView: View {
                     if bubble.role != .user { Spacer(minLength: 40) }
                 }
             }
+            executionWidget(for: bubble)
             codeExecutionCards(for: bubble)
             if !bubble.artifacts.isEmpty {
                 artifactCard(for: bubble.artifacts, awaitingSave: bubble.needsConfirmation)
@@ -717,6 +871,236 @@ struct CopilotView: View {
         }
         .frame(maxWidth: .infinity, alignment: bubble.role == .user ? .trailing : .leading)
         .padding(.horizontal)
+    }
+
+    private func executionWidget(for bubble: ChatBubble) -> some View {
+        let deviceSteps = bubble.steps.filter { $0.type != .executeCode }
+        let liveOnlyUpdates = standaloneExecutionUpdates(for: bubble, deviceSteps: deviceSteps)
+        let hasExecution = !deviceSteps.isEmpty || !bubble.backendConfirmations.isEmpty || !liveOnlyUpdates.isEmpty
+        return Group {
+            if hasExecution {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checklist")
+                            .foregroundStyle(.secondary)
+                        Text(executionWidgetTitle(bubble, deviceSteps: deviceSteps, liveOnlyUpdates: liveOnlyUpdates))
+                            .font(.subheadline.weight(.semibold))
+                        Spacer(minLength: 8)
+                        executionWidgetStatus(bubble, deviceSteps: deviceSteps)
+                    }
+                    .padding(.bottom, 8)
+
+                    ForEach(Array(deviceSteps.enumerated()), id: \.element.id) { index, step in
+                        deviceStepRow(index: index + 1, step: step, bubble: bubble)
+                        if index < deviceSteps.count - 1 || !bubble.backendConfirmations.isEmpty {
+                            Divider().padding(.vertical, 6)
+                        }
+                    }
+
+                    ForEach(Array(liveOnlyUpdates.enumerated()), id: \.element.id) { index, update in
+                        liveExecutionStepRow(index: deviceSteps.count + index + 1, update: update)
+                        if index < liveOnlyUpdates.count - 1 || !bubble.backendConfirmations.isEmpty {
+                            Divider().padding(.vertical, 6)
+                        }
+                    }
+
+                    ForEach(Array(bubble.backendConfirmations.enumerated()), id: \.element.id) { index, row in
+                        backendConfirmationRow(row, bubbleID: bubble.id)
+                        if index < bubble.backendConfirmations.count - 1 {
+                            Divider().padding(.vertical, 6)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
+            }
+        }
+    }
+
+    private func executionWidgetTitle(
+        _ bubble: ChatBubble,
+        deviceSteps: [PlannedCommand],
+        liveOnlyUpdates: [RovaBackendClient.ExecutionStepUpdate]
+    ) -> String {
+        if !deviceSteps.isEmpty && (!bubble.backendConfirmations.isEmpty || !liveOnlyUpdates.isEmpty) { return "İşlem planı" }
+        if !bubble.backendConfirmations.isEmpty || liveOnlyUpdates.contains(where: { $0.kind == "backend" }) { return "Hesap işlemi" }
+        return "Adımlar"
+    }
+
+    private func standaloneExecutionUpdates(
+        for bubble: ChatBubble,
+        deviceSteps: [PlannedCommand]
+    ) -> [RovaBackendClient.ExecutionStepUpdate] {
+        let representedIDs = Set(deviceSteps.map(\.id)).union(bubble.backendConfirmations.map(\.id))
+        return bubble.executionUpdates.values
+            .filter { update in
+                !representedIDs.contains(update.id)
+                    && !(update.confirmationId.map { representedIDs.contains($0) } ?? false)
+            }
+            .sorted { lhs, rhs in
+                switch (lhs.sequence, rhs.sequence) {
+                case let (left?, right?): return left < right
+                case (_?, nil): return true
+                case (nil, _?): return false
+                case (nil, nil): return lhs.id.uuidString < rhs.id.uuidString
+                }
+            }
+    }
+
+    private func executionWidgetStatus(_ bubble: ChatBubble, deviceSteps: [PlannedCommand]) -> some View {
+        let pendingLocal = deviceSteps.contains { step in
+            !bubble.executedStepIDs.contains(step.id)
+                && (step.isDestructive || step.requiresUserPresence)
+        }
+        let pendingBackend = bubble.backendConfirmations.contains { $0.status == .pending }
+        let livePending = bubble.executionUpdates.values.contains { update in
+            update.status == LiveExecutionStatus.awaitingConfirmation.rawValue || update.status == LiveExecutionStatus.blocked.rawValue
+        }
+        let liveReady = bubble.executionUpdates.values.contains { $0.status == LiveExecutionStatus.ready.rawValue }
+        let processing = !bubble.inFlightStepIDs.isEmpty
+            || bubble.backendConfirmations.contains { $0.status == .processing }
+            || bubble.executionUpdates.values.contains { update in
+                update.status == LiveExecutionStatus.dispatching.rawValue || update.status == LiveExecutionStatus.running.rawValue
+            }
+        let failed = !bubble.failedSteps.isEmpty
+            || bubble.backendConfirmations.contains { $0.status == .failed || $0.status == .cancelled }
+            || bubble.executionUpdates.values.contains { update in
+                update.status == LiveExecutionStatus.failed.rawValue || update.status == LiveExecutionStatus.denied.rawValue
+            }
+        let localDone = deviceSteps.allSatisfy { bubble.executedStepIDs.contains($0.id) }
+        let backendDone = bubble.backendConfirmations.allSatisfy { $0.status == .completed }
+
+        let title: String
+        let color: Color
+        if pendingLocal || pendingBackend || livePending || bubble.needsConfirmation {
+            title = "Onay bekliyor"
+            color = .orange
+        } else if processing {
+            title = "Çalışıyor…"
+            color = .secondary
+        } else if failed {
+            title = "Başarısız"
+            color = .red
+        } else if localDone && backendDone && !liveReady {
+            title = "Tamamlandı"
+            color = .green
+        } else {
+            title = "Hazırlanıyor…"
+            color = .secondary
+        }
+        return Text(title)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(color)
+            .lineLimit(1)
+    }
+
+    private func backendConfirmationRow(_ row: BackendConfirmationRow, bubbleID: UUID) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: row.confirmation.isDestructive ? "arrow.up.right.circle.fill" : "cloud.fill")
+                    .foregroundStyle(row.status == .failed ? .red : row.status == .completed ? .green : row.status == .pending ? .orange : .secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(row.confirmation.title)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Text(row.confirmation.summary)
+                        .font(.subheadline)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                backendConfirmationStatus(row.status)
+            }
+
+            if !row.confirmation.details.isEmpty {
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(row.confirmation.details.keys.sorted(), id: \.self) { key in
+                            if let value = row.confirmation.details[key], !value.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(key.replacingOccurrences(of: "_", with: " ").capitalized)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                    Text(value)
+                                        .font(.caption)
+                                        .lineLimit(5)
+                                        .foregroundStyle(.primary)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.top, 4)
+                } label: {
+                    Text("Ayrıntılar")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let resultText = row.resultText, !resultText.isEmpty {
+                Text(resultText)
+                    .font(.caption)
+                    .foregroundStyle(row.status == .completed ? Color.secondary : Color.red)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+            }
+
+            if row.status == .pending {
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await resolveBackendConfirmation(bubbleID: bubbleID, confirmationID: row.id, approved: true) }
+                    } label: {
+                        Text("Onayla")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button("Reddet", role: .destructive) {
+                        Task { await resolveBackendConfirmation(bubbleID: bubbleID, confirmationID: row.id, approved: false) }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+
+            if !row.artifacts.isEmpty {
+                artifactCard(for: row.artifacts, awaitingSave: false)
+            }
+        }
+    }
+
+    private func backendConfirmationStatus(_ status: BackendConfirmationStatus) -> some View {
+        let title: String
+        let icon: String
+        let color: Color
+        switch status {
+        case .pending:
+            title = "Bekliyor"
+            icon = "clock"
+            color = .orange
+        case .processing:
+            title = "İşleniyor…"
+            icon = "arrow.triangle.2.circlepath"
+            color = .secondary
+        case .completed:
+            title = "Tamamlandı"
+            icon = "checkmark.circle.fill"
+            color = .green
+        case .cancelled:
+            title = "Reddedildi"
+            icon = "xmark.circle"
+            color = .secondary
+        case .failed:
+            title = "Başarısız"
+            icon = "xmark.circle.fill"
+            color = .red
+        }
+        return Label(title, systemImage: icon)
+            .foregroundStyle(color)
+            .font(.caption2.weight(.medium))
+            .lineLimit(1)
+            .multilineTextAlignment(.trailing)
     }
 
     /// One collapsible card per `.executeCode` step in this bubble - shown both while a step is
@@ -741,6 +1125,100 @@ struct CopilotView: View {
         return payload
     }
 
+    private func deviceStepRow(index: Int, step: PlannedCommand, bubble: ChatBubble) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\(index)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .background(Color(.tertiarySystemFill), in: Circle())
+            VStack(alignment: .leading, spacing: 4) {
+                Text(step.summary)
+                    .font(.subheadline)
+                deviceStepStatus(step: step, bubble: bubble)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func liveExecutionStepRow(index: Int, update: RovaBackendClient.ExecutionStepUpdate) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\(index)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .background(Color(.tertiarySystemFill), in: Circle())
+            VStack(alignment: .leading, spacing: 4) {
+                Text(update.summary)
+                    .font(.subheadline)
+                    .lineLimit(2)
+                if let status = LiveExecutionStatus(rawValue: update.status) {
+                    liveExecutionStatus(status, message: update.message)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func deviceStepStatus(step: PlannedCommand, bubble: ChatBubble) -> some View {
+        if let result = bubble.stepResults[step.id] {
+            VStack(alignment: .leading, spacing: 2) {
+                Label(result.error?.message ?? result.message, systemImage: result.status == .completed ? "checkmark.circle.fill" : result.status == .unknown ? "questionmark.circle.fill" : "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(result.status == .completed ? .green : result.status == .unknown ? .orange : .red)
+                if let detail = stepResultDataDetail(result.data) {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(4)
+                }
+            }
+        } else if let failure = bubble.failedSteps[step.id] {
+            Label(failure, systemImage: "xmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .lineLimit(2)
+        } else if let update = bubble.executionUpdates[step.id],
+                  let status = LiveExecutionStatus(rawValue: update.status) {
+            liveExecutionStatus(status, message: update.message)
+        } else if bubble.inFlightStepIDs.contains(step.id) {
+            liveExecutionStatus(.running, message: nil)
+        } else if bubble.needsConfirmation {
+            if currentLocalConfirmationStep(in: bubble)?.id == step.id {
+                liveExecutionStatus(.awaitingConfirmation, message: nil)
+            } else if requiresLocalConfirmation(step) {
+                liveExecutionStatus(.blocked, message: "Önceki adım bekleniyor.")
+            } else {
+                liveExecutionStatus(.ready, message: nil)
+            }
+        } else {
+            liveExecutionStatus(.ready, message: nil)
+        }
+    }
+
+    private func liveExecutionStatus(_ status: LiveExecutionStatus, message: String?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                if status == .dispatching || status == .running {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: status.systemImage)
+                        .imageScale(.small)
+                }
+                Text(status.title)
+            }
+            .font(.caption)
+            .foregroundStyle(status.color)
+            if let message, !message.isEmpty, status == .failed || status == .denied || status == .blocked {
+                Text(message)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+    }
+
     private func bubbleBackground(_ role: ChatBubble.Role) -> Color {
         switch role {
         case .user: return Color(.secondarySystemBackground)
@@ -758,13 +1236,121 @@ struct CopilotView: View {
         return !(step.type == .controlApplication && step.summary.localizedCaseInsensitiveContains("zorla kapat"))
     }
 
-    private func grantableSteps(_ bubble: ChatBubble) -> [PlannedCommand] {
-        bubble.steps.filter(Self.canGrantTrust)
-    }
-
     private func presentConfirmation(for bubbleID: UUID) {
         confirmationHandledExplicitly = false
         confirmationBubbleID = bubbleID
+    }
+
+    private func presentLiveExecutionBubble(
+        for update: RovaBackendClient.ExecutionStepUpdate,
+        existingBubbleID: UUID?
+    ) -> UUID {
+        if let existingBubbleID {
+            applyStepUpdate(update, to: existingBubbleID)
+            return existingBubbleID
+        }
+
+        var reply = ChatBubble(
+            role: .assistant,
+            text: liveReply.displayed.isEmpty ? "İşlem hazırlanıyor…" : liveReply.displayed
+        )
+        reply.executionUpdates[update.id] = update
+        bubbles.append(reply)
+        liveReply.reset()
+        return reply.id
+    }
+
+    private func applyStepUpdate(_ update: RovaBackendClient.ExecutionStepUpdate, to bubbleID: UUID) {
+        setBubble(bubbleID) { bubble in
+            bubble.executionUpdates[update.id] = update
+            let confirmationID = update.confirmationId ?? update.id
+            guard let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) else { return }
+            applyBackendExecutionUpdate(update, to: &bubble.backendConfirmations[index])
+        }
+    }
+
+    private func applyBackendExecutionUpdate(
+        _ update: RovaBackendClient.ExecutionStepUpdate,
+        to row: inout BackendConfirmationRow
+    ) {
+        switch update.status {
+        case LiveExecutionStatus.awaitingConfirmation.rawValue:
+            row.status = .pending
+        case LiveExecutionStatus.running.rawValue, LiveExecutionStatus.dispatching.rawValue:
+            row.status = .processing
+        case LiveExecutionStatus.succeeded.rawValue:
+            row.status = .completed
+            row.resultText = update.message
+        case LiveExecutionStatus.denied.rawValue:
+            row.status = .cancelled
+            row.resultText = update.message
+        case LiveExecutionStatus.failed.rawValue, LiveExecutionStatus.blocked.rawValue:
+            row.status = .failed
+            row.resultText = update.message
+        default:
+            break
+        }
+    }
+
+    /// Called as soon as `confirmation_needed` arrives. Device steps open the existing native
+    /// sheet; backend confirmations remain independent inline rows whose buttons can be used
+    /// immediately, even while the rest of the SSE turn is still streaming.
+    private func presentEarlyConfirmationIfNeeded(
+        steps: [PlannedCommand],
+        backendConfirmations: [RovaBackendClient.BackendConfirmation],
+        existingBubbleID: UUID?
+    ) -> UUID? {
+        let needsDeviceConfirmation = steps.contains { $0.isDestructive || $0.requiresUserPresence }
+        guard needsDeviceConfirmation || !backendConfirmations.isEmpty else { return existingBubbleID }
+
+        if let existingBubbleID {
+            setBubble(existingBubbleID) { bubble in
+                if !steps.isEmpty { bubble.steps = steps }
+                bubble.backendConfirmations = mergedBackendConfirmations(
+                    existing: bubble.backendConfirmations,
+                    incoming: backendConfirmations,
+                    executionUpdates: bubble.executionUpdates
+                )
+                bubble.needsConfirmation = bubble.needsConfirmation || needsDeviceConfirmation
+            }
+            if needsDeviceConfirmation { presentConfirmation(for: existingBubbleID) }
+            return existingBubbleID
+        }
+
+        var reply = ChatBubble(
+            role: .assistant,
+            text: liveReply.displayed.isEmpty ? "…" : liveReply.displayed,
+            steps: steps,
+            backendConfirmations: backendConfirmations.map { BackendConfirmationRow(confirmation: $0) }
+        )
+        reply.needsConfirmation = needsDeviceConfirmation
+        bubbles.append(reply)
+        liveReply.reset()
+        if needsDeviceConfirmation { presentConfirmation(for: reply.id) }
+        return reply.id
+    }
+
+    private func mergedBackendConfirmations(
+        existing: [BackendConfirmationRow],
+        incoming: [RovaBackendClient.BackendConfirmation],
+        executionUpdates: [UUID: RovaBackendClient.ExecutionStepUpdate] = [:]
+    ) -> [BackendConfirmationRow] {
+        guard !incoming.isEmpty else { return existing }
+        var merged = existing
+        for confirmation in incoming {
+            if let index = merged.firstIndex(where: { $0.id == confirmation.id }) {
+                merged[index].confirmation = confirmation
+            } else {
+                var row = BackendConfirmationRow(confirmation: confirmation)
+                if let update = executionUpdates.values.first(where: { update in
+                    update.id == confirmation.id || update.confirmationId == confirmation.id
+                }) {
+                    applyBackendExecutionUpdate(update, to: &row)
+                }
+                merged.append(row)
+            }
+        }
+        return merged
     }
 
     /// Native bottom sheet (not an inline card) so a confirmation is never missed by scrolling
@@ -775,7 +1361,11 @@ struct CopilotView: View {
                 ConfirmationSheetView(
                     bubble: bubble,
                     isGranting: isGrantingTrust,
-                    isProcessing: isConfirming,
+                    // While the turn is still streaming, the sheet may be showing a partial plan
+                    // (see presentEarlyConfirmationIfNeeded) - keep it visible immediately, but
+                    // never let Onayla fire until `done` has reconciled the bubble with the final,
+                    // complete step list.
+                    isProcessing: isConfirming || isSending,
                     onCancel: {
                         confirmationHandledExplicitly = true
                         cancelConfirmation(for: bubbleID)
@@ -801,11 +1391,65 @@ struct CopilotView: View {
             reason: "Bu tür eylemleri onaysız çalıştırmaya izin vermek için kimliğinizi doğrulayın"
         ) {
             guard let bubble = self.bubbles.first(where: { $0.id == bubbleID }) else { return }
+            let pending = self.pendingLocalSteps(in: bubble)
+            guard let step = pending.first(where: self.requiresLocalConfirmation), Self.canGrantTrust(step) else { return }
             self.isGrantingTrust = true
-            for step in self.grantableSteps(bubble) {
-                _ = try? await RovaBackendClient.grantTrust(type: step.type.rawValue, summary: step.summary)
-            }
+            _ = try? await RovaBackendClient.grantTrust(type: step.type.rawValue, summary: step.summary)
             self.isGrantingTrust = false
+        }
+    }
+
+    private func resolveBackendConfirmation(bubbleID: UUID, confirmationID: UUID, approved: Bool) async {
+        guard let bubble = bubbles.first(where: { $0.id == bubbleID }),
+              let row = bubble.backendConfirmations.first(where: { $0.id == confirmationID }),
+              row.status == .pending else { return }
+
+        setBubble(bubbleID) { bubble in
+            guard let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) else { return }
+            bubble.backendConfirmations[index].status = .processing
+            bubble.backendConfirmations[index].resultText = nil
+        }
+
+        do {
+            let response = try await RovaBackendClient.resolveBackendConfirmation(id: confirmationID, approved: approved)
+            guard response.confirmationId == confirmationID else { throw RovaBackendError.invalidResponse }
+            let resultText = response.result?.text
+            let resultArtifacts = response.result?.artifacts ?? []
+            setBubble(bubbleID) { bubble in
+                guard let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) else { return }
+                switch response.status {
+                case "completed":
+                    if response.result?.ok == false {
+                        bubble.backendConfirmations[index].status = .failed
+                    } else {
+                        bubble.backendConfirmations[index].status = .completed
+                    }
+                case "cancelled":
+                    bubble.backendConfirmations[index].status = .cancelled
+                default:
+                    bubble.backendConfirmations[index].status = .failed
+                }
+                bubble.backendConfirmations[index].resultText = resultText
+                bubble.backendConfirmations[index].artifacts = resultArtifacts
+            }
+            persistConversation()
+        } catch RovaBackendError.notAuthenticated {
+            setBubble(bubbleID) { bubble in
+                if let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) {
+                    bubble.backendConfirmations[index].status = .failed
+                    bubble.backendConfirmations[index].resultText = "Oturumun geçersiz veya süresi dolmuş."
+                }
+            }
+            authSession.signOut()
+        } catch {
+            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            setBubble(bubbleID) { bubble in
+                if let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) {
+                    bubble.backendConfirmations[index].status = .failed
+                    bubble.backendConfirmations[index].resultText = message
+                }
+            }
+            persistConversation()
         }
     }
 
@@ -878,7 +1522,7 @@ struct CopilotView: View {
                 .disabled(isSending || isPreparingAttachment || pendingAttachments.count >= maxAttachments)
                 .accessibilityLabel("Görsel ekle")
 
-                TextField(audioRecorder.isRecording ? "Dinliyorum…" : "Wiqo'ya yaz", text: $inputText, axis: .vertical)
+                TextField(audioRecorder.isRecording ? "Dinliyorum…" : "Wiqo'ya anlat", text: $inputText, axis: .vertical)
                     .lineLimit(1...6)
                     .padding(.vertical, 7)
                     .focused($isComposerFocused)
@@ -1026,6 +1670,7 @@ struct CopilotView: View {
         turnCount += 1
         CopilotConversationStore.saveTurnCount(turnCount, for: conversationID)
         let requestID = UUID()
+        var earlyConfirmationBubbleID: UUID?
 
         do {
             let result = try await RovaBackendClient.converse(
@@ -1042,25 +1687,67 @@ struct CopilotView: View {
                 attachments: attachments,
                 onStatus: { text in statusMessages.append(text) },
                 onDelta: { text in liveReply.append(text) },
-                onReset: { liveReply.reset() }
+                onReset: { liveReply.reset() },
+                onConfirmationNeeded: { steps, backendConfirmations in
+                    earlyConfirmationBubbleID = presentEarlyConfirmationIfNeeded(
+                        steps: steps,
+                        backendConfirmations: backendConfirmations,
+                        existingBubbleID: earlyConfirmationBubbleID
+                    )
+                },
+                onStepUpdate: { update in
+                    earlyConfirmationBubbleID = presentLiveExecutionBubble(
+                        for: update,
+                        existingBubbleID: earlyConfirmationBubbleID
+                    )
+                }
             )
             let replyText = result.reply.isEmpty ? "…" : result.reply
             await liveReply.finish(with: replyText)
-            var reply = ChatBubble(role: .assistant, text: replyText, steps: result.steps, artifacts: result.artifacts)
-            if result.steps.contains(where: { $0.isDestructive || $0.requiresUserPresence }) {
-                reply.needsConfirmation = true
-                bubbles.append(reply)
+            if let earlyID = earlyConfirmationBubbleID, let index = bubbles.firstIndex(where: { $0.id == earlyID }) {
+                // Reconcile the same bubble with the terminal plan rather than appending a second
+                // one. Existing backend row statuses are deliberately preserved because the user
+                // may already have approved one while the SSE turn was still streaming.
+                bubbles[index].text = replyText
+                bubbles[index].steps = result.steps
+                bubbles[index].executionState = result.executionState
+                bubbles[index].artifacts = result.artifacts
+                bubbles[index].backendConfirmations = mergedBackendConfirmations(
+                    existing: bubbles[index].backendConfirmations,
+                    incoming: result.backendConfirmations,
+                    executionUpdates: bubbles[index].executionUpdates
+                )
+                bubbles[index].needsConfirmation = false
                 liveReply.reset()
-                presentConfirmation(for: reply.id)
-            } else {
-                bubbles.append(reply)
-                liveReply.reset()
-                await execute(result.steps, bubbleID: reply.id)
-                if result.steps.contains(where: needsLocalResultFollowUp) {
-                    await continueAfterLocalExecution(history: history, initialReply: result.reply, bubbleID: reply.id)
+                let advance = await advanceLocalExecution(bubbleID: earlyID)
+                if case .completed = advance, result.steps.contains(where: needsLocalResultFollowUp) {
+                    await continueAfterLocalExecution(history: history, initialReply: result.reply, bubbleID: earlyID)
+                } else if case .awaitingConfirmation = advance {
+                    // The next local step owns the confirmation sheet. Its approval continues
+                    // this same bubble; no second assistant message is created.
                 } else {
                     recentDeviceResults.removeAll(keepingCapacity: true)
                 }
+                persistConversation()
+                return
+            }
+            let reply = ChatBubble(
+                role: .assistant,
+                text: replyText,
+                steps: result.steps,
+                artifacts: result.artifacts,
+                executionState: result.executionState,
+                backendConfirmations: result.backendConfirmations.map { BackendConfirmationRow(confirmation: $0) }
+            )
+            bubbles.append(reply)
+            liveReply.reset()
+            let advance = await advanceLocalExecution(bubbleID: reply.id)
+            if case .completed = advance, result.steps.contains(where: needsLocalResultFollowUp) {
+                await continueAfterLocalExecution(history: history, initialReply: result.reply, bubbleID: reply.id)
+            } else if case .awaitingConfirmation = advance {
+                // The sheet is presented by advanceLocalExecution for the next gated step.
+            } else {
+                recentDeviceResults.removeAll(keepingCapacity: true)
             }
             persistConversation()
         } catch RovaBackendError.notAuthenticated {
@@ -1076,7 +1763,61 @@ struct CopilotView: View {
         }
     }
 
-    private func confirmAndExecute(bubbleID: UUID, reason: String = "Bu eylemleri PC'de çalıştırmak için kimliğinizi doğrulayın", beforeExecute: () async -> Void = {}) async {
+    private func requiresLocalConfirmation(_ step: PlannedCommand) -> Bool {
+        step.isDestructive || step.requiresUserPresence
+    }
+
+    private func pendingLocalSteps(in bubble: ChatBubble) -> [PlannedCommand] {
+        bubble.steps.filter { !bubble.executedStepIDs.contains($0.id) }
+    }
+
+    private func currentLocalConfirmationStep(in bubble: ChatBubble) -> PlannedCommand? {
+        pendingLocalSteps(in: bubble).first(where: requiresLocalConfirmation)
+    }
+
+    /// Runs only the safe prefix of a plan. The first permission-gated step stops the queue and
+    /// owns the sheet; after approval this method is called again, so a later gated step never
+    /// gets silently bundled into the previous approval.
+    private func advanceLocalExecution(bubbleID: UUID) async -> LocalExecutionAdvanceResult {
+        guard let bubble = bubbles.first(where: { $0.id == bubbleID }) else { return .failed }
+        guard bubble.failedSteps.isEmpty else {
+            setBubble(bubbleID) { $0.needsConfirmation = false }
+            return .failed
+        }
+        let pending = pendingLocalSteps(in: bubble)
+        guard !pending.isEmpty else {
+            setBubble(bubbleID) { $0.needsConfirmation = false }
+            return .completed
+        }
+
+        if let gateIndex = pending.firstIndex(where: requiresLocalConfirmation) {
+            let safePrefix = Array(pending.prefix(upTo: gateIndex))
+            if !safePrefix.isEmpty {
+                await execute(safePrefix, bubbleID: bubbleID)
+                guard let updated = bubbles.first(where: { $0.id == bubbleID }) else { return .failed }
+                let prefixFailed = safePrefix.contains { step in
+                    updated.failedSteps[step.id] != nil || updated.stepResults[step.id]?.status != .completed
+                }
+                if prefixFailed {
+                    setBubble(bubbleID) { $0.needsConfirmation = false }
+                    return .failed
+                }
+            }
+            setBubble(bubbleID) { $0.needsConfirmation = true }
+            presentConfirmation(for: bubbleID)
+            return .awaitingConfirmation
+        }
+
+        await execute(pending, bubbleID: bubbleID)
+        guard let updated = bubbles.first(where: { $0.id == bubbleID }) else { return .failed }
+        let failed = pending.contains { step in
+            updated.failedSteps[step.id] != nil || updated.stepResults[step.id]?.status != .completed
+        }
+        setBubble(bubbleID) { $0.needsConfirmation = false }
+        return failed ? .failed : .completed
+    }
+
+    private func confirmAndExecute(bubbleID: UUID, reason: String = "Bu eylemi PC'de çalıştırmak için kimliğinizi doğrulayın", beforeExecute: () async -> Void = {}) async {
         guard !isConfirming else { return }
         isConfirming = true
         defer {
@@ -1085,8 +1826,14 @@ struct CopilotView: View {
         }
         let ok = await model.authenticateBiometrics(reason: reason)
         guard ok, let bubble = bubbles.first(where: { $0.id == bubbleID }) else { return }
-        let steps = bubble.steps
-        let shouldContinue = steps.contains(where: needsLocalResultFollowUp)
+        let pending = pendingLocalSteps(in: bubble)
+        guard let gateIndex = pending.firstIndex(where: requiresLocalConfirmation) else {
+            confirmationHandledExplicitly = true
+            confirmationBubbleID = nil
+            return
+        }
+        let stepsThroughGate = Array(pending.prefix(through: gateIndex))
+        let shouldContinue = bubble.steps.contains(where: needsLocalResultFollowUp)
         let initialReply = executionNoticeFreeText(bubble.text)
         let history = bubbles
             .filter { $0.role != .system }
@@ -1100,9 +1847,12 @@ struct CopilotView: View {
         }
         confirmationBubbleID = nil
         recentDeviceResults.removeAll(keepingCapacity: true)
-        await execute(steps, bubbleID: bubbleID)
-        if shouldContinue {
+        await execute(stepsThroughGate, bubbleID: bubbleID)
+        let advance = await advanceLocalExecution(bubbleID: bubbleID)
+        if case .completed = advance, shouldContinue {
             await continueAfterLocalExecution(history: history, initialReply: initialReply, bubbleID: bubbleID)
+        } else if case .awaitingConfirmation = advance {
+            // The next gated step presents its own sheet from advanceLocalExecution.
         } else {
             recentDeviceResults.removeAll(keepingCapacity: true)
         }
@@ -1110,7 +1860,6 @@ struct CopilotView: View {
     }
 
     private func execute(_ steps: [PlannedCommand], bubbleID: UUID) async {
-        var outcomeLines: [String] = []
         var startedAnyStep = false
         for step in steps {
             guard let bubble = bubbles.first(where: { $0.id == bubbleID }),
@@ -1134,13 +1883,13 @@ struct CopilotView: View {
                         finishedAt: now,
                         error: RovaError(code: "SCREEN_OBSERVATION_LIMIT", message: "Bu istek için en fazla üç ekran gözlemi yapılabilir.", category: "tool_failure")
                     )
-                    outcomeLines.append(localOutcomeLine(step: step, result: result))
                     setBubble(bubbleID) { bubble in
                         bubble.inFlightStepIDs.remove(step.id)
                         bubble.executedStepIDs.insert(step.id)
                         bubble.failedSteps[step.id] = result.error?.message ?? result.message
+                        bubble.stepResults[step.id] = result
                     }
-                    continue
+                    break
                 }
                 screenshotObservationCount += 1
             }
@@ -1157,10 +1906,10 @@ struct CopilotView: View {
             )
             recentDeviceResults.append(deviceResult)
             recentDeviceResults = Array(recentDeviceResults.suffix(12))
-            outcomeLines.append(localOutcomeLine(step: step, result: result))
             setBubble(bubbleID) { bubble in
                 bubble.inFlightStepIDs.remove(step.id)
                 bubble.executedStepIDs.insert(step.id)
+                bubble.stepResults[step.id] = result
                 if result.status != .completed {
                     bubble.failedSteps[step.id] = result.error?.message ?? result.message
                 }
@@ -1168,15 +1917,28 @@ struct CopilotView: View {
                     bubble.codeRuns[step.id] = output
                 }
             }
+            if result.status != .completed { break }
         }
-        if !outcomeLines.isEmpty {
-            setBubble(bubbleID) { bubble in
-                bubble.text = executionNoticeFreeText(bubble.text)
-                    + "\n\nYerel PC sonucu:\n"
-                    + outcomeLines.joined(separator: "\n")
-            }
+        // The full per-step breakdown (detail/onay/sonuç) is executionWidget, reading `steps` +
+        // `stepResults` live for as long as this session runs - none of that survives a restart
+        // (see CopilotStoredMessage), so a short summary line is still folded into `text` here as
+        // the one thing that does.
+        if let bubble = bubbles.first(where: { $0.id == bubbleID }), let summary = overallStepsSummary(bubble) {
+            setBubble(bubbleID) { $0.text = executionNoticeFreeText($0.text) + "\n\n" + summary }
         }
         persistConversation()
+    }
+
+    /// One line, only once every non-executeCode step in this bubble has actually finished -
+    /// exactly what the user asked for at the end of a multi-step run: a clear, final "did it
+    /// work or not," not a repeat of each step's own detail (that's executionWidget above it).
+    private func overallStepsSummary(_ bubble: ChatBubble) -> String? {
+        let relevant = bubble.steps.filter { $0.type != .executeCode }
+        guard !relevant.isEmpty, relevant.allSatisfy({ bubble.executedStepIDs.contains($0.id) }) else { return nil }
+        let failedCount = relevant.filter { bubble.failedSteps[$0.id] != nil }.count
+        if failedCount == 0 { return "Tüm adımlar tamamlandı." }
+        if failedCount == relevant.count { return "Hiçbir adım tamamlanamadı." }
+        return "\(relevant.count - failedCount)/\(relevant.count) adım tamamlandı, \(failedCount) adım başarısız oldu."
     }
 
     /// Local reads and verified system controls are two-phase turns: first the Mac returns the
@@ -1197,6 +1959,7 @@ struct CopilotView: View {
         ]
         let localResults = Array(recentDeviceResults.suffix(12))
         recentDeviceResults.removeAll(keepingCapacity: true)
+        var earlyConfirmationBubbleID: UUID?
         do {
             let result = try await RovaBackendClient.converse(
                 messages: continuationHistory,
@@ -1211,29 +1974,73 @@ struct CopilotView: View {
                 requestID: UUID(),
                 onStatus: { text in statusMessages.append(text) },
                 onDelta: { text in liveReply.append(text) },
-                onReset: { liveReply.reset() }
+                onReset: { liveReply.reset() },
+                onConfirmationNeeded: { steps, backendConfirmations in
+                    earlyConfirmationBubbleID = presentEarlyConfirmationIfNeeded(
+                        steps: steps,
+                        backendConfirmations: backendConfirmations,
+                        existingBubbleID: earlyConfirmationBubbleID
+                    )
+                },
+                onStepUpdate: { update in
+                    earlyConfirmationBubbleID = presentLiveExecutionBubble(
+                        for: update,
+                        existingBubbleID: earlyConfirmationBubbleID
+                    )
+                }
             )
             let replyText = result.reply.isEmpty ? "…" : result.reply
             await liveReply.finish(with: replyText)
-            var followUp = ChatBubble(role: .assistant, text: replyText, steps: result.steps, artifacts: result.artifacts)
-            bubbles.append(followUp)
-            liveReply.reset()
-            if result.steps.contains(where: { $0.isDestructive || $0.requiresUserPresence }) {
-                followUp.needsConfirmation = true
-                setBubble(followUp.id) { $0.needsConfirmation = true }
-                presentConfirmation(for: followUp.id)
-            } else {
-                await execute(result.steps, bubbleID: followUp.id)
-                if result.steps.contains(where: needsLocalResultFollowUp), remainingRounds > 1 {
+            if let earlyID = earlyConfirmationBubbleID, let index = bubbles.firstIndex(where: { $0.id == earlyID }) {
+                bubbles[index].text = replyText
+                bubbles[index].steps = result.steps
+                bubbles[index].executionState = result.executionState
+                bubbles[index].artifacts = result.artifacts
+                bubbles[index].backendConfirmations = mergedBackendConfirmations(
+                    existing: bubbles[index].backendConfirmations,
+                    incoming: result.backendConfirmations,
+                    executionUpdates: bubbles[index].executionUpdates
+                )
+                bubbles[index].needsConfirmation = false
+                liveReply.reset()
+                let advance = await advanceLocalExecution(bubbleID: earlyID)
+                if case .completed = advance, result.steps.contains(where: needsLocalResultFollowUp), remainingRounds > 1 {
                     await continueAfterLocalExecution(
                         history: continuationHistory,
                         initialReply: result.reply,
-                        bubbleID: followUp.id,
+                        bubbleID: earlyID,
                         remainingRounds: remainingRounds - 1
                     )
+                } else if case .awaitingConfirmation = advance {
+                    // The next local step owns the confirmation sheet and resumes this bubble.
                 } else {
                     recentDeviceResults.removeAll(keepingCapacity: true)
                 }
+                persistConversation()
+                return
+            }
+            let followUp = ChatBubble(
+                role: .assistant,
+                text: replyText,
+                steps: result.steps,
+                artifacts: result.artifacts,
+                executionState: result.executionState,
+                backendConfirmations: result.backendConfirmations.map { BackendConfirmationRow(confirmation: $0) }
+            )
+            bubbles.append(followUp)
+            liveReply.reset()
+            let advance = await advanceLocalExecution(bubbleID: followUp.id)
+            if case .completed = advance, result.steps.contains(where: needsLocalResultFollowUp), remainingRounds > 1 {
+                await continueAfterLocalExecution(
+                    history: continuationHistory,
+                    initialReply: result.reply,
+                    bubbleID: followUp.id,
+                    remainingRounds: remainingRounds - 1
+                )
+            } else if case .awaitingConfirmation = advance {
+                // The sheet is presented by advanceLocalExecution for the next gated step.
+            } else {
+                recentDeviceResults.removeAll(keepingCapacity: true)
             }
             persistConversation()
         } catch {
@@ -1254,86 +2061,73 @@ struct CopilotView: View {
         return "\(max(1, totalMinutes))dk"
     }
 
-    private func localOutcomeLine(step: PlannedCommand, result: CommandResult) -> String {
-        let prefix: String
-        switch result.status {
-        case .completed: prefix = "✓"
-        case .unknown: prefix = "?"
-        default: prefix = "✗"
-        }
-        var line = "\(prefix) \(step.summary): \(result.error?.message ?? result.message)"
-        switch result.data {
+    /// The rich, per-type detail line shown under a step's own message in executionWidget (file
+    /// listings, calendar/reminder previews, verification before/after, etc.) - nil when this
+    /// result type has nothing more to add beyond message/error.
+    private func stepResultDataDetail(_ data: CommandData?) -> String? {
+        switch data {
         case .fileContent(let content):
-            line += "\n\(content.content.prefix(2_000))"
+            return String(content.content.prefix(2_000))
         case .documentContent(let content):
-            line += "\n\(content.text.prefix(4_000))"
+            return String(content.text.prefix(4_000))
         case .desktopFiles(let files):
             let names = files.map(\.filename).joined(separator: ", ")
-            line += files.isEmpty ? "\nMasaüstü boş." : "\nDosyalar: \(names)"
+            return files.isEmpty ? "Masaüstü boş." : "Dosyalar: \(names)"
         case .files(let files):
             let names = files.map { $0.name + ($0.isDirectory ? "/" : "") }.joined(separator: ", ")
-            line += files.isEmpty ? "\nKlasör boş." : "\nDosyalar: \(names)"
+            return files.isEmpty ? "Klasör boş." : "Dosyalar: \(names)"
         case .fileData(let content):
-            if let text = content.text { line += "\n\(text.prefix(2_000))" }
-            else { line += "\n\(content.mimeType) dosyası okundu." }
+            if let text = content.text { return String(text.prefix(2_000)) }
+            return "\(content.mimeType) dosyası okundu."
         case .screenshot(let content):
-            line += "\nEkran görüntüsü: \(content.width)×\(content.height)"
+            return "Ekran görüntüsü: \(content.width)×\(content.height)"
         case .shortcutResult(let content):
-            line += "\nDoğrulama: \(content.verified ? "başarılı" : "başarısız") (beklenen: \(content.expectedState), gözlenen: \(content.observedState ?? "belirsiz"))"
+            return "Doğrulama: \(content.verified ? "başarılı" : "başarısız") (beklenen: \(content.expectedState), gözlenen: \(content.observedState ?? "belirsiz"))"
         case .uiElement(let content):
-            line += "\nEşleşme: \(content.title ?? content.description ?? "etiket") (\(content.verified ? "doğrulandı" : "doğrulanamadı"))"
+            return "Eşleşme: \(content.title ?? content.description ?? "etiket") (\(content.verified ? "doğrulandı" : "doğrulanamadı"))"
         case .screenClick(let content):
-            line += "\nKoordinat: \(Int(content.x.rounded())), \(Int(content.y.rounded())) — yeniden gözlem gerekli."
+            return "Koordinat: \(Int(content.x.rounded())), \(Int(content.y.rounded())) — yeniden gözlem gerekli."
         case .applicationControl(let content):
-            line += "\nDoğrulama: \(content.verified ? "başarılı" : "başarısız") (önce: \(content.stateBefore), sonra: \(content.stateAfter))"
+            return "Doğrulama: \(content.verified ? "başarılı" : "başarısız") (önce: \(content.stateBefore), sonra: \(content.stateAfter))"
         case .calendarEvents(let events):
-            if events.isEmpty {
-                line += "\nYaklaşan etkinlik yok."
-            } else {
-                let formatter = DateFormatter()
-                formatter.dateStyle = .short
-                formatter.timeStyle = .short
-                line += "\n" + events.prefix(8).map { "\($0.title) (\(formatter.string(from: $0.startAt)))" }.joined(separator: "; ")
-            }
+            if events.isEmpty { return "Yaklaşan etkinlik yok." }
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+            return events.prefix(8).map { "\($0.title) (\(formatter.string(from: $0.startAt)))" }.joined(separator: "; ")
         case .reminders(let reminders):
-            if reminders.isEmpty {
-                line += "\nHatırlatıcı yok."
-            } else {
-                let formatter = DateFormatter()
-                formatter.dateStyle = .short
-                formatter.timeStyle = .short
-                line += "\n" + reminders.prefix(8).map { reminder in
-                    let due = reminder.dueAt.map { " (\(formatter.string(from: $0)))" } ?? ""
-                    return "\(reminder.isCompleted ? "✓" : "•") \(reminder.title)\(due)"
-                }.joined(separator: "; ")
-            }
+            if reminders.isEmpty { return "Hatırlatıcı yok." }
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+            return reminders.prefix(8).map { reminder in
+                let due = reminder.dueAt.map { " (\(formatter.string(from: $0)))" } ?? ""
+                return "\(reminder.isCompleted ? "✓" : "•") \(reminder.title)\(due)"
+            }.joined(separator: "; ")
         case .clipboardText(let text):
-            line += "\n\(text.prefix(2_000))"
+            return String(text.prefix(2_000))
         case .clipboardHistory(let entries):
-            if entries.isEmpty {
-                line += "\nPano geçmişi boş."
-            } else {
-                let formatter = DateFormatter()
-                formatter.dateStyle = .none
-                formatter.timeStyle = .short
-                line += "\n" + entries.prefix(10).map { "\(formatter.string(from: $0.copiedAt)): \($0.text.prefix(120))" }.joined(separator: "\n")
-            }
+            if entries.isEmpty { return "Pano geçmişi boş." }
+            let formatter = DateFormatter()
+            formatter.dateStyle = .none
+            formatter.timeStyle = .short
+            return entries.prefix(10).map { "\(formatter.string(from: $0.copiedAt)): \($0.text.prefix(120))" }.joined(separator: "\n")
         case .processOutput(let output):
             // The code and its full stdout/stderr are shown in the dedicated, collapsible code
-            // card below the message instead (see CodeExecutionCard) - this line stays short.
-            line += " (çıkış kodu \(output.exitCode), \(output.durationMs) ms)"
+            // card instead (see CodeExecutionCard) - this line stays short.
+            return "Çıkış kodu \(output.exitCode), \(output.durationMs) ms"
         case .systemStatus(let status):
             var parts = ["macOS \(status.macOSVersion)", formatUptime(status.uptimeSeconds)]
             if let battery = status.batteryPercentage { parts.append("pil %\(battery)\(status.isCharging == true ? " ⚡︎" : "")") }
-            line += "\n" + parts.joined(separator: " • ")
+            return parts.joined(separator: " • ")
         case .installedApplications(let apps):
-            line += apps.isEmpty ? "\nYüklü uygulama bulunamadı." : "\nUygulamalar: \(apps.prefix(20).map(\.name).joined(separator: ", "))"
+            return apps.isEmpty ? "Yüklü uygulama bulunamadı." : "Uygulamalar: \(apps.prefix(20).map(\.name).joined(separator: ", "))"
+        case .runningApplications(let apps):
+            if apps.isEmpty { return "Açık uygulama yok." }
+            return apps.prefix(30).map { $0.isActive ? "\($0.name) (öndeki)" : $0.name }.joined(separator: ", ")
         default:
-            // A step type this view doesn't have bespoke formatting for yet still gets *some*
-            // visible confirmation instead of silently vanishing after the summary line.
-            break
+            return nil
         }
-        return line
     }
 
     private func encodedCommandData(_ data: CommandData?) -> String? {
@@ -1528,7 +2322,7 @@ struct CopilotView: View {
     private func needsLocalResultFollowUp(_ step: PlannedCommand) -> Bool {
         switch step.type {
         case .readDocument, .readDesktopFile, .readFile, .listFiles, .captureScreen,
-             .runShortcut, .controlUIElement, .clickScreen:
+             .runShortcut, .controlUIElement, .clickScreen, .listRunningApplications:
             return true
         default:
             return false
@@ -1568,7 +2362,11 @@ struct CopilotView: View {
     private func cancelConfirmation(for bubbleID: UUID) {
         setBubble(bubbleID) { bubble in
             bubble.needsConfirmation = false
-            bubble.steps = []
+            if let step = bubble.steps.first(where: { step in
+                !bubble.executedStepIDs.contains(step.id) && requiresLocalConfirmation(step)
+            }) {
+                bubble.failedSteps[step.id] = "İşlem iptal edildi."
+            }
             let base = executionNoticeFreeText(bubble.text)
             bubble.text = base.isEmpty ? "İşlem iptal edildi." : base + "\n\nİşlem iptal edildi."
         }

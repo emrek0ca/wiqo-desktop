@@ -12,6 +12,7 @@ enum WiqoProduct {
 /// PayTR, never through StoreKit (App Store rules aside, the user explicitly wants it this way).
 enum WiqoWebsite {
     static let businessCheckoutURL = URL(string: "https://elyan.dev/business")!
+    static let downloadURL = URL(string: "https://wiqoai.com")!
     /// Wiqo's own legal/support pages (github.io while there's no dedicated domain yet - see
     /// docs/abonelik.md). Required to be reachable from both the paywall (Guideline 3.1.2) and
     /// Settings, and referenced as-is in App Store Connect's Privacy Policy/Support URL fields.

@@ -347,6 +347,9 @@ actor MacCommandEngine {
             }
             let outcome = await Task.detached(priority: .userInitiated) { MacSystem.clickScreen(payload) }.value
             return (outcome.data, outcome.error == nil ? "Ekran tıklaması gönderildi; sonucu yeniden gözlemlemek gerekiyor." : outcome.error!.message, outcome.error)
+        case .listRunningApplications:
+            let outcome = await MainActor.run { MacSystem.listRunningApplications() }
+            return (outcome.data, outcome.error == nil ? "Açık uygulamalar listelendi." : outcome.error!.message, outcome.error)
         }
     }
 

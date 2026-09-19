@@ -113,8 +113,8 @@ enum RovaBackendClient {
     }
 
     @discardableResult
-    static func register(email: String, password: String) async throws -> String {
-        try await authenticate(path: "auth/register", email: email, password: password)
+    static func register(email: String, password: String, inviteCode: String? = nil) async throws -> String {
+        try await authenticate(path: "auth/register", email: email, password: password, inviteCode: inviteCode)
     }
 
     @discardableResult
@@ -150,11 +150,13 @@ enum RovaBackendClient {
         return decoded.token
     }
 
-    private static func authenticate(path: String, email: String, password: String) async throws -> String {
+    private static func authenticate(path: String, email: String, password: String, inviteCode: String? = nil) async throws -> String {
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["email": email, "password": password])
+        var body: [String: Any] = ["email": email, "password": password]
+        if let inviteCode, !inviteCode.trimmingCharacters(in: .whitespaces).isEmpty { body["inviteCode"] = inviteCode }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await send(request)
         struct AuthResponse: Decodable { let token: String }
@@ -186,11 +188,50 @@ enum RovaBackendClient {
         let expiresAt: String
     }
 
+    struct BackendConfirmation: Codable, Identifiable, Equatable, Hashable {
+        let id: UUID
+        let kind: String
+        let title: String
+        let summary: String
+        let details: [String: String]
+        let isDestructive: Bool
+        let requiresUserPresence: Bool
+        let expiresAt: String
+    }
+
+    struct BackendConfirmationResult: Decodable {
+        let ok: Bool
+        let text: String
+        let artifacts: [ArtifactDescriptor]
+    }
+
+    struct BackendConfirmationResponse: Decodable {
+        let confirmationId: UUID
+        let status: String
+        let result: BackendConfirmationResult?
+    }
+
+    /// Live execution truth emitted by the backend while a chat turn is still running. The
+    /// backend deliberately omits its internal tool name; the client only needs the stable id,
+    /// user-facing summary, and lifecycle state to keep the compact execution widget current.
+    struct ExecutionStepUpdate: Decodable, Equatable {
+        let id: UUID
+        let kind: String
+        let summary: String
+        let requiresConfirmation: Bool
+        let requiresUserPresence: Bool
+        let status: String
+        let confirmationId: UUID?
+        let message: String?
+        let sequence: Int?
+    }
+
     struct ConverseResult {
         let reply: String
         let steps: [PlannedCommand]
         let executionState: String?
         let artifacts: [ArtifactDescriptor]
+        let backendConfirmations: [BackendConfirmation]
     }
 
     /// Result of running code on the canvas (`/canvas/run`) - the same sandbox run_python uses,
@@ -234,6 +275,7 @@ enum RovaBackendClient {
         let steps: [CopilotStepResponse]
         let executionState: String?
         let artifacts: [ArtifactDescriptor]?
+        let backendConfirmations: [BackendConfirmation]?
     }
 
     private struct CopilotErrorResponse: Decodable {
@@ -312,7 +354,9 @@ enum RovaBackendClient {
         // are not guaranteed to run in order, which would scramble streamed text.
         onStatus: @escaping @MainActor @Sendable (String) -> Void = { _ in },
         onDelta: @escaping @MainActor @Sendable (String) -> Void = { _ in },
-        onReset: @escaping @MainActor @Sendable () -> Void = {}
+        onReset: @escaping @MainActor @Sendable () -> Void = {},
+        onConfirmationNeeded: @escaping @MainActor @Sendable ([PlannedCommand], [BackendConfirmation]) -> Void = { _, _ in },
+        onStepUpdate: @escaping @MainActor @Sendable (ExecutionStepUpdate) -> Void = { _ in }
     ) async throws -> ConverseResult {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("copilot/chat"))
@@ -391,8 +435,21 @@ enum RovaBackendClient {
 
         struct StatusEvent: Decodable { let text: String }
         struct DeltaEvent: Decodable { let text: String }
-        struct DoneEvent: Decodable { let reply: String; let steps: [CopilotStepResponse]; let executionState: String?; let artifacts: [ArtifactDescriptor]? }
-        struct ErrorEvent: Decodable { let message: String }
+        struct DoneEvent: Decodable {
+            let reply: String
+            let steps: [CopilotStepResponse]
+            let executionState: String?
+            let artifacts: [ArtifactDescriptor]?
+            let backendConfirmations: [BackendConfirmation]?
+        }
+        struct ConfirmationNeededEvent: Decodable {
+            let steps: [CopilotStepResponse]
+            let backendConfirmations: [BackendConfirmation]?
+        }
+        struct StepUpdateEvent: Decodable {
+            let step: ExecutionStepUpdate
+        }
+        struct ErrorEvent: Decodable { let message: String; let code: String? }
         struct EventKind: Decodable { let type: String }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -411,14 +468,40 @@ enum RovaBackendClient {
                     if let event = try? decoder.decode(DeltaEvent.self, from: json) {
                         await onDelta(event.text)
                     }
+                case "confirmation_needed":
+                    // This is the plan/confirmation state so far, not necessarily the final
+                    // event. Device steps still use the existing final-plan sheet; backend rows
+                    // are safe to act on immediately because the server durably claims each one
+                    // atomically when the user taps its own button.
+                    if let event = try? decoder.decode(ConfirmationNeededEvent.self, from: json) {
+                        let partial = makeConverseResult(
+                            reply: "",
+                            steps: event.steps,
+                            executionState: nil,
+                            artifacts: [],
+                            backendConfirmations: event.backendConfirmations ?? []
+                        )
+                        await onConfirmationNeeded(partial.steps, partial.backendConfirmations)
+                    }
+                case "step_update":
+                    if let event = try? decoder.decode(StepUpdateEvent.self, from: json) {
+                        await onStepUpdate(event.step)
+                    }
                 case "reset":
                     await onReset()
                 case "done":
                     let event = try decoder.decode(DoneEvent.self, from: json)
-                    return makeConverseResult(reply: event.reply, steps: event.steps, executionState: event.executionState, artifacts: event.artifacts ?? [])
+                    return makeConverseResult(
+                        reply: event.reply,
+                        steps: event.steps,
+                        executionState: event.executionState,
+                        artifacts: event.artifacts ?? [],
+                        backendConfirmations: event.backendConfirmations ?? []
+                    )
                 case "error":
                     let event = try? decoder.decode(ErrorEvent.self, from: json)
-                    throw RovaBackendError.declined(nonEmptyMessage(event?.message, fallback: "İstek anlaşılamadı."))
+                    let message = nonEmptyMessage(event?.message, fallback: "İstek anlaşılamadı.")
+                    throw RovaBackendError.declined(appendingErrorCode(message, code: event?.code))
                 default:
                     continue
                 }
@@ -431,11 +514,23 @@ enum RovaBackendClient {
         return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus)
     }
 
+    static func resolveBackendConfirmation(id: UUID, approved: Bool) async throws -> BackendConfirmationResponse {
+        try await authorizedPost(
+            "copilot/confirm",
+            body: [
+                "confirmationId": id.uuidString,
+                "approved": approved
+            ],
+            as: BackendConfirmationResponse.self
+        )
+    }
+
     private static func makeConverseResult(
         reply: String,
         steps: [CopilotStepResponse],
         executionState: String?,
-        artifacts: [ArtifactDescriptor]
+        artifacts: [ArtifactDescriptor],
+        backendConfirmations: [BackendConfirmation]
     ) -> ConverseResult {
         let planned = steps.map { step in
             let localDestructive = RovaCommandAuthority.isDestructive(type: step.type, payload: step.payload)
@@ -449,7 +544,13 @@ enum RovaBackendClient {
                 requiresUserPresence: step.requiresUserPresence == true || step.isDestructive || localDestructive || localPresence
             )
         }
-        return ConverseResult(reply: reply, steps: planned, executionState: executionState, artifacts: artifacts)
+        return ConverseResult(
+            reply: reply,
+            steps: planned,
+            executionState: executionState,
+            artifacts: artifacts,
+            backendConfirmations: backendConfirmations
+        )
     }
 
     private static func waitForCopilotRequest(
@@ -470,7 +571,8 @@ enum RovaBackendClient {
                         reply: response.reply,
                         steps: response.steps,
                         executionState: response.executionState,
-                        artifacts: response.artifacts ?? []
+                        artifacts: response.artifacts ?? [],
+                        backendConfirmations: response.backendConfirmations ?? []
                     )
                 case "failed":
                     throw RovaBackendError.declined(nonEmptyMessage(state.error?.message, fallback: "İşlem tamamlanamadı."))
@@ -741,6 +843,58 @@ enum RovaBackendClient {
     static func fetchDevices() async throws -> [DeviceStatus] {
         struct Response: Decodable { let devices: [DeviceStatus] }
         return try await authorizedGet("devices", as: Response.self).devices
+    }
+
+    struct AccountInfo: Decodable {
+        let email: String
+        let isFoundingMember: Bool
+    }
+
+    static func fetchAccountInfo() async throws -> AccountInfo {
+        try await authorizedGet("auth/me", as: AccountInfo.self)
+    }
+
+    /// A code someone can hand a friend - redeeming one credits both sides a Pro bonus (see
+    /// rova-backend's grantReferralBonus). Every account always has a few unused ones; the
+    /// backend self-provisions a fresh batch the first time this is read.
+    struct InviteCode: Decodable, Identifiable {
+        var id: String { code }
+        let code: String
+        let used: Bool
+        let createdAt: String
+    }
+
+    static func fetchInviteCodes() async throws -> [InviteCode] {
+        struct Response: Decodable { let codes: [InviteCode] }
+        return try await authorizedGet("auth/invite-codes", as: Response.self).codes
+    }
+
+    /// A real Google/Notion account connection (see rova-backend's routes/oauth.ts) - never the
+    /// tokens themselves, just enough to show "bağlı: ___" and let the user disconnect it.
+    struct OAuthConnection: Decodable, Identifiable {
+        var id: String { provider }
+        let provider: String
+        let accountLabel: String?
+        let connectedAt: String
+    }
+
+    static func fetchOAuthConnections() async throws -> [OAuthConnection] {
+        struct Response: Decodable { let connections: [OAuthConnection] }
+        return try await authorizedGet("oauth", as: Response.self).connections
+    }
+
+    /// Returns the provider's own consent URL to open in an ASWebAuthenticationSession - this
+    /// request itself carries the real Authorization header (a webview navigation couldn't), and
+    /// the state that ties the resulting callback back to this account is embedded server-side.
+    static func startOAuth(provider: String) async throws -> URL {
+        struct Response: Decodable { let url: String }
+        let response = try await authorizedGet("oauth/\(provider)/start", as: Response.self)
+        guard let url = URL(string: response.url) else { throw RovaBackendError.invalidResponse }
+        return url
+    }
+
+    static func disconnectOAuth(provider: String) async throws {
+        _ = try await authorizedMutate("oauth/\(provider)", method: "DELETE")
     }
 
     /// Sets (or, with `nil`/empty, clears) a user-chosen name for one paired PC - lets more than
@@ -1052,9 +1206,20 @@ enum RovaBackendClient {
 
     private static func serverErrorMessage(from data: Data) -> String? {
         guard let envelope = try? JSONDecoder().decode(BackendErrorEnvelope.self, from: data) else { return nil }
-        let message = envelope.error?.message ?? envelope.message
+        let message = envelope.error?.message ?? envelope.message ?? envelope.result?.text
         let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
+        if trimmed.isEmpty { return nil }
+        return appendingErrorCode(trimmed, code: envelope.error?.code)
+    }
+
+    /// Every backend error response already carries a real machine-readable `code`
+    /// (`CONFIRMATION_NOT_PENDING`, `QUOTA_EXCEEDED`, ...) - this was being decoded and then
+    /// silently dropped before reaching any caller. Appending it here means every existing
+    /// `RovaBackendError.network(message)` surface (there is no single shared error view) gets it
+    /// for free, without hunting down and touching every place that already displays this string.
+    private static func appendingErrorCode(_ message: String, code: String?) -> String {
+        guard let code, !code.isEmpty else { return message }
+        return "\(message) (kod: \(code))"
     }
 }
 
@@ -1064,12 +1229,18 @@ private struct BackendErrorEnvelope: Decodable {
         let message: String?
     }
 
+    struct Result: Decodable {
+        let text: String?
+    }
+
     let error: Detail?
     let message: String?
+    let result: Result?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         message = try container.decodeIfPresent(String.self, forKey: .message)
+        result = try container.decodeIfPresent(Result.self, forKey: .result)
         if let detail = try? container.decode(Detail.self, forKey: .error) {
             error = detail
         } else if let text = try? container.decode(String.self, forKey: .error) {
@@ -1082,5 +1253,6 @@ private struct BackendErrorEnvelope: Decodable {
     private enum CodingKeys: String, CodingKey {
         case error
         case message
+        case result
     }
 }

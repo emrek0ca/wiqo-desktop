@@ -115,9 +115,22 @@ enum MacSystem {
                 options: [.skipsHiddenFiles]
             ) else { continue }
             for url in urls where url.pathExtension.lowercased() == "app" {
-                let bundleIdentifier = Bundle(url: url)?.bundleIdentifier
+                let bundle = Bundle(url: url)
+                let bundleIdentifier = bundle?.bundleIdentifier
+                // .app filenames are almost always the English name regardless of system
+                // language (e.g. "Notes.app" on a Turkish Mac, which still shows "Notlar" in
+                // Finder and to the user) - a not-currently-running app was falling back to that
+                // raw filename here while a running one (above) already used localizedName, so
+                // the model would say the name it's actually seeing ("Notlar") and this catalog
+                // would only ever have "Notes", failing the open with a false "not found."
+                // Reading the InfoPlist.strings display name for the current locale is what
+                // Finder itself shows, so it lines up with what the user (and therefore the
+                // model) actually calls the app.
+                let localizedName = (bundle?.localizedInfoDictionary?["CFBundleDisplayName"] as? String)
+                    ?? (bundle?.localizedInfoDictionary?["CFBundleName"] as? String)
+                    ?? (bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
                 add(
-                    name: url.deletingPathExtension().lastPathComponent,
+                    name: localizedName ?? url.deletingPathExtension().lastPathComponent,
                     bundleIdentifier: bundleIdentifier,
                     isRunning: bundleIdentifier.map { !NSRunningApplication.runningApplications(withBundleIdentifier: $0).isEmpty } ?? false
                 )
@@ -140,6 +153,25 @@ enum MacSystem {
                         : [.open, .activate, .quit]
                 )
             }
+    }
+
+    /// A direct, read-only answer to "what's actually open right now" - the missing tool that
+    /// pushed the model toward using computer_application's open/activate as an improvised "check
+    /// if it's running" step (a real side effect, not a check) before this existed.
+    @MainActor
+    static func listRunningApplications() -> (data: CommandData?, error: RovaError?) {
+        let frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let apps = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular || $0.bundleIdentifier == "com.apple.finder" }
+            .map {
+                RunningApplicationInfo(
+                    name: $0.localizedName ?? $0.bundleIdentifier ?? "Uygulama",
+                    bundleIdentifier: $0.bundleIdentifier,
+                    isActive: $0.bundleIdentifier != nil && $0.bundleIdentifier == frontmostBundleID
+                )
+            }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        return (.runningApplications(apps), nil)
     }
 
     // These checks are deliberately read-only. Opening a settings tab must never trigger a
@@ -189,6 +221,11 @@ enum MacSystem {
         let screenRecording = hasScreenRecordingAccess()
         let calendar = hasCalendarAccess()
         let fullDisk = hasFullDiskAccess()
+        // create_note automates Notes.app via AppleScript (see MacSystem.createNote) and fails
+        // with error -1743 without this - semanticDeviceTools.ts maps that tool to the "notes.write"
+        // authority key, but nothing here ever reported it, so the model had no way to know in
+        // advance whether Notes access was actually granted on this Mac.
+        let notesAccess = hasAutomationAccess(for: "com.apple.Notes")
 
         func authority(
             _ capability: String,
@@ -217,6 +254,7 @@ enum MacSystem {
             authority("device.clipboard", "Pano", .automatic),
             authority("device.system.power", "Kilit ve uyku", .confirmation),
             authority("device.messaging.send", "Mesaj gönderme", .confirmation, permissions: ["Automation"]),
+            authority("notes.write", "Not oluşturma", notesAccess ? .confirmation : .unavailable, permissions: ["Automation"], message: notesAccess ? nil : "Notes için Otomasyon izni gerekli."),
             authority("calendar.read", "Takvim okuma", calendar ? .automatic : .unavailable, permissions: ["Calendar"], message: calendar ? nil : "Takvim izni gerekli."),
             authority("calendar.write", "Takvime yazma", calendar ? .confirmation : .unavailable, permissions: ["Calendar"], message: calendar ? nil : "Takvim izni gerekli."),
             authority("device.files.list", "Dosya listeleme", .automatic, permissions: fullDisk ? [] : ["Full Disk Access"]),
@@ -242,6 +280,7 @@ enum MacSystem {
         MacAutomationTarget(id: "messages", title: "Messages", bundleIdentifier: "com.apple.MobileSMS"),
         MacAutomationTarget(id: "calendar", title: "Calendar", bundleIdentifier: "com.apple.iCal"),
         MacAutomationTarget(id: "mail", title: "Mail", bundleIdentifier: "com.apple.mail"),
+        MacAutomationTarget(id: "notes", title: "Notes", bundleIdentifier: "com.apple.Notes"),
         MacAutomationTarget(id: "finder", title: "Finder", bundleIdentifier: "com.apple.finder"),
         MacAutomationTarget(id: "shortcuts", title: "Shortcuts", bundleIdentifier: "com.apple.shortcuts")
     ]
@@ -1650,7 +1689,15 @@ enum MacSystem {
                 "PATH": "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
                 "HOME": NSHomeDirectory(),
                 "TMPDIR": temporaryDirectory.path + "/",
-                "LANG": "en_US.UTF-8"
+                "LANG": "en_US.UTF-8",
+                // bash/sh call getcwd() at shell-init to populate $PWD unless it's already set to
+                // a value that stats to the same directory - the sandbox profile above only grants
+                // file-read-DATA (not just metadata) on this run's own directory, not on its
+                // ancestors, so getcwd()'s directory-walk fallback fails there with "cannot access
+                // parent directories" even though the actual chdir (`workingDirectory` below)
+                // already succeeded. Pre-seeding $PWD sidesteps that call entirely instead of
+                // loosening the sandbox to grant directory-listing on every ancestor up to /.
+                "PWD": temporaryDirectory.path
             ]
             let snapshot = runProcess(
                 executable: "/usr/bin/sandbox-exec",
@@ -1666,7 +1713,14 @@ enum MacSystem {
                 return (.processOutput(output), RovaError(code: "CODE_TIMEOUT", message: "Kod çalıştırma süresi doldu.", category: "timeout"))
             }
             if snapshot.exitCode != 0 {
-                let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                // A shell-init cwd warning (harmless, unrelated to the script's own failure - see
+                // the PWD comment above) was eating the whole 300-char budget and hiding the actual
+                // reason underneath it. Drop that specific noise before truncating so the model
+                // sees the real error instead of two repeated "shell-init:" lines.
+                let meaningfulLines = stderr
+                    .split(separator: "\n", omittingEmptySubsequences: true)
+                    .filter { !$0.hasPrefix("shell-init: error retrieving current directory") }
+                let detail = meaningfulLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
                 let message = detail.isEmpty ? "Kod hata ile sonlandı (çıkış kodu \(snapshot.exitCode))." : "Kod hata ile sonlandı: \(detail.prefix(300))"
                 return (.processOutput(output), RovaError(code: "CODE_FAILED", message: message, category: "tool_failure"))
             }

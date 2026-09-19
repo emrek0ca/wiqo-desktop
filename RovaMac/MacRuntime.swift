@@ -46,7 +46,8 @@ final class MacRuntime: ObservableObject {
     private lazy var backendChannel = MacBackendChannel(
         engine: engine,
         runtimeStatus: { [weak self] in self?.serviceState.rawValue ?? "unknown" },
-        deviceInfo: { [weak self] in self?.deviceInfo ?? DeviceInfo(id: UUID(), displayName: "Wiqo Mac", hostname: "Mac", localIPAddress: "Kullanılamıyor", port: 47831, serviceStatus: "unknown", availableApplications: []) }
+        deviceInfo: { [weak self] in self?.deviceInfo ?? DeviceInfo(id: UUID(), displayName: "Wiqo Mac", hostname: "Mac", localIPAddress: "Kullanılamıyor", port: 47831, serviceStatus: "unknown", availableApplications: []) },
+        pairedDeviceToken: { [weak self] in self?.token }
     )
 
     init() {
@@ -344,12 +345,14 @@ final class MacRuntime: ObservableObject {
                 session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "AUTH_REQUIRED", message: "Önce cihaz doğrulaması gerekir."))))
                 return
             }
-            if let token = self.token, request.signature != nil {
-                guard RovaValidation.verifyRequestSignature(request: request, token: token) else {
-                    authLogger.warning("Command signature verification failed")
-                    session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "INVALID_SIGNATURE", message: "Komut kriptografik imzası geçersiz."))))
-                    return
-                }
+            // Every command must carry a valid signature - a nil signature used to mean "skip
+            // verification," which silently accepted anything on an already-authenticated session
+            // instead of proving the caller still holds the pairing token per command. There is no
+            // longer any legitimate caller (direct or relayed) that omits one.
+            guard let token = self.token, RovaValidation.verifyRequestSignature(request: request, token: token) else {
+                authLogger.warning("Command signature verification failed")
+                session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "INVALID_SIGNATURE", message: "Komut kriptografik imzası geçersiz."))))
+                return
             }
             commandLogger.info("Executing capability \(request.type.rawValue, privacy: .public)")
             let currentStatus = serviceState.rawValue
