@@ -33,6 +33,11 @@ Sürüm: 1.0.0 (1) · Bundle ID: `com.wiqo.ios` · Minimum iOS 17 · Sadece iPho
 > PC özelliklerini kullanmak için Mac uygulamasını wiqoai.com adresinden indirip aç, sonra telefondan QR kodu tara. Mac uygulaması olmadan sohbet, canvas ve bulut araçları çalışır.
 >
 > Free plan sınırlıdır. Wiqo Pro aylık abonelikle daha fazla mesaj, görsel ve PC bağlantısı sunar. Abonelik Apple ID hesabından tahsil edilir ve dönem bitiminden en az 24 saat önce iptal edilmezse otomatik yenilenir; Ayarlar > Apple ID > Abonelikler'den yönetilir.
+>
+> Kullanım Şartları: https://wiqoai.com/terms
+> Gizlilik Politikası: https://wiqoai.com/privacy
+
+(Bu metin App Store Connect'te girildi: birincil dil `tr`, ikinci dil `en-GB` İngilizce çevirisi. Apple, abonelik uygulamalarında açıklamada Şartlar ve Gizlilik bağlantısını arar.)
 
 **Destek URL'si:** https://wiqoai.com/support
 **Gizlilik Politikası URL'si:** https://wiqoai.com/privacy
