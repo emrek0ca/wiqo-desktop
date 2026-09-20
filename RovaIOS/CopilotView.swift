@@ -419,7 +419,6 @@ struct CopilotView: View {
     @ObservedObject var authSession: AuthSessionStore
     @ObservedObject var subscriptionStore: SubscriptionStore
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bubbles: [ChatBubble] = []
     @State private var inputText = ""
     @State private var isSending = false
@@ -579,13 +578,16 @@ struct CopilotView: View {
 
     /// Just the mark, centered - the input bar and the suggestion row below already say what to do.
     private var emptyState: some View {
-        VStack {
+        VStack(spacing: 14) {
             Spacer()
             Image("WiqoMark")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 96, height: 96)
                 .accessibilityLabel("Wiqo")
+                .wiqoRiseIn()
+            connectionPill
+                .wiqoRiseIn(delay: 0.14)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -593,6 +595,24 @@ struct CopilotView: View {
         .onTapGesture {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
+    }
+
+    /// One quiet line about the PC, so the first screen answers "is my computer ready?" without a
+    /// greeting or a paragraph.
+    private var connectionPill: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(RovaConnectionStatus.color(for: model))
+                .frame(width: 7, height: 7)
+            Text(RovaConnectionStatus.label(for: model))
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 30)
+        .background(WiqoTheme.inset, in: Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("PC durumu: \(RovaConnectionStatus.label(for: model))")
     }
 
     /// A Mac suggestion is only actually actionable when one is paired, currently reachable, and
@@ -609,43 +629,38 @@ struct CopilotView: View {
     private var suggestionRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(visibleSuggestions, id: \.title) { suggestion in
-                    Button {
+                ForEach(Array(visibleSuggestions.enumerated()), id: \.element.title) { index, suggestion in
+                    suggestionChip(title: suggestion.title, systemImage: suggestion.icon, isPrimary: true) {
                         inputText = suggestion.title
                         Task { await sendMessage() }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: suggestion.icon)
-                                .foregroundStyle(.secondary)
-                            Text(suggestion.title)
-                                .foregroundStyle(.primary)
-                        }
-                        .font(.subheadline)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(Color(.secondarySystemBackground), in: Capsule())
-                        .overlay(Capsule().strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5))
                     }
-                    .buttonStyle(.plain)
+                    .wiqoRiseIn(delay: 0.2 + Double(index) * 0.06)
                 }
-                Button {
+                suggestionChip(title: "Neler yapabilirim?", systemImage: "square.grid.2x2", isPrimary: false) {
                     showingDiscovery = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
-                        Text("Neler yapabilirim?")
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color(.secondarySystemBackground), in: Capsule())
-                    .overlay(Capsule().strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5))
                 }
-                .buttonStyle(.plain)
+                .wiqoRiseIn(delay: 0.2 + Double(visibleSuggestions.count) * 0.06)
             }
             .padding(.horizontal, 12)
         }
+    }
+
+    private func suggestionChip(title: String, systemImage: String, isPrimary: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .foregroundStyle(isPrimary ? Color.primary : Color.secondary)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 40)
+            .background(WiqoTheme.surface, in: Capsule())
+            .overlay(Capsule().strokeBorder(WiqoTheme.line, lineWidth: 0.5))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(WiqoPillButtonStyle(kind: .ghost))
     }
 
     private var proactiveCards: some View {
@@ -758,27 +773,14 @@ struct CopilotView: View {
         }
     }
 
-    /// Keep streaming progress as one natural sentence. The backend can emit many checkpoints,
-    /// but exposing the whole internal timeline makes a normal conversation feel like a log.
+    /// Progress is one sentence about what is happening right now ("PC'ye bağlanıyorum"); when the
+    /// step changes it dissolves into the next one. No spinner, no "thinking" label.
     private var thinkingStagesView: some View {
-        Group {
-            if let message = statusMessages.last, !message.isEmpty {
-                HStack(spacing: 8) {
-                    // "Görsel" only appears in the image-generation progress text. Every other
-                    // operation uses the quiet working indicator.
-                    (message.contains("Görsel") ? ThinkingOrbsPill.generatingPreset : ThinkingOrbsPill.workingPreset)
-                        .frame(width: 16, height: 16)
-                    Text(message)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                .transition(reduceMotion ? .identity : .opacity)
-            }
-        }
-        .padding(.horizontal)
-        .id("thinkingStages")
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: statusMessages.last ?? "")
+        WiqoStatusLine(text: statusMessages.last(where: { !$0.isEmpty }) ?? "Bakıyorum…")
+            .font(.subheadline)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+            .id("thinkingStages")
     }
 
     private func bubbleView(_ bubble: ChatBubble) -> some View {
@@ -836,7 +838,7 @@ struct CopilotView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
+        .background(WiqoTheme.tint(WiqoTheme.red), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func executionWidget(for bubble: ChatBubble) -> some View {
@@ -1633,7 +1635,7 @@ struct CopilotView: View {
                     .background(Color.primary, in: Circle())
             }
             .accessibilityLabel("Gönder")
-            .transition(.scale.combined(with: .opacity))
+            .transition(.wiqoBlur)
         } else {
             Button {
                 toggleAudioRecording()
@@ -1645,7 +1647,7 @@ struct CopilotView: View {
                     .background(audioRecorder.isRecording ? Color.red : Color(.tertiarySystemFill), in: Circle())
             }
             .accessibilityLabel(audioRecorder.isRecording ? "Ses kaydını bitir" : "Sesli mesaj kaydet")
-            .transition(.scale.combined(with: .opacity))
+            .transition(.wiqoBlur)
         }
     }
 
