@@ -22,30 +22,6 @@ private enum LiveExecutionStatus: String {
     case failed
     case denied
     case blocked
-
-    var systemImage: String {
-        switch self {
-        case .ready: return "circle"
-        case .awaitingConfirmation: return "clock"
-        case .dispatching: return "arrow.forward.circle"
-        case .running: return "arrow.triangle.2.circlepath"
-        case .succeeded: return "checkmark.circle.fill"
-        case .failed: return "xmark.circle.fill"
-        case .denied: return "xmark.circle"
-        case .blocked: return "pause.circle"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .ready, .dispatching, .blocked: return .secondary
-        case .awaitingConfirmation: return .orange
-        case .running: return .secondary
-        case .succeeded: return .green
-        case .failed: return .red
-        case .denied: return .secondary
-        }
-    }
 }
 
 private enum LocalExecutionAdvanceResult {
@@ -209,13 +185,8 @@ private struct CodeExecutionCard: View {
             }
 
             DisclosureGroup(isExpanded: $showsCode) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Text(payload.code)
-                        .font(.system(.footnote, design: .monospaced))
-                        .foregroundStyle(.primary)
-                        .padding(10)
-                }
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                WiqoCodeBlock(code: payload.code, title: payload.language.lowercased())
+                    .padding(.top, 4)
             } label: {
                 Text("Kodu görüntüle")
                     .font(.caption.weight(.medium))
@@ -448,6 +419,7 @@ struct CopilotView: View {
     @ObservedObject var authSession: AuthSessionStore
     @ObservedObject var subscriptionStore: SubscriptionStore
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bubbles: [ChatBubble] = []
     @State private var inputText = ""
     @State private var isSending = false
@@ -677,67 +649,55 @@ struct CopilotView: View {
     }
 
     private var proactiveCards: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Label("Wiqo önerisi", systemImage: "lightbulb.fill")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.orange)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.secondary)
             ForEach(proactiveSuggestions) { suggestion in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(suggestion.title).font(.subheadline.weight(.medium))
-                    Text(suggestion.body).font(.caption).foregroundStyle(.secondary)
-                    HStack {
-                        Button("Sor") {
-                            inputText = suggestion.prompt
-                            proactiveSuggestions.removeAll { $0.id == suggestion.id }
-                            Task { await markSuggestion(suggestion.id, action: "accept") }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        Button("Kapat") {
-                            proactiveSuggestions.removeAll { $0.id == suggestion.id }
-                            Task { await markSuggestion(suggestion.id, action: "dismiss") }
-                        }
-                        .buttonStyle(.bordered)
+                WiqoRecommendationCard(
+                    title: suggestion.title,
+                    message: suggestion.body,
+                    primaryTitle: "Sor",
+                    onPrimary: {
+                        inputText = suggestion.prompt
+                        proactiveSuggestions.removeAll { $0.id == suggestion.id }
+                        Task { await markSuggestion(suggestion.id, action: "accept") }
+                    },
+                    onDismiss: {
+                        proactiveSuggestions.removeAll { $0.id == suggestion.id }
+                        Task { await markSuggestion(suggestion.id, action: "dismiss") }
                     }
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
+                )
             }
         }
         .padding(.horizontal)
     }
 
     private var memoryCandidatesCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Label("Wiqo hafıza önerisi", systemImage: "brain.head.profile")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.purple)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.secondary)
             ForEach(memoryCandidates) { candidate in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(candidate.content)
-                        .font(.subheadline)
-                    HStack {
-                        Button("Hatırla") {
-                            memoryCandidates.removeAll { $0.id == candidate.id }
-                            Task {
-                                do { try await RovaBackendClient.acceptMemoryCandidate(id: candidate.id) }
-                                catch { await loadMemoryCandidates() }
-                            }
+                WiqoRecommendationCard(
+                    title: "Bunu hatırlayayım mı?",
+                    message: candidate.content,
+                    primaryTitle: "Hatırla",
+                    onPrimary: {
+                        memoryCandidates.removeAll { $0.id == candidate.id }
+                        Task {
+                            do { try await RovaBackendClient.acceptMemoryCandidate(id: candidate.id) }
+                            catch { await loadMemoryCandidates() }
                         }
-                        .buttonStyle(.borderedProminent)
-                        Button("Kapat") {
-                            memoryCandidates.removeAll { $0.id == candidate.id }
-                            Task {
-                                do { try await RovaBackendClient.dismissMemoryCandidate(id: candidate.id) }
-                                catch { await loadMemoryCandidates() }
-                            }
+                    },
+                    onDismiss: {
+                        memoryCandidates.removeAll { $0.id == candidate.id }
+                        Task {
+                            do { try await RovaBackendClient.dismissMemoryCandidate(id: candidate.id) }
+                            catch { await loadMemoryCandidates() }
                         }
-                        .buttonStyle(.bordered)
                     }
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
+                )
             }
         }
         .padding(.horizontal)
@@ -756,7 +716,7 @@ struct CopilotView: View {
                     if !liveReply.displayed.isEmpty {
                         // Same layout as a finished assistant bubble, so swapping the live text
                         // for the stored reply produces no visual jump.
-                        ReplyBlocksView(text: liveReply.displayed)
+                        ReplyBlocksView(text: liveReply.displayed, isStreaming: true)
                             .padding(.horizontal)
                     } else if isSending {
                         thinkingStagesView
@@ -798,37 +758,27 @@ struct CopilotView: View {
         }
     }
 
-    /// Wiqo's reasoning stages for the turn in flight, oldest first: earlier stages settle into a
-    /// dim, checked-off line while the newest one stays highlighted with the live ThinkingOrbsPill
-    /// animation - the same "show your work as you go" shape ChatGPT/Gemini use, not a single line
-    /// that overwrites.
+    /// Keep streaming progress as one natural sentence. The backend can emit many checkpoints,
+    /// but exposing the whole internal timeline makes a normal conversation feel like a log.
     private var thinkingStagesView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(statusMessages.enumerated()), id: \.offset) { index, message in
-                let isCurrent = index == statusMessages.count - 1
+        Group {
+            if let message = statusMessages.last, !message.isEmpty {
                 HStack(spacing: 8) {
-                    if isCurrent {
-                        // "Görsel" only ever appears in the two image-generation/edit status
-                        // strings describeCall emits (groq/client.ts) - everything else (research,
-                        // memory, device actions, plain reasoning) gets the ordinary working look.
-                        (message.contains("Görsel") ? ThinkingOrbsPill.generatingPreset : ThinkingOrbsPill.workingPreset)
-                            .frame(width: 16, height: 16)
-                    } else {
-                        Image(systemName: "checkmark")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                            .frame(width: 16)
-                    }
+                    // "Görsel" only appears in the image-generation progress text. Every other
+                    // operation uses the quiet working indicator.
+                    (message.contains("Görsel") ? ThinkingOrbsPill.generatingPreset : ThinkingOrbsPill.workingPreset)
+                        .frame(width: 16, height: 16)
                     Text(message)
                         .font(.subheadline)
-                        .foregroundStyle(isCurrent ? .secondary : .tertiary)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(reduceMotion ? .identity : .opacity)
             }
         }
         .padding(.horizontal)
         .id("thinkingStages")
-        .animation(.easeInOut(duration: 0.2), value: statusMessages)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: statusMessages.last ?? "")
     }
 
     private func bubbleView(_ bubble: ChatBubble) -> some View {
@@ -893,43 +843,54 @@ struct CopilotView: View {
         let deviceSteps = bubble.steps.filter { $0.type != .executeCode }
         let liveOnlyUpdates = standaloneExecutionUpdates(for: bubble, deviceSteps: deviceSteps)
         let hasExecution = !deviceSteps.isEmpty || !bubble.backendConfirmations.isEmpty || !liveOnlyUpdates.isEmpty
+        let rows = toolRows(for: bubble, deviceSteps: deviceSteps, liveOnlyUpdates: liveOnlyUpdates)
+        let chunks = contextChunks(for: bubble)
         return Group {
             if hasExecution {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 8) {
-                        Image(systemName: executionNarrationIcon(bubble, deviceSteps: deviceSteps, liveOnlyUpdates: liveOnlyUpdates))
-                            .foregroundStyle(.secondary)
-                        Text(executionNarration(bubble, deviceSteps: deviceSteps, liveOnlyUpdates: liveOnlyUpdates))
-                            .font(.subheadline)
-                        Spacer(minLength: 8)
-                    }
-                    .padding(.bottom, 8)
-
-                    ForEach(deviceSteps) { step in
-                        deviceStepRow(step: step, bubble: bubble)
-                        if step.id != deviceSteps.last?.id || !bubble.backendConfirmations.isEmpty {
-                            Divider().padding(.vertical, 6)
+                VStack(alignment: .leading, spacing: 10) {
+                    if shouldShowExecutionNarration(bubble, liveOnlyUpdates: liveOnlyUpdates) {
+                        HStack(spacing: 8) {
+                            Image(systemName: executionNarrationIcon(bubble, deviceSteps: deviceSteps, liveOnlyUpdates: liveOnlyUpdates))
+                                .foregroundStyle(.secondary)
+                            Text(executionNarration(bubble, deviceSteps: deviceSteps, liveOnlyUpdates: liveOnlyUpdates))
+                                .font(.subheadline)
+                                .lineLimit(2)
+                            Spacer(minLength: 8)
                         }
                     }
 
-                    ForEach(liveOnlyUpdates, id: \.id) { update in
-                        liveExecutionStepRow(update: update)
-                        if update.id != liveOnlyUpdates.last?.id || !bubble.backendConfirmations.isEmpty {
-                            Divider().padding(.vertical, 6)
-                        }
+                    if !rows.isEmpty {
+                        WiqoToolChips(rows: rows, summary: toolSummary(rows))
+                    }
+
+                    ForEach(chunks) { chunk in
+                        WiqoContextCard(chunk: chunk)
                     }
 
                     ForEach(Array(bubble.backendConfirmations.enumerated()), id: \.element.id) { index, row in
-                        backendConfirmationRow(row, bubbleID: bubble.id)
-                        if index < bubble.backendConfirmations.count - 1 {
-                            Divider().padding(.vertical, 6)
-                        }
+                        backendConfirmationView(row, index: index, total: bubble.backendConfirmations.count, bubbleID: bubble.id)
                     }
                 }
-                .padding(12)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
+                .padding(.vertical, 2)
             }
         }
+    }
+
+    private func shouldShowExecutionNarration(
+        _ bubble: ChatBubble,
+        liveOnlyUpdates: [RovaBackendClient.ExecutionStepUpdate]
+    ) -> Bool {
+        bubble.needsConfirmation
+            || !bubble.inFlightStepIDs.isEmpty
+            || bubble.failedSteps.isEmpty == false
+            || bubble.backendConfirmations.contains { $0.status == .pending || $0.status == .processing || $0.status == .failed }
+            || liveOnlyUpdates.contains {
+                $0.status == LiveExecutionStatus.awaitingConfirmation.rawValue
+                    || $0.status == LiveExecutionStatus.dispatching.rawValue
+                    || $0.status == LiveExecutionStatus.running.rawValue
+                    || $0.status == LiveExecutionStatus.failed.rawValue
+                    || $0.status == LiveExecutionStatus.denied.rawValue
+            }
     }
 
     private func executionNarrationIcon(
@@ -987,7 +948,8 @@ struct CopilotView: View {
         let representedIDs = Set(deviceSteps.map(\.id)).union(bubble.backendConfirmations.map(\.id))
         return bubble.executionUpdates.values
             .filter { update in
-                !representedIDs.contains(update.id)
+                isUserVisibleExecutionUpdate(update)
+                    && !representedIDs.contains(update.id)
                     && !(update.confirmationId.map { representedIDs.contains($0) } ?? false)
             }
             .sorted { lhs, rhs in
@@ -1000,58 +962,36 @@ struct CopilotView: View {
             }
     }
 
-    private func backendConfirmationRow(_ row: BackendConfirmationRow, bubbleID: UUID) -> some View {
+    /// Backend/service steps such as memory bookkeeping, code generation and research are
+    /// internal implementation details. They must not turn an ordinary chat reply into a gray
+    /// execution card. Real PC steps and explicit permission/presence gates remain visible.
+    private func isUserVisibleExecutionUpdate(_ update: RovaBackendClient.ExecutionStepUpdate) -> Bool {
+        update.kind == "device" || update.requiresConfirmation || update.requiresUserPresence
+    }
+
+    /// A pending or in-progress approval is a card with two clear answers; once answered it settles
+    /// into a single quiet pill. Everything else about the action lives in the details.
+    private func backendConfirmationView(_ row: BackendConfirmationRow, index: Int, total: Int, bubbleID: UUID) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: row.confirmation.isDestructive ? "arrow.up.right.circle.fill" : "cloud.fill")
-                    .foregroundStyle(row.status == .failed ? .red : row.status == .completed ? .green : row.status == .pending ? .orange : .secondary)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(row.confirmation.title)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Text(row.confirmation.summary)
-                        .font(.subheadline)
-                        .lineLimit(2)
-                }
-                Spacer(minLength: 8)
-            }
-
-            if !row.confirmation.details.isEmpty {
-                DisclosureGroup {
-                    VStack(alignment: .leading, spacing: 5) {
-                        ForEach(row.confirmation.details.keys.sorted(), id: \.self) { key in
-                            if let value = row.confirmation.details[key], !value.isEmpty {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(key.replacingOccurrences(of: "_", with: " ").capitalized)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                    Text(value)
-                                        .font(.caption)
-                                        .lineLimit(5)
-                                        .foregroundStyle(.primary)
-                                        .textSelection(.enabled)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.top, 4)
-                } label: {
-                    Text("Ayrıntılar")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            if let resultText = row.resultText, !resultText.isEmpty {
-                Text(resultText)
-                    .font(.caption)
-                    .foregroundStyle(row.status == .completed ? Color.secondary : Color.red)
-                    .lineLimit(3)
-                    .textSelection(.enabled)
-            } else if let statusMessage = backendConfirmationMessage(row.status) {
-                Text(statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(row.status == .failed ? .red : .secondary)
+            switch row.status {
+            case .pending, .processing:
+                WiqoApprovalCard(
+                    title: row.confirmation.title,
+                    summary: row.confirmation.summary,
+                    fields: approvalFields(row.confirmation),
+                    step: index + 1,
+                    stepCount: total,
+                    isDestructive: row.confirmation.isDestructive,
+                    isProcessing: row.status == .processing,
+                    onApprove: { Task { await resolveBackendConfirmation(bubbleID: bubbleID, confirmationID: row.id, approved: true) } },
+                    onDecline: { Task { await resolveBackendConfirmation(bubbleID: bubbleID, confirmationID: row.id, approved: false) } }
+                )
+            case .completed:
+                WiqoApprovalOutcome(kind: .done, message: nonEmpty(row.resultText) ?? "Yaptım.")
+            case .cancelled:
+                WiqoApprovalOutcome(kind: .declined, message: "İşlemi yapmadım.")
+            case .failed:
+                WiqoApprovalOutcome(kind: .failed, message: nonEmpty(row.resultText) ?? "İşlem gerçekleşmedi.")
             }
 
             if let resultDetail = row.resultDetail, !resultDetail.isEmpty {
@@ -1066,44 +1006,23 @@ struct CopilotView: View {
                 .foregroundStyle(.secondary)
             }
 
-            if row.status == .pending {
-                HStack(spacing: 8) {
-                    Button {
-                        Task { await resolveBackendConfirmation(bubbleID: bubbleID, confirmationID: row.id, approved: true) }
-                    } label: {
-                        Text("Onayla")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-
-                    Button("Reddet", role: .destructive) {
-                        Task { await resolveBackendConfirmation(bubbleID: bubbleID, confirmationID: row.id, approved: false) }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-
             if !row.artifacts.isEmpty {
                 artifactCard(for: row.artifacts, awaitingSave: false)
             }
         }
+        .wiqoAnimation(WiqoMotion.ease(0.4), value: row.status)
     }
 
-    private func backendConfirmationMessage(_ status: BackendConfirmationStatus) -> String? {
-        switch status {
-        case .pending:
-            return "Bunu yapabilmem için senden onay almam gerekiyor."
-        case .processing:
-            return "Onayını aldım, şimdi yapıyorum."
-        case .completed:
-            return nil
-        case .cancelled:
-            return "İşlemi yapmadım."
-        case .failed:
-            return "İşlem gerçekleşmedi."
+    private func approvalFields(_ confirmation: RovaBackendClient.BackendConfirmation) -> [WiqoApprovalCard.Field] {
+        confirmation.details.keys.sorted().compactMap { key in
+            guard let value = confirmation.details[key], !value.isEmpty else { return nil }
+            return WiqoApprovalCard.Field(id: key, label: key.replacingOccurrences(of: "_", with: " ").capitalized, value: value)
         }
+    }
+
+    private func nonEmpty(_ text: String?) -> String? {
+        guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 
     /// One collapsible card per `.executeCode` step in this bubble - shown both while a step is
@@ -1128,144 +1047,159 @@ struct CopilotView: View {
         return payload
     }
 
-    private func deviceStepRow(step: PlannedCommand, bubble: ChatBubble) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "circle.fill")
-                .font(.system(size: 6))
-                .foregroundStyle(.tertiary)
-                .frame(width: 16)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(step.summary)
-                    .font(.subheadline)
-                    .lineLimit(1)
-                deviceStepStatus(step: step, bubble: bubble)
-            }
-            Spacer(minLength: 0)
+    private func toolRows(
+        for bubble: ChatBubble,
+        deviceSteps: [PlannedCommand],
+        liveOnlyUpdates: [RovaBackendClient.ExecutionStepUpdate]
+    ) -> [WiqoToolRow] {
+        let local = deviceSteps.map { step -> WiqoToolRow in
+            let presentation = stepPresentation(step: step, bubble: bubble)
+            return WiqoToolRow(
+                id: step.id.uuidString,
+                icon: deviceToolIcon(step.type),
+                label: step.summary,
+                tone: deviceToolTone(step: step, bubble: bubble),
+                status: presentation.status,
+                detail: presentation.detail
+            )
+        }
+        let live = liveOnlyUpdates.map { update -> WiqoToolRow in
+            let presentation = livePresentation(LiveExecutionStatus(rawValue: update.status) ?? .ready, message: update.message)
+            return WiqoToolRow(
+                id: update.id.uuidString,
+                icon: "desktopcomputer",
+                label: update.summary,
+                tone: liveToolTone(update.status),
+                status: presentation.status,
+                detail: presentation.detail
+            )
+        }
+        return local + live
+    }
+
+    private func toolSummary(_ rows: [WiqoToolRow]) -> String {
+        let finished = rows.filter { $0.tone == .success }.count
+        if finished == rows.count { return "\(rows.count) işlem tamamlandı" }
+        return "\(rows.count) işlem"
+    }
+
+    private func deviceToolIcon(_ type: CommandType) -> String {
+        switch type {
+        case .openApplication, .openApplicationByName, .controlApplication, .quitApplication, .listRunningApplications:
+            return "app.fill"
+        case .listDesktopFiles, .readDesktopFile, .moveDesktopFile, .renameDesktopFile, .saveTextFile,
+             .saveArtifact, .readDocument, .editDocument, .listFiles, .readFile, .writeFile, .moveFile,
+             .copyFile, .deleteFile:
+            return "doc.fill"
+        case .executeCode: return "terminal"
+        case .setClipboardText, .getClipboardText, .getClipboardHistory: return "doc.on.clipboard"
+        case .setVolume, .toggleMute, .mediaControl: return "speaker.wave.2.fill"
+        case .captureScreen, .clickScreen, .controlUIElement: return "rectangle.inset.filled.and.person.filled"
+        case .getSystemStatus, .ping: return "desktopcomputer"
+        default: return "bolt.fill"
         }
     }
 
-    private func liveExecutionStepRow(update: RovaBackendClient.ExecutionStepUpdate) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "circle.fill")
-                .font(.system(size: 6))
-                .foregroundStyle(.tertiary)
-                .frame(width: 16)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(update.summary)
-                    .font(.subheadline)
-                    .lineLimit(1)
-                if let status = LiveExecutionStatus(rawValue: update.status) {
-                    liveExecutionStatus(status, message: update.message)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    @ViewBuilder
-    private func deviceStepStatus(step: PlannedCommand, bubble: ChatBubble) -> some View {
+    private func deviceToolTone(step: PlannedCommand, bubble: ChatBubble) -> WiqoToolChipTone {
         if let result = bubble.stepResults[step.id] {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(localResultMessage(result))
-                    .font(.caption)
-                    .foregroundStyle(result.status == .completed ? Color.secondary : result.status == .unknown ? Color.orange : Color.red)
-                if let error = result.error {
-                    DisclosureGroup("Ayrıntı") {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(error.message)
-                            Text("Kod: \(error.code)")
-                                .font(.caption2.monospaced())
-                        }
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .padding(.top, 3)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                } else if let detail = stepResultDataDetail(result.data) {
-                    DisclosureGroup("Ayrıntı") {
-                        Text(detail)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(6)
-                            .textSelection(.enabled)
-                            .padding(.top, 3)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
+            switch result.status {
+            case .completed: return .success
+            case .unknown: return .attention
+            case .failed: return .failure
+            case .denied: return .attention
+            case .pending, .running: return .active
             }
-        } else if let failure = bubble.failedSteps[step.id] {
-            Text("Bunu tamamlayamadım.")
-                .font(.caption)
-                .foregroundStyle(.red)
-                .accessibilityValue(failure)
-        } else if let update = bubble.executionUpdates[step.id],
-                  let status = LiveExecutionStatus(rawValue: update.status) {
-            liveExecutionStatus(status, message: update.message)
-        } else if bubble.inFlightStepIDs.contains(step.id) {
-            liveExecutionStatus(.running, message: nil)
-        } else if bubble.needsConfirmation {
+        }
+        if bubble.failedSteps[step.id] != nil { return .failure }
+        if bubble.inFlightStepIDs.contains(step.id) { return .active }
+        if bubble.needsConfirmation && currentLocalConfirmationStep(in: bubble)?.id == step.id { return .attention }
+        return .neutral
+    }
+
+    private func liveToolTone(_ status: String) -> WiqoToolChipTone {
+        switch LiveExecutionStatus(rawValue: status) {
+        case .succeeded: return .success
+        case .failed: return .failure
+        case .denied, .awaitingConfirmation: return .attention
+        case .dispatching, .running: return .active
+        default: return .neutral
+        }
+    }
+
+    /// The one sentence and the optional technical lines shown for a step - what used to be a
+    /// stack of status views is now plain text, so every row reads the same way.
+    private func stepPresentation(step: PlannedCommand, bubble: ChatBubble) -> (status: String?, detail: [String]) {
+        if let result = bubble.stepResults[step.id] {
+            var detail: [String] = []
+            if let error = result.error {
+                detail = [error.message, "Kod: \(error.code)"]
+            } else if let data = result.data, contextChunk(from: data, id: step.id.uuidString) == nil,
+                      let text = stepResultDataDetail(data) {
+                detail = [text]
+            }
+            return (localResultMessage(result), detail)
+        }
+        if let failure = bubble.failedSteps[step.id] {
+            return ("Bunu tamamlayamadım.", [failure])
+        }
+        if let update = bubble.executionUpdates[step.id], let status = LiveExecutionStatus(rawValue: update.status) {
+            return livePresentation(status, message: update.message)
+        }
+        if bubble.inFlightStepIDs.contains(step.id) {
+            return livePresentation(.running, message: nil)
+        }
+        if bubble.needsConfirmation {
             if currentLocalConfirmationStep(in: bubble)?.id == step.id {
-                liveExecutionStatus(.awaitingConfirmation, message: nil)
-            } else if requiresLocalConfirmation(step) {
-                liveExecutionStatus(.blocked, message: "Önceki adım bekleniyor.")
-            } else {
-                liveExecutionStatus(.ready, message: nil)
+                return livePresentation(.awaitingConfirmation, message: nil)
             }
-        } else {
-            liveExecutionStatus(.ready, message: nil)
+            if requiresLocalConfirmation(step) {
+                return livePresentation(.blocked, message: nil)
+            }
         }
+        return (nil, [])
     }
 
-    @ViewBuilder
-    private func liveExecutionStatus(_ status: LiveExecutionStatus, message: String?) -> some View {
-        if status != .ready {
-            liveExecutionStatusContent(status, message: message)
-        }
-    }
-
-    private func liveExecutionStatusContent(_ status: LiveExecutionStatus, message: String?) -> some View {
-        let text: String
+    private func livePresentation(_ status: LiveExecutionStatus, message: String?) -> (status: String?, detail: [String]) {
+        let detail = (message ?? "").isEmpty ? [] : [message ?? ""]
         switch status {
-        case .awaitingConfirmation:
-            text = "Bunu yapabilmem için senden onay almam gerekiyor."
-        case .dispatching, .running:
-            text = "Şimdi yapıyorum…"
-        case .succeeded:
-            text = "Oldu."
-        case .failed, .denied:
-            text = friendlyExecutionFailure(status, message: message)
-        case .blocked:
-            text = "Önceki işlemi tamamlayınca buna geçeceğim."
         case .ready:
-            text = ""
+            return (nil, [])
+        case .awaitingConfirmation:
+            return ("Bunu yapabilmem için senden onay almam gerekiyor.", [])
+        case .dispatching, .running:
+            return ("Şimdi yapıyorum…", [])
+        case .succeeded:
+            return ("Oldu.", [])
+        case .failed, .denied:
+            return (friendlyExecutionFailure(status, message: message), detail)
+        case .blocked:
+            return ("Önceki işlemi tamamlayınca buna geçeceğim.", detail)
         }
-        return VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 5) {
-                if status == .dispatching || status == .running {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    Image(systemName: status.systemImage)
-                        .imageScale(.small)
-                }
-                Text(text)
-            }
-            .font(.caption)
-            .foregroundStyle(status.color)
-            if let message, !message.isEmpty, status == .failed || status == .denied || status == .blocked {
-                DisclosureGroup("Ayrıntı") {
-                    Text(message)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(4)
-                        .textSelection(.enabled)
-                        .padding(.top, 3)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
+    }
+
+    /// File and document reads are shown as what they are - text taken from a file - rather than
+    /// as a technical detail line.
+    private func contextChunks(for bubble: ChatBubble) -> [WiqoContextChunk] {
+        bubble.steps.compactMap { step in
+            guard let data = bubble.stepResults[step.id]?.data else { return nil }
+            return contextChunk(from: data, id: step.id.uuidString)
+        }
+    }
+
+    private func contextChunk(from data: CommandData, id: String) -> WiqoContextChunk? {
+        let title = "Okunan içerik"
+        switch data {
+        case .fileContent(let content):
+            guard !content.content.isEmpty else { return nil }
+            return WiqoContextChunk(id: id, title: title, text: String(content.content.prefix(4_000)), source: content.filename)
+        case .documentContent(let content):
+            guard !content.text.isEmpty else { return nil }
+            return WiqoContextChunk(id: id, title: title, text: String(content.text.prefix(4_000)), source: content.filename)
+        case .fileData(let content):
+            guard let text = content.text, !text.isEmpty else { return nil }
+            return WiqoContextChunk(id: id, title: title, text: String(text.prefix(4_000)), source: (content.path as NSString).lastPathComponent)
+        default:
+            return nil
         }
     }
 
@@ -1786,6 +1720,7 @@ struct CopilotView: View {
                     )
                 },
                 onStepUpdate: { update in
+                    guard isUserVisibleExecutionUpdate(update) else { return }
                     earlyConfirmationBubbleID = presentLiveExecutionBubble(
                         for: update,
                         existingBubbleID: earlyConfirmationBubbleID
@@ -2095,6 +2030,7 @@ struct CopilotView: View {
                     )
                 },
                 onStepUpdate: { update in
+                    guard isUserVisibleExecutionUpdate(update) else { return }
                     earlyConfirmationBubbleID = presentLiveExecutionBubble(
                         for: update,
                         existingBubbleID: earlyConfirmationBubbleID

@@ -18,6 +18,7 @@ import Foundation
 /// doesn't carry three dozen unused drawing algorithms as dead weight.
 struct ThinkingOrbsPill: View {
     @Environment(\.colorScheme) var systemScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var style: Int = 3
     var period: Double = 4.4
     var label: String = "Düşünüyor…"
@@ -87,7 +88,7 @@ struct ThinkingOrbsPill: View {
                 speed: speed,
                 reverse: reverse,
                 startAt: startAt,
-                animated: true,
+                animated: !reduceMotion,
                 dotScale: dotScale,
                 dots: dots,
                 spread: spread,

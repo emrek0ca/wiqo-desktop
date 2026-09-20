@@ -1,28 +1,30 @@
 import SwiftUI
 import UIKit
-import WebKit
 
-/// A focused workspace for code that Wiqo has written or the user wants to try.
+/// The place where code Wiqo wrote (or the user wrote) becomes something you can see.
 ///
-/// The canvas deliberately has three surfaces instead of mixing source, output and device
-/// previews together:
-///   - Kod: the editable source and the optional Python dependency list
-///   - Uygulama: a phone-sized HTML viewport
-///   - PC: the same result in a wide desktop viewport
+/// Two surfaces, nothing else:
+///   - Kod: the editable source and the libraries it needs
+///   - Sonuç: whatever the code produced - a live interface (as a phone app or on a PC), or the
+///     program's output
 ///
-/// Python/JavaScript/shell still run in the existing isolated backend sandbox. A Python program
-/// can produce an HTML artifact (for example `app.html`) and that artifact becomes the application
-/// preview. Native desktop GUI libraries cannot be rendered inside an iPhone WebView, so the UI
-/// stays honest about that boundary instead of showing a fake PC state.
+/// Running code switches to the result on its own. HTML, and JavaScript written for the browser,
+/// open instantly on the device. Python, JavaScript and shell run in the isolated backend sandbox;
+/// a Python program that writes `app.html` (or any HTML file) gets that page shown as the
+/// interface. A program that opens a native desktop window cannot be drawn on a phone, and the
+/// canvas says so instead of showing an empty result.
 struct CanvasView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var language: String
     @State private var code: String
-    @State private var packagesText = ""
-    @State private var workspace: WorkspaceTab
-    @State private var isRunning = false
+    @State private var surface: Surface
+    @State private var manualPackages: [String] = []
+    @State private var dismissedPackages: Set<String> = []
+    @State private var packageDraft = ""
+    @State private var phase: RunPhase = .idle
+    @State private var hasRun = false
     @State private var activeTaskID: Int?
     @State private var runMessage: String?
     @State private var result: RovaBackendClient.CanvasRunResult?
@@ -30,26 +32,23 @@ struct CanvasView: View {
     @State private var artifactErrorMessage: String?
     @State private var previewHTML: String?
     @State private var previewURL: URL?
+    @State private var previewDevice: WiqoPreviewDevice = .phone
+    @State private var reloadToken = 0
     @State private var copied = false
 
     private let autoRun: Bool
 
-    private enum WorkspaceTab: String, CaseIterable {
+    private enum Surface: String, CaseIterable {
         case code = "Kod"
-        case app = "Uygulama"
-        case pc = "PC"
+        case result = "Sonuç"
     }
 
-    private enum PreviewMode {
-        case phone
-        case desktop
-
-        var viewportWidth: Int {
-            switch self {
-            case .phone: return 390
-            case .desktop: return 1280
-            }
-        }
+    private enum RunPhase: Equatable {
+        case idle
+        case preparing
+        case running
+        case finishing
+        case done
     }
 
     private let languages = [
@@ -60,70 +59,79 @@ struct CanvasView: View {
     ]
 
     init(language: String = "python", code: String = "", autoRun: Bool = false) {
-        let canonicalLanguage = language.lowercased() == "html" ? "html" : language
-        _language = State(initialValue: canonicalLanguage)
+        let canonical = language.lowercased() == "html" ? "html" : language
+        _language = State(initialValue: canonical)
         _code = State(initialValue: code)
-        _workspace = State(initialValue: canonicalLanguage == "html" ? .app : .code)
+        let hasCode = !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        _surface = State(initialValue: autoRun && hasCode ? .result : .code)
         self.autoRun = autoRun
     }
 
-    private var isHTML: Bool { language.lowercased() == "html" }
+    // MARK: - Derived state
 
-    private var packageList: [String] {
-        packagesText
-            .split { $0 == "," || $0 == "\n" }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .reduce(into: [String]()) { result, package in
-                if !result.contains(where: { $0.caseInsensitiveCompare(package) == .orderedSame }) {
-                    result.append(package)
-                }
-            }
+    private var isHTML: Bool { language == "html" }
+    private var isRunning: Bool { phase == .preparing || phase == .running || phase == .finishing }
+    private var trimmedCode: String { code.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// Libraries found in the code plus the ones the user added, minus the ones they turned off.
+    private var packages: [String] {
+        guard language == "python" else { return [] }
+        var list: [String] = []
+        for name in CanvasPackageDetector.detect(in: code) + manualPackages {
+            let key = name.lowercased()
+            guard !dismissedPackages.contains(key),
+                  !list.contains(where: { $0.lowercased() == key }) else { continue }
+            list.append(name)
+        }
+        return Array(list.prefix(CanvasPackageDetector.limit))
     }
 
     private var displayLanguage: String {
         languages.first(where: { $0.0 == language })?.1 ?? language.capitalized
     }
 
+    private var fileName: String {
+        switch language {
+        case "python": return "canvas.py"
+        case "javascript": return "canvas.js"
+        case "shell": return "canvas.sh"
+        default: return "app.html"
+        }
+    }
+
+    private var placeholder: String {
+        switch language {
+        case "python": return "# Python kodunu buraya yaz\nprint(\"merhaba\")"
+        case "javascript": return "// JavaScript kodunu buraya yaz\nconsole.log(\"merhaba\")"
+        case "html": return "<!doctype html>\n<html>\n  <body>\n    <h1>Merhaba</h1>\n  </body>\n</html>"
+        default: return "# Shell komutlarını buraya yaz\necho merhaba"
+        }
+    }
+
+    private var opensNativeWindow: Bool {
+        language == "python" && CanvasPackageDetector.opensNativeWindow(code)
+    }
+
+    // MARK: - Body
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                workspacePicker
+                surfacePicker
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        if workspace == .code {
-                            codeWorkspace
-                        } else {
-                            previewWorkspace
-                        }
-
-                        if let runMessage, isRunning {
-                            WiqoToolChip(
-                                title: runMessage,
-                                systemImage: packageList.isEmpty ? "terminal" : "shippingbox",
-                                tone: .active
-                            )
-                        }
-
-                        if let result {
-                            resultView(result)
-                        }
-
-                        if let artifactErrorMessage {
-                            Text(artifactErrorMessage)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        if let errorMessage {
-                            errorView(errorMessage)
+                    VStack(alignment: .leading, spacing: 14) {
+                        switch surface {
+                        case .code: codeSurface
+                        case .result: resultSurface
                         }
                     }
                     .padding(RovaDesign.screenPadding)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollDismissesKeyboard(.interactively)
             }
             .background(RovaDesign.canvas)
+            .safeAreaInset(edge: .bottom) { runBar }
             .navigationTitle("Canvas")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -137,37 +145,22 @@ struct CanvasView: View {
             .quickLookPreview($previewURL)
         }
         .task {
-            guard autoRun, !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            if isHTML {
-                previewHTML = code
-                workspace = .app
-            } else {
-                await run()
-            }
+            guard autoRun, !trimmedCode.isEmpty else { return }
+            await run()
         }
-        .onChange(of: language) { _, newLanguage in
-            if newLanguage == "html" {
-                previewHTML = code
-                workspace = .app
-            } else if workspace != .code {
-                workspace = .code
-            }
-        }
+        .wiqoAnimation(value: surface)
     }
 
-    private var workspacePicker: some View {
-        Picker("Canvas görünümü", selection: $workspace) {
-            ForEach(WorkspaceTab.allCases, id: \.self) { tab in
-                Text(tab.rawValue).tag(tab)
+    private var surfacePicker: some View {
+        Picker("Canvas yüzeyi", selection: $surface) {
+            ForEach(Surface.allCases, id: \.self) { item in
+                Text(item.rawValue).tag(item)
             }
         }
         .pickerStyle(.segmented)
         .padding(.horizontal, RovaDesign.screenPadding)
         .padding(.top, 12)
         .padding(.bottom, 8)
-        .onChange(of: workspace) { _, newTab in
-            if newTab == .app, isHTML { previewHTML = code }
-        }
     }
 
     private var languageMenu: some View {
@@ -190,228 +183,374 @@ struct CanvasView: View {
         .accessibilityLabel("Kod dili")
     }
 
-    private var codeWorkspace: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            codeEditor
-
-            if language == "python" {
-                packageField
-            }
-
-            runButton
-
-            if let runMessage, !isRunning {
-                WiqoToolChip(
-                    title: runMessage,
-                    systemImage: result?.exitCode == 0 ? "checkmark.circle" : "info.circle",
-                    tone: result?.exitCode == 0 ? .success : .neutral
-                )
-            }
-        }
-    }
-
-    private var codeEditor: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: fileIcon)
-                    .foregroundStyle(.secondary)
-                Text(fileName)
-                    .font(.system(.caption, design: .monospaced).weight(.medium))
-                    .foregroundStyle(.primary)
-                Spacer()
-                Button {
-                    UIPasteboard.general.string = code
-                    copied = true
-                    Task {
-                        try? await Task.sleep(nanoseconds: 1_200_000_000)
-                        await MainActor.run { copied = false }
-                    }
-                } label: {
-                    Label(copied ? "Kopyalandı" : "Kopyala", systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(copied ? .green : .secondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .overlay(alignment: .bottom) { Divider() }
-
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: $code)
-                    .font(.system(.footnote, design: .monospaced))
-                    .frame(minHeight: 230)
-                    .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 8)
-
-                if code.isEmpty {
-                    Text(placeholder)
-                        .font(.system(.footnote, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 16)
-                        .allowsHitTesting(false)
-                }
-            }
-        }
-        .background(RovaDesign.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-        }
-    }
-
-    private var packageField: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 7) {
-                Image(systemName: "shippingbox")
-                    .foregroundStyle(.secondary)
-                Text("Python kütüphaneleri")
-                    .font(.subheadline.weight(.medium))
-                Text("İsteğe bağlı")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            TextField("numpy, pandas, matplotlib", text: $packagesText, axis: .vertical)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(.system(.footnote, design: .monospaced))
-                .lineLimit(1...3)
-                .padding(11)
-                .background(RovaDesign.cardSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                }
-            Text("Güvenli biçimde hazırlanır; kod çalışırken internet erişimi kapalıdır.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var runButton: some View {
+    private var runBar: some View {
         Button {
             if isRunning {
                 Task { await cancelRun() }
-            } else if isHTML {
-                previewHTML = code
-                workspace = .app
-                runMessage = "Uygulama önizlemesini yeniledim."
             } else {
                 Task { await run() }
             }
         } label: {
             HStack(spacing: 8) {
                 if isRunning {
-                    ProgressView()
-                        .tint(.white)
-                        .controlSize(.small)
+                    ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: isHTML ? "eye" : "play.fill")
+                    Image(systemName: "play.fill")
                 }
-                Text(isRunning ? "Durdur" : (isHTML ? "Önizlemeyi aç" : "Çalıştır"))
-                    .font(.body.weight(.semibold))
+                Text(isRunning ? "Durdur" : "Çalıştır")
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(isRunning ? .orange : RovaDesign.ink)
-        .disabled(!isRunning && code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .buttonStyle(.wiqoPill(isRunning ? .secondary : .accent))
+        .disabled(!isRunning && trimmedCode.isEmpty)
+        .padding(.horizontal, RovaDesign.screenPadding)
+        .padding(.vertical, 10)
+        .background(.bar)
     }
 
-    private var previewWorkspace: some View {
-        let previewMode: PreviewMode = workspace == .pc ? .desktop : .phone
-        return VStack(alignment: .leading, spacing: 12) {
+    // MARK: - Kod
+
+    private var codeSurface: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            editor
+            if language == "python" {
+                packagesSection
+            }
+            if opensNativeWindow {
+                notice("Bu kod bilgisayarda pencere açıyor. Telefonda göstermek için arayüzün web olarak (HTML) yazılması gerekir.", systemImage: "macwindow")
+            }
+        }
+    }
+
+    private var editor: some View {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: workspace == .pc ? "desktopcomputer" : "rectangle.on.rectangle")
-                    .foregroundStyle(RovaDesign.ink)
-                Text(workspace == .pc ? "PC görünümü" : "Uygulama görünümü")
-                    .font(.subheadline.weight(.semibold))
+                Image(systemName: "chevron.left.forwardslash.chevron.right")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(WiqoTheme.ink3)
+                Text(fileName)
+                    .font(.system(.caption, design: .monospaced))
                 Spacer()
-                Text("\(previewMode.viewportWidth) px")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                Button {
+                    UIPasteboard.general.string = code
+                    copied = true
+                    Task {
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        copied = false
+                    }
+                } label: {
+                    Label(copied ? "Kopyalandı" : "Kopyala", systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(.caption.weight(.medium))
+                        .frame(minHeight: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(copied ? WiqoTheme.green : Color.secondary)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 42)
+
+            Rectangle().fill(WiqoTheme.line).frame(height: 0.5)
+
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $code)
+                    .font(.system(size: 12.5, design: .monospaced))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 260)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 8)
+
+                if code.isEmpty {
+                    Text(placeholder)
+                        .font(.system(size: 12.5, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 16)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wiqoCard(radius: 14)
+    }
+
+    private var packagesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Kütüphaneler", systemImage: "shippingbox")
+                .font(.subheadline.weight(.medium))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(packages, id: \.self) { name in
+                        packageChip(name)
+                    }
+                    TextField("Ekle", text: $packageDraft)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.system(size: 12.5, design: .monospaced))
+                        .submitLabel(.done)
+                        .frame(width: 84)
+                        .padding(.horizontal, 10)
+                        .frame(height: 30)
+                        .background(WiqoTheme.inset, in: Capsule())
+                        .onSubmit(addDraftPackage)
+                }
+            }
+
+            Text(packages.isEmpty
+                 ? "Kodda kullanılan tanınmış kütüphaneleri otomatik hazırlarım. İstersen kendin de ekleyebilirsin."
+                 : "Çalıştırırken hazırlanır. Kod çalışırken internet erişimi kapalıdır.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func packageChip(_ name: String) -> some View {
+        HStack(spacing: 6) {
+            Text(name)
+                .font(.system(size: 12.5, design: .monospaced))
+            Button {
+                dismissedPackages.insert(name.lowercased())
+                manualPackages.removeAll { $0.lowercased() == name.lowercased() }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .frame(width: 18, height: 18)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("\(name) kütüphanesini kaldır")
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 6)
+        .frame(height: 30)
+        .background(WiqoTheme.inset, in: Capsule())
+        .overlay { Capsule().strokeBorder(WiqoTheme.line, lineWidth: 0.5) }
+    }
+
+    private func addDraftPackage() {
+        let name = packageDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        packageDraft = ""
+        guard !name.isEmpty, name.count <= 60 else { return }
+        dismissedPackages.remove(name.lowercased())
+        if !manualPackages.contains(where: { $0.lowercased() == name.lowercased() }) {
+            manualPackages.append(name)
+        }
+    }
+
+    // MARK: - Sonuç
+
+    @ViewBuilder
+    private var resultSurface: some View {
+        if !hasRun && result == nil && previewHTML == nil && errorMessage == nil {
+            emptyResult
+        } else {
+            let rows = progressRows
+            if !rows.isEmpty {
+                WiqoToolChips(rows: rows)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .wiqoCard(radius: 14)
             }
 
             if let previewHTML {
-                HTMLPreviewWebView(
-                    html: htmlDocument(source: previewHTML, viewportWidth: previewMode.viewportWidth),
-                    viewportWidth: previewMode.viewportWidth
-                )
-                .frame(minHeight: workspace == .pc ? 430 : 520)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.primary.opacity(0.09), lineWidth: 1)
-                }
-            } else {
-                emptyPreview
+                previewSection(previewHTML)
             }
 
-            if workspace == .pc {
-                Text("Bu alan, üretilen arayüzün geniş ekran önizlemesidir.")
+            if let result {
+                outputSection(result)
+            }
+
+            if opensNativeWindow, previewHTML == nil {
+                notice("Bu kod bilgisayarda pencere açıyor; telefonda gösterilemez. Arayüzün web olarak (HTML) yazılmasını iste.", systemImage: "macwindow")
+            }
+
+            if let artifactErrorMessage {
+                Text(artifactErrorMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            if let errorMessage {
+                errorView(errorMessage)
             }
         }
     }
 
-    private var emptyPreview: some View {
+    private var emptyResult: some View {
         VStack(spacing: 10) {
-            Image(systemName: "rectangle.3.group")
+            Image(systemName: "play.rectangle")
                 .font(.title2)
                 .foregroundStyle(.secondary)
-            Text("Uygulama görünümü için bir HTML çıktısı üret.")
+            Text("Sonuç burada görünür")
                 .font(.subheadline.weight(.medium))
-                .multilineTextAlignment(.center)
-            Text("Python kodun app.html veya index.html oluşturduğunda burada açılır.")
+            Text("Kodu çalıştırdığında arayüz ya da çıktı otomatik olarak açılır.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, minHeight: 220)
         .padding(20)
-        .background(RovaDesign.cardSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .wiqoCard(radius: 16)
+    }
+
+    private var progressRows: [WiqoToolRow] {
+        guard hasRun else { return [] }
+        var rows: [WiqoToolRow] = []
+        let past = phase != .idle && phase != .preparing
+
+        if !packages.isEmpty {
+            rows.append(WiqoToolRow(
+                id: "packages",
+                icon: "shippingbox",
+                label: "Kütüphaneleri hazırla",
+                chip: packages.joined(separator: ", "),
+                tone: phase == .preparing ? .active : (past ? .success : .neutral)
+            ))
+        }
+
+        let runTone: WiqoToolChipTone
+        var runStatus: String?
+        if isRunning {
+            runTone = phase == .preparing ? .neutral : .active
+            runStatus = phase == .preparing ? nil : runMessage
+        } else if let result {
+            runTone = result.timedOut ? .attention : (result.exitCode == 0 ? .success : .failure)
+            runStatus = result.timedOut
+                ? "Beklenenden uzun sürdü, durdurdum."
+                : (result.exitCode == 0 ? nil : "Kod çalışmadı; ayrıntı aşağıda.")
+        } else if errorMessage != nil {
+            runTone = .failure
+            runStatus = "Çalıştırma durdu."
+        } else {
+            runTone = previewHTML == nil ? .neutral : .success
+            runStatus = nil
+        }
+        rows.append(WiqoToolRow(
+            id: "run",
+            icon: language == "html" ? "safari" : "terminal",
+            label: language == "html" ? "Sayfayı aç" : "Kodu çalıştır",
+            chip: fileName,
+            tone: runTone,
+            status: runStatus
+        ))
+
+        if previewHTML != nil, !isRunning {
+            rows.append(WiqoToolRow(id: "preview", icon: "rectangle.on.rectangle", label: "Arayüzü aç", tone: .success))
+        }
+        return rows
+    }
+
+    private func previewSection(_ html: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                devicePicker
+                Spacer(minLength: 0)
+                Button {
+                    reloadToken += 1
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(width: 36, height: 36)
+                        .background(WiqoTheme.inset, in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Önizlemeyi yenile")
+            }
+
+            let document = WiqoHTMLDocument.wrap(html, viewportWidth: previewDevice.viewportWidth, reduceMotion: reduceMotion)
+            Group {
+                switch previewDevice {
+                case .phone:
+                    WiqoDeviceFrame(device: .phone) {
+                        WiqoHTMLWebView(html: document, reloadToken: reloadToken)
+                            .frame(height: 560)
+                            .background(Color.white)
+                    }
+                    .frame(maxWidth: 300)
+                    .frame(maxWidth: .infinity)
+                case .desktop:
+                    WiqoDeviceFrame(device: .desktop, address: fileName) {
+                        WiqoHTMLWebView(html: document, reloadToken: reloadToken)
+                            .frame(height: 380)
+                            .background(Color.white)
+                    }
+                }
+            }
+            .transition(reduceMotion ? .identity : .opacity)
+        }
+        .wiqoAnimation(WiqoMotion.slide(), value: previewDevice)
+    }
+
+    private var devicePicker: some View {
+        HStack(spacing: 2) {
+            ForEach(WiqoPreviewDevice.allCases) { device in
+                Button {
+                    previewDevice = device
+                } label: {
+                    Label(device.title, systemImage: device.systemImage)
+                        .font(.footnote.weight(.medium))
+                        .padding(.horizontal, 12)
+                        .frame(height: 32)
+                        .foregroundStyle(previewDevice == device ? Color(uiColor: .systemBackground) : Color.secondary)
+                        .background(previewDevice == device ? WiqoTheme.ink : Color.clear, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(WiqoTheme.inset, in: Capsule())
     }
 
     @ViewBuilder
-    private func resultView(_ result: RovaBackendClient.CanvasRunResult) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if result.timedOut {
-                WiqoToolChip(title: "Kod beklenenden uzun sürdü; durdurdum.", systemImage: "clock", tone: .attention)
-            } else if result.exitCode == 0 {
-                WiqoToolChip(title: "Kodu çalıştırdım; çıktıyı hazırladım.", systemImage: "checkmark.circle", tone: .success)
+    private func outputSection(_ result: RovaBackendClient.CanvasRunResult) -> some View {
+        let hasOutput = !result.stdout.isEmpty || !result.stderr.isEmpty
+        if hasOutput {
+            if previewHTML != nil {
+                DisclosureGroup("Konsol") { outputBlocks(result) }
+                    .font(.subheadline.weight(.medium))
+                    .tint(.secondary)
             } else {
-                WiqoToolChip(title: "Kod çalışmadı; ayrıntıyı aşağıda bıraktım.", systemImage: "info.circle", tone: .failure)
+                outputBlocks(result)
             }
+        } else if previewHTML == nil, result.exitCode == 0, result.artifacts.isEmpty {
+            notice("Kod çalıştı ama görüntülenecek bir çıktı üretmedi.", systemImage: "checkmark.circle")
+        }
 
+        ForEach(result.artifacts) { artifact in
+            if isHTMLArtifact(artifact) {
+                ArtifactFileRow(artifact: artifact, isBusy: false) {
+                    Task { await openArtifact(artifact) }
+                }
+            } else if case .none = ArtifactInlineKind(mimeType: artifact.mimeType) {
+                ArtifactFileRow(artifact: artifact, isBusy: false) {
+                    Task { await openArtifact(artifact) }
+                }
+            } else {
+                InlineArtifactPreview(artifact: artifact) {
+                    Task { await openArtifact(artifact) }
+                }
+            }
+        }
+    }
+
+    private func outputBlocks(_ result: RovaBackendClient.CanvasRunResult) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             if !result.stdout.isEmpty {
-                outputBlock(title: "Çıktı", text: result.stdout)
+                WiqoCodeBlock(code: result.stdout, title: "Çıktı")
             }
             if !result.stderr.isEmpty {
-                outputBlock(title: "Ayrıntı", text: result.stderr, isError: true)
+                WiqoCodeBlock(code: result.stderr, title: "Ayrıntı")
             }
             if result.truncated {
                 Text("Çıktının uzun bölümünü kısalttım.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-
-            ForEach(result.artifacts) { artifact in
-                if isHTMLArtifact(artifact) {
-                    ArtifactFileRow(artifact: artifact, isBusy: false) {
-                        Task { await openArtifact(artifact) }
-                    }
-                } else if case .none = ArtifactInlineKind(mimeType: artifact.mimeType) {
-                    ArtifactFileRow(artifact: artifact, isBusy: false) {
-                        Task { await openArtifact(artifact) }
-                    }
-                } else {
-                    InlineArtifactPreview(artifact: artifact) {
-                        Task { await openArtifact(artifact) }
-                    }
-                }
             }
         }
     }
@@ -426,114 +565,97 @@ struct CanvasView: View {
         } label: {
             Label("Çalıştırma tamamlanamadı", systemImage: "exclamationmark.circle")
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.red)
+                .foregroundStyle(WiqoTheme.red)
         }
         .tint(.secondary)
         .padding(12)
-        .background(Color.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(WiqoTheme.tint(WiqoTheme.red), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private func outputBlock(title: String, text: String, isError: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(title)
-                    .font(.caption.weight(.semibold))
-                Spacer()
-                Button {
-                    UIPasteboard.general.string = text
-                } label: {
-                    Label("Kopyala", systemImage: "doc.on.doc")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
+    private func notice(_ text: String, systemImage: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .overlay(alignment: .bottom) { Divider() }
-
-            Text(isError ? AttributedString(text) : SyntaxHighlighter.highlight(text))
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(isError ? .red : .primary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
-        .background(RovaDesign.cardSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(12)
+        .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private var fileName: String {
-        switch language {
-        case "python": return "canvas.py"
-        case "javascript": return "canvas.js"
-        case "shell": return "canvas.sh"
-        default: return "app.html"
-        }
-    }
-
-    private var fileIcon: String {
-        switch language {
-        case "python": return "chevron.left.forwardslash.chevron.right"
-        case "html": return "rectangle.and.text.magnifyingglass"
-        default: return "terminal"
-        }
-    }
-
-    private var placeholder: String {
-        switch language {
-        case "python": return "# Python kodunu buraya yaz\nprint(\"merhaba\")"
-        case "javascript": return "// JavaScript kodunu buraya yaz\nconsole.log(\"merhaba\")"
-        case "html": return "<!doctype html>\n<html>\n  <body>\n    <h1>Merhaba</h1>\n  </body>\n</html>"
-        default: return "# Shell komutlarını buraya yaz\necho merhaba"
-        }
-    }
+    // MARK: - Running
 
     @MainActor
     private func run() async {
         guard !isRunning else { return }
-        let source = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source = trimmedCode
         guard !source.isEmpty else { return }
-        if packageList.count > 8 {
-            errorMessage = "En fazla 8 Python kütüphanesi ekleyebilirsin."
+
+        // A page, or a script written for the browser, needs no server: it opens right here.
+        if isHTML || (language == "javascript" && WiqoHTMLDocument.isBrowserScript(source)) {
+            showLocalPreview(isHTML ? source : WiqoHTMLDocument.wrapBrowserScript(source))
             return
         }
 
-        isRunning = true
+        let requested = packages
+        hasRun = true
+        surface = .result
+        phase = requested.isEmpty ? .running : .preparing
         activeTaskID = nil
         result = nil
         previewHTML = nil
-        runMessage = packageList.isEmpty ? "Kodu çalıştırıyorum…" : "Kütüphaneleri hazırlıyorum…"
         errorMessage = nil
         artifactErrorMessage = nil
-        defer { isRunning = false }
+        runMessage = requested.isEmpty ? "Kodu çalıştırıyorum…" : "Kütüphaneleri hazırlıyorum…"
+        defer { if isRunning { phase = .done } }
 
         do {
             let runResult = try await RovaBackendClient.runCanvasCode(
                 language: language,
                 code: source,
-                packages: language == "python" ? packageList : [],
+                packages: requested,
                 onTaskID: { taskID in activeTaskID = taskID },
-                onProgress: { message in runMessage = naturalProgress(message) }
+                onProgress: { message in
+                    let text = naturalProgress(message)
+                    runMessage = text
+                    phase = text.contains("Kütüphane") ? .preparing : (text.contains("Çıktı") ? .finishing : .running)
+                }
             )
             result = runResult
-            runMessage = naturalResult(for: runResult)
+            phase = .done
             if let htmlArtifact = runResult.artifacts.first(where: isHTMLArtifact) {
                 await loadPreview(htmlArtifact)
-                if previewHTML != nil { workspace = .app }
             }
         } catch RovaBackendError.declined(let message) {
             errorMessage = message
-            runMessage = "Çalıştırma durdu."
+            phase = .done
         } catch RovaBackendError.network(let message) {
             errorMessage = message
-            runMessage = "Çalıştırma durdu."
+            phase = .done
         } catch is CancellationError {
             runMessage = "Çalıştırmayı durdurdum."
+            phase = .done
         } catch {
             errorMessage = "Kod çalıştırılamadı."
-            runMessage = "Çalıştırma durdu."
+            phase = .done
         }
         activeTaskID = nil
+    }
+
+    @MainActor
+    private func showLocalPreview(_ html: String) {
+        hasRun = true
+        result = nil
+        errorMessage = nil
+        artifactErrorMessage = nil
+        previewHTML = html
+        reloadToken += 1
+        phase = .done
+        surface = .result
     }
 
     @MainActor
@@ -555,6 +677,7 @@ struct CanvasView: View {
         do {
             let url = try await RovaBackendClient.downloadArtifact(artifact)
             previewHTML = try String(contentsOf: url, encoding: .utf8)
+            reloadToken += 1
         } catch {
             artifactErrorMessage = "Uygulama önizlemesi açılamadı."
         }
@@ -577,73 +700,5 @@ struct CanvasView: View {
         if lowercased.contains("kütüphane") { return "Kütüphaneleri hazırlıyorum…" }
         if lowercased.contains("çıktı") || lowercased.contains("dosya") { return "Çıktıyı düzenliyorum…" }
         return "Kodu çalıştırıyorum…"
-    }
-
-    private func naturalResult(for result: RovaBackendClient.CanvasRunResult) -> String {
-        if result.timedOut { return "Kod beklenenden uzun sürdü; durdurdum." }
-        if result.exitCode == 0 { return "Kodu çalıştırdım; çıktıyı hazırladım." }
-        return "Kod çalışmadı; ayrıntıyı aşağıda bıraktım."
-    }
-
-    private func htmlDocument(source: String, viewportWidth: Int) -> String {
-        let viewport = "<meta name=\"viewport\" content=\"width=\(viewportWidth)\">"
-        let security = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:; connect-src 'none'\">"
-        let motion = reduceMotion ? "<style>*{animation-duration:.01ms!important;transition-duration:.01ms!important;}</style>" : ""
-        let stripped = source.replacingOccurrences(
-            of: #"<meta[^>]*name=[\"']viewport[\"'][^>]*>"#,
-            with: "",
-            options: [.regularExpression, .caseInsensitive]
-        )
-        if let head = stripped.range(of: "<head", options: .caseInsensitive),
-           let close = stripped.range(of: ">", range: head.upperBound..<stripped.endIndex) {
-            var document = stripped
-            document.insert(contentsOf: security + viewport + motion, at: close.upperBound)
-            return document
-        }
-        if let html = stripped.range(of: "<html", options: .caseInsensitive),
-           let close = stripped.range(of: ">", range: html.upperBound..<stripped.endIndex) {
-            var document = stripped
-            document.insert(contentsOf: "<head><meta charset=\"utf-8\">\(security)\(viewport)\(motion)</head>", at: close.upperBound)
-            return document
-        }
-        return "<!doctype html><html><head><meta charset=\"utf-8\">\(security)\(viewport)\(motion)</head><body>\(stripped)</body></html>"
-    }
-}
-
-/// The preview is intentionally non-persistent and network-disabled. It is a presentation surface
-/// for generated HTML, not a second browser or an escape hatch from the execution sandbox.
-private struct HTMLPreviewWebView: UIViewRepresentable {
-    let html: String
-    let viewportWidth: Int
-
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        var lastLoaded: String?
-
-        @MainActor
-        func webView(
-            _ webView: WKWebView,
-            decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
-        ) {
-            decisionHandler(navigationAction.navigationType == .other ? .allow : .cancel)
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.navigationDelegate = context.coordinator
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        return webView
-    }
-
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        guard context.coordinator.lastLoaded != html else { return }
-        context.coordinator.lastLoaded = html
-        webView.loadHTMLString(html, baseURL: nil)
     }
 }

@@ -58,6 +58,34 @@ struct RovaChip: View {
     }
 }
 
+enum WiqoToolChipTone: Equatable {
+    case neutral
+    case active
+    case success
+    case attention
+    case failure
+
+    var tint: Color {
+        switch self {
+        case .neutral: return .secondary
+        case .active: return RovaDesign.ink
+        case .success: return .green
+        case .attention: return .orange
+        case .failure: return .red
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .neutral: return "circle"
+        case .active: return "arrow.triangle.2.circlepath"
+        case .success: return "checkmark.circle.fill"
+        case .attention: return "hand.raised.fill"
+        case .failure: return "exclamationmark.circle.fill"
+        }
+    }
+}
+
 /// A square-ish icon action tile for the horizontal quick-action row (lock, sleep, mute, ...).
 struct RovaActionTile: View {
     let title: String

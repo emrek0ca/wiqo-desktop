@@ -272,24 +272,27 @@ struct ReplyBlocksView: View {
     /// authenticated way any other artifact already is. Defaulted so existing call sites that
     /// never show formulas (system messages, previews) don't need to pass it.
     var artifacts: [RovaBackendClient.ArtifactDescriptor] = []
+    /// True while the reply is still arriving: the newest words resolve softly into place, and
+    /// finished apps are not previewed until the code block is complete.
+    var isStreaming = false
 
     var body: some View {
         let blocks = ReplyBlockParser.parse(text)
         VStack(alignment: .leading, spacing: 12) {
             // Positional identity keeps a block's view stable while its content grows during
             // streaming, instead of tearing down and rebuilding it on every revealed character.
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                view(for: block)
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                view(for: block, fadesTail: isStreaming && index == blocks.count - 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
-    private func view(for block: ReplyBlock) -> some View {
+    private func view(for block: ReplyBlock, fadesTail: Bool = false) -> some View {
         switch block {
         case .paragraph(let text):
-            Text(text)
+            Text(fadesTail ? WiqoStreamingTail.fade(text) : text)
                 .font(.body)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -301,13 +304,13 @@ struct ReplyBlocksView: View {
                 .textSelection(.enabled)
         case .list(let items):
             VStack(alignment: .leading, spacing: 7) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                ForEach(Array(items.enumerated()), id: \.offset) { position, item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(item.marker)
                             .font(.body.weight(.medium))
                             .foregroundStyle(.secondary)
                             .frame(minWidth: item.marker == "•" ? 10 : 22, alignment: .trailing)
-                        Text(item.text)
+                        Text(fadesTail && position == items.count - 1 ? WiqoStreamingTail.fade(item.text) : item.text)
                             .font(.body)
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
@@ -330,7 +333,7 @@ struct ReplyBlocksView: View {
         case .rule:
             Divider().padding(.vertical, 4)
         case .codeBlock(let language, let code):
-            CodeBlockView(language: language, code: code)
+            CodeBlockView(language: language, code: code, showsAppPreview: !isStreaming)
         case .table(let headers, let rows):
             TableBlockView(headers: headers, rows: rows)
         case .richText(let raw):
@@ -342,15 +345,16 @@ struct ReplyBlocksView: View {
 private struct CodeBlockView: View {
     let language: String?
     let code: String
-    @State private var copied = false
+    /// A finished HTML answer is shown as the running app under the code.
+    var showsAppPreview = false
     @State private var showingRun = false
 
     /// The fence tag on a code block can be any of the common spellings/aliases for what canvas
     /// can actually do, or something else entirely (swift, json, sql, ...) that isn't runnable at
     /// all. Returns the canonical language canvas expects, or nil to hide the "Çalıştır" button
-    /// rather than offer a run that can only fail. "html" is rendered live on-device (CanvasView's
-    /// isHTMLPreview path) instead of going through the server sandbox (routes/canvas.ts) that
-    /// python/javascript/shell use - it's the one language with an actual interface to show.
+    /// rather than offer a run that can only fail. "html" is rendered live on-device instead of
+    /// going through the server sandbox (routes/canvas.ts) that python/javascript/shell use - it's
+    /// the one language with an actual interface to show.
     private var runnableLanguage: String? {
         switch language?.lowercased() {
         case "python", "py", "python3": return "python"
@@ -361,52 +365,63 @@ private struct CodeBlockView: View {
         }
     }
 
+    private var isDiff: Bool {
+        guard let tag = language?.lowercased() else { return false }
+        return tag == "diff" || tag == "patch"
+    }
+
+    /// The page to show as an app: an HTML answer as is, or JavaScript written for the browser.
+    private var appHTML: String? {
+        guard showsAppPreview else { return nil }
+        switch runnableLanguage {
+        case "html": return code.contains("<") ? code : nil
+        case "javascript": return WiqoHTMLDocument.isBrowserScript(code) ? WiqoHTMLDocument.wrapBrowserScript(code) : nil
+        default: return nil
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(language?.lowercased() ?? "kod")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if let runnableLanguage {
-                    Button {
-                        showingRun = true
-                    } label: {
-                        Label("Çalıştır", systemImage: "play.fill")
-                            .font(.caption.weight(.medium))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .sheet(isPresented: $showingRun) {
-                        CanvasView(language: runnableLanguage, code: code, autoRun: true)
-                    }
-                }
-                Button {
-                    UIPasteboard.general.string = code
-                    copied = true
-                    Task {
-                        try? await Task.sleep(nanoseconds: 1_500_000_000)
-                        copied = false
-                    }
-                } label: {
-                    Label(copied ? "Kopyalandı" : "Kopyala", systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(.caption.weight(.medium))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            if isDiff {
+                WiqoCodeBlock(diff: code, title: "değişiklik")
+            } else {
+                WiqoCodeBlock(
+                    code: code,
+                    title: language?.lowercased() ?? "kod",
+                    onRun: runnableLanguage == nil ? nil : { showingRun = true }
+                )
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            Divider()
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(SyntaxHighlighter.highlight(code))
-                    .font(.system(.footnote, design: .monospaced))
-                    .textSelection(.enabled)
-                    .padding(12)
+            if let appHTML {
+                WiqoAppPreviewCard(html: appHTML) { showingRun = true }
             }
         }
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color(uiColor: .separator).opacity(0.5), lineWidth: 0.5))
+        .sheet(isPresented: $showingRun) {
+            if let runnableLanguage {
+                CanvasView(language: runnableLanguage, code: code, autoRun: true)
+            }
+        }
+    }
+}
+
+/// Lets the newest characters of a streaming reply resolve into place: the last few fade up from
+/// faint instead of appearing at full strength, so text feels like it is settling rather than
+/// being typed.
+enum WiqoStreamingTail {
+    static func fade(_ text: AttributedString, tail: Int = 18) -> AttributedString {
+        var result = text
+        let total = result.characters.count
+        guard total > 6 else { return result }
+        let segment = max(1, min(tail, total) / 3)
+        let steps: [(back: Int, opacity: Double)] = [(3, 0.3), (2, 0.55), (1, 0.8)]
+        for step in steps {
+            let startOffset = total - segment * step.back
+            let endOffset = total - segment * (step.back - 1)
+            guard startOffset >= 0, endOffset <= total, startOffset < endOffset else { continue }
+            let start = result.characters.index(result.characters.startIndex, offsetBy: startOffset)
+            let end = result.characters.index(result.characters.startIndex, offsetBy: endOffset)
+            result[start..<end].foregroundColor = Color.primary.opacity(step.opacity)
+        }
+        return result
     }
 }
 

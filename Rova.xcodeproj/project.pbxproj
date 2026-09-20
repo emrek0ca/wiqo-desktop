@@ -53,6 +53,14 @@
 		B019 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F019 /* QRScannerView.swift */; };
 		B020 /* IOSViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F020 /* IOSViews.swift */; };
 		D10000000000000000000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* OnboardingView.swift */; };
+		D20000000000000000000002 /* WiqoTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* WiqoTheme.swift */; };
+		D20000000000000000000004 /* WiqoToolChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000005 /* WiqoToolChips.swift */; };
+		D20000000000000000000006 /* WiqoApprovalCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* WiqoApprovalCard.swift */; };
+		D20000000000000000000008 /* WiqoCodeBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000009 /* WiqoCodeBlock.swift */; };
+		D2000000000000000000000A /* WiqoRecommendationCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000B /* WiqoRecommendationCard.swift */; };
+		D2000000000000000000000C /* WiqoContextCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000D /* WiqoContextCard.swift */; };
+		D2000000000000000000000E /* WiqoAppPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000F /* WiqoAppPreview.swift */; };
+		D20000000000000000000010 /* WiqoCanvasSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000011 /* WiqoCanvasSupport.swift */; };
 		B026 /* ProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F026 /* ProtocolTests.swift */; };
 		B027 /* MacCommandEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F027 /* MacCommandEngineTests.swift */; };
 		B028 /* OperationManifest.swift in RovaSharedTests */ = {isa = PBXBuildFile; fileRef = F031 /* OperationManifest.swift */; };
@@ -152,6 +160,14 @@
 		F019 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		F020 /* IOSViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSViews.swift; sourceTree = "<group>"; };
 		D10000000000000000000002 /* OnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		D20000000000000000000003 /* WiqoTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoTheme.swift; sourceTree = "<group>"; };
+		D20000000000000000000005 /* WiqoToolChips.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoToolChips.swift; sourceTree = "<group>"; };
+		D20000000000000000000007 /* WiqoApprovalCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoApprovalCard.swift; sourceTree = "<group>"; };
+		D20000000000000000000009 /* WiqoCodeBlock.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoCodeBlock.swift; sourceTree = "<group>"; };
+		D2000000000000000000000B /* WiqoRecommendationCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoRecommendationCard.swift; sourceTree = "<group>"; };
+		D2000000000000000000000D /* WiqoContextCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoContextCard.swift; sourceTree = "<group>"; };
+		D2000000000000000000000F /* WiqoAppPreview.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoAppPreview.swift; sourceTree = "<group>"; };
+		D20000000000000000000011 /* WiqoCanvasSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoCanvasSupport.swift; sourceTree = "<group>"; };
 		F021 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F022 /* Wiqo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Wiqo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F023 /* Rova.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rova.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -257,6 +273,14 @@
 				F019 /* QRScannerView.swift */,
 				F020 /* IOSViews.swift */,
 				D10000000000000000000002 /* OnboardingView.swift */,
+				D20000000000000000000003 /* WiqoTheme.swift */,
+				D20000000000000000000005 /* WiqoToolChips.swift */,
+				D20000000000000000000007 /* WiqoApprovalCard.swift */,
+				D20000000000000000000009 /* WiqoCodeBlock.swift */,
+				D2000000000000000000000B /* WiqoRecommendationCard.swift */,
+				D2000000000000000000000D /* WiqoContextCard.swift */,
+				D2000000000000000000000F /* WiqoAppPreview.swift */,
+				D20000000000000000000011 /* WiqoCanvasSupport.swift */,
 				F021 /* Info.plist */,
 				40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */,
 				316BBB8D46F54C18809ADCAD /* DiscoveryView.swift */,
@@ -540,6 +564,14 @@
 				B019 /* QRScannerView.swift in Sources */,
 				B020 /* IOSViews.swift in Sources */,
 				D10000000000000000000001 /* OnboardingView.swift in Sources */,
+				D20000000000000000000002 /* WiqoTheme.swift in Sources */,
+				D20000000000000000000004 /* WiqoToolChips.swift in Sources */,
+				D20000000000000000000006 /* WiqoApprovalCard.swift in Sources */,
+				D20000000000000000000008 /* WiqoCodeBlock.swift in Sources */,
+				D2000000000000000000000A /* WiqoRecommendationCard.swift in Sources */,
+				D2000000000000000000000C /* WiqoContextCard.swift in Sources */,
+				D2000000000000000000000E /* WiqoAppPreview.swift in Sources */,
+				D20000000000000000000010 /* WiqoCanvasSupport.swift in Sources */,
 				FF28DCBE30573E6C0006FF82 /* Protocol.swift in Sources */,
 				FF28DCBF30573E6C0006FF82 /* Validation.swift in Sources */,
 				FF28DCC030573E6C0006FF82 /* Framing.swift in Sources */,
