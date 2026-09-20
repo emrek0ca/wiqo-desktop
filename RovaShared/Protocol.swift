@@ -1258,6 +1258,28 @@ public struct PairingPayload: Codable, Equatable, Sendable {
     }
 }
 
+/// Bootstrap-only relay pairing data. It is deliberately separate from Protocol v2 command
+/// messages: the QR contains a short-lived, one-use session secret, never a JWT or a permanent
+/// device credential.
+public struct RelayPairingPayload: Codable, Equatable, Sendable {
+    public let version: Int
+    public let sessionID: String
+    public let secret: String
+    public let expiresAt: Date
+
+    public init(version: Int = 1, sessionID: String, secret: String, expiresAt: Date) {
+        self.version = version
+        self.sessionID = sessionID
+        self.secret = secret
+        self.expiresAt = expiresAt
+    }
+}
+
+public enum RovaPairingCode: Equatable, Sendable {
+    case local(PairingPayload)
+    case relay(RelayPairingPayload)
+}
+
 public struct PairingRequest: Codable, Equatable, Sendable {
     public let code: String
     public let deviceName: String

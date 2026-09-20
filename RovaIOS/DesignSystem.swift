@@ -111,16 +111,7 @@ struct RovaConnectionIcon: View {
 enum RovaConnectionStatus {
     static func label(for model: IOSConnectionModel) -> String {
         if !model.isPaired { return "PC ekle" }
-        if model.isReconnecting { return "Yeniden bağlanıyor" }
-        // Not on the same local network as the PC right now, but the last command still reached
-        // it through the server relay - worth saying plainly rather than showing "Çevrimdışı"
-        // while things are, in fact, working (just a bit slower).
-        if model.isUsingRelay, model.state != .connected { return "İnternet üzerinden bağlı" }
-        switch model.state {
-        case .connected: return "Bağlı"
-        case .connecting: return "Bağlanıyor"
-        case .failed, .disconnected: return "Çevrimdışı"
-        }
+        return model.userFacingConnectionLabel
     }
 
     static func color(for model: IOSConnectionModel) -> Color {

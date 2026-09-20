@@ -70,10 +70,26 @@ final class IOSConnectionModel: ObservableObject {
     /// even though the command just worked.
     @Published private(set) var isUsingRelay = false
 
+    /// Transport details stay internal; the UI gets one small, stable vocabulary.
+    var userFacingConnectionLabel: String {
+        guard isPaired else { return "PC kapalı" }
+        if isReconnecting || state == .connecting { return "Yeniden bağlanıyor" }
+        if state == .connected { return isUsingRelay ? "İnternet üzerinden bağlı" : "Bağlı" }
+        return "PC kapalı"
+    }
+
+    var userFacingConnectionError: String {
+        "PC’ye ulaşılamıyor. Açık ve internete bağlı olduğundan emin olun."
+    }
+
     private let deviceID: UUID
     private var token: String?
     private var certificateFingerprint: String?
     private var savedEndpoint: SavedEndpoint?
+    // The Mac device ID is separate from this phone's pairing-request ID. Persisting it lets the
+    // relay target the same Mac after the app restarts, even when the direct local socket is not
+    // reachable on the current network.
+    private var pairedMacDeviceID: UUID?
     private var connection: NWConnection?
     private var connectionGeneration: UInt64 = 0
     private var pairingTimeoutTask: Task<Void, Never>?
@@ -85,7 +101,12 @@ final class IOSConnectionModel: ObservableObject {
     private var reconnectTask: Task<Void, Never>?
     private var reconnectAttempt = 0
     private var heartbeatTask: Task<Void, Never>?
+    private var relayProbeTask: Task<Void, Never>?
     private var browser: NWBrowser?
+    private let pathMonitor = NWPathMonitor()
+    private let pathMonitorQueue = DispatchQueue(label: "com.rova.path-monitor", qos: .utility)
+    private var pathAvailable = true
+    private var pathSignature: String?
     private let discoveryQueue = DispatchQueue(label: "com.rova.discovery", qos: .utility)
     private var discoveredServiceName: String?
 
@@ -104,8 +125,23 @@ final class IOSConnectionModel: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: "rova.ios.endpoint"), let saved = try? JSONDecoder().decode(SavedEndpoint.self, from: data) {
             savedEndpoint = saved
         }
-        isPaired = token != nil && certificateFingerprint != nil && savedEndpoint != nil
+        if let value = UserDefaults.standard.string(forKey: "rova.ios.mac-device-id") {
+            pairedMacDeviceID = UUID(uuidString: value)
+        }
+        isPaired = token != nil && ((certificateFingerprint != nil && savedEndpoint != nil) || pairedMacDeviceID != nil)
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            let available = path.status == .satisfied
+            let signature = "\(path.status):\(path.availableInterfaces.map(\.name).sorted().joined(separator: ","))"
+            Task { @MainActor [weak self] in
+                self?.handleNetworkPath(available: available, signature: signature)
+            }
+        }
+        pathMonitor.start(queue: pathMonitorQueue)
         startDiscovery()
+    }
+
+    deinit {
+        pathMonitor.cancel()
     }
 
     func pair(using payload: PairingPayload) {
@@ -149,7 +185,13 @@ final class IOSConnectionModel: ObservableObject {
 
     func connect() {
         guard let endpoint = savedEndpoint, let fingerprint = certificateFingerprint else {
-            state = .disconnected
+            if isPaired {
+                isUsingRelay = true
+                state = .connecting
+                scheduleRelayProbe()
+            } else {
+                state = .disconnected
+            }
             return
         }
         if state == .connected {
@@ -207,13 +249,54 @@ final class IOSConnectionModel: ObservableObject {
         token = nil
         certificateFingerprint = nil
         savedEndpoint = nil
+        pairedMacDeviceID = nil
         UserDefaults.standard.removeObject(forKey: "rova.ios.endpoint")
+        UserDefaults.standard.removeObject(forKey: "rova.ios.mac-device-id")
         isPaired = false
         deviceInfo = nil
         systemStatus = nil
         lastPingLatencyMs = nil
         connectionQuality = .unknown
         isReconnecting = false
+    }
+
+    /// Relay bootstrap pairing is intentionally separate from the local TLS QR. It binds the
+    /// existing phone account to the Mac over the backend, then reuses the same signed
+    /// CommandRequest/CommandResult path for every later operation.
+    func pair(using payload: RelayPairingPayload) {
+        guard payload.expiresAt > Date() else {
+            fail("Eşleşme QR kodunun süresi doldu.")
+            return
+        }
+        isPairing = true
+        isReconnecting = true
+        isUsingRelay = true
+        state = .connecting
+        lastError = nil
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let claim = try await RovaBackendClient.claimRelayPairing(sessionID: payload.sessionID, secret: payload.secret)
+                guard let deviceID = UUID(uuidString: claim.deviceId) else { throw RovaBackendError.invalidResponse }
+                try RovaKeychainStore.save(Data(claim.pairingToken.utf8), account: "ios-device-token")
+                try RovaKeychainStore.save(Data("relay".utf8), account: "ios-certificate-fingerprint")
+                token = claim.pairingToken
+                pairedMacDeviceID = deviceID
+                UserDefaults.standard.set(deviceID.uuidString, forKey: "rova.ios.mac-device-id")
+                UserDefaults.standard.removeObject(forKey: "rova.ios.endpoint")
+                certificateFingerprint = "relay"
+                isPaired = true
+                isPairing = false
+                appendActivity(title: "Eşleşme", detail: "İnternet bağlantısı hazır")
+                scheduleRelayProbe()
+            } catch {
+                isPairing = false
+                isReconnecting = false
+                isUsingRelay = false
+                state = .failed
+                lastError = (error as? LocalizedError)?.errorDescription ?? "Eşleşme tamamlanamadı."
+            }
+        }
     }
 
     func authenticateBiometrics(reason: String = "Wiqo komutunu onaylayın") async -> Bool {
@@ -515,6 +598,7 @@ final class IOSConnectionModel: ObservableObject {
         switch envelope.message {
         case .hello(let info):
             deviceInfo = info
+            if isPaired { persistMacDeviceID(info.id) }
         case .pairAccepted(let response):
             pairingTimeoutTask?.cancel()
             pairingTimeoutTask = nil
@@ -532,6 +616,8 @@ final class IOSConnectionModel: ObservableObject {
                 if let savedEndpoint, let data = try? JSONEncoder().encode(savedEndpoint) { UserDefaults.standard.set(data, forKey: "rova.ios.endpoint") }
             }
             isPaired = true
+            isUsingRelay = false
+            if let deviceInfo { persistMacDeviceID(deviceInfo.id) }
             isPairing = false
             state = .disconnected
             connection?.cancel()
@@ -541,7 +627,7 @@ final class IOSConnectionModel: ObservableObject {
         case .authenticated(let response):
             authenticated = true
             isUsingRelay = false
-            deviceInfo = response.deviceInfo
+            rememberMacDevice(response.deviceInfo)
             state = .connected
             startHeartbeat()
             Task { [weak self] in _ = await self?.send(.getSystemStatus) }
@@ -629,6 +715,19 @@ final class IOSConnectionModel: ObservableObject {
         heartbeatTask = nil
     }
 
+    private func scheduleRelayProbe() {
+        guard isPaired, isUsingRelay, relayProbeTask == nil else { return }
+        relayProbeTask = Task { @MainActor [weak self] in
+            defer { self?.relayProbeTask = nil }
+            for delay in [0, 1, 2, 4, 8, 16, 30] {
+                if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000) }
+                guard let self, !Task.isCancelled, self.isPaired, self.state != .connected else { return }
+                let result = await self.send(.ping)
+                if result.error == nil { return }
+            }
+        }
+    }
+
     private func failPending(_ error: Error) {
         let continuations = pending.values
         pending.removeAll()
@@ -637,6 +736,10 @@ final class IOSConnectionModel: ObservableObject {
 
     private func scheduleReconnect() {
         guard isPaired, reconnectTask == nil, state != .connected else { return }
+        guard pathAvailable else {
+            isReconnecting = true
+            return
+        }
         let delays = [1, 2, 4, 8, 16, 30]
         let delay = delays[min(reconnectAttempt, delays.count - 1)]
         reconnectAttempt += 1
@@ -650,7 +753,45 @@ final class IOSConnectionModel: ObservableObject {
 
     private func finishReconnect() {
         reconnectTask = nil
+        guard pathAvailable else {
+            isReconnecting = true
+            return
+        }
         connect()
+    }
+
+    private func handleNetworkPath(available: Bool, signature: String) {
+        let changed = pathSignature != nil && pathSignature != signature
+        pathSignature = signature
+        pathAvailable = available
+
+        guard isPaired else { return }
+        if !available {
+            isReconnecting = true
+            if state == .connected || state == .connecting {
+                connection?.cancel()
+                connection = nil
+                authenticated = false
+                state = .disconnected
+                failPending(IOSConnectionError.disconnected)
+            }
+            return
+        }
+
+        // A changed interface invalidates the local route (Wi-Fi handoff, sleep/wake). The next
+        // command can use the relay while the local socket is rebuilt in the background.
+        if changed && !isUsingRelay && state == .connected {
+            stopHeartbeat()
+            connection?.cancel()
+            connection = nil
+            authenticated = false
+            state = .disconnected
+            isReconnecting = true
+            scheduleReconnect()
+        } else if state != .connected {
+            reconnectAttempt = 0
+            scheduleReconnect()
+        }
     }
 
     /// `silent` skips surfacing `message` to the UI - used for a routine background reconnect
@@ -658,7 +799,7 @@ final class IOSConnectionModel: ObservableObject {
     /// through anyway, as opposed to a failure the user is actively watching for (pairing a PC
     /// for the first time).
     private func fail(_ message: String, silent: Bool = false) {
-        if !silent { lastError = message }
+        if !silent { lastError = isPaired ? userFacingConnectionError : message }
         state = .failed
         isPairing = false
         stopHeartbeat()
@@ -752,8 +893,13 @@ final class IOSConnectionModel: ObservableObject {
         }
         appendActivity(title: title(for: request), detail: "PC yerel ağda değil, sunucu üzerinden deneniyor…")
         do {
-            let result = try await RovaBackendClient.sendDeviceCommand(request, deviceId: deviceInfo?.id.uuidString)
+            let result = try await RovaBackendClient.sendDeviceCommand(request, deviceId: pairedMacDeviceID?.uuidString ?? deviceInfo?.id.uuidString)
             isUsingRelay = result.error == nil
+            if result.error == nil {
+                state = .connected
+                isReconnecting = false
+                startHeartbeat()
+            }
             if let error = result.error { self.lastError = error.message }
             appendActivity(title: title(for: request), detail: result.message)
             return result
@@ -764,6 +910,16 @@ final class IOSConnectionModel: ObservableObject {
             appendActivity(title: title(for: request), detail: message)
             return failureResult(id: request.id, error: RovaError(code: "RELAY_FAILED", message: message))
         }
+    }
+
+    private func rememberMacDevice(_ info: DeviceInfo) {
+        deviceInfo = info
+        persistMacDeviceID(info.id)
+    }
+
+    private func persistMacDeviceID(_ id: UUID) {
+        pairedMacDeviceID = id
+        UserDefaults.standard.set(id.uuidString, forKey: "rova.ios.mac-device-id")
     }
 
     private func startDiscovery() {

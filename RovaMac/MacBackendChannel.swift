@@ -1,5 +1,26 @@
 import Foundation
 
+private actor BackendTokenStore {
+    private let account: String
+
+    init(account: String) {
+        self.account = account
+    }
+
+    func load() -> String? {
+        guard let data = try? RovaKeychainStore.load(account: account) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    func save(_ token: String) throws {
+        try RovaKeychainStore.save(Data(token.utf8), account: account)
+    }
+
+    func delete() throws {
+        try RovaKeychainStore.delete(account: account)
+    }
+}
+
 /// Persistent connection from this Mac to Rova's backend, so a scheduled automation (something
 /// the user set up conversationally, e.g. "her sabah 9'da...") can reach this Mac even when no
 /// iPhone is around to ask for anything. Authenticates with the same login JWT the iPhone used
@@ -11,48 +32,102 @@ import Foundation
 /// them through the exact same MacCommandEngine every other command already goes through.
 @MainActor
 final class MacBackendChannel: NSObject {
-    private static let endpoint = URL(string: "wss://84-247-172-213.sslip.io/device/socket")!
-    private static let apiBaseURL = URL(string: "https://84-247-172-213.sslip.io")!
-    private static let tokenAccount = "rova-backend-token"
+    // Keep the relay on the canonical hostname. The old sslip.io hostname followed one server IP;
+    // a VPS/IP change made every already-installed Mac reconnect forever to a stale endpoint.
+    static let endpoint = URL(string: "wss://api.wiqoai.com/device/socket")!
+    static let apiBaseURL = URL(string: "https://api.wiqoai.com")!
+    private static let heartbeatInterval: UInt64 = 20
+    private static let openTimeout: UInt64 = 12
 
     private let engine: MacCommandEngine
+    private let tokenStore = BackendTokenStore(account: "rova-backend-token")
     private let runtimeStatus: () -> String
     private let deviceInfo: () -> DeviceInfo
     private let pairedDeviceToken: () -> String?
     private var task: URLSessionWebSocketTask?
+    private var session: URLSession?
     private var reconnectTask: Task<Void, Never>?
+    private var heartbeatTask: Task<Void, Never>?
+    private var openTimeoutTask: Task<Void, Never>?
     private var reconnectAttempt = 0
     private var currentToken: String?
+    private var registrationSent = false
+    private let onConnectionStateChange: (Bool) -> Void
 
-    init(engine: MacCommandEngine, runtimeStatus: @escaping () -> String, deviceInfo: @escaping () -> DeviceInfo, pairedDeviceToken: @escaping () -> String?) {
+    init(
+        engine: MacCommandEngine,
+        runtimeStatus: @escaping () -> String,
+        deviceInfo: @escaping () -> DeviceInfo,
+        pairedDeviceToken: @escaping () -> String?,
+        onConnectionStateChange: @escaping (Bool) -> Void = { _ in }
+    ) {
         self.engine = engine
         self.runtimeStatus = runtimeStatus
         self.deviceInfo = deviceInfo
         self.pairedDeviceToken = pairedDeviceToken
+        self.onConnectionStateChange = onConnectionStateChange
     }
 
     /// Reconnects with a stored token, if any - call once at app launch.
-    func connectWithStoredTokenIfAvailable() {
-        guard let data = try? RovaKeychainStore.load(account: Self.tokenAccount),
-              let token = String(data: data, encoding: .utf8) else { return }
-        connect(token: token)
+    @discardableResult
+    func connectWithStoredTokenIfAvailable() async -> Bool {
+        let token = await tokenStore.load()
+        guard let token, !token.isEmpty else { return false }
+        guard currentToken == nil || !registrationSent else { return registrationSent }
+        await connect(token: token)
+        return registrationSent && currentToken == token
     }
 
-    func connect(token: String) {
-        guard token != currentToken || task == nil else { return }
-        try? RovaKeychainStore.save(Data(token.utf8), account: Self.tokenAccount)
+    func connect(token: String) async {
+        guard !token.isEmpty else { return }
+        if token == currentToken, registrationSent { return }
+        if token == currentToken, task != nil { return }
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        openTimeoutTask?.cancel()
+        openTimeoutTask = nil
+        task?.cancel(with: .goingAway, reason: nil)
+        task = nil
+        session?.invalidateAndCancel()
+        session = nil
+        registrationSent = false
+        publishConnectionState()
         currentToken = token
         reconnectAttempt = 0
+        do {
+            try await tokenStore.save(token)
+        } catch {
+            // Keep the live connection attempt possible, but do not pretend the token was
+            // persisted. The next launch will require the phone to hand the token over again.
+        }
+        guard currentToken == token else { return }
         open(token: token)
     }
 
-    func disconnect() {
+    func disconnect() async {
+        stopConnection()
         reconnectTask?.cancel()
         reconnectTask = nil
+        currentToken = nil
+        do { try await tokenStore.delete() } catch { }
+    }
+
+    /// Stops the socket while retaining the backend token for the next app launch.
+    func stopConnection() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        openTimeoutTask?.cancel()
+        openTimeoutTask = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
-        currentToken = nil
-        try? RovaKeychainStore.delete(account: Self.tokenAccount)
+        session?.invalidateAndCancel()
+        session = nil
+        registrationSent = false
+        publishConnectionState()
     }
 
     func fetchAutomations() async throws -> [MacAutomation] {
@@ -81,7 +156,7 @@ final class MacBackendChannel: NSObject {
     }
 
     private func authenticatedRequest(path: String) throws -> URLRequest {
-        guard let token = currentToken ?? storedBackendToken() else {
+        guard let token = currentToken else {
             throw MacBackendChannelError.notAuthenticated
         }
         var request = URLRequest(url: Self.apiBaseURL.appendingPathComponent(path))
@@ -90,21 +165,35 @@ final class MacBackendChannel: NSObject {
         return request
     }
 
-    private func storedBackendToken() -> String? {
-        guard let data = try? RovaKeychainStore.load(account: Self.tokenAccount) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
     private func open(token: String) {
+        guard currentToken == token else { return }
         task?.cancel(with: .goingAway, reason: nil)
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        openTimeoutTask?.cancel()
         var request = URLRequest(url: Self.endpoint)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let session = URLSession(configuration: .default)
+        let configuration = URLSessionConfiguration.default
+        configuration.waitsForConnectivity = false
+        configuration.timeoutIntervalForRequest = 30
+        let session = URLSession(configuration: configuration)
         let newTask = session.webSocketTask(with: request)
+        self.session = session
         task = newTask
+        registrationSent = false
+        publishConnectionState()
         newTask.resume()
         sendRegistration(on: newTask)
         receiveNext(on: newTask)
+        openTimeoutTask = Task { @MainActor [weak self, weak newTask] in
+            do {
+                try await Task.sleep(nanoseconds: Self.openTimeout * 1_000_000_000)
+            } catch {
+                return
+            }
+            guard let self, let newTask, self.task === newTask, !self.registrationSent else { return }
+            self.handleSocketFailure(newTask)
+        }
     }
 
     private func sendRegistration(on task: URLSessionWebSocketTask) {
@@ -134,11 +223,23 @@ final class MacBackendChannel: NSObject {
                 ] as [String: Any]
             }
         ]
-        guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value), let text = String(data: data, encoding: .utf8) else { return }
+        guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value), let text = String(data: data, encoding: .utf8) else {
+            handleSocketFailure(task)
+            return
+        }
         task.send(.string(text)) { [weak self] error in
-            guard error == nil else { return }
             Task { @MainActor [weak self] in
                 guard let self, self.task === task else { return }
+                guard error == nil else {
+                    self.handleSocketFailure(task)
+                    return
+                }
+                self.registrationSent = true
+                self.reconnectAttempt = 0
+                self.openTimeoutTask?.cancel()
+                self.openTimeoutTask = nil
+                self.publishConnectionState()
+                self.startHeartbeat(on: task)
                 self.sendAutomationReceipts(on: task)
             }
         }
@@ -146,40 +247,106 @@ final class MacBackendChannel: NSObject {
 
     private func receiveNext(on task: URLSessionWebSocketTask) {
         task.receive { [weak self] result in
-            Task { @MainActor [weak self] in
-                guard let self, self.task === task else { return }
-                switch result {
-                case .success(let message):
-                    if case .string(let text) = message { self.handleIncoming(text, on: task) }
-                    self.reconnectAttempt = 0
+            switch result {
+            case .success(.string(let text)):
+                guard let data = text.data(using: .utf8) else {
+                    Task { @MainActor [weak self] in self?.receiveNext(on: task) }
+                    return
+                }
+                let parseTask = Task.detached(priority: .utility) {
+                    Self.parseIncoming(data)
+                }
+                Task { @MainActor [weak self] in
+                    guard let self, self.task === task else { return }
+                    if let message = await parseTask.value {
+                        self.handleIncoming(message, on: task)
+                    }
                     self.receiveNext(on: task)
-                case .failure:
-                    self.scheduleReconnect()
+                }
+            case .success:
+                Task { @MainActor [weak self] in self?.receiveNext(on: task) }
+            case .failure:
+                Task { @MainActor [weak self] in
+                    guard let self, self.task === task else { return }
+                    self.handleSocketFailure(task)
                 }
             }
         }
     }
 
-    private func handleIncoming(_ text: String, on task: URLSessionWebSocketTask) {
-        guard let data = text.data(using: .utf8),
-              let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = envelope["type"] as? String else { return }
-        switch type {
-        case "automationStep":
-            guard let payload = try? JSONDecoder().decode(AutomationStepPayload.self, from: data) else { return }
+    private func startHeartbeat(on task: URLSessionWebSocketTask) {
+        heartbeatTask?.cancel()
+        heartbeatTask = Task { @MainActor [weak self, weak task] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: Self.heartbeatInterval * 1_000_000_000)
+                } catch {
+                    return
+                }
+                guard let self, let task, self.task === task, self.registrationSent else { return }
+                task.sendPing { [weak self, weak task] error in
+                    Task { @MainActor [weak self, weak task] in
+                        guard let self, let task, self.task === task else { return }
+                        if error != nil { self.handleSocketFailure(task) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func handleSocketFailure(_ task: URLSessionWebSocketTask) {
+        guard self.task === task else { return }
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        openTimeoutTask?.cancel()
+        openTimeoutTask = nil
+        task.cancel(with: .abnormalClosure, reason: nil)
+        self.task = nil
+        session?.invalidateAndCancel()
+        session = nil
+        registrationSent = false
+        publishConnectionState()
+        scheduleReconnect()
+    }
+
+    private func publishConnectionState() {
+        onConnectionStateChange(registrationSent)
+    }
+
+    private func handleIncoming(_ message: ParsedBackendMessage, on task: URLSessionWebSocketTask) {
+        switch message {
+        case .automationStep(let payload):
             sendAutomationStepAck(payload, on: task)
             executeAutomationStep(payload, on: task)
-        case "automationRun":
-            guard let payload = try? JSONDecoder().decode(AutomationRunPayload.self, from: data) else { return }
+        case .automationRun(let payload):
             executeLegacyAutomation(payload)
-        case "automationComplete":
+        case .automationComplete:
             // The Mac does not need to act on the final checkpoint; iPhone/UI clients consume it.
             break
-        case "interactiveCommand":
-            guard let payload = try? Self.iso8601Decoder.decode(InteractiveCommandPayload.self, from: data) else { return }
+        case .interactiveCommand(let payload):
             executeInteractiveCommand(payload, on: task)
+        }
+    }
+
+    private nonisolated static func parseIncoming(_ data: Data) -> ParsedBackendMessage? {
+        guard let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = envelope["type"] as? String else { return nil }
+        let decoder = JSONDecoder()
+        switch type {
+        case "automationStep":
+            guard let payload = try? decoder.decode(AutomationStepPayload.self, from: data) else { return nil }
+            return .automationStep(payload)
+        case "automationRun":
+            guard let payload = try? decoder.decode(AutomationRunPayload.self, from: data) else { return nil }
+            return .automationRun(payload)
+        case "automationComplete":
+            return .automationComplete
+        case "interactiveCommand":
+            decoder.dateDecodingStrategy = .iso8601
+            guard let payload = try? decoder.decode(InteractiveCommandPayload.self, from: data) else { return nil }
+            return .interactiveCommand(payload)
         default:
-            break
+            return nil
         }
     }
 
@@ -293,12 +460,21 @@ final class MacBackendChannel: NSObject {
 
     private func executeLegacyAutomation(_ payload: AutomationRunPayload) {
         Task { [engine, runtimeStatus] in
-            for step in payload.steps where Self.canRunUnattended(step) {
-                let id = step.id.flatMap(UUID.init) ?? UUID()
+            for (index, step) in payload.steps.enumerated() where Self.canRunUnattended(step) {
+                // Older automation payloads may not carry a command ID. Derive one from the
+                // stable run/step position so reconnect delivery cannot execute the same step
+                // again under a fresh UUID.
+                let id = step.id.flatMap(UUID.init) ?? Self.stableLegacyCommandID(runID: payload.runId, stepIndex: index)
                 let request = CommandRequest(id: id, type: step.type, payload: step.payload)
                 _ = await engine.execute(request, runtimeStatus: runtimeStatus())
             }
         }
+    }
+
+    private static func stableLegacyCommandID(runID: Int, stepIndex: Int) -> UUID {
+        let digest = RovaCrypto.sha256Hex(Data("legacy-automation:\(runID):\(stepIndex)".utf8))
+        let uuidText = "\(digest.prefix(8))-\(digest.dropFirst(8).prefix(4))-\(digest.dropFirst(12).prefix(4))-\(digest.dropFirst(16).prefix(4))-\(digest.dropFirst(20).prefix(12))"
+        return UUID(uuidString: uuidText)!
     }
 
     private func sendAutomationStepResult(
@@ -330,15 +506,20 @@ final class MacBackendChannel: NSObject {
     }
 
     private func scheduleReconnect() {
-        guard let currentToken else { return }
-        reconnectTask?.cancel()
+        guard let currentToken, reconnectTask == nil else { return }
         let delays: [UInt64] = [1, 2, 4, 8, 16, 30]
         let delay = delays[min(reconnectAttempt, delays.count - 1)]
+        let jitter = UInt64.random(in: 0...250)
         reconnectAttempt += 1
         reconnectTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            self?.open(token: currentToken)
+            do {
+                try await Task.sleep(nanoseconds: delay * 1_000_000_000 + jitter * 1_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.reconnectTask = nil
+            self.open(token: currentToken)
         }
     }
 }
@@ -378,14 +559,21 @@ struct MacAutomationTrigger: Decodable {
     let nextCheckAt: String?
 }
 
-private struct AutomationRunPayload: Decodable {
+private enum ParsedBackendMessage: Sendable {
+    case automationStep(AutomationStepPayload)
+    case automationRun(AutomationRunPayload)
+    case automationComplete
+    case interactiveCommand(InteractiveCommandPayload)
+}
+
+private struct AutomationRunPayload: Decodable, Sendable {
     let type: String
     let runId: Int
     let reply: String?
     let steps: [AutomationStep]
 }
 
-private struct AutomationStep: Decodable {
+private struct AutomationStep: Decodable, Sendable {
     let id: String?
     let type: CommandType
     let payload: CommandPayload
@@ -395,7 +583,7 @@ private struct AutomationStep: Decodable {
     let requiresUserPresence: Bool?
 }
 
-private struct AutomationStepPayload: Decodable {
+private struct AutomationStepPayload: Decodable, Sendable {
     let type: String
     let runId: Int
     let stepId: Int
@@ -435,7 +623,7 @@ private struct AutomationReceiptsPayload: Encodable {
     let receipts: [AutomationReceiptPayload]
 }
 
-private struct InteractiveCommandPayload: Decodable {
+private struct InteractiveCommandPayload: Decodable, Sendable {
     let type: String
     let commandId: String
     let request: CommandRequest

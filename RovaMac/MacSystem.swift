@@ -158,7 +158,6 @@ enum MacSystem {
     /// A direct, read-only answer to "what's actually open right now" - the missing tool that
     /// pushed the model toward using computer_application's open/activate as an improvised "check
     /// if it's running" step (a real side effect, not a check) before this existed.
-    @MainActor
     static func listRunningApplications() -> (data: CommandData?, error: RovaError?) {
         let frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let apps = NSWorkspace.shared.runningApplications
@@ -470,7 +469,6 @@ enum MacSystem {
     /// action, rebuild the catalog locally and require one exact/contained name match (or an exact
     /// bundle identifier). This prevents a model-supplied arbitrary bundle from becoming a
     /// LaunchServices request and keeps unsupported targets fail-closed.
-    @MainActor
     private static func resolveManifestApplication(
         target: String,
         bundleIdentifier: String?,
@@ -499,7 +497,6 @@ enum MacSystem {
     /// `ApplicationID` list. Native LaunchServices/NSRunningApplication APIs are the primary path;
     /// Apple Events are only a graceful-quit fallback. Every state-changing branch observes the
     /// process again before claiming success.
-    @MainActor
     static func controlApplication(_ payload: ApplicationControlPayload) async -> (data: CommandData?, error: RovaError?) {
         let target = payload.target.trimmingCharacters(in: .whitespacesAndNewlines)
         let manifestResolution = resolveManifestApplication(
@@ -629,7 +626,6 @@ enum MacSystem {
         let ambiguous: Bool
     }
 
-    @MainActor
     private static func resolveRunningApplication(target: String, bundleIdentifier: String?) -> RunningApplicationResolution {
         let applications = NSWorkspace.shared.runningApplications.filter {
             !$0.isTerminated && ($0.activationPolicy == .regular || $0.bundleIdentifier == "com.apple.finder")
@@ -680,7 +676,6 @@ enum MacSystem {
         let ambiguous: Bool
     }
 
-    @MainActor
     private static func resolveInstalledApplication(target: String, bundleIdentifier: String?) async -> InstalledApplicationResolution {
         if let bundleIdentifier,
            let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
@@ -709,7 +704,6 @@ enum MacSystem {
         return InstalledApplicationResolution(application: ambiguous ? nil : resolved, candidates: ranked.prefix(5).map { $0.0.name }, ambiguous: ambiguous)
     }
 
-    @MainActor
     private static func quitResolvedApplication(_ application: RunningApplicationGroup, force: Bool) async -> (data: CommandData?, error: RovaError?) {
         if application.bundleIdentifier == Bundle.main.bundleIdentifier {
             return (nil, RovaError(code: "APPLICATION_SELF_PROTECTED", message: "Wiqo kendi yürütme bağlantısını kapatamaz.", category: "permission"))
@@ -756,7 +750,6 @@ enum MacSystem {
         return (.applicationControl(content), nil)
     }
 
-    @MainActor
     private static func matchingRunningApplications(name: String, bundleIdentifier: String?) -> [NSRunningApplication] {
         if let bundleIdentifier {
             return NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).filter { !$0.isTerminated }
@@ -767,7 +760,6 @@ enum MacSystem {
         }
     }
 
-    @MainActor
     private static func waitForApplication(target: RunningApplicationGroup, expectedRunning: Bool, expectedActive: Bool, timeoutSeconds: TimeInterval) async -> Bool {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         repeat {
@@ -926,7 +918,6 @@ enum MacSystem {
         return nil
     }
 
-    @MainActor
     static func setClipboardText(_ text: String) -> RovaError? {
         let pb = NSPasteboard.general
         pb.clearContents()
@@ -936,7 +927,6 @@ enum MacSystem {
         return nil
     }
 
-    @MainActor
     static func getClipboardText() -> (data: CommandData?, error: RovaError?) {
         guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else {
             return (nil, RovaError(code: "CLIPBOARD_EMPTY", message: "Panoda metin yok."))
@@ -1023,7 +1013,6 @@ enum MacSystem {
         }
     }
 
-    @MainActor
     static func sendMessage(_ payload: MessagePayload) -> RovaError? {
         let recipient = appleScriptLiteral(payload.recipient)
         let body = appleScriptLiteral(payload.body)
@@ -1047,7 +1036,6 @@ enum MacSystem {
         return RovaError(code: "MESSAGE_SEND_FAILED", message: "Mesaj gönderilemedi.")
     }
 
-    @MainActor
     static func createNote(_ payload: NotePayload) -> (data: CommandData?, error: RovaError?) {
         let title = appleScriptLiteral(payload.title)
         // Notes.app bodies are HTML; a plain-text body is wrapped in <div> per line so line breaks
@@ -1076,7 +1064,6 @@ enum MacSystem {
         return (nil, RovaError(code: "NOTE_SAVE_FAILED", message: payload.folderName != nil ? "Not kaydedilemedi; klasör adını kontrol edin." : "Not kaydedilemedi."))
     }
 
-    @MainActor
     static func sendEmail(_ payload: EmailPayload) -> RovaError? {
         let recipient = appleScriptLiteral(payload.to)
         let subject = appleScriptLiteral(payload.subject)
@@ -1110,7 +1097,6 @@ enum MacSystem {
             .replacingOccurrences(of: ">", with: "&gt;")
     }
 
-    @MainActor
     static func listCalendarEvents() async -> (data: CommandData?, error: RovaError?) {
         guard let store = await calendarStore() else {
             return (nil, RovaError(code: "CALENDAR_PERMISSION_DENIED", message: "Takvim erişimi verilmedi."))
@@ -1124,7 +1110,6 @@ enum MacSystem {
         return (.calendarEvents(Array(events)), nil)
     }
 
-    @MainActor
     static func createCalendarEvent(_ payload: CalendarEventPayload) async -> (data: CommandData?, error: RovaError?) {
         guard let store = await calendarStore() else {
             return (nil, RovaError(code: "CALENDAR_PERMISSION_DENIED", message: "Takvim erişimi verilmedi."))
@@ -1766,7 +1751,6 @@ enum MacSystem {
 
     // MARK: - Screen capture for Gemini vision
 
-    @MainActor
     static func captureScreen(_ payload: ScreenCapturePayload) async -> (data: CommandData?, error: RovaError?) {
         guard CGPreflightScreenCaptureAccess() else {
             return (nil, RovaError(code: "SCREEN_RECORDING_PERMISSION_REQUIRED", message: "Ekran görüntüsü için Sistem Ayarları > Gizlilik ve Güvenlik > Ekran ve Sistem Sesi Kaydı bölümünden Wiqo'ya izin verin. Ayarlar: x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture", category: "permission"))
@@ -1964,7 +1948,6 @@ enum MacSystem {
         return "\"\(escaped)\""
     }
 
-    @MainActor
     private static func calendarStore() async -> EKEventStore? {
         let store = EKEventStore()
         let granted = await withCheckedContinuation { continuation in
@@ -1981,7 +1964,6 @@ enum MacSystem {
         CalendarEventInfo(identifier: event.eventIdentifier ?? UUID().uuidString, title: event.title ?? "(Başlıksız)", startAt: event.startDate, endAt: event.endDate, calendarName: event.calendar?.title ?? "Takvim", location: event.location)
     }
 
-    @MainActor
     private static func remindersStore() async -> EKEventStore? {
         let store = EKEventStore()
         let granted = await withCheckedContinuation { continuation in
@@ -2012,7 +1994,6 @@ enum MacSystem {
     /// Lists incomplete reminders due within the next 30 days plus any without a due date,
     /// mirroring how the Reminders app's "Today"/"Scheduled" smart lists read - a plain "all
     /// reminders ever created" dump would be far less useful to the model.
-    @MainActor
     static func listReminders() async -> (data: CommandData?, error: RovaError?) {
         guard let store = await remindersStore() else {
             return (nil, RovaError(code: "REMINDERS_PERMISSION_DENIED", message: "Hatırlatıcılar erişimi verilmedi."))
@@ -2041,7 +2022,6 @@ enum MacSystem {
         return (.reminders(infos), nil)
     }
 
-    @MainActor
     static func createReminder(_ payload: ReminderPayload) async -> (data: CommandData?, error: RovaError?) {
         guard let store = await remindersStore() else {
             return (nil, RovaError(code: "REMINDERS_PERMISSION_DENIED", message: "Hatırlatıcılar erişimi verilmedi."))
@@ -2070,7 +2050,6 @@ enum MacSystem {
         }
     }
 
-    @MainActor
     static func completeReminder(_ payload: CompleteReminderPayload) async -> (data: CommandData?, error: RovaError?) {
         guard let store = await remindersStore() else {
             return (nil, RovaError(code: "REMINDERS_PERMISSION_DENIED", message: "Hatırlatıcılar erişimi verilmedi."))
@@ -2087,7 +2066,6 @@ enum MacSystem {
         }
     }
 
-    @MainActor
     static func quitApplication(_ id: ApplicationID) -> RovaError? {
         guard let bundleID = applications.first(where: { $0.0 == id })?.1 else {
             return RovaError(code: "APPLICATION_NOT_FOUND", message: "Uygulama tanımlanamadı.")
@@ -2166,7 +2144,6 @@ enum MacSystem {
         case previousTrack = 5
     }
 
-    @MainActor
     static func mediaControl(_ action: MediaAction) -> RovaError? {
         let command: MediaRemoteCommand
         switch action {
@@ -2196,7 +2173,6 @@ enum MacSystem {
         return sendCommand(command.rawValue, nil)
     }
 
-    @MainActor
     private static func legacyMediaControl(_ action: MediaAction) -> RovaError? {
         let isSpotifyRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty
         let isMusicRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").isEmpty

@@ -13,11 +13,13 @@ struct CapabilityGroup: Identifiable {
 }
 
 enum RovaCapabilityCatalog {
+    private static let manifestCapabilities = Set(RovaOperationManifest.advertisedCapabilities(for: .macOS))
+
     /// Every capability the Mac can ever advertise (mirrors MacRuntime.deviceInfo's list) minus
     /// `runtime.status`, which is harmless, read-only, and always on.
-    static let groups: [CapabilityGroup] = [
+    private static let rawGroups: [CapabilityGroup] = [
         CapabilityGroup(id: "apps", title: "Uygulamalar", icon: "app.badge", capabilities: [
-            "device.app.open", "device.app.open_by_name", "device.app.quit", "device.app.control"
+            "device.app.open", "device.app.open_by_name", "device.app.quit", "device.app.control", "device.app.list"
         ]),
         CapabilityGroup(id: "system", title: "Sistem Kontrolü", icon: "power", capabilities: [
             "device.system.power", "device.display", "device.audio", "device.media"
@@ -56,6 +58,13 @@ enum RovaCapabilityCatalog {
             "device.url.open", "device.shortcut.run"
         ])
     ]
+
+    /// The manifest is the source of truth for what can be advertised. The UI keeps its human
+    /// grouping, but stale labels cannot make an unsupported capability reach the backend.
+    static let groups: [CapabilityGroup] = rawGroups.compactMap { group in
+        let capabilities = group.capabilities.filter(manifestCapabilities.contains)
+        return capabilities.isEmpty ? nil : CapabilityGroup(id: group.id, title: group.title, icon: group.icon, capabilities: capabilities)
+    }
 }
 
 /// Persists which capability groups the user turned off - UserDefaults-backed, takes effect the
@@ -92,7 +101,8 @@ final class CapabilityStore: ObservableObject {
     /// Filters a full capability list down to what's actually turned on - called once per
     /// connection when MacRuntime builds `deviceInfo`.
     func filter(_ capabilities: [String]) -> [String] {
-        capabilities.filter(isEnabled)
+        let supported = Set(RovaOperationManifest.advertisedCapabilities(for: .macOS))
+        return Array(Set(capabilities.filter { supported.contains($0) && isEnabled($0) })).sorted()
     }
 }
 

@@ -25,7 +25,7 @@ struct PlannedCommand: Identifiable {
 /// Where the app's copilot/auth requests go. Fixed - there is exactly one Rova backend, and it
 /// is not meant to be user-configurable in the shipped app.
 enum RovaBackendConfig {
-    static let baseURL = URL(string: "https://84-247-172-213.sslip.io")!
+    static let baseURL = URL(string: "https://api.wiqoai.com")!
 }
 
 enum RovaBackendError: Error, LocalizedError {
@@ -930,6 +930,22 @@ enum RovaBackendClient {
         } catch {
             throw RovaBackendError.invalidResponse
         }
+    }
+
+    struct RelayPairingClaim: Decodable {
+        let deviceId: String
+        let displayName: String
+        let platform: String
+        let pairingToken: String
+    }
+
+    /// Claims the short-lived QR bootstrap session. The backend binds the Mac to this signed-in
+    /// account; the returned pairing token is only for the existing per-command signature path.
+    static func claimRelayPairing(sessionID: String, secret: String) async throws -> RelayPairingClaim {
+        let body = try JSONSerialization.data(withJSONObject: ["secret": secret])
+        let data = try await authorizedJSON("device-pairing/sessions/\(sessionID)/claim", method: "POST", body: body)
+        do { return try JSONDecoder().decode(RelayPairingClaim.self, from: data) }
+        catch { throw RovaBackendError.invalidResponse }
     }
 
     /// CommandRequest/CommandResult carry Date fields encoded as ISO-8601 strings everywhere else

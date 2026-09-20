@@ -1,0 +1,26 @@
+name: Wiqo Windows
+
+on:
+  push:
+    paths:
+      - "RovaWindows/**"
+      - ".github/workflows/rova-windows.yml"
+  pull_request:
+    paths:
+      - "RovaWindows/**"
+      - ".github/workflows/rova-windows.yml"
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Restore
+        run: dotnet restore RovaWindows/RovaWindows.sln
+      - name: Build
+        run: dotnet build RovaWindows/RovaWindows.sln --configuration Release --no-restore
+      - name: Test
+        run: dotnet test RovaWindows/RovaWindows.sln --configuration Release --no-build --no-restore

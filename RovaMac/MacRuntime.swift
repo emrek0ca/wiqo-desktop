@@ -4,6 +4,30 @@ import Network
 import OSLog
 import ServiceManagement
 
+private struct MacDeviceInfoSnapshot: Sendable {
+    let availableApplications: [ApplicationInfo]
+    let applicationTargets: [DeviceApplicationTarget]
+    let capabilities: [String]
+    let authorities: [DeviceCapabilityAuthority]
+}
+
+private actor PairedDeviceTokenStore {
+    private let account = "paired-device-token"
+
+    func load() -> String? {
+        guard let data = try? RovaKeychainStore.load(account: account) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    func save(_ token: String) throws {
+        try RovaKeychainStore.save(Data(token.utf8), account: account)
+    }
+
+    func delete() throws {
+        try RovaKeychainStore.delete(account: account)
+    }
+}
+
 @MainActor
 final class MacRuntime: ObservableObject {
     private let logger = Logger(subsystem: "com.rova.local", category: "connection")
@@ -30,15 +54,25 @@ final class MacRuntime: ObservableObject {
     @Published private(set) var permissionActionMessage: String?
     @Published private(set) var installedWiqoShortcuts: Set<WiqoShortcut> = []
     @Published private(set) var shortcutInstallMessage: String?
+    @Published private(set) var backendSessionActive = false
+    @Published private(set) var relayPairingPayload: RelayPairingPayload?
+
+    private var cachedAvailableApplications: [ApplicationInfo] = []
+    private var cachedApplicationTargets: [DeviceApplicationTarget] = []
+    private var cachedCapabilities: [String] = ["runtime.status"]
+    private var cachedAuthorities: [DeviceCapabilityAuthority] = []
 
     let port: UInt16 = 47831
     let deviceID: UUID
     private var server: MacServer?
     private let engine = MacCommandEngine()
+    private let pairedDeviceTokenStore = PairedDeviceTokenStore()
     private var identity: RovaTLSIdentity?
     private var token: String?
     private var startTask: Task<Void, Never>?
+    private var deviceInfoRefreshTask: Task<Void, Never>?
     private var shortcutInstallRefreshTask: Task<Void, Never>?
+    private var relayPairingTask: Task<Void, Never>?
     private var sessions: [ObjectIdentifier: MacClientSession] = [:]
     private var authenticatedSessionID: ObjectIdentifier?
     private var sessionFailedPairingAttempts: [ObjectIdentifier: Int] = [:]
@@ -47,7 +81,10 @@ final class MacRuntime: ObservableObject {
         engine: engine,
         runtimeStatus: { [weak self] in self?.serviceState.rawValue ?? "unknown" },
         deviceInfo: { [weak self] in self?.deviceInfo ?? DeviceInfo(id: UUID(), displayName: "Wiqo Mac", hostname: "Mac", localIPAddress: "Kullanılamıyor", port: 47831, serviceStatus: "unknown", availableApplications: []) },
-        pairedDeviceToken: { [weak self] in self?.token }
+        pairedDeviceToken: { [weak self] in self?.token },
+        onConnectionStateChange: { [weak self] isConnected in
+            self?.backendSessionActive = isConnected
+        }
     )
 
     init() {
@@ -61,10 +98,8 @@ final class MacRuntime: ObservableObject {
         }
         pairedDeviceName = UserDefaults.standard.string(forKey: "rova.mac.paired-name")
         if let value = UserDefaults.standard.string(forKey: "rova.mac.paired-id") { pairedDeviceID = UUID(uuidString: value) }
-        token = try? RovaKeychainStore.load(account: "paired-device-token").flatMap { String(data: $0, encoding: .utf8) }
         launchAtLogin = SMAppService.mainApp.status == .enabled
         refreshPairingCode()
-        backendChannel.connectWithStoredTokenIfAvailable()
         refreshPermissions()
     }
 
@@ -73,15 +108,27 @@ final class MacRuntime: ObservableObject {
         ClipboardWatcher.shared.start()
         startTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            let pairedDeviceTokenStore = self.pairedDeviceTokenStore
+            let pairedTokenTask = Task.detached(priority: .utility) {
+                await pairedDeviceTokenStore.load()
+            }
             let result = await Task.detached(priority: .userInitiated) {
                 Result { try RovaTLSIdentityStore.loadOrCreate() }
             }.value
+            guard !Task.isCancelled else { return }
             switch result {
             case .success(let identity):
+                let storedPairedToken = await pairedTokenTask.value
+                guard !Task.isCancelled else { return }
+                self.token = self.token ?? storedPairedToken
                 self.identity = identity
                 self.certificateFingerprint = identity.certificateFingerprint
                 self.localIPAddress = MacSystem.localIPv4Address()
+                await self.refreshDeviceInfo()
+                self.startDeviceInfoRefresh()
                 self.configureServer(identity: identity)
+                self.prepareRelayPairing()
+                _ = await self.backendChannel.connectWithStoredTokenIfAvailable()
             case .failure(let error):
                 self.errorLogger.error("TLS identity setup failed: \(error.localizedDescription, privacy: .public)")
                 self.serviceState = .failed
@@ -91,7 +138,15 @@ final class MacRuntime: ObservableObject {
     }
 
     func stop() {
+        startTask?.cancel()
+        startTask = nil
+        deviceInfoRefreshTask?.cancel()
+        deviceInfoRefreshTask = nil
         closeAllSessions()
+        ClipboardWatcher.shared.stop()
+        backendChannel.stopConnection()
+        relayPairingTask?.cancel()
+        relayPairingTask = nil
         server?.stop()
         server = nil
         serviceState = .stopped
@@ -99,6 +154,7 @@ final class MacRuntime: ObservableObject {
 
     func regeneratePairing() {
         refreshPairingCode()
+        prepareRelayPairing()
     }
 
     func refreshPermissions() {
@@ -166,7 +222,15 @@ final class MacRuntime: ObservableObject {
 
     func revokeCurrentDevice() {
         closeAllSessions()
-        do { try RovaKeychainStore.delete(account: "paired-device-token") } catch { serviceError = "Cihaz yetkisi kaldırılamadı." }
+        let tokenStore = pairedDeviceTokenStore
+        Task { @MainActor [weak self] in
+            await self?.backendChannel.disconnect()
+            do {
+                try await tokenStore.delete()
+            } catch {
+                self?.serviceError = "Cihaz yetkisi kaldırılamadı."
+            }
+        }
         token = nil
         pairedDeviceName = nil
         pairedDeviceID = nil
@@ -200,10 +264,72 @@ final class MacRuntime: ObservableObject {
         )
     }
 
-    var backendSessionActive: Bool {
-        guard let data = try? RovaKeychainStore.load(account: "rova-backend-token"),
-              let backendToken = String(data: data, encoding: .utf8) else { return false }
-        return !backendToken.isEmpty
+    private struct RelaySessionResponse: Decodable {
+        let sessionId: String
+        let secret: String
+        let expiresAt: Date
+    }
+
+    private struct RelayPollResponse: Decodable {
+        let status: String
+        let deviceId: String?
+        let pairingToken: String?
+        let backendToken: String?
+    }
+
+    /// Creates a short-lived bootstrap session without requiring a second Mac login. If the
+    /// backend is unreachable the existing local QR remains available as a compatibility path.
+    private func prepareRelayPairing() {
+        relayPairingTask?.cancel()
+        relayPairingTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                var request = URLRequest(url: URL(string: "https://api.wiqoai.com/device-pairing/sessions")!)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                let body: [String: Any] = [
+                    "deviceId": self.deviceID.uuidString,
+                    "displayName": Host.current().localizedName ?? "Wiqo Windows/Mac",
+                    "platform": "macOS"
+                ]
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return }
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let session = try decoder.decode(RelaySessionResponse.self, from: data)
+                self.relayPairingPayload = RelayPairingPayload(sessionID: session.sessionId, secret: session.secret, expiresAt: session.expiresAt)
+                try await self.pollRelayPairing(sessionID: session.sessionId, secret: session.secret, expiresAt: session.expiresAt)
+            } catch is CancellationError {
+                return
+            } catch {
+                // Local QR remains the fallback; do not surface a transient internet bootstrap
+                // failure as a broken Mac service.
+            }
+        }
+    }
+
+    private func pollRelayPairing(sessionID: String, secret: String, expiresAt: Date) async throws {
+        let decoder = JSONDecoder()
+        while !Task.isCancelled && Date() < expiresAt {
+            var components = URLComponents(url: URL(string: "https://api.wiqoai.com/device-pairing/sessions/\(sessionID)")!, resolvingAgainstBaseURL: false)!
+            components.queryItems = [URLQueryItem(name: "secret", value: secret)]
+            let (data, response) = try await URLSession.shared.data(from: components.url!)
+            guard let http = response as? HTTPURLResponse else { throw MacBackendChannelError.invalidResponse }
+            if http.statusCode == 429 {
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+                continue
+            }
+            guard (200..<300).contains(http.statusCode) else { throw MacBackendChannelError.requestFailed }
+            let poll = try decoder.decode(RelayPollResponse.self, from: data)
+            if poll.status == "claimed", let pairingToken = poll.pairingToken, let backendToken = poll.backendToken {
+                try await pairedDeviceTokenStore.save(pairingToken)
+                token = pairingToken
+                await backendChannel.connect(token: backendToken)
+                return
+            }
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+        }
     }
 
     func refreshAutomations() async {
@@ -239,18 +365,45 @@ final class MacRuntime: ObservableObject {
             localIPAddress: localIPAddress,
             port: port,
             serviceStatus: serviceState.rawValue,
-            availableApplications: MacSystem.availableApplications(),
-            applicationTargets: MacSystem.applicationTargets(),
-            // The full set comes from RovaCommandAuthority.allCapabilities (derived from
-            // CommandType itself, see Validation.swift) rather than a second hand-typed list here -
-            // adding a new command type can no longer silently forget to also advertise it.
-            // "runtime.status" is never user-toggleable (harmless read-only status), so it's
-            // exempted from filtering; every other capability respects the Yetenekler settings.
-            capabilities: ["runtime.status"] + CapabilityStore.shared.filter(
-                Array(RovaCommandAuthority.allCapabilities.subtracting(["runtime.status"]))
-            ),
-            authorities: MacSystem.capabilityAuthorities()
+            availableApplications: cachedAvailableApplications,
+            applicationTargets: cachedApplicationTargets,
+            capabilities: CapabilityStore.shared.filter(cachedCapabilities),
+            authorities: cachedAuthorities.filter { CapabilityStore.shared.isEnabled($0.capability) }
         )
+    }
+
+    private func refreshDeviceInfo() async {
+        // The command authority is the single source for operation -> capability mapping. The
+        // expensive application/permission scans happen once before registration, not every time
+        // the backend asks for a DeviceInfo snapshot.
+        let allCapabilities = RovaOperationManifest.advertisedCapabilities(for: .macOS)
+        let snapshot = await Task.detached(priority: .utility) {
+            MacDeviceInfoSnapshot(
+                availableApplications: MacSystem.availableApplications(),
+                applicationTargets: MacSystem.applicationTargets(),
+                capabilities: allCapabilities.sorted(),
+                authorities: MacSystem.capabilityAuthorities()
+            )
+        }.value
+        cachedAvailableApplications = snapshot.availableApplications
+        cachedApplicationTargets = snapshot.applicationTargets
+        cachedCapabilities = snapshot.capabilities
+        cachedAuthorities = snapshot.authorities
+    }
+
+    private func startDeviceInfoRefresh() {
+        deviceInfoRefreshTask?.cancel()
+        deviceInfoRefreshTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 30_000_000_000)
+                } catch {
+                    return
+                }
+                guard let self, !Task.isCancelled else { return }
+                await self.refreshDeviceInfo()
+            }
+        }
     }
 
     private func configureServer(identity: RovaTLSIdentity) {
@@ -276,13 +429,16 @@ final class MacRuntime: ObservableObject {
             }
         }
         server.onEnvelope = { [weak self] session, envelope in
-            Task { @MainActor in self?.handle(envelope, on: session) }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.handle(envelope, on: session)
+            }
         }
         self.server = server
         server.start()
     }
 
-    private func handle(_ envelope: WireEnvelope, on session: MacClientSession) {
+    private func handle(_ envelope: WireEnvelope, on session: MacClientSession) async {
         switch envelope.message {
         case .pair(let request):
             let sessionID = ObjectIdentifier(session)
@@ -312,7 +468,7 @@ final class MacRuntime: ObservableObject {
             closeOtherSessions(except: session)
             do {
                 let newToken = try RovaCrypto.randomToken()
-                try RovaKeychainStore.save(Data(newToken.utf8), account: "paired-device-token")
+                try await pairedDeviceTokenStore.save(newToken)
                 token = newToken
                 pairedDeviceName = name
                 pairedDeviceID = request.deviceID
@@ -368,7 +524,7 @@ final class MacRuntime: ObservableObject {
                 authLogger.warning("Backend token rejected before authentication")
                 return
             }
-            backendChannel.connect(token: backendToken)
+            await backendChannel.connect(token: backendToken)
         default:
             authLogger.warning("Unsupported message rejected")
             session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "UNSUPPORTED_MESSAGE", message: "Mesaj desteklenmiyor."))))

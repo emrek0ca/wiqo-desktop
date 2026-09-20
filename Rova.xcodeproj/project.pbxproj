@@ -47,6 +47,7 @@
 		B013 /* MacRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = F013 /* MacRuntime.swift */; };
 		B014 /* MacViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F014 /* MacViews.swift */; };
 		B015 /* DocumentEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F030 /* DocumentEngine.swift */; };
+		B016 /* OperationManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F031 /* OperationManifest.swift */; };
 		B017 /* RovaIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F017 /* RovaIOSApp.swift */; };
 		B018 /* IOSConnectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F018 /* IOSConnectionModel.swift */; };
 		B019 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F019 /* QRScannerView.swift */; };
@@ -54,6 +55,8 @@
 		D10000000000000000000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* OnboardingView.swift */; };
 		B026 /* ProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F026 /* ProtocolTests.swift */; };
 		B027 /* MacCommandEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F027 /* MacCommandEngineTests.swift */; };
+		B028 /* OperationManifest.swift in RovaSharedTests */ = {isa = PBXBuildFile; fileRef = F031 /* OperationManifest.swift */; };
+		B029 /* OperationManifest.swift in RovaIOS */ = {isa = PBXBuildFile; fileRef = F031 /* OperationManifest.swift */; };
 		C100 /* WiqoFocusDoNotDisturbOn.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C110 /* WiqoFocusDoNotDisturbOn.shortcut */; };
 		C101 /* WiqoFocusDoNotDisturbOff.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C111 /* WiqoFocusDoNotDisturbOff.shortcut */; };
 		C102 /* WiqoFocusPersonalOn.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C112 /* WiqoFocusPersonalOn.shortcut */; };
@@ -159,6 +162,7 @@
 		F028 /* project.pbxproj */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = project.pbxproj; sourceTree = "<group>"; };
 		F029 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = README.md; sourceTree = "<group>"; };
 		F030 /* DocumentEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentEngine.swift; sourceTree = "<group>"; };
+		F031 /* OperationManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperationManifest.swift; sourceTree = "<group>"; };
 		FF28DCCA305883720006FF82 /* RovaIOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RovaIOS.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -211,6 +215,7 @@
 			isa = PBXGroup;
 			children = (
 				F001 /* Protocol.swift */,
+				F031 /* OperationManifest.swift */,
 				F002 /* Validation.swift */,
 				F003 /* Framing.swift */,
 				F004 /* KeychainStore.swift */,
@@ -519,6 +524,7 @@
 				B004 /* KeychainStore.swift in Sources */,
 				B005 /* CryptoSupport.swift in Sources */,
 				B006 /* QRPairing.swift in Sources */,
+				B016 /* OperationManifest.swift in Sources */,
 				98D7CE60A345E6E8CBEE8D65 /* MacBackendChannel.swift in Sources */,
 				7A591C26FAD5E71C69CA3830 /* ClipboardWatcher.swift in Sources */,
 				5881451312769523475482A3 /* CapabilitySettings.swift in Sources */,
@@ -540,6 +546,7 @@
 				FF28DCC130573E6C0006FF82 /* KeychainStore.swift in Sources */,
 				FF28DCC230573E6C0006FF82 /* CryptoSupport.swift in Sources */,
 				FF28DCC330573E6C0006FF82 /* QRPairing.swift in Sources */,
+				B029 /* OperationManifest.swift in RovaIOS */,
 				3C44106B0048C66ECF01156E /* CopilotView.swift in Sources */,
 				4B18DD33AE07432EA5D484B4 /* DiscoveryView.swift in Sources */,
 				1EB858DB70C74FAFB333639B /* ConnectedAccountsView.swift in Sources */,
@@ -574,6 +581,7 @@
 				FF28DCC730573E6C0006FF82 /* KeychainStore.swift in Sources */,
 				FF28DCC830573E6C0006FF82 /* CryptoSupport.swift in Sources */,
 				FF28DCC930573E6C0006FF82 /* QRPairing.swift in Sources */,
+				B028 /* OperationManifest.swift in RovaSharedTests */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

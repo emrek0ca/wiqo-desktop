@@ -27,6 +27,15 @@ struct RootView: View {
                 model.forgetPairing()
             }
         }
+        .task {
+            // AuthSessionStore can start already authenticated after restoring the saved
+            // account. In that case onChange does not fire, so give the paired Mac its current
+            // backend session here as well; this is what keeps relay control available after an
+            // app or network restart.
+            if authSession.isAuthenticated {
+                model.sendBackendTokenIfAvailable()
+            }
+        }
     }
 }
 
@@ -471,7 +480,10 @@ struct PairingView: View {
                 QRScannerView { value in
                     showingScanner = false
                     do {
-                        model.pair(using: try RovaQRCodec.decode(value))
+                        switch try RovaQRCodec.decodePairingCode(value) {
+                        case .local(let payload): model.pair(using: payload)
+                        case .relay(let payload): model.pair(using: payload)
+                        }
                         scanError = nil
                     } catch {
                         scanError = "Geçersiz Wiqo QR kodu."
@@ -659,12 +671,7 @@ struct SettingsView: View {
     }
 
     private var settingsPCStatusText: String {
-        switch model.state {
-        case .connected: return model.isUsingRelay ? "Bağlı • internet üzerinden" : "Bağlı"
-        case .connecting: return "Bağlanıyor…"
-        case .failed: return model.isReconnecting ? "Yeniden bağlanıyor…" : "PC'ye ulaşılamıyor"
-        case .disconnected: return "Çevrimdışı"
-        }
+        model.userFacingConnectionLabel
     }
 
     /// The whole point is that Wiqo spreads through people who already use it: a founding-member
@@ -1495,12 +1502,7 @@ struct PCSettingsView: View {
     }
 
     private var statusText: String {
-        switch model.state {
-        case .connected: return model.isUsingRelay ? "Bağlı • internet üzerinden" : "Bağlı"
-        case .connecting: return "Bağlanıyor…"
-        case .failed: return model.isReconnecting ? "Yeniden bağlanıyor…" : "Bağlantı hatası"
-        case .disconnected: return "Çevrimdışı"
-        }
+        model.userFacingConnectionLabel
     }
 
     private var qualityColor: Color {

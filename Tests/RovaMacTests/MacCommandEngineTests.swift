@@ -2,6 +2,16 @@ import XCTest
 @testable import RovaMac
 
 final class MacCommandEngineTests: XCTestCase {
+    @MainActor
+    func testBackendRelayUsesCanonicalProductionHost() {
+        let endpoint = MacBackendChannel.endpoint
+        let apiBaseURL = MacBackendChannel.apiBaseURL
+        XCTAssertEqual(endpoint.scheme, "wss")
+        XCTAssertEqual(endpoint.host, "api.wiqoai.com")
+        XCTAssertEqual(endpoint.path, "/device/socket")
+        XCTAssertEqual(apiBaseURL.absoluteString, "https://api.wiqoai.com")
+    }
+
     func testDuplicateCommandIDIsNotExecutedTwice() async {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("rova-ledger-\(UUID().uuidString).json")
         let engine = MacCommandEngine(ledger: CommandLedger(fileURL: url))
@@ -30,7 +40,7 @@ final class MacCommandEngineTests: XCTestCase {
         XCTAssertEqual(result.error?.code, "INVALID_PAYLOAD")
     }
 
-    func testRestartWithUnfinishedRunningCommandYieldsDenied() async {
+    func testRestartWithUnfinishedRunningCommandYieldsUnknownWithoutReplay() async {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("rova-ledger-\(UUID().uuidString).json")
         let ledger = CommandLedger(fileURL: url)
         let id = UUID()
@@ -41,8 +51,8 @@ final class MacCommandEngineTests: XCTestCase {
         let restartedEngine = MacCommandEngine(ledger: ledger)
         let retryRequest = CommandRequest(id: id, type: .ping)
         let result = await restartedEngine.execute(retryRequest, runtimeStatus: "running")
-        XCTAssertEqual(result.status, .denied)
-        XCTAssertEqual(result.error?.code, "DUPLICATE_DENIED")
+        XCTAssertEqual(result.status, .unknown)
+        XCTAssertEqual(result.error?.code, "OUTCOME_UNKNOWN")
         try? FileManager.default.removeItem(at: url)
     }
 
@@ -68,5 +78,34 @@ final class MacCommandEngineTests: XCTestCase {
         let result = await engine.execute(expired, runtimeStatus: "running")
         XCTAssertEqual(result.status, .denied)
         XCTAssertEqual(result.error?.code, "EXPIRED_REQUEST")
+    }
+
+    func testConcurrentCommandsCompleteAndHistoryStaysBounded() async {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("rova-ledger-\(UUID().uuidString).json")
+        let engine = MacCommandEngine(ledger: CommandLedger(fileURL: url))
+
+        await withTaskGroup(of: CommandResult.self) { group in
+            for _ in 0..<50 {
+                group.addTask {
+                    await engine.execute(CommandRequest(type: .ping), runtimeStatus: "running")
+                }
+            }
+            for await result in group {
+                XCTAssertEqual(result.status, .completed)
+            }
+        }
+
+        for _ in 0..<90 {
+            _ = await engine.execute(CommandRequest(type: .ping), runtimeStatus: "running")
+        }
+        let persisted = await engine.persistedResults()
+        XCTAssertEqual(persisted.count, 128)
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    func testCapabilitySettingsStayWithinSharedCommandManifest() {
+        let settingsCapabilities = Set(RovaCapabilityCatalog.groups.flatMap(\.capabilities))
+        let toggleableCapabilities = RovaCommandAuthority.allCapabilities.subtracting(["runtime.status"])
+        XCTAssertEqual(settingsCapabilities, toggleableCapabilities)
     }
 }

@@ -140,14 +140,22 @@ struct PairingQRView: View {
     var body: some View {
         VStack(spacing: 14) {
             Text("iPhone'u eşleştir").font(.title3.weight(.semibold))
-            if let payload = runtime.pairingPayload, let value = try? RovaQRCodec.encode(payload), let image = makeQRCode(value) {
+            if let relayPayload = runtime.relayPairingPayload, let value = try? RovaQRCodec.encode(relayPayload), let image = makeQRCode(value) {
+                Image(nsImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 260, height: 260)
+                Text("İnternet üzerinden güvenli eşleşme").font(.subheadline.weight(.semibold))
+                Text("QR kodu telefondan tara. Kod 10 dakika geçerli.").font(.caption).foregroundStyle(.secondary)
+            } else if let payload = runtime.pairingPayload, let value = try? RovaQRCodec.encode(payload), let image = makeQRCode(value) {
                 Image(nsImage: image)
                     .interpolation(.none)
                     .resizable()
                     .scaledToFit()
                     .frame(width: 260, height: 260)
                 Text("Kod: \(payload.pairingCode)").font(.title2.monospacedDigit())
-                Text("Kod 5 dakika geçerli.").font(.caption).foregroundStyle(.secondary)
+                Text("Yerel ağ eşleşmesi · 5 dakika geçerli.").font(.caption).foregroundStyle(.secondary)
             } else {
                 ProgressView("Güvenli bağlantı hazırlanıyor…")
             }

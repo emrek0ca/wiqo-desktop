@@ -158,6 +158,19 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(decoded.platform, "macOS")
     }
 
+    func testOperationManifestIsCompleteAndDeterministic() throws {
+        XCTAssertEqual(RovaOperationManifest.entries.count, CommandType.allCases.count)
+        XCTAssertEqual(Set(RovaOperationManifest.entries.map(\.operation)).count, CommandType.allCases.count)
+        XCTAssertEqual(
+            RovaOperationManifest.advertisedCapabilities(for: .macOS),
+            RovaOperationManifest.advertisedCapabilities(for: .macOS).sorted()
+        )
+        XCTAssertFalse(RovaOperationManifest.supports(.runShortcut, on: .windows))
+        XCTAssertTrue(RovaOperationManifest.supports(.openApplicationByName, on: .windows))
+        let encoded = try RovaOperationManifest.encodedManifest()
+        XCTAssertFalse(encoded.isEmpty)
+    }
+
     func testHMACSignatureAndTimestampValidation() throws {
         let token = "test-secret-token-1234567890abcdef"
         let id = UUID()

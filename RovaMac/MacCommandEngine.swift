@@ -1,7 +1,150 @@
 import Foundation
 
+private enum MacExecutionLane: Sendable {
+    case readOnly
+    case sideEffect
+}
+
+private actor MacExecutionGate {
+    private struct Waiter {
+        let id: UUID
+        let lane: MacExecutionLane
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
+    private let maximumConcurrentReads = 4
+    private let maximumQueuedCommands = 64
+    private let maximumQueueWaitNanoseconds: UInt64 = 5_000_000_000
+    private var activeReads = 0
+    private var activeSideEffects = 0
+    private var waiters: [Waiter] = []
+
+    func acquire(_ lane: MacExecutionLane) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        guard waiters.isEmpty, canStart(lane) else {
+            guard waiters.count < maximumQueuedCommands else { return false }
+            let id = UUID()
+            let timeoutTask = Task { [weak self] in
+                do {
+                    try await Task.sleep(nanoseconds: self?.maximumQueueWaitNanoseconds ?? 0)
+                    guard !Task.isCancelled else { return }
+                    await self?.expire(id)
+                } catch {
+                    // The command acquired a slot or was cancelled before the queue deadline.
+                }
+            }
+            let result = await withTaskCancellationHandler(operation: {
+                await waitForSlot(id: id, lane: lane)
+            }, onCancel: {
+                Task { [weak self] in await self?.cancel(id) }
+            })
+            timeoutTask.cancel()
+            return result
+        }
+        if canStart(lane) {
+            start(lane)
+            return true
+        }
+        return false
+    }
+
+    func release(_ lane: MacExecutionLane) {
+        switch lane {
+        case .readOnly:
+            activeReads = max(0, activeReads - 1)
+        case .sideEffect:
+            activeSideEffects = max(0, activeSideEffects - 1)
+        }
+        drain()
+    }
+
+    private func canStart(_ lane: MacExecutionLane) -> Bool {
+        switch lane {
+        case .readOnly:
+            return activeSideEffects == 0 && activeReads < maximumConcurrentReads
+        case .sideEffect:
+            return activeSideEffects == 0 && activeReads == 0
+        }
+    }
+
+    private func start(_ lane: MacExecutionLane) {
+        switch lane {
+        case .readOnly: activeReads += 1
+        case .sideEffect: activeSideEffects += 1
+        }
+    }
+
+    private func waitForSlot(id: UUID, lane: MacExecutionLane) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        if waiters.isEmpty, canStart(lane) {
+            start(lane)
+            return true
+        }
+        return await withCheckedContinuation { continuation in
+            waiters.append(Waiter(id: id, lane: lane, continuation: continuation))
+            drain()
+        }
+    }
+
+    private func expire(_ id: UUID) {
+        resumeWaiter(id, returning: false)
+    }
+
+    private func cancel(_ id: UUID) {
+        resumeWaiter(id, returning: false)
+    }
+
+    private func resumeWaiter(_ id: UUID, returning result: Bool) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+        let waiter = waiters.remove(at: index)
+        waiter.continuation.resume(returning: result)
+        drain()
+    }
+
+    private func drain() {
+        while let waiter = waiters.first, canStart(waiter.lane) {
+            waiters.removeFirst()
+            start(waiter.lane)
+            waiter.continuation.resume(returning: true)
+        }
+    }
+}
+
+private enum MacOperationWaitResult: Sendable {
+    case completed(data: CommandData?, message: String, error: RovaError?)
+    case timedOut
+}
+
+private actor MacOperationRace {
+    private var resolved: MacOperationWaitResult?
+    private var continuation: CheckedContinuation<MacOperationWaitResult, Never>?
+
+    func wait() async -> MacOperationWaitResult {
+        if let resolved { return resolved }
+        return await withCheckedContinuation { continuation in
+            register(continuation)
+        }
+    }
+
+    func resolve(_ result: MacOperationWaitResult) {
+        guard resolved == nil else { return }
+        resolved = result
+        continuation?.resume(returning: result)
+        continuation = nil
+    }
+
+    private func register(_ continuation: CheckedContinuation<MacOperationWaitResult, Never>) {
+        if let resolved {
+            continuation.resume(returning: resolved)
+        } else {
+            self.continuation = continuation
+        }
+    }
+}
+
 actor MacCommandEngine {
     private let ledger: CommandLedger
+    private let executionGate = MacExecutionGate()
     private var completed: [UUID: CommandResult]
     private var inFlight: [UUID: Task<CommandResult, Never>] = [:]
 
@@ -35,17 +178,36 @@ actor MacCommandEngine {
     private func executeFresh(_ request: CommandRequest, runtimeStatus: String) async -> CommandResult {
         if let previous = completed[request.id] { return previous }
 
+        guard RovaOperationManifest.supports(request.type, on: .macOS) else {
+            let result = denied(request.id, error: RovaError(code: "UNSUPPORTED_OPERATION", message: "Bu Mac sürümünde bu işlem desteklenmiyor."))
+            remember(result)
+            ledger.save(completed)
+            return result
+        }
+
         // 2. Validate timestamp skew and payload/command type fail-closed.
         if !RovaValidation.isRequestTimestampValid(request.createdAt) {
             let result = denied(request.id, error: RovaError(code: "EXPIRED_REQUEST", message: "Komut zaman damgası geçersiz veya süresi dolmuş."))
-            completed[request.id] = result
+            remember(result)
             ledger.save(completed)
             return result
         }
 
         if let validationError = RovaValidation.validate(request) {
             let result = denied(request.id, error: validationError)
-            completed[request.id] = result
+            remember(result)
+            ledger.save(completed)
+            return result
+        }
+
+        let lane = executionLane(for: request.type)
+        guard await executionGate.acquire(lane) else {
+            let result = failed(
+                request.id,
+                message: "Mac şu anda çok sayıda işlem yürütüyor; bu komut henüz çalıştırılmadı.",
+                error: RovaError(code: "DEVICE_BUSY", message: "Mac işlem kuyruğu dolu; lütfen biraz sonra tekrar deneyin.", category: "retryable")
+            )
+            remember(result)
             ledger.save(completed)
             return result
         }
@@ -54,8 +216,21 @@ actor MacCommandEngine {
         let startedAt = Date()
         ledger.recordRunning(commandID: request.id, startedAt: startedAt, currentCompleted: completed)
 
-        // 4. Perform actual side-effect on MainActor.
-        let outcome = await perform(request, runtimeStatus: runtimeStatus)
+        // 4. Perform the operation away from the UI actor where the underlying API permits it.
+        // A timed-out side effect keeps its execution slot until the underlying operation really
+        // finishes, so a late result can never race with the next write.
+        let waitResult = await performWithTimeout(request, runtimeStatus: runtimeStatus, lane: lane)
+        let outcome: (data: CommandData?, message: String, error: RovaError?)
+        switch waitResult {
+        case .completed(let data, let message, let error):
+            outcome = (data, message, error)
+        case .timedOut:
+            outcome = (
+                nil,
+                "İşlem zaman aşımına uğradı; sonucu doğrulanamadığı için tekrar çalıştırılmadı.",
+                RovaError(code: "COMMAND_TIMEOUT", message: "Komut zaman aşımına uğradı; sonucu doğrulanamadığı için tekrar çalıştırılmadı.", category: "timeout")
+            )
+        }
         let finishedAt = Date()
         let result = CommandResult(
             commandID: request.id,
@@ -66,21 +241,85 @@ actor MacCommandEngine {
             data: outcome.data,
             error: outcome.error
         )
-        completed[request.id] = result
+        remember(result)
         ledger.save(completed)
         return result
+    }
+
+    private func performWithTimeout(
+        _ request: CommandRequest,
+        runtimeStatus: String,
+        lane: MacExecutionLane
+    ) async -> MacOperationWaitResult {
+        let operation = Task { [self] in
+            await perform(request, runtimeStatus: runtimeStatus)
+        }
+        let race = MacOperationRace()
+        let observer = Task {
+            let outcome = await operation.value
+            await race.resolve(.completed(data: outcome.data, message: outcome.message, error: outcome.error))
+        }
+        let timeout = Task {
+            do {
+                try await Task.sleep(nanoseconds: timeoutNanoseconds(for: request.type))
+                await race.resolve(.timedOut)
+            } catch {
+                // The operation completed before the deadline.
+            }
+        }
+        let result = await race.wait()
+        timeout.cancel()
+
+        switch result {
+        case .completed:
+            observer.cancel()
+            await executionGate.release(lane)
+        case .timedOut:
+            operation.cancel()
+            // Do not release the lane until a non-cooperative synchronous API has returned.
+            Task { [executionGate] in
+                _ = await operation.value
+                await executionGate.release(lane)
+            }
+        }
+        return result
+    }
+
+    private func executionLane(for type: CommandType) -> MacExecutionLane {
+        switch type {
+        case .getSystemStatus, .getClipboardText, .getClipboardHistory,
+             .listCalendarEvents, .listReminders, .listDesktopFiles, .readDesktopFile,
+             .listFiles, .readFile, .readDocument, .captureScreen, .listRunningApplications,
+             .ping:
+            return .readOnly
+        default:
+            return .sideEffect
+        }
+    }
+
+    private func timeoutNanoseconds(for type: CommandType) -> UInt64 {
+        switch type {
+        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut:
+            return 60_000_000_000
+        case .listCalendarEvents, .createCalendarEvent, .listReminders, .createReminder,
+             .completeReminder, .listDesktopFiles, .readDesktopFile, .listFiles, .readFile,
+             .writeFile, .moveFile, .copyFile, .deleteFile, .saveTextFile:
+            return 20_000_000_000
+        default:
+            return 10_000_000_000
+        }
     }
 
     private func perform(_ request: CommandRequest, runtimeStatus: String) async -> (data: CommandData?, message: String, error: RovaError?) {
         switch request.type {
         case .getSystemStatus:
-            let status = await MainActor.run { MacSystem.systemStatus(runtimeStatus: runtimeStatus) }
+            let status = await Task.detached(priority: .utility) { MacSystem.systemStatus(runtimeStatus: runtimeStatus) }.value
             return (.systemStatus(status), "Mac sistem durumu hazır.", nil)
         case .openApplication:
             guard case .application(let id) = request.payload else {
                 return (nil, "Geçersiz uygulama isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Uygulama seçimi geçersiz."))
             }
-            let error = await MainActor.run { MacSystem.openApplication(id) }
+            let error = await Task.detached(priority: .userInitiated) { MacSystem.openApplication(id) }.value
             return (nil, error == nil ? "\(id.displayName) açıldı." : error!.message, error)
         case .openApplicationByName:
             guard case .applicationQuery(let query) = request.payload else {
@@ -92,7 +331,9 @@ actor MacCommandEngine {
             guard case .applicationControl(let application) = request.payload else {
                 return (nil, "Geçersiz uygulama eylemi.", RovaError(code: "INVALID_PAYLOAD", message: "Uygulama eylemi veya hedefi geçersiz.", category: "validation"))
             }
-            let outcome = await MacSystem.controlApplication(application)
+            let outcome = await Task.detached(priority: .userInitiated) {
+                await MacSystem.controlApplication(application)
+            }.value
             let resolvedName: String
             if case .applicationControl(let content) = outcome.data {
                 resolvedName = content.resolvedName
@@ -115,64 +356,76 @@ actor MacCommandEngine {
             guard case .application(let id) = request.payload else {
                 return (nil, "Geçersiz uygulama isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Kapatılacak uygulama seçimi geçersiz."))
             }
-            let error = await MainActor.run { MacSystem.quitApplication(id) }
+            let error = await Task.detached(priority: .userInitiated) {
+                MacSystem.quitApplication(id)
+            }.value
             return (nil, error == nil ? "\(id.displayName) kapatıldı." : error!.message, error)
         case .openURL:
             guard case .url(let value) = request.payload else {
                 return (nil, "Geçersiz URL isteği.", RovaError(code: "INVALID_PAYLOAD", message: "URL payload’ı geçersiz."))
             }
-            let error = await MainActor.run { MacSystem.openURL(value) }
+            let error = await Task.detached(priority: .userInitiated) { MacSystem.openURL(value) }.value
             return (nil, error == nil ? "URL açıldı." : error!.message, error)
         case .lockMac:
-            let error = await MainActor.run { MacSystem.lockMac() }
+            let error = await Task.detached(priority: .userInitiated) { MacSystem.lockMac() }.value
             return (nil, error == nil ? "Mac kilitlendi." : error!.message, error)
         case .sleepMac:
-            let error = await MainActor.run { MacSystem.sleepMac() }
+            let error = await Task.detached(priority: .userInitiated) { MacSystem.sleepMac() }.value
             return (nil, error == nil ? "Mac uyku moduna alındı." : error!.message, error)
         case .displaySleep:
-            let error = await MainActor.run { MacSystem.displaySleep() }
+            let error = await Task.detached(priority: .userInitiated) { MacSystem.displaySleep() }.value
             return (nil, error == nil ? "Mac ekranı uyku moduna alındı." : error!.message, error)
         case .setBrightness:
             guard case .brightness(let level) = request.payload else {
                 return (nil, "Geçersiz parlaklık seviyesi.", RovaError(code: "INVALID_PAYLOAD", message: "Parlaklık seviyesi geçersiz."))
             }
-            let error = await MainActor.run { MacSystem.setBrightness(level) }
+            let error = await Task.detached(priority: .userInitiated) { MacSystem.setBrightness(level) }.value
             return (nil, error == nil ? "Parlaklık %\(level) yapıldı." : error!.message, error)
         case .setVolume:
             guard case .volume(let level) = request.payload else {
                 return (nil, "Geçersiz ses seviyesi.", RovaError(code: "INVALID_PAYLOAD", message: "Ses seviyesi geçersiz."))
             }
-            let error = await MainActor.run { MacSystem.setVolume(level) }
+            let error = await Task.detached(priority: .userInitiated) { MacSystem.setVolume(level) }.value
             return (nil, error == nil ? "Ses %\(level) yapıldı." : error!.message, error)
         case .toggleMute:
-            let error = await MainActor.run { MacSystem.toggleMute() }
+            let error = await Task.detached(priority: .userInitiated) { MacSystem.toggleMute() }.value
             return (nil, error == nil ? "Ses durumu değiştirildi." : error!.message, error)
         case .mediaControl:
             guard case .media(let action) = request.payload else {
                 return (nil, "Geçersiz medya komutu.", RovaError(code: "INVALID_PAYLOAD", message: "Medya komutu geçersiz."))
             }
-            let error = await MainActor.run { MacSystem.mediaControl(action) }
+            let error = await Task.detached(priority: .userInitiated) {
+                MacSystem.mediaControl(action)
+            }.value
             return (nil, error == nil ? "Medya komutu uygulandı." : error!.message, error)
         case .setClipboardText:
             guard case .clipboardText(let text) = request.payload else {
                 return (nil, "Geçersiz pano metni.", RovaError(code: "INVALID_PAYLOAD", message: "Pano metni geçersiz."))
             }
-            let error = await MainActor.run { MacSystem.setClipboardText(text) }
+            let error = await Task.detached(priority: .userInitiated) {
+                MacSystem.setClipboardText(text)
+            }.value
             return (nil, error == nil ? "Metin Mac panosuna kopyalandı." : error!.message, error)
         case .getClipboardText:
-            let outcome = await MainActor.run { MacSystem.getClipboardText() }
+            let outcome = await Task.detached(priority: .utility) {
+                MacSystem.getClipboardText()
+            }.value
             return (outcome.data, outcome.error == nil ? "Pano içeriği okundu." : outcome.error!.message, outcome.error)
         case .createNote:
             guard case .note(let payload) = request.payload else {
                 return (nil, "Geçersiz not isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Not isteği geçersiz."))
             }
-            let outcome = await MainActor.run { MacSystem.createNote(payload) }
+            let outcome = await Task.detached(priority: .userInitiated) {
+                MacSystem.createNote(payload)
+            }.value
             return (outcome.data, outcome.error == nil ? "Not oluşturuldu." : outcome.error!.message, outcome.error)
         case .sendEmail:
             guard case .email(let payload) = request.payload else {
                 return (nil, "Geçersiz e-posta isteği.", RovaError(code: "INVALID_PAYLOAD", message: "E-posta isteği geçersiz."))
             }
-            let error = await MainActor.run { MacSystem.sendEmail(payload) }
+            let error = await Task.detached(priority: .userInitiated) {
+                MacSystem.sendEmail(payload)
+            }.value
             return (nil, error == nil ? "E-posta gönderildi." : error!.message, error)
         case .getClipboardHistory:
             let outcome = await MainActor.run { MacSystem.getClipboardHistory() }
@@ -185,7 +438,7 @@ actor MacCommandEngine {
             guard case .textFile(let file) = request.payload else {
                 return (nil, "Geçersiz dosya isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya isteği geçersiz."))
             }
-            let error = MacSystem.saveTextFile(file)
+            let error = await Task.detached(priority: .userInitiated) { MacSystem.saveTextFile(file) }.value
             return (nil, error == nil ? "\(file.filename) masaüstüne kaydedildi." : error!.message, error)
         case .saveArtifact:
             guard case .artifactFile(let artifact) = request.payload else {
@@ -214,10 +467,14 @@ actor MacCommandEngine {
             guard case .message(let message) = request.payload else {
                 return (nil, "Geçersiz mesaj isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Mesaj isteği geçersiz."))
             }
-            let error = await MainActor.run { MacSystem.sendMessage(message) }
+            let error = await Task.detached(priority: .userInitiated) {
+                MacSystem.sendMessage(message)
+            }.value
             return (nil, error == nil ? "Mesaj gönderildi." : error!.message, error)
         case .listCalendarEvents:
-            let outcome = await MacSystem.listCalendarEvents()
+            let outcome = await Task.detached(priority: .utility) {
+                await MacSystem.listCalendarEvents()
+            }.value
             let count = outcome.data.flatMap { data -> Int? in
                 if case .calendarEvents(let events) = data { return events.count }
                 return nil
@@ -227,10 +484,14 @@ actor MacCommandEngine {
             guard case .calendarEvent(let event) = request.payload else {
                 return (nil, "Geçersiz takvim etkinliği isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Takvim etkinliği isteği geçersiz."))
             }
-            let outcome = await MacSystem.createCalendarEvent(event)
+            let outcome = await Task.detached(priority: .userInitiated) {
+                await MacSystem.createCalendarEvent(event)
+            }.value
             return (outcome.data, outcome.error == nil ? "Takvim etkinliği oluşturuldu." : outcome.error!.message, outcome.error)
         case .listReminders:
-            let outcome = await MacSystem.listReminders()
+            let outcome = await Task.detached(priority: .utility) {
+                await MacSystem.listReminders()
+            }.value
             let count = outcome.data.flatMap { data -> Int? in
                 if case .reminders(let reminders) = data { return reminders.count }
                 return nil
@@ -240,16 +501,20 @@ actor MacCommandEngine {
             guard case .reminder(let payload) = request.payload else {
                 return (nil, "Geçersiz hatırlatıcı isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Hatırlatıcı isteği geçersiz."))
             }
-            let outcome = await MacSystem.createReminder(payload)
+            let outcome = await Task.detached(priority: .userInitiated) {
+                await MacSystem.createReminder(payload)
+            }.value
             return (outcome.data, outcome.error == nil ? "Hatırlatıcı oluşturuldu." : outcome.error!.message, outcome.error)
         case .completeReminder:
             guard case .completeReminder(let payload) = request.payload else {
                 return (nil, "Geçersiz hatırlatıcı isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Hatırlatıcı isteği geçersiz."))
             }
-            let outcome = await MacSystem.completeReminder(payload)
+            let outcome = await Task.detached(priority: .userInitiated) {
+                await MacSystem.completeReminder(payload)
+            }.value
             return (outcome.data, outcome.error == nil ? "Hatırlatıcı tamamlandı." : outcome.error!.message, outcome.error)
         case .listDesktopFiles:
-            let outcome = MacSystem.listDesktopFiles()
+            let outcome = await Task.detached(priority: .utility) { MacSystem.listDesktopFiles() }.value
             let count = outcome.data.flatMap { data -> Int? in
                 if case .desktopFiles(let files) = data { return files.count }
                 return nil
@@ -259,13 +524,13 @@ actor MacCommandEngine {
             guard case .fileName(let filename) = request.payload else {
                 return (nil, "Geçersiz dosya okuma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya adı geçersiz."))
             }
-            let outcome = MacSystem.readDesktopFile(filename)
+            let outcome = await Task.detached(priority: .utility) { MacSystem.readDesktopFile(filename) }.value
             return (outcome.data, outcome.error == nil ? "\(filename) okundu." : outcome.error!.message, outcome.error)
         case .moveDesktopFile, .renameDesktopFile:
             guard case .fileMove(let move) = request.payload else {
                 return (nil, "Geçersiz dosya taşıma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya taşıma isteği geçersiz."))
             }
-            let error = MacSystem.moveDesktopFile(move)
+            let error = await Task.detached(priority: .userInitiated) { MacSystem.moveDesktopFile(move) }.value
             let verb = request.type == .renameDesktopFile ? "yeniden adlandırıldı" : "taşındı"
             return (nil, error == nil ? "Dosya \(verb)." : error!.message, error)
         case .ping:
@@ -327,7 +592,9 @@ actor MacCommandEngine {
             guard case .screenCapture(let payload) = request.payload else {
                 return (nil, "Geçersiz ekran görüntüsü isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Ekran ayarları geçersiz.", category: "tool_failure"))
             }
-            let outcome = await MacSystem.captureScreen(payload)
+            let outcome = await Task.detached(priority: .userInitiated) {
+                await MacSystem.captureScreen(payload)
+            }.value
             return (outcome.data, outcome.error == nil ? "Ekran görüntüsü hazır." : outcome.error!.message, outcome.error)
         case .runShortcut:
             guard case .shortcut(let payload) = request.payload else {
@@ -348,7 +615,9 @@ actor MacCommandEngine {
             let outcome = await Task.detached(priority: .userInitiated) { MacSystem.clickScreen(payload) }.value
             return (outcome.data, outcome.error == nil ? "Ekran tıklaması gönderildi; sonucu yeniden gözlemlemek gerekiyor." : outcome.error!.message, outcome.error)
         case .listRunningApplications:
-            let outcome = await MainActor.run { MacSystem.listRunningApplications() }
+            let outcome = await Task.detached(priority: .utility) {
+                MacSystem.listRunningApplications()
+            }.value
             return (outcome.data, outcome.error == nil ? "Açık uygulamalar listelendi." : outcome.error!.message, outcome.error)
         }
     }
@@ -356,5 +625,22 @@ actor MacCommandEngine {
     private func denied(_ commandID: UUID, error: RovaError) -> CommandResult {
         let now = Date()
         return CommandResult(commandID: commandID, status: .denied, message: error.message, startedAt: now, finishedAt: now, error: error)
+    }
+
+    private func failed(_ commandID: UUID, message: String, error: RovaError) -> CommandResult {
+        let now = Date()
+        return CommandResult(commandID: commandID, status: .failed, message: message, startedAt: now, finishedAt: now, error: error)
+    }
+
+    private func remember(_ result: CommandResult) {
+        completed[result.commandID] = result
+        guard completed.count > 128 else { return }
+        let retainedIDs = Set(
+            completed.values
+                .sorted { $0.finishedAt > $1.finishedAt }
+                .prefix(128)
+                .map(\.commandID)
+        )
+        completed = completed.filter { retainedIDs.contains($0.key) }
     }
 }
