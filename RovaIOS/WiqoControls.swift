@@ -389,7 +389,21 @@ final class WiqoToastCenter: ObservableObject {
     static let shared = WiqoToastCenter()
 
     @Published private(set) var current: WiqoToast?
+    /// Sheets are separate presentation layers, so each one installs its own host. Only the
+    /// topmost host shows the toast; otherwise it would be drawn underneath the sheet.
+    @Published private(set) var topLevel = 0
+    private var hostLevels: [UUID: Int] = [:]
     private var dismissTask: Task<Void, Never>?
+
+    func register(host id: UUID, level: Int) {
+        hostLevels[id] = level
+        topLevel = hostLevels.values.max() ?? 0
+    }
+
+    func unregister(host id: UUID) {
+        hostLevels[id] = nil
+        topLevel = hostLevels.values.max() ?? 0
+    }
 
     func show(_ message: String, kind: WiqoToast.Kind = .info) {
         dismissTask?.cancel()
@@ -450,13 +464,17 @@ private struct WiqoToastView: View {
 }
 
 private struct WiqoToastHost: ViewModifier {
+    let level: Int
     @ObservedObject private var center = WiqoToastCenter.shared
+    @State private var hostID = UUID()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
+            .onAppear { center.register(host: hostID, level: level) }
+            .onDisappear { center.unregister(host: hostID) }
             .overlay(alignment: .top) {
-                if let toast = center.current {
+                if let toast = center.current, center.topLevel == level {
                     WiqoToastView(toast: toast)
                         .padding(.top, 6)
                         .padding(.horizontal, 16)
@@ -487,8 +505,9 @@ private struct WiqoToastPose: ViewModifier {
 }
 
 extension View {
-    /// Installs the app-wide toast presenter. Add once, near the root.
-    func wiqoToastHost() -> some View {
-        modifier(WiqoToastHost())
+    /// Installs a toast presenter. The root uses level 0; each sheet that can raise a toast adds
+    /// its own with a higher level, so the toast always appears above whatever is on top.
+    func wiqoToastHost(level: Int = 0) -> some View {
+        modifier(WiqoToastHost(level: level))
     }
 }

@@ -231,6 +231,7 @@ struct CanvasView: View {
                 Spacer()
                 Button {
                     UIPasteboard.general.string = code
+                    WiqoHaptics.selection()
                     copied = true
                     Task {
                         try? await Task.sleep(nanoseconds: 1_500_000_000)

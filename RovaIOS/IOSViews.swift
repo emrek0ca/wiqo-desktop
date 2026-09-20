@@ -639,6 +639,7 @@ struct SettingsView: View {
                 PCSettingsView(model: model, subscriptionStore: subscriptionStore)
             }
         }
+        .wiqoToastHost(level: 1)
         .task {
             await loadTasksAndAutomations()
             await subscriptionStore.refresh()

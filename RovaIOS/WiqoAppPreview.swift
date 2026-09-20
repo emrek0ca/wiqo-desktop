@@ -176,7 +176,7 @@ struct WiqoAppPreviewCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkles.rectangle.stack")
+                Image(systemName: "rectangle.on.rectangle")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(WiqoTheme.ink)
                 Text("Uygulama önizlemesi")

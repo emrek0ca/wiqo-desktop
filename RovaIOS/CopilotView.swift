@@ -143,6 +143,7 @@ private struct CopyReplyButton: View {
     var body: some View {
         Button {
             UIPasteboard.general.string = text
+            WiqoHaptics.selection()
             copied = true
             Task {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -645,7 +646,7 @@ struct CopilotView: View {
 
     private var proactiveCards: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Wiqo önerisi", systemImage: "lightbulb.fill")
+            Text("Öneri")
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(.secondary)
             ForEach(proactiveSuggestions) { suggestion in
@@ -670,9 +671,6 @@ struct CopilotView: View {
 
     private var memoryCandidatesCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Wiqo hafıza önerisi", systemImage: "brain.head.profile")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.secondary)
             ForEach(memoryCandidates) { candidate in
                 WiqoRecommendationCard(
                     title: "Bunu hatırlayayım mı?",
@@ -887,7 +885,7 @@ struct CopilotView: View {
            !bubble.backendConfirmations.contains(where: { $0.status == .failed || $0.status == .cancelled }),
            !liveOnlyUpdates.contains(where: { $0.status == LiveExecutionStatus.failed.rawValue || $0.status == LiveExecutionStatus.denied.rawValue }) {
             let hasWork = !deviceSteps.isEmpty || !liveOnlyUpdates.isEmpty || !bubble.backendConfirmations.isEmpty
-            if hasWork { return "sparkles" }
+            if hasWork { return "checkmark.circle" }
         }
         return "arrow.triangle.2.circlepath"
     }

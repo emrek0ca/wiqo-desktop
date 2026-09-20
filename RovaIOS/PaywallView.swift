@@ -48,6 +48,7 @@ struct PaywallView: View {
                 }
             }
             .task { await storeKit.loadProducts() }
+            .wiqoToastHost(level: 2)
             .alert("İşlem tamamlanamadı", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
                 Button("Tamam", role: .cancel) {}
             } message: {

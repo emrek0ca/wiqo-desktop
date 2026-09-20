@@ -104,6 +104,7 @@ struct WiqoCodeBlock: View {
     private var copyButton: some View {
         Button {
             UIPasteboard.general.string = raw
+            WiqoHaptics.selection()
             copied = true
             Task {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)

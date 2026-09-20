@@ -183,5 +183,9 @@ struct WiqoApprovalOutcome: View {
         .padding(.trailing, 12)
         .background(WiqoTheme.tint(kind.tint), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .transition(reduceMotion ? .identity : .wiqoPop)
+        .onAppear {
+            if kind == .done { WiqoHaptics.success() }
+            if kind == .failed { WiqoHaptics.failure() }
+        }
     }
 }
