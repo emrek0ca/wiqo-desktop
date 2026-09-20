@@ -64,6 +64,8 @@
 		D20000000000000000000010 /* WiqoCanvasSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000011 /* WiqoCanvasSupport.swift */; };
 		D20000000000000000000028 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000029 /* PrivacyInfo.xcprivacy */; };
 		B026 /* ProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F026 /* ProtocolTests.swift */; };
+		D2000000000000000000002E /* CanvasPackageDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000002F /* CanvasPackageDetectorTests.swift */; };
+		D20000000000000000000030 /* WiqoCanvasSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000011 /* WiqoCanvasSupport.swift */; };
 		B027 /* MacCommandEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F027 /* MacCommandEngineTests.swift */; };
 		B028 /* OperationManifest.swift in RovaSharedTests */ = {isa = PBXBuildFile; fileRef = F031 /* OperationManifest.swift */; };
 		B029 /* OperationManifest.swift in RovaIOS */ = {isa = PBXBuildFile; fileRef = F031 /* OperationManifest.swift */; };
@@ -178,6 +180,7 @@
 		F024 /* RovaSharedTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RovaSharedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F025 /* RovaMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RovaMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F026 /* ProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolTests.swift; sourceTree = "<group>"; };
+		D2000000000000000000002F /* CanvasPackageDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasPackageDetectorTests.swift; sourceTree = "<group>"; };
 		F027 /* MacCommandEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCommandEngineTests.swift; sourceTree = "<group>"; };
 		F028 /* project.pbxproj */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = project.pbxproj; sourceTree = "<group>"; };
 		F029 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = README.md; sourceTree = "<group>"; };
@@ -338,6 +341,7 @@
 			isa = PBXGroup;
 			children = (
 				F026 /* ProtocolTests.swift */,
+				D2000000000000000000002F /* CanvasPackageDetectorTests.swift */,
 			);
 			path = RovaSharedTests;
 			sourceTree = "<group>";
@@ -614,6 +618,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				B026 /* ProtocolTests.swift in Sources */,
+				D2000000000000000000002E /* CanvasPackageDetectorTests.swift in Sources */,
+				D20000000000000000000030 /* WiqoCanvasSupport.swift in Sources */,
 				A5C0DE000000000000000003 /* WiqoSpeechPermissionBridge.swift in Sources */,
 				FF28DCC430573E6C0006FF82 /* Protocol.swift in Sources */,
 				FF28DCC530573E6C0006FF82 /* Validation.swift in Sources */,

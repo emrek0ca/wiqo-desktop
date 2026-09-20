@@ -1027,8 +1027,7 @@ struct PCSettingsView: View {
                 }
                 Spacer(minLength: 8)
                 Button("Yükselt") { showingPaywall = true }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .buttonStyle(.wiqoPill(.accent))
             }
         }
     }
@@ -1173,8 +1172,7 @@ struct PCSettingsView: View {
                 }
                 Spacer(minLength: 8)
                 Button("Bağla") { showingPairing = true }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .buttonStyle(.wiqoPill(.accent))
             }
         }
     }
@@ -1208,9 +1206,7 @@ struct PCSettingsView: View {
                         Button("Tekrar dene") {
                             model.retry()
                         }
-                        .font(.caption.weight(.medium))
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .buttonStyle(.wiqoPill(.secondary))
                     }
                 }
             }
@@ -1391,7 +1387,7 @@ struct PCSettingsView: View {
                 } label: {
                     Image(systemName: "arrow.up.doc.fill")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.wiqoPill(.accent))
                 .disabled(clipboardText.isEmpty || model.state != .connected)
             }
         }

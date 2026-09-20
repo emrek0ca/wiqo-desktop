@@ -133,11 +133,11 @@ struct WiqoToolChips: View {
 
     private func chipView(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11.5, design: .monospaced))
+            .font(.system(.caption, design: .monospaced))
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .padding(.horizontal, 7)
-            .frame(height: 22)
+            .frame(minHeight: 22)
             .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)

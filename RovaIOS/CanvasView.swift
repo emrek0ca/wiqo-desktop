@@ -152,12 +152,10 @@ struct CanvasView: View {
     }
 
     private var surfacePicker: some View {
-        Picker("Canvas yüzeyi", selection: $surface) {
-            ForEach(Surface.allCases, id: \.self) { item in
-                Text(item.rawValue).tag(item)
-            }
-        }
-        .pickerStyle(.segmented)
+        WiqoPillTabs<Surface>(
+            options: Surface.allCases.map { WiqoPillTabs<Surface>.Option(value: $0, title: $0.rawValue) },
+            selection: $surface
+        )
         .padding(.horizontal, RovaDesign.screenPadding)
         .padding(.top, 12)
         .padding(.bottom, 8)
@@ -254,7 +252,7 @@ struct CanvasView: View {
 
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $code)
-                    .font(.system(size: 12.5, design: .monospaced))
+                    .font(.system(.footnote, design: .monospaced))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .scrollContentBackground(.hidden)
@@ -264,7 +262,7 @@ struct CanvasView: View {
 
                 if code.isEmpty {
                     Text(placeholder)
-                        .font(.system(size: 12.5, design: .monospaced))
+                        .font(.system(.footnote, design: .monospaced))
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 16)
@@ -289,7 +287,7 @@ struct CanvasView: View {
                     TextField("Ekle", text: $packageDraft)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .font(.system(size: 12.5, design: .monospaced))
+                        .font(.system(.footnote, design: .monospaced))
                         .submitLabel(.done)
                         .frame(width: 84)
                         .padding(.horizontal, 10)
@@ -310,7 +308,7 @@ struct CanvasView: View {
     private func packageChip(_ name: String) -> some View {
         HStack(spacing: 6) {
             Text(name)
-                .font(.system(size: 12.5, design: .monospaced))
+                .font(.system(.footnote, design: .monospaced))
             Button {
                 dismissedPackages.insert(name.lowercased())
                 manualPackages.removeAll { $0.lowercased() == name.lowercased() }
@@ -487,24 +485,13 @@ struct CanvasView: View {
     }
 
     private var devicePicker: some View {
-        HStack(spacing: 2) {
-            ForEach(WiqoPreviewDevice.allCases) { device in
-                Button {
-                    previewDevice = device
-                } label: {
-                    Label(device.title, systemImage: device.systemImage)
-                        .font(.footnote.weight(.medium))
-                        .padding(.horizontal, 12)
-                        .frame(height: 32)
-                        .foregroundStyle(previewDevice == device ? Color(uiColor: .systemBackground) : Color.secondary)
-                        .background(previewDevice == device ? WiqoTheme.ink : Color.clear, in: Capsule())
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(2)
-        .background(WiqoTheme.inset, in: Capsule())
+        WiqoPillTabs<WiqoPreviewDevice>(
+            options: WiqoPreviewDevice.allCases.map {
+                WiqoPillTabs<WiqoPreviewDevice>.Option(value: $0, title: $0.title, systemImage: $0.systemImage)
+            },
+            selection: $previewDevice
+        )
+        .frame(maxWidth: 240)
     }
 
     @ViewBuilder

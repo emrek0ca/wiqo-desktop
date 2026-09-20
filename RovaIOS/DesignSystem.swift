@@ -34,29 +34,6 @@ struct RovaCard<Content: View>: View {
     }
 }
 
-/// A small pill-shaped tappable chip, used for suggestion prompts and quick actions.
-struct RovaChip: View {
-    let title: String
-    var systemImage: String?
-    var tint: Color = RovaDesign.ink
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                if let systemImage { Image(systemName: systemImage) }
-                Text(title)
-            }
-            .font(.subheadline.weight(.medium))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
-            .foregroundStyle(tint)
-        }
-        .buttonStyle(RovaPressStyle())
-    }
-}
-
 enum WiqoToolChipTone: Equatable {
     case neutral
     case active

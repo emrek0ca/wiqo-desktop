@@ -288,7 +288,7 @@ struct ProfileSettingsView: View {
                         Label(pickerTitle, systemImage: "photo.on.rectangle")
                             .font(.subheadline.weight(.medium))
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.wiqoPill(.secondary))
                 case "emoji":
                     emojiGrid
                     colorRow

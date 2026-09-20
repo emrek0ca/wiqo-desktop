@@ -124,7 +124,7 @@ struct WiqoCodeBlock: View {
     private var content: some View {
         if mode == .listing, lines.count > Self.numberedLineLimit {
             Text(SyntaxHighlighter.highlight(raw))
-                .font(.system(size: 12.5, design: .monospaced))
+                .font(.system(.footnote, design: .monospaced))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14)
@@ -143,13 +143,13 @@ struct WiqoCodeBlock: View {
     private func row(_ line: WiqoCodeLine) -> some View {
         HStack(alignment: .top, spacing: 0) {
             Text(line.number.map { String($0) } ?? "")
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(.caption2, design: .monospaced))
                 .monospacedDigit()
                 .foregroundStyle(gutterColor(line.kind))
                 .frame(width: 34, alignment: .center)
                 .accessibilityHidden(true)
             Text(line.text.characters.isEmpty ? AttributedString(" ") : line.text)
-                .font(.system(size: 12.5, design: .monospaced))
+                .font(.system(.footnote, design: .monospaced))
                 .lineSpacing(2)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)

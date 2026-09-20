@@ -350,38 +350,18 @@ private struct ConfirmationSheetView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 8) {
-                    Button {
-                        onConfirm()
-                    } label: {
-                        if isProcessing {
-                            ProgressView().frame(maxWidth: .infinity)
-                        } else {
-                            Label("Onayla", systemImage: "checkmark.shield")
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(isProcessing)
+                    WiqoActionButton(title: "Onayla", isLoading: isProcessing) { onConfirm() }
 
                     if qualifiesForAlwaysAllow {
-                        Button {
+                        WiqoActionButton(title: "Onayla, her zaman izin ver", kind: .secondary, isLoading: isGranting) {
                             onConfirmAndAlwaysAllow()
-                        } label: {
-                            if isGranting {
-                                ProgressView().frame(maxWidth: .infinity)
-                            } else {
-                                Label("Onayla, her zaman izin ver", systemImage: "checkmark.shield.fill")
-                                    .frame(maxWidth: .infinity)
-                            }
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                        .disabled(isProcessing || isGranting)
+                        .disabled(isProcessing)
                     }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
+                .padding(.bottom, 8)
                 .background(.bar)
             }
         }
