@@ -1,17 +1,14 @@
 import Foundation
 import StoreKit
 
-/// Product identifiers Wiqo sells through StoreKit. Business is web/PayTR-only and never appears
-/// here - see WiqoWebsite below and docs/abonelik.md for the full plan/billing design.
+/// Product identifiers Wiqo sells through StoreKit. See docs/abonelik.md for the plan/billing design.
 enum WiqoProduct {
     static let proMonthly = "com.rova.ios.pro.monthly"
     static let all: Set<String> = [proMonthly]
 }
 
-/// Where "Business" in the paywall sends the user - Business is sold on Wiqo's own website via
-/// PayTR, never through StoreKit (App Store rules aside, the user explicitly wants it this way).
+/// Wiqo's own web addresses. The app never links to a page that sells anything.
 enum WiqoWebsite {
-    static let businessCheckoutURL = URL(string: "https://elyan.dev/business")!
     static let downloadURL = URL(string: "https://wiqoai.com")!
     /// Wiqo's own legal/support pages (github.io while there's no dedicated domain yet - see
     /// docs/abonelik.md). Required to be reachable from both the paywall (Guideline 3.1.2) and

@@ -53,33 +53,42 @@ struct DiscoveryView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                if !deviceReady {
-                    Section {
-                        Label("PC gerektiren örnekler, bir Mac eşleştirip bağlandığında burada görünür.", systemImage: "info.circle")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if !deviceReady {
+                        Text("PC gerektiren örnekler, bir Mac eşleştirip bağlandığında burada görünür.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
                     }
-                }
-                ForEach(discoveryCategories.filter { category in
-                    category.examples.contains { deviceReady || !$0.requiresDevice }
-                }) { category in
-                    Section {
-                        ForEach(category.examples.filter { deviceReady || !$0.requiresDevice }) { example in
-                            Button {
-                                onSelect(example.prompt)
-                                dismiss()
-                            } label: {
-                                Text(example.prompt)
-                                    .foregroundStyle(.primary)
-                                    .multilineTextAlignment(.leading)
+                    ForEach(discoveryCategories.filter { category in
+                        category.examples.contains { deviceReady || !$0.requiresDevice }
+                    }) { category in
+                        let examples = category.examples.filter { deviceReady || !$0.requiresDevice }
+                        WiqoSettingsGroup(title: category.title) {
+                            ForEach(examples) { example in
+                                Button {
+                                    onSelect(example.prompt)
+                                    dismiss()
+                                } label: {
+                                    WiqoRow(
+                                        systemImage: category.icon,
+                                        title: example.prompt,
+                                        showsDivider: example.id != examples.last?.id
+                                    ) {
+                                        Image(systemName: "arrow.up.left")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(WiqoTheme.ink3)
+                                    }
+                                }
+                                .buttonStyle(WiqoRowButtonStyle())
                             }
                         }
-                    } header: {
-                        Label(category.title, systemImage: category.icon)
                     }
                 }
+                .padding(RovaDesign.screenPadding)
             }
+            .background(RovaDesign.canvas)
             .navigationTitle("Neler yapabilirim?")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

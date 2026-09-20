@@ -30,8 +30,7 @@ struct RovaCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 10, content: { content })
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RovaDesign.cardSurface, in: RoundedRectangle(cornerRadius: RovaDesign.cardRadius, style: .continuous))
-            .shadow(color: .black.opacity(0.055), radius: 12, y: 5)
+            .wiqoCard(radius: RovaDesign.cardRadius)
     }
 }
 
@@ -107,8 +106,7 @@ struct RovaActionTile: View {
             }
             .frame(minWidth: 84, minHeight: 76)
             .padding(.horizontal, 8)
-            .background(RovaDesign.cardSurface, in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
-            .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+            .wiqoCard(radius: RovaDesign.chipRadius)
         }
         .buttonStyle(RovaPressStyle())
     }

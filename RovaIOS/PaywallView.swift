@@ -1,9 +1,9 @@
 import StoreKit
 import SwiftUI
 
-/// Plan comparison + purchase flow. Pro purchases right here through StoreKit. Business is sold
-/// on the website via PayTR (see WiqoWebsite in Billing.swift) but that integration isn't wired
-/// up yet, so its card shows "Yakında" instead of a live link - see docs/abonelik.md section 8.
+/// Plan comparison + purchase flow. Pro is bought right here through StoreKit, and the price shown
+/// is always the one the App Store returns for the user's storefront - never a number typed into
+/// the app. Business is not sold in the app; it only appears for accounts that already have it.
 struct PaywallView: View {
     @ObservedObject var subscriptionStore: SubscriptionStore
     @StateObject private var storeKit = StoreKitManager()
@@ -19,9 +19,21 @@ struct PaywallView: View {
             ScrollView {
                 VStack(spacing: RovaDesign.cardSpacing) {
                     header
-                    freeCard
+                    planCard(
+                        title: "Free",
+                        price: "Ücretsiz",
+                        features: ["Günde 10 mesaj", "Günde 1 görsel", "PC bağlantısı yok"],
+                        isCurrent: currentTier == "free"
+                    )
                     proCard
-                    businessCard
+                    if currentTier == "business" {
+                        planCard(
+                            title: "Business",
+                            price: nil,
+                            features: ["Günde 200 mesaj", "Günde 20 görsel", "PC bağlantısı"],
+                            isCurrent: true
+                        )
+                    }
                     restoreButton
                     legalFooter
                 }
@@ -36,7 +48,7 @@ struct PaywallView: View {
                 }
             }
             .task { await storeKit.loadProducts() }
-            .alert("Hata", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            .alert("İşlem tamamlanamadı", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
                 Button("Tamam", role: .cancel) {}
             } message: {
                 Text(errorMessage ?? "")
@@ -46,7 +58,8 @@ struct PaywallView: View {
 
     private var header: some View {
         VStack(spacing: 6) {
-            Text("Wiqo'yu yükselt").font(.title2.weight(.bold))
+            Text("Wiqo'yu yükselt")
+                .font(.title2.weight(.bold))
             Text("Daha fazla mesaj, görsel ve PC bağlantısı için bir plan seç.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -54,62 +67,22 @@ struct PaywallView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 8)
-    }
-
-    private var freeCard: some View {
-        planCard(
-            title: "Free",
-            price: "Ücretsiz",
-            features: ["Günde 10 mesaj", "Günde 1 görsel", "PC bağlantısı yok"],
-            isCurrent: currentTier == "free"
-        )
+        .wiqoRiseIn()
     }
 
     private var proCard: some View {
         planCard(
             title: "Pro",
-            price: storeKit.proProduct?.displayPrice ?? "$9,99/ay",
+            price: storeKit.proProduct?.displayPrice,
+            priceSuffix: "/ay",
             features: ["Günde 100 mesaj", "Günde 10 görsel", "PC bağlantısı"],
             isCurrent: currentTier == "pro"
         ) {
             if currentTier != "pro" {
-                Button {
+                WiqoActionButton(title: "Pro'ya geç", isLoading: storeKit.isPurchasing) {
                     Task { await purchasePro() }
-                } label: {
-                    if storeKit.isPurchasing {
-                        ProgressView().frame(maxWidth: .infinity)
-                    } else {
-                        Text("Pro'ya geç").frame(maxWidth: .infinity)
-                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(storeKit.isPurchasing || storeKit.proProduct == nil)
-                .padding(.top, 4)
-            }
-        }
-    }
-
-    private var businessCard: some View {
-        planCard(
-            title: "Business",
-            price: "$20,00/ay",
-            features: ["Günde 200 mesaj", "Günde 20 görsel", "PC bağlantısı"],
-            isCurrent: currentTier == "business"
-        ) {
-            if currentTier != "business" {
-                // Business satışı web sitesi + PayTR üzerinden yürüyecek, ama o entegrasyon henüz
-                // bağlanmadı (bkz. docs/abonelik.md bölüm 8) - bağlanana kadar yönlendirme yerine
-                // net bir "yakında" durumu gösteriliyor.
-                VStack(alignment: .leading, spacing: 6) {
-                    Button {} label: {
-                        Text("Yakında").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(true)
-                    Text("Business planı yakında Wiqo'nun web sitesi üzerinden satışa açılacak.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                .disabled(storeKit.proProduct == nil && !storeKit.isPurchasing)
                 .padding(.top, 4)
             }
         }
@@ -120,23 +93,30 @@ struct PaywallView: View {
         Button {
             Task { await restore() }
         } label: {
-            if isRestoring {
-                ProgressView()
-            } else {
-                Text("Satın alımları geri yükle")
+            ZStack {
+                if isRestoring {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Text("Satın alımları geri yükle")
+                }
             }
+            .frame(minHeight: 44)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .font(.footnote.weight(.medium))
+        .foregroundStyle(.secondary)
         .disabled(isRestoring)
-        .padding(.top, 4)
     }
 
     /// Required by App Store Review Guideline 3.1.2: auto-renewal terms spelled out in the
     /// purchase flow itself, plus working links to the Privacy Policy and Terms of Use right next
     /// to the purchase buttons - not just somewhere else in the app.
     private var legalFooter: some View {
-        VStack(spacing: 10) {
-            Text("Pro, aylık 9,99 $ karşılığında otomatik yenilenen bir abonelik ürünüdür. Ödeme, satın alma onayıyla Apple ID hesabınızdan tahsil edilir; mevcut dönemin bitiminden en az 24 saat önce iptal etmediğiniz sürece abonelik aynı ücretle otomatik olarak yenilenir. Aboneliğinizi Ayarlar > [Adınız] > Abonelikler yolundan istediğiniz zaman yönetebilirsiniz.")
+        let priceClause = storeKit.proProduct.map { "aylık \($0.displayPrice) karşılığında" } ?? "aylık ücret karşılığında"
+        return VStack(spacing: 10) {
+            Text("Pro, \(priceClause) otomatik yenilenen bir abonelik ürünüdür. Ödeme, satın alma onayıyla Apple ID hesabınızdan tahsil edilir; mevcut dönemin bitiminden en az 24 saat önce iptal etmediğiniz sürece abonelik aynı ücretle otomatik olarak yenilenir. Aboneliğinizi Ayarlar > [Adınız] > Abonelikler yolundan istediğiniz zaman yönetebilirsiniz.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -154,32 +134,58 @@ struct PaywallView: View {
     @ViewBuilder
     private func planCard<Action: View>(
         title: String,
-        price: String,
+        price: String?,
+        priceSuffix: String = "",
         features: [String],
         isCurrent: Bool,
         @ViewBuilder action: () -> Action = { EmptyView() }
     ) -> some View {
-        RovaCard {
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
                 Text(title).font(.headline)
                 if isCurrent {
                     Text("Mevcut plan")
                         .font(.caption2.weight(.semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(RovaDesign.signal.opacity(0.18), in: Capsule())
-                        .foregroundStyle(RovaDesign.signal)
+                        .background(WiqoTheme.ink, in: Capsule())
+                        .foregroundStyle(Color(uiColor: .systemBackground))
                 }
                 Spacer()
-                Text(price).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                if let price {
+                    Text(price + priceSuffix)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .transition(.wiqoBlur)
+                } else if title == "Pro" {
+                    WiqoSkeleton(width: 64, height: 14)
+                }
             }
-            ForEach(features, id: \.self) { feature in
-                Label(feature, systemImage: "checkmark.circle.fill")
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(features, id: \.self) { feature in
+                    Label {
+                        Text(feature)
+                    } icon: {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(WiqoTheme.ink)
+                    }
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                }
             }
             action()
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wiqoCard(radius: RovaDesign.cardRadius)
+        .overlay {
+            if isCurrent {
+                RoundedRectangle(cornerRadius: RovaDesign.cardRadius, style: .continuous)
+                    .strokeBorder(WiqoTheme.ink.opacity(0.6), lineWidth: 1.5)
+            }
+        }
+        .wiqoAnimation(WiqoMotion.ease(0.3), value: price)
     }
 
     private func purchasePro() async {
@@ -187,8 +193,8 @@ struct PaywallView: View {
             let outcome = try await storeKit.purchasePro(subscriptionStore: subscriptionStore)
             switch outcome {
             case .purchased:
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
                 dismiss()
+                WiqoToastCenter.shared.show("Pro aktif. Hoş geldin!", kind: .success)
             case .pending:
                 errorMessage = "Satın alma onay bekliyor (Ask to Buy). Onaylanınca otomatik aktif olacak."
             case .cancelled:
@@ -204,8 +210,8 @@ struct PaywallView: View {
         defer { isRestoring = false }
         do {
             try await storeKit.restore(subscriptionStore: subscriptionStore)
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
             dismiss()
+            WiqoToastCenter.shared.show("Satın alımların geri yüklendi", kind: .success)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }

@@ -17,6 +17,7 @@ struct RootView: View {
             }
         }
         .tint(RovaDesign.ink)
+        .wiqoToastHost()
         .onChange(of: authSession.isAuthenticated) { _, isAuthenticated in
             if isAuthenticated {
                 model.sendBackendTokenIfAvailable()
@@ -603,30 +604,23 @@ struct SettingsView: View {
     @State private var accountInfo: RovaBackendClient.AccountInfo?
     @State private var inviteCodes: [RovaBackendClient.InviteCode] = []
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: RovaDesign.cardSpacing) {
-                    pcStatusCard
-                    pcSettingsCard
-                    RovaCard {
-                        DisclosureGroup {
-                            VStack(spacing: RovaDesign.cardSpacing) {
-                                profileCard
-                                subscriptionCard
-                                referralCard
-                                connectedAccountsCard
-                                if taskAutomationError != nil || !pendingTasks.isEmpty || !activeAutomations.isEmpty { tasksAutomationsCard }
-                                legalCard
-                                accountCard
-                            }
-                            .padding(.top, 8)
-                        } label: {
-                            Label("Gelişmiş", systemImage: "slider.horizontal.3")
-                                .font(.subheadline.weight(.semibold))
-                        }
+                VStack(spacing: 22) {
+                    pcSection
+                    accountSection
+                    if taskAutomationError != nil || !pendingTasks.isEmpty || !activeAutomations.isEmpty {
+                        tasksAutomationsSection
                     }
+                    if accountInfo?.isFoundingMember == true || firstUnusedInviteCode != nil {
+                        inviteSection
+                    }
+                    legalSection
+                    signOutSection
+                    versionFooter
                 }
                 .padding(RovaDesign.screenPadding)
             }
@@ -659,198 +653,114 @@ struct SettingsView: View {
         inviteCodes = (await fetchedCodes) ?? []
     }
 
-    private var pcStatusCard: some View {
-        RovaCard {
-            HStack(spacing: 12) {
+    private var firstUnusedInviteCode: String? {
+        inviteCodes.first(where: { !$0.used })?.code
+    }
+
+    // MARK: PC
+
+    /// The one thing this app is for, first: is the computer ready, and a way into its settings.
+    private var pcSection: some View {
+        Button { showingPCSettings = true } label: {
+            HStack(spacing: 14) {
                 Image(systemName: "laptopcomputer")
-                    .font(.title2)
-                    .foregroundStyle(model.state == .connected ? .green : .secondary)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(RovaConnectionStatus.color(for: model))
+                    .frame(width: 44, height: 44)
+                    .background(WiqoTheme.tint(RovaConnectionStatus.color(for: model)), in: Circle())
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("PC durumu")
-                        .font(.subheadline.weight(.semibold))
-                    Text(model.isPaired ? settingsPCStatusText : "PC henüz bağlanmadı")
-                        .font(.caption)
+                    Text(model.isPaired ? "PC" : "PC ekle")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(model.isPaired ? model.userFacingConnectionLabel : "Bilgisayarını bağla ve telefondan yönet")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 if model.state == .connecting || model.isReconnecting {
                     ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                    WiqoChevron()
                 }
             }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .wiqoCard()
+            .contentShape(Rectangle())
         }
+        .buttonStyle(WiqoCardButtonStyle())
+        .accessibilityElement(children: .combine)
     }
 
-    private var settingsPCStatusText: String {
-        model.userFacingConnectionLabel
-    }
+    // MARK: Account
 
-    /// The whole point is that Wiqo spreads through people who already use it: a founding-member
-    /// badge for whoever got here early, and a code to hand a friend that credits both sides a
-    /// Pro bonus the moment it's redeemed (see rova-backend's grantReferralBonus).
-    private var referralCard: some View {
-        RovaCard {
-            if accountInfo?.isFoundingMember == true {
-                HStack(spacing: 8) {
-                    Image(systemName: "seal.fill").foregroundStyle(.yellow)
-                    Text("Kurucu Üye").font(.subheadline.weight(.semibold))
-                }
-                Divider()
-            }
-            Label("Arkadaşını davet et", systemImage: "gift.fill")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text("Bir arkadaşın senin kodunla katılırsa ikiniz de \(14) gün Pro kazanır.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if let code = inviteCodes.first(where: { !$0.used })?.code {
-                HStack {
-                    Text(code)
-                        .font(.system(.title3, design: .monospaced).weight(.semibold))
-                    Spacer()
-                    ShareLink(item: "Wiqo'yu deniyorum, davet kodumla katıl ve ikimiz de Pro kazanalım: \(code)") {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                }
-                .padding(.top, 2)
-            }
-        }
-    }
-
-    /// Google Calendar/Gmail and Notion - real cloud accounts, entirely separate from the paired
-    /// Mac (see rova-backend's cloudIntegrationTools.ts). Works even for a Free user with no PC.
-    private var connectedAccountsCard: some View {
-        NavigationLink {
-            ConnectedAccountsView()
-        } label: {
-            RovaCard {
-                HStack(spacing: 14) {
-                    Image(systemName: "link.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.tint)
+    private var accountSection: some View {
+        WiqoSettingsGroup(title: "Hesap") {
+            NavigationLink {
+                ProfileSettingsView(profileStore: profileStore, authSession: authSession)
+            } label: {
+                HStack(spacing: 12) {
+                    AvatarView(profile: profileStore.profile, image: profileStore.avatarImage, size: 44)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Bağlı Hesaplar").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                        Text("Google Takvim, Gmail, Notion").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var profileCard: some View {
-        NavigationLink {
-            ProfileSettingsView(profileStore: profileStore, authSession: authSession)
-        } label: {
-            RovaCard {
-                HStack(spacing: 14) {
-                    AvatarView(profile: profileStore.profile, image: profileStore.avatarImage, size: 56)
-                    VStack(alignment: .leading, spacing: 3) {
                         Text(profileStore.profile.visibleName)
-                            .font(.headline)
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                         Text(profileStore.profile.email)
-                            .font(.subheadline)
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                        Text("Profili düzenle")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.tint)
                     }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                    Spacer(minLength: 8)
+                    WiqoChevron()
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(minHeight: 64)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 14)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(WiqoRowButtonStyle())
+
+            planRow
+
+            NavigationLink {
+                ConnectedAccountsView()
+            } label: {
+                WiqoRow(systemImage: "link", title: "Bağlı hesaplar", subtitle: "Google, Notion", showsDivider: false)
+            }
+            .buttonStyle(WiqoRowButtonStyle())
         }
-        .buttonStyle(.plain)
     }
 
     /// Current plan and today's usage, straight from the backend (`GET /billing/subscription`) -
     /// the same numbers copilot.ts/creativeTools.ts actually enforce, so this can never promise
     /// more than the backend will allow. See docs/abonelik.md for the full billing design.
-    private var subscriptionCard: some View {
+    private var planRow: some View {
         let info = subscriptionStore.info
-        return RovaCard {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(info.label).font(.subheadline.weight(.semibold))
-                    Text("\(info.usage.messages.used)/\(info.usage.messages.limit) mesaj • \(info.usage.images.used)/\(info.usage.images.limit) görsel (bugün)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(info.label)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
                 Button(info.tier == "free" ? "Yükselt" : "Planlar") { showingPaywall = true }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(.wiqoPill(info.tier == "free" ? .accent : .secondary))
             }
+            WiqoUsageBar(title: "Bugünkü mesajlar", used: info.usage.messages.used, limit: info.usage.messages.limit)
+            WiqoUsageBar(title: "Bugünkü görseller", used: info.usage.images.used, limit: info.usage.images.limit)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 14)
         }
     }
 
-    /// Entry point into PCSettingsView - the same screen the chat toolbar's connection icon
-    /// opens, so there's exactly one PC-control surface reachable two ways instead of two.
-    private var pcSettingsCard: some View {
-        Button { showingPCSettings = true } label: {
-            RovaCard {
-                HStack(spacing: 14) {
-                    Image(systemName: "laptopcomputer")
-                        .font(.title2)
-                        .foregroundStyle(.tint)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("PC ayarları").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                        Text(model.isPaired ? "Bağlantı, kilit/uyku, ses ve daha fazlası" : "PC ekle ve kontrol et")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// App Store Connect's Support URL is required to actually resolve to something useful, and
-    /// Guideline 5.1.1 expects the same legal documents referenced at signup/purchase to also be
-    /// reachable from within the app proper - not just at the point of purchase.
-    private var legalCard: some View {
-        RovaCard {
-            Text("Yasal").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-            Link(destination: WiqoWebsite.privacyPolicyURL) {
-                settingsRow(title: "Gizlilik Politikası", systemImage: "hand.raised")
-            }
-            Link(destination: WiqoWebsite.termsOfServiceURL) {
-                settingsRow(title: "Kullanım Şartları", systemImage: "doc.text")
-            }
-            Link(destination: WiqoWebsite.supportURL) {
-                settingsRow(title: "Destek", systemImage: "questionmark.circle")
-            }
-        }
-    }
-
-    private var accountCard: some View {
-        RovaCard {
-            Text("Hesap").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-            Button(role: .destructive) {
-                showingSignOutConfirmation = true
-            } label: {
-                settingsRow(title: "Wiqo hesabından çıkış", systemImage: "rectangle.portrait.and.arrow.right", isDestructive: true)
-            }
-        }
-        .confirmationDialog("Wiqo hesabından çıkmak istediğine emin misin?", isPresented: $showingSignOutConfirmation, titleVisibility: .visible) {
-            Button("Çıkış yap", role: .destructive) { authSession.signOut(); dismiss() }
-            Button("Vazgeç", role: .cancel) { }
-        }
-    }
+    // MARK: Tasks and automations
 
     private var pendingTasks: [RovaBackendClient.RovaTask] {
         tasks.filter { $0.status == "pending" }
@@ -860,53 +770,149 @@ struct SettingsView: View {
         automations.filter(\.isActive)
     }
 
-    private var tasksAutomationsCard: some View {
-        RovaCard {
+    private var tasksAutomationsSection: some View {
+        WiqoSettingsGroup(title: "Görevler ve otomasyonlar") {
             if let taskAutomationError {
-                Text(taskAutomationError).font(.footnote).foregroundStyle(.red)
+                Text(taskAutomationError)
+                    .font(.footnote)
+                    .foregroundStyle(WiqoTheme.red)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if !pendingTasks.isEmpty {
-                Text("Görevler").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                ForEach(pendingTasks) { task in
-                    HStack {
-                        Image(systemName: "circle").foregroundStyle(.secondary)
-                        Text(task.title).font(.subheadline)
-                        Spacer()
+            ForEach(pendingTasks) { task in
+                WiqoRow(
+                    systemImage: "circle",
+                    tint: .secondary,
+                    title: task.title,
+                    showsDivider: !activeAutomations.isEmpty || task.id != pendingTasks.last?.id
+                ) { EmptyView() }
+            }
+            ForEach(activeAutomations) { automation in
+                HStack(spacing: 0) {
+                    NavigationLink {
+                        AutomationDetailView(automation: automation)
+                    } label: {
+                        WiqoRow(
+                            systemImage: "clock.arrow.circlepath",
+                            title: automation.prompt,
+                            subtitle: automation.cron,
+                            showsDivider: false
+                        ) { EmptyView() }
                     }
+                    .buttonStyle(WiqoRowButtonStyle())
+                    Button {
+                        Task { await cancel(automation) }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Otomasyonu iptal et")
                 }
-            }
-            if !activeAutomations.isEmpty {
-                if !pendingTasks.isEmpty { Divider() }
-                Text("Otomasyonlar").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                ForEach(activeAutomations) { automation in
-                    HStack(alignment: .top) {
-                        NavigationLink {
-                            AutomationDetailView(automation: automation)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(automation.prompt).font(.subheadline).foregroundStyle(.primary)
-                                Text(automation.cron).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        Spacer()
-                        Button {
-                            Task {
-                                do {
-                                    try await RovaBackendClient.cancelAutomation(id: automation.id)
-                                    await loadTasksAndAutomations()
-                                } catch {
-                                    taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Otomasyon iptal edilemedi."
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "xmark.circle").foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.borderless)
+                .overlay(alignment: .bottom) {
+                    if automation.id != activeAutomations.last?.id {
+                        Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 56)
                     }
                 }
             }
         }
+    }
+
+    private func cancel(_ automation: RovaBackendClient.RovaAutomation) async {
+        do {
+            try await RovaBackendClient.cancelAutomation(id: automation.id)
+            await loadTasksAndAutomations()
+            WiqoToastCenter.shared.show("Otomasyon iptal edildi", kind: .success)
+        } catch {
+            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Otomasyon iptal edilemedi."
+        }
+    }
+
+    // MARK: Invite
+
+    /// The whole point is that Wiqo spreads through people who already use it: a founding-member
+    /// badge for whoever got here early, and a code to hand a friend that credits both sides a
+    /// Pro bonus the moment it's redeemed (see rova-backend's grantReferralBonus).
+    private var inviteSection: some View {
+        WiqoSettingsGroup(title: "Arkadaşını davet et") {
+            if accountInfo?.isFoundingMember == true {
+                WiqoRow(
+                    systemImage: "seal.fill",
+                    tint: .yellow,
+                    title: "Kurucu üye",
+                    showsDivider: firstUnusedInviteCode != nil
+                ) { EmptyView() }
+            }
+            if let code = firstUnusedInviteCode {
+                WiqoRow(
+                    systemImage: "gift.fill",
+                    title: code,
+                    subtitle: "Katılırsa ikiniz de 14 gün Pro kazanırsınız.",
+                    showsDivider: false
+                ) {
+                    ShareLink(item: "Wiqo'yu deniyorum, davet kodumla katıl ve ikimiz de Pro kazanalım: \(code)") {
+                        Image(systemName: "square.and.arrow.up")
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Legal and account
+
+    /// App Store Connect's Support URL is required to actually resolve to something useful, and
+    /// Guideline 5.1.1 expects the same legal documents referenced at signup/purchase to also be
+    /// reachable from within the app proper - not just at the point of purchase.
+    private var legalSection: some View {
+        WiqoSettingsGroup(title: "Yasal ve destek") {
+            legalRow("Gizlilik Politikası", systemImage: "hand.raised", url: WiqoWebsite.privacyPolicyURL)
+            legalRow("Kullanım Şartları", systemImage: "doc.text", url: WiqoWebsite.termsOfServiceURL)
+            legalRow("Destek", systemImage: "questionmark.circle", url: WiqoWebsite.supportURL, showsDivider: false)
+        }
+    }
+
+    private func legalRow(_ title: String, systemImage: String, url: URL, showsDivider: Bool = true) -> some View {
+        Button { openURL(url) } label: {
+            WiqoRow(systemImage: systemImage, title: title, showsDivider: showsDivider) {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(WiqoTheme.ink3)
+            }
+        }
+        .buttonStyle(WiqoRowButtonStyle())
+    }
+
+    private var signOutSection: some View {
+        WiqoSettingsGroup {
+            Button(role: .destructive) {
+                showingSignOutConfirmation = true
+            } label: {
+                WiqoRow(systemImage: "rectangle.portrait.and.arrow.right", title: "Çıkış yap", isDestructive: true, showsDivider: false) {
+                    EmptyView()
+                }
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+        }
+        .confirmationDialog("Wiqo hesabından çıkmak istediğine emin misin?", isPresented: $showingSignOutConfirmation, titleVisibility: .visible) {
+            Button("Çıkış yap", role: .destructive) { authSession.signOut(); dismiss() }
+            Button("Vazgeç", role: .cancel) { }
+        }
+    }
+
+    private var versionFooter: some View {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "-"
+        let build = info?["CFBundleVersion"] as? String ?? "-"
+        return Text("Wiqo \(version) (\(build))")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 8)
     }
 
     private func loadTasksAndAutomations() async {

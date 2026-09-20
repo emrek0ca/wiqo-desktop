@@ -89,33 +89,26 @@ struct AutomationTemplatesView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 10) {
-                    ForEach(automationTemplates) { template in
-                        Button {
-                            onSelect(template.prompt)
-                        } label: {
-                            RovaCard {
-                                HStack(spacing: 14) {
-                                    Image(systemName: template.icon)
-                                        .font(.title3)
-                                        .foregroundStyle(RovaDesign.ink)
-                                        .frame(width: 36, height: 36)
-                                        .background(RovaDesign.ink.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(template.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                                        Text(template.detail).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer(minLength: 8)
-                                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
-                                }
+                VStack(alignment: .leading, spacing: 14) {
+                    WiqoSettingsGroup {
+                        ForEach(automationTemplates) { template in
+                            Button {
+                                onSelect(template.prompt)
+                            } label: {
+                                WiqoRow(
+                                    systemImage: template.icon,
+                                    title: template.title,
+                                    subtitle: template.detail,
+                                    showsDivider: template.id != automationTemplates.last?.id
+                                )
                             }
+                            .buttonStyle(WiqoRowButtonStyle())
                         }
-                        .buttonStyle(.plain)
                     }
                     Text("Bir şablon seçince Wiqo'yla yeni bir sohbet açılır ve istek yazı kutusuna doldurulur - göndermeden önce saat, hedef PC vb. ayrıntıları dilediğin gibi değiştirebilirsin.")
-                        .font(.caption)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
-                        .padding(.top, 4)
+                        .padding(.horizontal, 6)
                 }
                 .padding(RovaDesign.screenPadding)
             }

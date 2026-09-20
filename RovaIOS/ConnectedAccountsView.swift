@@ -58,60 +58,61 @@ struct ConnectedAccountsView: View {
     }
 
     var body: some View {
-        List {
-            Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
                 Text("Wiqo'nun bu hesaplara erişimi yalnızca kendi kullanıcı hesabına özeldir; bağlantıyı istediğin an buradan kesebilirsin.")
-                    .font(.caption)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
-            Section {
-                ForEach(providers, id: \.id) { provider in
-                    row(for: provider)
+                    .padding(.horizontal, 6)
+
+                WiqoSettingsGroup {
+                    ForEach(providers, id: \.id) { provider in
+                        row(for: provider, isLast: provider.id == providers.last?.id)
+                    }
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(WiqoTheme.red)
+                        .padding(.horizontal, 6)
+                        .transition(.wiqoBlur)
                 }
             }
-            if let errorMessage {
-                Section {
-                    Text(errorMessage).font(.caption).foregroundStyle(.red)
-                }
-            }
+            .padding(RovaDesign.screenPadding)
+            .wiqoAnimation(WiqoMotion.slide(), value: errorMessage)
         }
+        .background(RovaDesign.canvas)
         .navigationTitle("Bağlı Hesaplar")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
     }
 
-    private func row(for provider: (id: String, name: String, icon: String, description: String)) -> some View {
+    private func row(for provider: (id: String, name: String, icon: String, description: String), isLast: Bool) -> some View {
         let connected = connection(for: provider.id)
-        return HStack(spacing: 12) {
-            Image(systemName: provider.icon)
-                .font(.title3)
-                .foregroundStyle(.tint)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(provider.name).font(.subheadline.weight(.medium))
-                Text(connected != nil ? (connected?.accountLabel ?? "Bağlı") : provider.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
+        return WiqoRow(
+            systemImage: provider.icon,
+            title: provider.name,
+            subtitle: connected != nil ? (connected?.accountLabel ?? "Bağlı") : provider.description,
+            showsDivider: !isLast
+        ) {
             if connectingProvider == provider.id {
-                ProgressView()
+                ProgressView().controlSize(.small)
+            } else if isLoading && connections.isEmpty {
+                WiqoSkeleton(width: 56, height: 28)
             } else if connected != nil {
-                Button("Kes", role: .destructive) {
+                Button("Kes") {
                     Task { await disconnect(provider.id) }
                 }
-                .font(.caption.weight(.medium))
-                .buttonStyle(.bordered)
+                .buttonStyle(.wiqoPill(.secondary))
             } else {
                 Button("Bağlan") {
                     Task { await connect(provider.id) }
                 }
-                .font(.caption.weight(.medium))
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.wiqoPill(.accent))
             }
         }
-        .padding(.vertical, 4)
     }
 
     private func load() async {
@@ -131,6 +132,7 @@ struct ConnectedAccountsView: View {
             let status = components?.queryItems?.first(where: { $0.name == "status" })?.value
             if status == "success" {
                 await load()
+                WiqoToastCenter.shared.show("Hesap bağlandı", kind: .success)
             } else {
                 let message = components?.queryItems?.first(where: { $0.name == "message" })?.value
                 errorMessage = message ?? "Bağlantı tamamlanamadı."
@@ -147,6 +149,7 @@ struct ConnectedAccountsView: View {
         do {
             try await RovaBackendClient.disconnectOAuth(provider: provider)
             connections.removeAll { $0.provider == provider }
+            WiqoToastCenter.shared.show("Bağlantı kesildi")
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "Bağlantı kesilemedi."
         }
