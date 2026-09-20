@@ -468,7 +468,7 @@ struct PairingView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                if model.isPairing { ProgressView("Eşleşiyor…") }
+                if model.isPairing { ProgressView("PC'yi bağlıyorum…") }
                 if let error = scanError ?? model.lastError {
                     Text(error).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center)
                 }
@@ -525,7 +525,7 @@ private struct PairingCelebrationView: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 48))
                 .foregroundStyle(.tint)
-            Text("Mac'in Bağlandı!")
+                    Text("Mac'in bağlandı!")
                 .font(.title2.weight(.bold))
             Text("Şimdi yanındaki birine telefonundan söyle:")
                 .foregroundStyle(.secondary)
@@ -1129,7 +1129,7 @@ struct PCSettingsView: View {
                         .foregroundStyle(.tint)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("PC Yetenekleri").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                        Text("Şu an neyin hazır, neyin izin beklediğini gör").font(.caption).foregroundStyle(.secondary)
+                        Text("PC'nde nelerin hazır olduğunu gör").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
@@ -1147,12 +1147,12 @@ struct PCSettingsView: View {
                     .foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("PC ekle").font(.subheadline.weight(.semibold))
-                    Text("Wiqo'nun PC'sini kontrol edebilmesi için QR kod ile eşleştir.")
+                    Text("PC'ni QR kodu okutarak bağla.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                Button("Ekle") { showingPairing = true }
+                Button("Bağla") { showingPairing = true }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }
@@ -1169,16 +1169,6 @@ struct PCSettingsView: View {
                     Text(model.deviceInfo?.displayName ?? "PC").font(.headline)
                     HStack(spacing: 6) {
                         Text(statusText).font(.subheadline).foregroundStyle(statusColor)
-                        if model.state == .connected {
-                            Image(systemName: model.connectionQuality.symbolName)
-                                .font(.caption2)
-                                .foregroundStyle(qualityColor)
-                            if let latency = model.lastPingLatencyMs {
-                                Text("\(model.connectionQuality.label) • \(latency) ms")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
                     }
                 }
                 Spacer()
@@ -1190,11 +1180,8 @@ struct PCSettingsView: View {
                     Image(systemName: "wifi.exclamationmark")
                         .foregroundStyle(.orange)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(model.isReconnecting ? "Bağlantıyı yeniden kuruyorum…" : "PC'ye ulaşılamıyor.")
+                        Text(model.isReconnecting ? "Bağlantıyı yeniden kuruyorum…" : model.userFacingConnectionError)
                             .font(.caption.weight(.medium))
-                        Text("PC'nin açık ve internette olduğundan emin ol.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
                     if !model.isReconnecting {
@@ -1503,15 +1490,6 @@ struct PCSettingsView: View {
 
     private var statusText: String {
         model.userFacingConnectionLabel
-    }
-
-    private var qualityColor: Color {
-        switch model.connectionQuality {
-        case .unknown: return .secondary
-        case .weak: return .red
-        case .good: return .orange
-        case .excellent: return .green
-        }
     }
 
     private var statusColor: Color {

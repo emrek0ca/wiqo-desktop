@@ -21,7 +21,7 @@ struct MacMenuView: View {
                 openWindow(id: RovaWindowID.pairingQR)
                 bringPairingWindowToFront()
             } label: {
-                Label("Eşleşme QR'ı", systemImage: "qrcode")
+                Label("Telefonu bağla", systemImage: "qrcode")
             }
             if let name = runtime.pairedDeviceName {
                 Label(name, systemImage: "iphone")
@@ -44,7 +44,7 @@ struct MacMenuView: View {
         for delay in [0.0, 0.1, 0.3, 0.6] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 NSApp.activate(ignoringOtherApps: true)
-                guard let window = NSApp.windows.first(where: { $0.title == "Wiqo eşleşme QR'ı" }) else { return }
+                guard let window = NSApp.windows.first(where: { $0.title == "Wiqo telefonu bağla" }) else { return }
                 window.level = .floating
                 window.orderFrontRegardless()
                 window.makeKey()
@@ -55,9 +55,9 @@ struct MacMenuView: View {
     private var connectionStatusText: String {
         if runtime.connectedDeviceID != nil { return "iPhone bağlı" }
         if runtime.pairedDeviceID != nil { return "iPhone bağlı değil" }
-        if runtime.serviceState == .running { return "Eşleşmeye hazır" }
-        if runtime.serviceState == .starting { return "Servis başlıyor…" }
-        return "Servis kullanılamıyor"
+        if runtime.serviceState == .running { return "Telefonunu bağlamaya hazır" }
+        if runtime.serviceState == .starting { return "Wiqo açılıyor…" }
+        return "PC’ye ulaşılamıyor"
     }
 
     private var connectionStatusIcon: String {
@@ -94,7 +94,7 @@ struct MacWelcomeView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     instructionRow(number: "1", text: "iPhone'da Wiqo'yu aç.")
-                    instructionRow(number: "2", text: "Sağdaki QR kodu telefondan tara.")
+                    instructionRow(number: "2", text: "Sağdaki kodu Wiqo'da tara.")
                     instructionRow(number: "3", text: "Bağlanınca ilk komutunu ver.")
                 }
                 .padding(.top, 4)
@@ -139,15 +139,15 @@ struct PairingQRView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Text("iPhone'u eşleştir").font(.title3.weight(.semibold))
+            Text("Telefonunu bağla").font(.title3.weight(.semibold))
             if let relayPayload = runtime.relayPairingPayload, let value = try? RovaQRCodec.encode(relayPayload), let image = makeQRCode(value) {
                 Image(nsImage: image)
                     .interpolation(.none)
                     .resizable()
                     .scaledToFit()
                     .frame(width: 260, height: 260)
-                Text("İnternet üzerinden güvenli eşleşme").font(.subheadline.weight(.semibold))
-                Text("QR kodu telefondan tara. Kod 10 dakika geçerli.").font(.caption).foregroundStyle(.secondary)
+                Text("İnternet üzerinden güvenli bağlantı").font(.subheadline.weight(.semibold))
+                Text("Bu kodu Wiqo uygulamasında tara. Kod 10 dakika geçerli.").font(.caption).foregroundStyle(.secondary)
             } else if let payload = runtime.pairingPayload, let value = try? RovaQRCodec.encode(payload), let image = makeQRCode(value) {
                 Image(nsImage: image)
                     .interpolation(.none)
@@ -155,9 +155,9 @@ struct PairingQRView: View {
                     .scaledToFit()
                     .frame(width: 260, height: 260)
                 Text("Kod: \(payload.pairingCode)").font(.title2.monospacedDigit())
-                Text("Yerel ağ eşleşmesi · 5 dakika geçerli.").font(.caption).foregroundStyle(.secondary)
+                Text("Yerel ağ bağlantısı · 5 dakika geçerli.").font(.caption).foregroundStyle(.secondary)
             } else {
-                ProgressView("Güvenli bağlantı hazırlanıyor…")
+                ProgressView("Güvenli bağlantı kuruluyor…")
             }
         }
         .padding(24)
@@ -169,7 +169,7 @@ struct PairingQRView: View {
             runtime.regeneratePairing()
             DispatchQueue.main.async {
                 NSApp.activate(ignoringOtherApps: true)
-                guard let window = NSApp.windows.first(where: { $0.title == "Wiqo eşleşme QR'ı" }) else { return }
+                guard let window = NSApp.windows.first(where: { $0.title == "Wiqo telefonu bağla" }) else { return }
                 window.level = .floating
                 window.orderFrontRegardless()
                 window.makeKey()
@@ -231,17 +231,17 @@ struct MacSettingsView: View {
 
     private var devicesTab: some View {
         Form {
-            Section("Eşleşmiş cihaz") {
+            Section("Bağlı telefon") {
                 if let name = runtime.pairedDeviceName {
                     LabeledContent("iPhone", value: name)
                     LabeledContent("Bağlantı", value: runtime.connectedDeviceID == nil ? "Bağlı değil" : "Bağlı")
                     Button("Cihaz yetkisini kaldır", role: .destructive) { runtime.revokeCurrentDevice() }
                 } else {
-                    Text("Eşleşmiş cihaz yok").foregroundStyle(.secondary)
+                    Text("Bağlı telefon yok").foregroundStyle(.secondary)
                 }
             }
-            Section("Eşleşme") {
-                Button("Yeni QR oluştur") { runtime.regeneratePairing() }
+            Section("Bağlantı") {
+                Button("Yeni bağlantı kodu oluştur") { runtime.regeneratePairing() }
                 Button("Tüm cihazların yetkisini kaldır", role: .destructive) { runtime.revokeAllDevices() }
             }
         }

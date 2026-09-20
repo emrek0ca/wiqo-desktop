@@ -21,7 +21,7 @@ struct RovaMacApp: App {
         MenuBarExtra("Wiqo", systemImage: "arrow.triangle.2.circlepath") {
             MacMenuView(runtime: runtime)
         }
-        Window("Wiqo eşleşme QR'ı", id: RovaWindowID.pairingQR) {
+        Window("Wiqo telefonu bağla", id: RovaWindowID.pairingQR) {
             PairingQRView(runtime: runtime)
         }
         .windowResizability(.contentSize)

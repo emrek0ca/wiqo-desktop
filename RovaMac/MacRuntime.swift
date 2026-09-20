@@ -177,7 +177,7 @@ final class MacRuntime: ObservableObject {
     func warmUpAutomationPermissions() async {
         guard !isWarmingAutomationPermissions else { return }
         isWarmingAutomationPermissions = true
-        permissionActionMessage = "İzin istekleri hazırlanıyor…"
+        permissionActionMessage = "Gerekli izinleri kontrol ediyorum…"
         let accessibilityGranted = MacSystem.requestAccessibilityAccess()
         let screenRecordingGranted = MacSystem.requestScreenRecordingAccess()
         let results = await Task.detached(priority: .userInitiated) {
@@ -452,7 +452,7 @@ final class MacRuntime: ObservableObject {
             guard isPairingCodeValid(request.code) else {
                 sessionFailedPairingAttempts[sessionID] = attempts + 1
                 authLogger.warning("Pairing rejected: expired or invalid code")
-                session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "PAIRING_EXPIRED", message: "Eşleşme kodunun süresi doldu veya geçersiz."))))
+                session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "PAIRING_EXPIRED", message: "Bağlantı kodu geçersiz veya süresi doldu."))))
                 if attempts + 1 >= Self.maxPairingAttemptsPerSession {
                     session.close()
                 }
@@ -479,7 +479,7 @@ final class MacRuntime: ObservableObject {
                 authLogger.info("Pairing accepted")
             } catch {
                 errorLogger.error("Pairing failed")
-                session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "PAIRING_FAILED", message: "Eşleşme tamamlanamadı."))))
+                session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "PAIRING_FAILED", message: "Bağlantı kurulamadı."))))
             }
         case .authenticate(let request):
             guard let token, let pairedDeviceID,

@@ -46,7 +46,7 @@ public sealed partial class MainWindow : Window
         catch
         {
             PairingBorder.Visibility = Visibility.Collapsed;
-            StatusText.Text = "Eşleştirme kodu hazırlanamadı.";
+            StatusText.Text = "Bağlantı kodu hazırlanamadı.";
         }
     }
 }
@@ -73,7 +73,7 @@ internal sealed class WindowsRuntime
         if (started) return;
         started = true;
         lifetime = new CancellationTokenSource();
-        publishStatus("Eşleşmeye hazır");
+        publishStatus("Telefonunu bağlamaya hazır");
         _ = StartStoredConnectionAsync(lifetime.Token);
     }
 
@@ -118,7 +118,7 @@ internal sealed class WindowsRuntime
             await StartRelayAsync(backendToken, pairingToken, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
-        catch { publishStatus("Eşleşme bilgileri okunamadı. Yeniden eşleştirin."); }
+        catch { publishStatus("Bağlantı bilgileri okunamadı. Telefonu yeniden bağlayın."); }
     }
 
     private async Task StartPairingAsync(CancellationToken cancellationToken)
@@ -134,10 +134,10 @@ internal sealed class WindowsRuntime
             }, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             var session = await response.Content.ReadFromJsonAsync<PairingSessionResponse>(cancellationToken: cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Eşleşme oturumu yanıtı geçersiz.");
+                ?? throw new InvalidOperationException("Bağlantı oturumu yanıtı geçersiz.");
             var value = $"rova-relay:v1:{Base64Url(JsonSerializer.SerializeToUtf8Bytes(new { version = 1, sessionID = session.SessionId, secret = session.Secret, expiresAt = session.ExpiresAt }))}";
             publishPairingCode(value);
-            publishStatus("Telefonla eşleştirmeye hazır");
+            publishStatus("Telefonunu bağlamaya hazır");
 
             while (!cancellationToken.IsCancellationRequested && DateTimeOffset.UtcNow < session.ExpiresAt)
             {
@@ -160,13 +160,13 @@ internal sealed class WindowsRuntime
                 }
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
             }
-            if (!cancellationToken.IsCancellationRequested) publishStatus("Eşleştirme kodunun süresi doldu.");
+            if (!cancellationToken.IsCancellationRequested) publishStatus("Bağlantı kodunun süresi doldu.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch
         {
             publishPairingCode(null);
-            publishStatus("Eşleştirme hazırlanamadı. İnternet bağlantısını kontrol edin.");
+            publishStatus("Bağlantı hazırlanamadı. İnternet bağlantısını kontrol edin.");
         }
     }
 
@@ -203,8 +203,8 @@ internal sealed class WindowsRuntime
         var ledgerPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Wiqo", "command-ledger.json");
         var engine = new WindowsCommandEngine(new WindowsOperationAdapter(), new CommandLedger(ledgerPath));
         relay = new BackendRelayConnection(new Uri("wss://api.wiqoai.com/device/socket"), engine, info, pairingToken, connected => publishStatus(connected ? "İnternet üzerinden bağlı" : "Yeniden bağlanıyor…"));
-        publishStatus("İnternet üzerinden bağlanıyor…");
-        connectionTask = relay.RunAsync(token, cancellationToken).ContinueWith(_ => publishStatus("Yeniden bağlanıyor…"), TaskScheduler.Default);
+        publishStatus("Bağlantı kuruluyor…");
+        connectionTask = relay.RunAsync(token, cancellationToken).ContinueWith(_ => publishStatus("Bağlantıyı yeniden kuruyorum…"), TaskScheduler.Default);
         return connectionTask;
     }
 

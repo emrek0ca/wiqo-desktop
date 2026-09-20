@@ -23,19 +23,6 @@ private enum LiveExecutionStatus: String {
     case denied
     case blocked
 
-    var title: String {
-        switch self {
-        case .ready: return "Hazır"
-        case .awaitingConfirmation: return "Onay bekliyor"
-        case .dispatching: return "Sırada"
-        case .running: return "Çalışıyor…"
-        case .succeeded: return "Tamamlandı"
-        case .failed: return "Başarısız"
-        case .denied: return "Reddedildi"
-        case .blocked: return "Bekletildi"
-        }
-    }
-
     var systemImage: String {
         switch self {
         case .ready: return "circle"
@@ -262,7 +249,7 @@ private struct CodeExecutionCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 } label: {
-                    Text("Çıktı • çıkış kodu \(run.exitCode) • \(run.durationMs) ms")
+                    Text("Çıktıyı gör")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
@@ -292,15 +279,15 @@ private struct CodeExecutionCard: View {
     @ViewBuilder
     private var statusBadge: some View {
         if isPending {
-            Label("Onay bekliyor", systemImage: "clock.fill")
+            Text("Bunu çalıştırmam için onayını bekliyorum.")
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.orange)
         } else if let run {
-            Label(run.exitCode == 0 ? "Başarılı" : "Başarısız", systemImage: run.exitCode == 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
+            Text(run.exitCode == 0 ? "Kod çalıştı." : "Kodu çalıştırırken bir sorun çıktı.")
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(run.exitCode == 0 ? .green : .red)
         } else if failureMessage != nil {
-            Label("Başarısız", systemImage: "xmark.circle.fill")
+            Text("Kodu çalıştıramadım.")
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.red)
         }
@@ -910,25 +897,24 @@ struct CopilotView: View {
             if hasExecution {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
-                        Image(systemName: "checklist")
+                        Image(systemName: executionNarrationIcon(bubble, deviceSteps: deviceSteps, liveOnlyUpdates: liveOnlyUpdates))
                             .foregroundStyle(.secondary)
-                        Text(executionWidgetTitle(bubble, deviceSteps: deviceSteps, liveOnlyUpdates: liveOnlyUpdates))
-                            .font(.subheadline.weight(.semibold))
+                        Text(executionNarration(bubble, deviceSteps: deviceSteps, liveOnlyUpdates: liveOnlyUpdates))
+                            .font(.subheadline)
                         Spacer(minLength: 8)
-                        executionWidgetStatus(bubble, deviceSteps: deviceSteps)
                     }
                     .padding(.bottom, 8)
 
-                    ForEach(Array(deviceSteps.enumerated()), id: \.element.id) { index, step in
-                        deviceStepRow(index: index + 1, step: step, bubble: bubble)
-                        if index < deviceSteps.count - 1 || !bubble.backendConfirmations.isEmpty {
+                    ForEach(deviceSteps) { step in
+                        deviceStepRow(step: step, bubble: bubble)
+                        if step.id != deviceSteps.last?.id || !bubble.backendConfirmations.isEmpty {
                             Divider().padding(.vertical, 6)
                         }
                     }
 
-                    ForEach(Array(liveOnlyUpdates.enumerated()), id: \.element.id) { index, update in
-                        liveExecutionStepRow(index: deviceSteps.count + index + 1, update: update)
-                        if index < liveOnlyUpdates.count - 1 || !bubble.backendConfirmations.isEmpty {
+                    ForEach(liveOnlyUpdates, id: \.id) { update in
+                        liveExecutionStepRow(update: update)
+                        if update.id != liveOnlyUpdates.last?.id || !bubble.backendConfirmations.isEmpty {
                             Divider().padding(.vertical, 6)
                         }
                     }
@@ -946,14 +932,52 @@ struct CopilotView: View {
         }
     }
 
-    private func executionWidgetTitle(
+    private func executionNarrationIcon(
         _ bubble: ChatBubble,
         deviceSteps: [PlannedCommand],
         liveOnlyUpdates: [RovaBackendClient.ExecutionStepUpdate]
     ) -> String {
-        if !deviceSteps.isEmpty && (!bubble.backendConfirmations.isEmpty || !liveOnlyUpdates.isEmpty) { return "İşlem planı" }
-        if !bubble.backendConfirmations.isEmpty || liveOnlyUpdates.contains(where: { $0.kind == "backend" }) { return "Hesap işlemi" }
-        return "Adımlar"
+        if bubble.needsConfirmation || bubble.backendConfirmations.contains(where: { $0.status == .pending }) {
+            return "hand.raised.fill"
+        }
+        if bubble.failedSteps.isEmpty,
+           !bubble.backendConfirmations.contains(where: { $0.status == .failed || $0.status == .cancelled }),
+           !liveOnlyUpdates.contains(where: { $0.status == LiveExecutionStatus.failed.rawValue || $0.status == LiveExecutionStatus.denied.rawValue }) {
+            let hasWork = !deviceSteps.isEmpty || !liveOnlyUpdates.isEmpty || !bubble.backendConfirmations.isEmpty
+            if hasWork { return "sparkles" }
+        }
+        return "arrow.triangle.2.circlepath"
+    }
+
+    private func executionNarration(
+        _ bubble: ChatBubble,
+        deviceSteps: [PlannedCommand],
+        liveOnlyUpdates: [RovaBackendClient.ExecutionStepUpdate]
+    ) -> String {
+        let pendingConfirmation = bubble.needsConfirmation
+            || bubble.backendConfirmations.contains { $0.status == .pending }
+            || liveOnlyUpdates.contains { $0.status == LiveExecutionStatus.awaitingConfirmation.rawValue }
+        if pendingConfirmation { return "Bunu yapabilmem için senden onay almam gerekiyor." }
+
+        let failed = !bubble.failedSteps.isEmpty
+            || bubble.backendConfirmations.contains { $0.status == .failed || $0.status == .cancelled }
+            || liveOnlyUpdates.contains { $0.status == LiveExecutionStatus.failed.rawValue || $0.status == LiveExecutionStatus.denied.rawValue }
+        if failed { return "İşlemi tamamlayamadım; ayrıntıyı açabilirsin." }
+
+        let processing = !bubble.inFlightStepIDs.isEmpty
+            || bubble.backendConfirmations.contains { $0.status == .processing }
+            || liveOnlyUpdates.contains { $0.status == LiveExecutionStatus.dispatching.rawValue || $0.status == LiveExecutionStatus.running.rawValue }
+        if processing {
+            let summary = deviceSteps.first(where: { bubble.inFlightStepIDs.contains($0.id) })?.summary
+                ?? liveOnlyUpdates.first(where: { $0.status == LiveExecutionStatus.dispatching.rawValue || $0.status == LiveExecutionStatus.running.rawValue })?.summary
+            return summary.map { "Şimdi şunu yapıyorum: \($0)" } ?? "İstediklerini sırayla yapıyorum."
+        }
+
+        let localDone = deviceSteps.allSatisfy { bubble.executedStepIDs.contains($0.id) }
+        let backendDone = bubble.backendConfirmations.allSatisfy { $0.status == .completed }
+        let liveDone = liveOnlyUpdates.allSatisfy { $0.status == LiveExecutionStatus.succeeded.rawValue }
+        if localDone && backendDone && liveDone { return "İstediklerini yaptım." }
+        return "İstediklerini sırayla yapıyorum."
     }
 
     private func standaloneExecutionUpdates(
@@ -976,53 +1000,6 @@ struct CopilotView: View {
             }
     }
 
-    private func executionWidgetStatus(_ bubble: ChatBubble, deviceSteps: [PlannedCommand]) -> some View {
-        let pendingLocal = deviceSteps.contains { step in
-            !bubble.executedStepIDs.contains(step.id)
-                && (step.isDestructive || step.requiresUserPresence)
-        }
-        let pendingBackend = bubble.backendConfirmations.contains { $0.status == .pending }
-        let livePending = bubble.executionUpdates.values.contains { update in
-            update.status == LiveExecutionStatus.awaitingConfirmation.rawValue || update.status == LiveExecutionStatus.blocked.rawValue
-        }
-        let liveReady = bubble.executionUpdates.values.contains { $0.status == LiveExecutionStatus.ready.rawValue }
-        let processing = !bubble.inFlightStepIDs.isEmpty
-            || bubble.backendConfirmations.contains { $0.status == .processing }
-            || bubble.executionUpdates.values.contains { update in
-                update.status == LiveExecutionStatus.dispatching.rawValue || update.status == LiveExecutionStatus.running.rawValue
-            }
-        let failed = !bubble.failedSteps.isEmpty
-            || bubble.backendConfirmations.contains { $0.status == .failed || $0.status == .cancelled }
-            || bubble.executionUpdates.values.contains { update in
-                update.status == LiveExecutionStatus.failed.rawValue || update.status == LiveExecutionStatus.denied.rawValue
-            }
-        let localDone = deviceSteps.allSatisfy { bubble.executedStepIDs.contains($0.id) }
-        let backendDone = bubble.backendConfirmations.allSatisfy { $0.status == .completed }
-
-        let title: String
-        let color: Color
-        if pendingLocal || pendingBackend || livePending || bubble.needsConfirmation {
-            title = "Onay bekliyor"
-            color = .orange
-        } else if processing {
-            title = "Çalışıyor…"
-            color = .secondary
-        } else if failed {
-            title = "Başarısız"
-            color = .red
-        } else if localDone && backendDone && !liveReady {
-            title = "Tamamlandı"
-            color = .green
-        } else {
-            title = "Hazırlanıyor…"
-            color = .secondary
-        }
-        return Text(title)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(color)
-            .lineLimit(1)
-    }
-
     private func backendConfirmationRow(_ row: BackendConfirmationRow, bubbleID: UUID) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
@@ -1037,7 +1014,6 @@ struct CopilotView: View {
                         .lineLimit(2)
                 }
                 Spacer(minLength: 8)
-                backendConfirmationStatus(row.status)
             }
 
             if !row.confirmation.details.isEmpty {
@@ -1072,6 +1048,10 @@ struct CopilotView: View {
                     .foregroundStyle(row.status == .completed ? Color.secondary : Color.red)
                     .lineLimit(3)
                     .textSelection(.enabled)
+            } else if let statusMessage = backendConfirmationMessage(row.status) {
+                Text(statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(row.status == .failed ? .red : .secondary)
             }
 
             if let resultDetail = row.resultDetail, !resultDetail.isEmpty {
@@ -1111,37 +1091,19 @@ struct CopilotView: View {
         }
     }
 
-    private func backendConfirmationStatus(_ status: BackendConfirmationStatus) -> some View {
-        let title: String
-        let icon: String
-        let color: Color
+    private func backendConfirmationMessage(_ status: BackendConfirmationStatus) -> String? {
         switch status {
         case .pending:
-            title = "Bekliyor"
-            icon = "clock"
-            color = .orange
+            return "Bunu yapabilmem için senden onay almam gerekiyor."
         case .processing:
-            title = "İşleniyor…"
-            icon = "arrow.triangle.2.circlepath"
-            color = .secondary
+            return "Onayını aldım, şimdi yapıyorum."
         case .completed:
-            title = "Tamamlandı"
-            icon = "checkmark.circle.fill"
-            color = .green
+            return nil
         case .cancelled:
-            title = "Reddedildi"
-            icon = "xmark.circle"
-            color = .secondary
+            return "İşlemi yapmadım."
         case .failed:
-            title = "Başarısız"
-            icon = "xmark.circle.fill"
-            color = .red
+            return "İşlem gerçekleşmedi."
         }
-        return Label(title, systemImage: icon)
-            .foregroundStyle(color)
-            .font(.caption2.weight(.medium))
-            .lineLimit(1)
-            .multilineTextAlignment(.trailing)
     }
 
     /// One collapsible card per `.executeCode` step in this bubble - shown both while a step is
@@ -1166,13 +1128,12 @@ struct CopilotView: View {
         return payload
     }
 
-    private func deviceStepRow(index: Int, step: PlannedCommand, bubble: ChatBubble) -> some View {
+    private func deviceStepRow(step: PlannedCommand, bubble: ChatBubble) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Text("\(index)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, height: 22)
-                .background(Color(.tertiarySystemFill), in: Circle())
+            Image(systemName: "circle.fill")
+                .font(.system(size: 6))
+                .foregroundStyle(.tertiary)
+                .frame(width: 16)
             VStack(alignment: .leading, spacing: 4) {
                 Text(step.summary)
                     .font(.subheadline)
@@ -1183,13 +1144,12 @@ struct CopilotView: View {
         }
     }
 
-    private func liveExecutionStepRow(index: Int, update: RovaBackendClient.ExecutionStepUpdate) -> some View {
+    private func liveExecutionStepRow(update: RovaBackendClient.ExecutionStepUpdate) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Text("\(index)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, height: 22)
-                .background(Color(.tertiarySystemFill), in: Circle())
+            Image(systemName: "circle.fill")
+                .font(.system(size: 6))
+                .foregroundStyle(.tertiary)
+                .frame(width: 16)
             VStack(alignment: .leading, spacing: 4) {
                 Text(update.summary)
                     .font(.subheadline)
@@ -1205,12 +1165,10 @@ struct CopilotView: View {
     @ViewBuilder
     private func deviceStepStatus(step: PlannedCommand, bubble: ChatBubble) -> some View {
         if let result = bubble.stepResults[step.id] {
-            let title = result.status == .completed ? "Tamamlandı" : result.status == .denied ? "Reddedildi" : result.status == .unknown ? "Bilinmiyor" : "Başarısız"
-            let color: Color = result.status == .completed ? .green : result.status == .unknown ? .orange : .red
             VStack(alignment: .leading, spacing: 2) {
-                Label(title, systemImage: result.status == .completed ? "checkmark.circle.fill" : result.status == .unknown ? "questionmark.circle.fill" : "xmark.circle.fill")
+                Text(localResultMessage(result))
                     .font(.caption)
-                    .foregroundStyle(color)
+                    .foregroundStyle(result.status == .completed ? Color.secondary : result.status == .unknown ? Color.orange : Color.red)
                 if let error = result.error {
                     DisclosureGroup("Ayrıntı") {
                         VStack(alignment: .leading, spacing: 3) {
@@ -1239,7 +1197,7 @@ struct CopilotView: View {
                 }
             }
         } else if let failure = bubble.failedSteps[step.id] {
-            Label("Başarısız", systemImage: "xmark.circle.fill")
+            Text("Bunu tamamlayamadım.")
                 .font(.caption)
                 .foregroundStyle(.red)
                 .accessibilityValue(failure)
@@ -1261,8 +1219,30 @@ struct CopilotView: View {
         }
     }
 
+    @ViewBuilder
     private func liveExecutionStatus(_ status: LiveExecutionStatus, message: String?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        if status != .ready {
+            liveExecutionStatusContent(status, message: message)
+        }
+    }
+
+    private func liveExecutionStatusContent(_ status: LiveExecutionStatus, message: String?) -> some View {
+        let text: String
+        switch status {
+        case .awaitingConfirmation:
+            text = "Bunu yapabilmem için senden onay almam gerekiyor."
+        case .dispatching, .running:
+            text = "Şimdi yapıyorum…"
+        case .succeeded:
+            text = "Oldu."
+        case .failed, .denied:
+            text = friendlyExecutionFailure(status, message: message)
+        case .blocked:
+            text = "Önceki işlemi tamamlayınca buna geçeceğim."
+        case .ready:
+            text = ""
+        }
+        return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
                 if status == .dispatching || status == .running {
                     ProgressView().controlSize(.mini)
@@ -1270,7 +1250,7 @@ struct CopilotView: View {
                     Image(systemName: status.systemImage)
                         .imageScale(.small)
                 }
-                Text(status.title)
+                Text(text)
             }
             .font(.caption)
             .foregroundStyle(status.color)
@@ -1286,6 +1266,38 @@ struct CopilotView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private func friendlyExecutionFailure(_ status: LiveExecutionStatus, message: String?) -> String {
+        if status == .denied { return "Bu işlemi yapmadım." }
+        let normalized = (message ?? "").lowercased()
+        if normalized.contains("offline")
+            || normalized.contains("device_offline")
+            || normalized.contains("pc'ye ulaşılamıyor")
+            || normalized.contains("pc’ye ulaşılamıyor") {
+            return "PC’ye şu anda ulaşamıyorum. Açık ve internete bağlı olduğundan emin olun."
+        }
+        if normalized.contains("permission")
+            || normalized.contains("presence")
+            || normalized.contains("authority") {
+            return "Bu işlem için gerekli izni alamadım."
+        }
+        return "Bunu tamamlayamadım."
+    }
+
+    private func localResultMessage(_ result: CommandResult) -> String {
+        switch result.status {
+        case .pending, .running:
+            return "Şimdi yapıyorum…"
+        case .completed:
+            return result.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Oldu." : result.message
+        case .unknown:
+            return "İşlemin sonucu netleşmedi; tekrar çalıştırmadım."
+        case .denied:
+            return "Bu işlemi yapmadım."
+        case .failed:
+            return "Bunu tamamlayamadım."
         }
     }
 
@@ -1322,7 +1334,7 @@ struct CopilotView: View {
 
         var reply = ChatBubble(
             role: .assistant,
-            text: liveReply.displayed.isEmpty ? "İşlem hazırlanıyor…" : liveReply.displayed
+            text: liveReply.displayed.isEmpty ? "Bakıyorum…" : liveReply.displayed
         )
         reply.executionUpdates[update.id] = update
         bubbles.append(reply)
@@ -1354,12 +1366,12 @@ struct CopilotView: View {
             row.resultDetail = nil
         case LiveExecutionStatus.denied.rawValue:
             row.status = .cancelled
-            row.resultText = update.message
-            row.resultDetail = nil
+            row.resultText = friendlyExecutionFailure(.denied, message: update.message)
+            row.resultDetail = update.message
         case LiveExecutionStatus.failed.rawValue, LiveExecutionStatus.blocked.rawValue:
             row.status = .failed
-            row.resultText = update.message
-            row.resultDetail = nil
+            row.resultText = friendlyExecutionFailure(.failed, message: update.message)
+            row.resultDetail = update.message
         default:
             break
         }
@@ -1392,7 +1404,7 @@ struct CopilotView: View {
 
         var reply = ChatBubble(
             role: .assistant,
-            text: liveReply.displayed.isEmpty ? "…" : liveReply.displayed,
+            text: liveReply.displayed.isEmpty ? "Bunu yapmak için onayını almam gerekiyor." : liveReply.displayed,
             steps: steps,
             backendConfirmations: backendConfirmations.map { BackendConfirmationRow(confirmation: $0) }
         )
@@ -1780,7 +1792,7 @@ struct CopilotView: View {
                     )
                 }
             )
-            let replyText = result.reply.isEmpty ? "…" : result.reply
+            let replyText = result.reply.isEmpty ? "Bakıyorum…" : result.reply
             await liveReply.finish(with: replyText)
             if let earlyID = earlyConfirmationBubbleID, let index = bubbles.firstIndex(where: { $0.id == earlyID }) {
                 // Reconcile the same bubble with the terminal plan rather than appending a second
@@ -2028,9 +2040,9 @@ struct CopilotView: View {
         let relevant = bubble.steps.filter { $0.type != .executeCode }
         guard !relevant.isEmpty, relevant.allSatisfy({ bubble.executedStepIDs.contains($0.id) }) else { return nil }
         let failedCount = relevant.filter { bubble.failedSteps[$0.id] != nil }.count
-        if failedCount == 0 { return "Tüm adımlar tamamlandı." }
-        if failedCount == relevant.count { return "Hiçbir adım tamamlanamadı." }
-        return "\(relevant.count - failedCount)/\(relevant.count) adım tamamlandı, \(failedCount) adım başarısız oldu."
+        if failedCount == 0 { return "İstediklerini yaptım." }
+        if failedCount == relevant.count { return "Bu isteği tamamlayamadım." }
+        return "İşin bir kısmını yaptım; kalanını tamamlayamadım."
     }
 
     /// Local reads and verified system controls are two-phase turns: first the Mac returns the
@@ -2089,7 +2101,7 @@ struct CopilotView: View {
                     )
                 }
             )
-            let replyText = result.reply.isEmpty ? "…" : result.reply
+            let replyText = result.reply.isEmpty ? "Bakıyorum…" : result.reply
             await liveReply.finish(with: replyText)
             mergeContinuationResult(result, into: bubbleID, streamBubbleID: earlyConfirmationBubbleID, text: replyText)
             liveReply.reset()
@@ -2457,6 +2469,7 @@ struct CopilotView: View {
             "\n\nOnayını bekliyor; onay verdiğinde PC'de çalıştırılacak.",
             "\n\nBu cihaz eylemleri henüz çalıştırılmadı; önce uygulamadaki onayını bekliyor.",
             "\n\nBu PC komutları hazırlanıp yerel cihaza gönderilecek; gerçek sonucu henüz doğrulamadım.",
+            "\n\nİstediğin işlemi PC'ye gönderiyorum; gerçek sonucu alınca haber vereceğim.",
             "\n\nPC'de çalıştırılıyor; gerçek sonuç doğrulanınca burada gösterilecek.",
             "\n\nPC'de çalıştırılıyor…",
             " için onayını bekliyorum.",
@@ -2470,7 +2483,7 @@ struct CopilotView: View {
 
     private func executionStartedText(_ text: String) -> String {
         let base = executionNoticeFreeText(text)
-        return base.isEmpty ? "PC'de çalıştırılıyor…" : base + "\n\nPC'de çalıştırılıyor…"
+        return base.isEmpty ? "İstediklerini sırayla yapıyorum…" : base + "\n\nİstediklerini sırayla yapıyorum…"
     }
 
     private func cancelConfirmation(for bubbleID: UUID) {
