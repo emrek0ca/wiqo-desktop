@@ -112,14 +112,14 @@ struct WiqoHomeView: View {
             // Three independent requests: waiting for each in turn made the first screen wait for
             // the sum of them instead of the slowest one.
             async let profile: Void = profileStore.refresh()
-            async let subscription: Void = subscriptionStore.refresh()
+            async let subscription: Void = subscriptionStore.start()
             async let history: Void = refreshConversationsFromServer()
             _ = await (profile, subscription, history)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 model.connect()
-                Task { await subscriptionStore.refresh() }
+                Task { await subscriptionStore.refreshIfStale() }
             }
         }
         .sheet(isPresented: $showSettings) {
@@ -645,7 +645,7 @@ struct SettingsView: View {
         .wiqoToastHost(level: 1)
         .task {
             await loadTasksAndAutomations()
-            await subscriptionStore.refresh()
+            await subscriptionStore.refreshIfStale(maxAge: 60)
             await loadAccountAndInviteCodes()
         }
     }

@@ -6,11 +6,16 @@ import SwiftUI
 /// the app. Business is not sold in the app; it only appears for accounts that already have it.
 struct PaywallView: View {
     @ObservedObject var subscriptionStore: SubscriptionStore
-    @StateObject private var storeKit = StoreKitManager()
+    @ObservedObject private var storeKit: StoreKitManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var isRestoring = false
     @State private var errorMessage: String?
+
+    init(subscriptionStore: SubscriptionStore) {
+        self.subscriptionStore = subscriptionStore
+        _storeKit = ObservedObject(wrappedValue: subscriptionStore.storeKit)
+    }
 
     private var currentTier: String { subscriptionStore.info.tier }
 
@@ -47,7 +52,10 @@ struct PaywallView: View {
                     Button("Kapat") { dismiss() }
                 }
             }
-            .task { await storeKit.loadProducts() }
+            .task {
+                await storeKit.loadProducts()
+                await subscriptionStore.refreshIfStale(maxAge: 60)
+            }
             .wiqoToastHost(level: 2)
             .alert("İşlem tamamlanamadı", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
                 Button("Tamam", role: .cancel) {}
@@ -191,7 +199,7 @@ struct PaywallView: View {
 
     private func purchasePro() async {
         do {
-            let outcome = try await storeKit.purchasePro(subscriptionStore: subscriptionStore)
+            let outcome = try await storeKit.purchasePro()
             switch outcome {
             case .purchased:
                 dismiss()
@@ -210,7 +218,7 @@ struct PaywallView: View {
         isRestoring = true
         defer { isRestoring = false }
         do {
-            try await storeKit.restore(subscriptionStore: subscriptionStore)
+            try await storeKit.restore()
             dismiss()
             WiqoToastCenter.shared.show("Satın alımların geri yüklendi", kind: .success)
         } catch {

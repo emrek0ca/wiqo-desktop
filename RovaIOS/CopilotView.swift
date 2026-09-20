@@ -1352,6 +1352,9 @@ struct CopilotView: View {
                         for: update,
                         existingBubbleID: earlyConfirmationBubbleID
                     )
+                },
+                onUsage: { used, limit in
+                    subscriptionStore.applyMessageUsage(used: used, limit: limit)
                 }
             )
             let replyText = result.reply.isEmpty ? "Bakıyorum…" : result.reply
@@ -1662,6 +1665,9 @@ struct CopilotView: View {
                         for: update,
                         existingBubbleID: earlyConfirmationBubbleID
                     )
+                },
+                onUsage: { used, limit in
+                    subscriptionStore.applyMessageUsage(used: used, limit: limit)
                 }
             )
             let replyText = result.reply.isEmpty ? "Bakıyorum…" : result.reply

@@ -356,7 +356,9 @@ enum RovaBackendClient {
         onDelta: @escaping @MainActor @Sendable (String) -> Void = { _ in },
         onReset: @escaping @MainActor @Sendable () -> Void = {},
         onConfirmationNeeded: @escaping @MainActor @Sendable ([PlannedCommand], [BackendConfirmation]) -> Void = { _, _ in },
-        onStepUpdate: @escaping @MainActor @Sendable (ExecutionStepUpdate) -> Void = { _ in }
+        onStepUpdate: @escaping @MainActor @Sendable (ExecutionStepUpdate) -> Void = { _ in },
+        /// Today's message count as the server has just counted it (used, limit).
+        onUsage: @escaping @MainActor @Sendable (Int, Int) -> Void = { _, _ in }
     ) async throws -> ConverseResult {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("copilot/chat"))
@@ -451,6 +453,10 @@ enum RovaBackendClient {
         }
         struct ErrorEvent: Decodable { let message: String; let code: String? }
         struct EventKind: Decodable { let type: String }
+        struct UsageEvent: Decodable {
+            struct Counter: Decodable { let used: Int; let limit: Int }
+            let messages: Counter
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
@@ -486,6 +492,10 @@ enum RovaBackendClient {
                 case "step_update":
                     if let event = try? decoder.decode(StepUpdateEvent.self, from: json) {
                         await onStepUpdate(event.step)
+                    }
+                case "usage":
+                    if let event = try? decoder.decode(UsageEvent.self, from: json) {
+                        await onUsage(event.messages.used, event.messages.limit)
                     }
                 case "reset":
                     await onReset()
@@ -837,10 +847,11 @@ enum RovaBackendClient {
 
     /// Forwards a StoreKit transaction's raw JWS to the backend right after a purchase - the
     /// backend independently re-verifies it against Apple's root certificate before granting
-    /// anything (see rova-backend/src/billing/subscriptions.ts); this call only starts that.
-    static func verifyStoreKitTransaction(_ signedTransaction: String) async throws {
-        struct Response: Decodable { let ok: Bool; let tier: String; let expiresAt: String }
-        _ = try await authorizedPost("billing/storekit/verify", body: ["signedTransaction": signedTransaction], as: Response.self)
+    /// anything (see rova-backend/src/billing/subscriptions.ts). The response carries the account's
+    /// new plan and usage, so the app can show it at once.
+    static func verifyStoreKitTransaction(_ signedTransaction: String) async throws -> SubscriptionInfo? {
+        struct Response: Decodable { let ok: Bool; let subscription: SubscriptionInfo? }
+        return try await authorizedPost("billing/storekit/verify", body: ["signedTransaction": signedTransaction], as: Response.self).subscription
     }
 
     static func fetchDevices() async throws -> [DeviceStatus] {
