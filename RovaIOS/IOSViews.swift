@@ -109,9 +109,12 @@ struct WiqoHomeView: View {
         .task {
             prepareWelcomeIfNeeded()
             model.connect()
-            await profileStore.refresh()
-            await subscriptionStore.refresh()
-            await refreshConversationsFromServer()
+            // Three independent requests: waiting for each in turn made the first screen wait for
+            // the sum of them instead of the slowest one.
+            async let profile: Void = profileStore.refresh()
+            async let subscription: Void = subscriptionStore.refresh()
+            async let history: Void = refreshConversationsFromServer()
+            _ = await (profile, subscription, history)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {

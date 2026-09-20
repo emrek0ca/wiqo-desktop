@@ -52,6 +52,7 @@
 		B019 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F019 /* QRScannerView.swift */; };
 		B020 /* IOSViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F020 /* IOSViews.swift */; };
 		D10000000000000000000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* OnboardingView.swift */; };
+		D2000000000000000000003B /* ReplyStreamSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000003C /* ReplyStreamSplitter.swift */; };
 		D20000000000000000000039 /* CopilotConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000003A /* CopilotConversationStore.swift */; };
 		D20000000000000000000037 /* CopilotSpeechRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000038 /* CopilotSpeechRecorder.swift */; };
 		D20000000000000000000035 /* CopilotExecutionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000036 /* CopilotExecutionViews.swift */; };
@@ -69,6 +70,8 @@
 		D20000000000000000000010 /* WiqoCanvasSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000011 /* WiqoCanvasSupport.swift */; };
 		D20000000000000000000028 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000029 /* PrivacyInfo.xcprivacy */; };
 		B026 /* ProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F026 /* ProtocolTests.swift */; };
+		D2000000000000000000003D /* ReplyStreamSplitterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000003E /* ReplyStreamSplitterTests.swift */; };
+		D2000000000000000000003F /* ReplyStreamSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000003C /* ReplyStreamSplitter.swift */; };
 		D2000000000000000000002E /* CanvasPackageDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000002F /* CanvasPackageDetectorTests.swift */; };
 		D20000000000000000000030 /* WiqoCanvasSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000011 /* WiqoCanvasSupport.swift */; };
 		B027 /* MacCommandEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F027 /* MacCommandEngineTests.swift */; };
@@ -168,6 +171,7 @@
 		F019 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		F020 /* IOSViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSViews.swift; sourceTree = "<group>"; };
 		D10000000000000000000002 /* OnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		D2000000000000000000003C /* ReplyStreamSplitter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReplyStreamSplitter.swift; sourceTree = "<group>"; };
 		D2000000000000000000003A /* CopilotConversationStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotConversationStore.swift; sourceTree = "<group>"; };
 		D20000000000000000000038 /* CopilotSpeechRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotSpeechRecorder.swift; sourceTree = "<group>"; };
 		D20000000000000000000036 /* CopilotExecutionViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotExecutionViews.swift; sourceTree = "<group>"; };
@@ -190,6 +194,7 @@
 		F024 /* RovaSharedTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RovaSharedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F025 /* RovaMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RovaMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F026 /* ProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolTests.swift; sourceTree = "<group>"; };
+		D2000000000000000000003E /* ReplyStreamSplitterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplyStreamSplitterTests.swift; sourceTree = "<group>"; };
 		D2000000000000000000002F /* CanvasPackageDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasPackageDetectorTests.swift; sourceTree = "<group>"; };
 		F027 /* MacCommandEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCommandEngineTests.swift; sourceTree = "<group>"; };
 		F028 /* project.pbxproj */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = project.pbxproj; sourceTree = "<group>"; };
@@ -290,6 +295,7 @@
 				F019 /* QRScannerView.swift */,
 				F020 /* IOSViews.swift */,
 				D10000000000000000000002 /* OnboardingView.swift */,
+				D2000000000000000000003C /* ReplyStreamSplitter.swift */,
 				D2000000000000000000003A /* CopilotConversationStore.swift */,
 				D20000000000000000000038 /* CopilotSpeechRecorder.swift */,
 				D20000000000000000000036 /* CopilotExecutionViews.swift */,
@@ -356,6 +362,7 @@
 			isa = PBXGroup;
 			children = (
 				F026 /* ProtocolTests.swift */,
+				D2000000000000000000003E /* ReplyStreamSplitterTests.swift */,
 				D2000000000000000000002F /* CanvasPackageDetectorTests.swift */,
 			);
 			path = RovaSharedTests;
@@ -590,6 +597,7 @@
 				B019 /* QRScannerView.swift in Sources */,
 				B020 /* IOSViews.swift in Sources */,
 				D10000000000000000000001 /* OnboardingView.swift in Sources */,
+				D2000000000000000000003B /* ReplyStreamSplitter.swift in Sources */,
 				D20000000000000000000039 /* CopilotConversationStore.swift in Sources */,
 				D20000000000000000000037 /* CopilotSpeechRecorder.swift in Sources */,
 				D20000000000000000000035 /* CopilotExecutionViews.swift in Sources */,
@@ -638,6 +646,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				B026 /* ProtocolTests.swift in Sources */,
+				D2000000000000000000003D /* ReplyStreamSplitterTests.swift in Sources */,
+				D2000000000000000000003F /* ReplyStreamSplitter.swift in Sources */,
 				D2000000000000000000002E /* CanvasPackageDetectorTests.swift in Sources */,
 				D20000000000000000000030 /* WiqoCanvasSupport.swift in Sources */,
 				A5C0DE000000000000000003 /* WiqoSpeechPermissionBridge.swift in Sources */,

@@ -1153,15 +1153,38 @@ enum RovaBackendClient {
     }
 
     private static func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            throw RovaBackendError.network(userFacingNetworkMessage(for: error))
+        var retried = false
+        while true {
+            let data: Data
+            let response: URLResponse
+            do {
+                (data, response) = try await URLSession.shared.data(for: request)
+            } catch {
+                // A read that failed only because the connection had gone stale (typical right after
+                // the app returns from the background) is safe to repeat once. A write is never
+                // repeated here: the server could already have acted on it.
+                if !retried, isRepeatable(request), isDroppedConnection(error) {
+                    retried = true
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    continue
+                }
+                throw RovaBackendError.network(userFacingNetworkMessage(for: error))
+            }
+            guard let http = response as? HTTPURLResponse else { throw RovaBackendError.invalidResponse }
+            return (data, http)
         }
-        guard let http = response as? HTTPURLResponse else { throw RovaBackendError.invalidResponse }
-        return (data, http)
+    }
+
+    private static func isRepeatable(_ request: URLRequest) -> Bool {
+        (request.httpMethod ?? "GET") == "GET"
+    }
+
+    private static func isDroppedConnection(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .networkConnectionLost, .cannotConnectToHost, .dnsLookupFailed: return true
+        default: return false
+        }
     }
 
     private static func decode<T: Decodable>(_ type: T.Type, from data: Data, response: HTTPURLResponse) throws -> T {

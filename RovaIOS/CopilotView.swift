@@ -134,18 +134,21 @@ struct CopilotView: View {
             if let draftPrompt, bubbles.isEmpty {
                 inputText = draftPrompt
                 isComposerFocused = true
+                await loadSideCards()
             } else if bubbles.isEmpty {
-                await loadRemoteMessagesIfNeeded()
+                async let messages: Void = loadRemoteMessagesIfNeeded()
+                async let cards: Void = loadSideCards()
+                _ = await (messages, cards)
+            } else {
+                await loadSideCards()
             }
-            await loadProactiveSuggestions()
-            await loadMemoryCandidates()
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            Task {
-                await loadProactiveSuggestions()
-                await loadMemoryCandidates()
+            guard phase == .active else {
+                CopilotConversationStore.flushPending()
+                return
             }
+            Task { await loadSideCards() }
         }
         .onChange(of: selectedPhotos) { _, items in
             guard !items.isEmpty else { return }
@@ -187,7 +190,10 @@ struct CopilotView: View {
         )) {
             confirmationSheetContent
         }
-        .onDisappear { persistConversation() }
+        .onDisappear {
+            persistConversation()
+            CopilotConversationStore.flushPending()
+        }
     }
 
     /// Just the mark, centered - the input bar and the suggestion row below already say what to do.
@@ -209,6 +215,13 @@ struct CopilotView: View {
         .onTapGesture {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
+    }
+
+    /// Suggestions and memory candidates are independent of each other.
+    private func loadSideCards() async {
+        async let suggestions: Void = loadProactiveSuggestions()
+        async let candidates: Void = loadMemoryCandidates()
+        _ = await (suggestions, candidates)
     }
 
     /// One quiet line about the PC, so the first screen answers "is my computer ready?" without a
@@ -2064,7 +2077,7 @@ struct CopilotView: View {
                 attachmentThumbnails: bubble.attachmentThumbnails.isEmpty ? nil : bubble.attachmentThumbnails
             )
         }
-        CopilotConversationStore.save(id: conversationID, messages: stored, turnCount: turnCount)
+        CopilotConversationStore.saveSoon(id: conversationID, messages: stored, turnCount: turnCount)
     }
 }
 

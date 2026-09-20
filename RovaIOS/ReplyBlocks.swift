@@ -44,6 +44,27 @@ enum ReplyBlockParser {
         return blocks
     }
 
+    /// Streaming replies re-render on every update. Beyond a short reply, everything before the last
+    /// blank line is settled, so it is parsed once (and cached) and only the tail is parsed again.
+    private static let streamingSplitThreshold = 1_200
+    private static var settledStreamText = ""
+
+    static func parseStreaming(_ text: String) -> [ReplyBlock] {
+        guard text.utf8.count > streamingSplitThreshold else {
+            settledStreamText = ""
+            return parseUncached(text)
+        }
+        if !settledStreamText.isEmpty, !text.hasPrefix(settledStreamText) { settledStreamText = "" }
+        let known = settledStreamText.utf8.count
+        let cut = ReplyStreamSplitter.settledOffset(in: text, after: known)
+        if cut > known {
+            settledStreamText = String(decoding: Array(text.utf8.prefix(cut)), as: UTF8.self)
+        }
+        guard !settledStreamText.isEmpty else { return parseUncached(text) }
+        let tail = String(decoding: Array(text.utf8.dropFirst(settledStreamText.utf8.count)), as: UTF8.self)
+        return parse(settledStreamText) + parseUncached(tail)
+    }
+
     private static func parseUncached(_ text: String) -> [ReplyBlock] {
         let lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
         var blocks: [ReplyBlock] = []
@@ -277,7 +298,7 @@ struct ReplyBlocksView: View {
     var isStreaming = false
 
     var body: some View {
-        let blocks = ReplyBlockParser.parse(text)
+        let blocks = isStreaming ? ReplyBlockParser.parseStreaming(text) : ReplyBlockParser.parse(text)
         VStack(alignment: .leading, spacing: 12) {
             // Positional identity keeps a block's view stable while its content grows during
             // streaming, instead of tearing down and rebuilding it on every revealed character.
@@ -941,9 +962,9 @@ final class LiveReplyText: ObservableObject {
             while let self, !Task.isCancelled {
                 let remaining = self.target.count - self.displayed.count
                 if remaining <= 0 { break }
-                let step = max(3, remaining / 12)
+                let step = max(5, remaining / 10)
                 self.displayed = String(self.target.prefix(self.displayed.count + step))
-                try? await Task.sleep(nanoseconds: 22_000_000)
+                try? await Task.sleep(nanoseconds: 33_000_000)
             }
             self?.revealTask = nil
         }
