@@ -785,17 +785,20 @@ enum RovaBackendClient {
         language: String,
         code: String,
         timeoutSeconds: Int = 15,
+        packages: [String] = [],
         onTaskID: @escaping @MainActor @Sendable (Int) -> Void = { _ in },
         onProgress: @escaping @MainActor @Sendable (String) -> Void = { _ in }
     ) async throws -> CanvasRunResult {
         struct Submission: Decodable { let taskId: Int; let status: String; let message: String }
+        var body: [String: Any] = ["language": language, "code": code, "timeoutSeconds": timeoutSeconds]
+        if !packages.isEmpty { body["packages"] = packages }
         let submission = try await authorizedPost(
             "canvas/run",
-            body: ["language": language, "code": code, "timeoutSeconds": timeoutSeconds],
+            body: body,
             as: Submission.self
         )
         await onTaskID(submission.taskId)
-        let deadline = Date().addingTimeInterval(120)
+        let deadline = Date().addingTimeInterval(packages.isEmpty ? 120 : 180)
         while Date() < deadline {
             if Task.isCancelled {
                 try? await cancelCanvasRun(taskID: submission.taskId)
