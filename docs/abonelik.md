@@ -92,17 +92,31 @@ Doğrudan bağlantı backend'den görülemediği için, iOS tarafında da:
 
 ## 5. Apple StoreKit 2 entegrasyonu
 
-### 5.1 App Store Connect durumu (asc CLI ile, `/opt/homebrew/Cellar/asc/5.3.1/bin/asc`)
+### 5.1 App Store Connect durumu
+
+Uygulama kaydı bundle kimliğiyle kalıcı bağlıdır ve sonradan değiştirilemez. Eski kayıt (`Wiqo`,
+`com.rova.ios`) bu yüzden kullanılmıyor; her şey `com.wiqo.ios` bundle kimliğiyle **yeni bir kayıtta**
+kurulur.
+
+| Alan | Değer |
+|---|---|
+| Bundle ID | `com.wiqo.ios` (Developer hesabında kayıtlı; Push ve In-App Purchase açık) |
+| App Apple ID | yeni kaydın Apple Kimliği (sunucuda `APPLE_APP_ID`) |
+| Product ID | `com.wiqo.ios.pro.monthly` |
+| Abonelik grubu | "Wiqo Abonelikler" |
+| Süre / fiyat | 1 ay / $9.99 (ABD + TR) |
+
+Yeni kayıt oluşturulduktan sonra abonelik grubunu ve ürünü kurmak için (`asc` API anahtarıyla
+çalışır, Apple web oturumu gerekmez):
 
 ```bash
 ASC=/opt/homebrew/Cellar/asc/5.3.1/bin/asc
 $ASC subscriptions setup \
-  --app 6811908101 \
-  --group-id "22387650" \
+  --app <YENİ_APPLE_KİMLİĞİ> \
   --group-display-name "Wiqo Abonelikler" \
   --group-locale "tr" \
   --reference-name "Wiqo Pro Aylık" \
-  --product-id "com.rova.ios.pro.monthly" \
+  --product-id "com.wiqo.ios.pro.monthly" \
   --subscription-period ONE_MONTH \
   --price "9.99" \
   --price-territory "United States" \
@@ -115,21 +129,10 @@ $ASC subscriptions setup \
   --output json --pretty
 ```
 
-| Alan | Değer |
-|---|---|
-| App Apple ID | `6811908101` |
-| Bundle ID | `com.rova.ios` |
-| Subscription Group ID | `22387650` (adı: "Wiqo Abonelikler") |
-| Subscription ID | `6812481170` |
-| Product ID | `com.rova.ios.pro.monthly` |
-| Süre | 1 ay (`ONE_MONTH`) |
-| Fiyat noktası | $9.99 (kullanıcı $10 istedi; App Store sabit fiyat basamakları kullanır, en yakını 9.99) |
-| Bölgeler | ABD + TR, yeni bölgelerde otomatik aktif |
-| Durum | **`READY_TO_SUBMIT`** — **review'a bilerek gönderilmedi** |
+App Store Connect'te bir kez ayarlanacak: **App Bilgileri → App Store Sunucu Bildirimleri**,
+hem Production hem Sandbox için URL: `https://api.wiqoai.com/billing/storekit/notifications` (V2).
 
-**Neden review'a gönderilmedi:** Uygulama içinde StoreKit satın alma kodu henüz yazılmadan bir aboneliği review'a sokmak, Apple'ın "satın alma akışını test edemedik" diye reddetmesine yol açar. iOS satın alma akışı artık yazıldı (bkz. bölüm 9), ama gerçek bir cihazda/TestFlight'ta sandbox hesabıyla uçtan uca denenmeden review'a gönderilmemesi öneriliyor (bölüm 8'deki son madde).
-
-Review ekran görüntüsü PIL ile üretilip yüklendi (`asc subscriptions review screenshots create`) — koyu gradyan, "Wiqo Pro", özellik maddeleri, "Ayda 9,99 $" fiyat rozeti, 1284×2778 px.
+Ürün review'a, uygulama içi satın alma sandbox hesabıyla uçtan uca denenmeden gönderilmez.
 
 ### 5.2 Sunucu tarafı doğrulama (`rova-backend/src/billing/subscriptions.ts`)
 
@@ -145,7 +148,7 @@ Review ekran görüntüsü PIL ile üretilip yüklendi (`asc subscriptions revie
 2. iOS: `POST /billing/storekit/verify` ile `{ signedTransaction }` gönderilir.
 3. Backend: `applyVerifiedTransaction(userId, signedTransaction)`:
    - imza doğrulanır (Production → Sandbox fallback)
-   - `productId === "com.rova.ios.pro.monthly"` kontrolü
+   - `productId === "com.wiqo.ios.pro.monthly"` kontrolü
    - süresi dolmamış mı kontrolü
    - `apple_original_transaction_id` başka bir hesaba bağlı mı kontrolü (`ALREADY_CLAIMED`)
    - `setSubscription(userId, "pro", "storekit", expiresAt, originalTransactionId)`

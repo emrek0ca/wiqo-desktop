@@ -4,12 +4,9 @@ Sürüm: 1.0.0 (1) · Bundle ID: `com.wiqo.ios` · Minimum iOS 17 · Sadece iPho
 
 ## 1. Gönderimden önce (sırayla)
 
-1. Apple Developer'da yeni App ID: `com.wiqo.ios` (Push Notifications açık). Mevcut APNs anahtarı aynı takımdaki tüm App ID'lerde çalışır.
-2. App Store Connect'te yeni uygulama kaydı (bundle `com.wiqo.ios`) ve **Wiqo Pro** aylık abonelik ürünü: Product ID `com.rova.ios.pro.monthly` (ürün ID'si bundle ID'den bağımsızdır, backend ile aynı kalmalı).
-3. **Backend (bu repoda değil, `rova-backend`):**
-   - `src/billing/subscriptions.ts` → `BUNDLE_ID = "com.wiqo.ios"`. Değişmezse **her satın alma doğrulaması reddedilir**.
-   - Sunucu `.env`: `APP_APPLE_ID` yeni uygulamanın Apple ID'si, `APNS_BUNDLE_ID=com.wiqo.ios`. Değişmezse push gitmez.
-   - `src/routes/notifications.ts` içindeki varsayılan `com.rova.ios` ve `.env.example` da güncellenmeli.
+1. Apple Developer'da `com.wiqo.ios` App ID'si kayıtlı (Push ve In-App Purchase açık).
+2. App Store Connect'te **yeni uygulama** kaydı: bundle `com.wiqo.ios`, SKU `wiqoios001`, birincil dil Türkçe. (Eski `Wiqo`/`com.rova.ios` kaydı kullanılmaz; bundle kimliği kayıtta değiştirilemez.) Ad, mevcut "Wiqo" ile çakışırsa örn. "Wiqo: PC'ni Konuşarak Yönet"; ana ekrandaki ad `CFBundleDisplayName` ile yine "Wiqo" kalır.
+3. Yeni kaydın Apple Kimliği ile abonelik ürününü kur (`docs/abonelik.md` bölüm 5.1), sunucu `.env`'ye `APPLE_APP_ID=<yeni kimlik>` yaz, `APPLE_BUNDLE_ID=com.wiqo.ios` ve `APNS_BUNDLE_ID=com.wiqo.ios` olmalı.
 4. Xcode: Signing & Capabilities → Team seç, Push Notifications ve Sign-in yeteneklerinin yeni App ID ile eşleştiğini doğrula.
 5. TestFlight: kendi iPhone'unda ve 3-5 tanıdık kişide şu akışı dene: kayıt → onboarding → QR eşleştirme → "Sesi kıs" → onay kartı → Pro satın alma (sandbox) → satın alımı geri yükle → hesabı sil.
 6. Product → Archive → Distribute → App Store Connect.

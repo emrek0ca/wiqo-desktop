@@ -3,7 +3,7 @@ import StoreKit
 
 /// Product identifiers Wiqo sells through StoreKit. See docs/abonelik.md for the plan/billing design.
 enum WiqoProduct {
-    static let proMonthly = "com.rova.ios.pro.monthly"
+    static let proMonthly = "com.wiqo.ios.pro.monthly"
     static let all: Set<String> = [proMonthly]
 }
 

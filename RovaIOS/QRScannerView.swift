@@ -21,7 +21,7 @@ final class ScannerViewController: UIViewController, @preconcurrency AVCaptureMe
     var onScan: ((String) -> Void)?
     var onCancel: (() -> Void)?
     nonisolated(unsafe) private let session = AVCaptureSession()
-    private let sessionQueue = DispatchQueue(label: "com.rova.camera", qos: .userInitiated)
+    private let sessionQueue = DispatchQueue(label: "com.wiqo.camera", qos: .userInitiated)
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var didScan = false
     private let statusLabel = UILabel()

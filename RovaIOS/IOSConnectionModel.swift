@@ -104,10 +104,10 @@ final class IOSConnectionModel: ObservableObject {
     private var relayProbeTask: Task<Void, Never>?
     private var browser: NWBrowser?
     private let pathMonitor = NWPathMonitor()
-    private let pathMonitorQueue = DispatchQueue(label: "com.rova.path-monitor", qos: .utility)
+    private let pathMonitorQueue = DispatchQueue(label: "com.wiqo.path-monitor", qos: .utility)
     private var pathAvailable = true
     private var pathSignature: String?
-    private let discoveryQueue = DispatchQueue(label: "com.rova.discovery", qos: .utility)
+    private let discoveryQueue = DispatchQueue(label: "com.wiqo.discovery", qos: .utility)
     private var discoveredServiceName: String?
 
     init() {
@@ -461,7 +461,7 @@ final class IOSConnectionModel: ObservableObject {
                 self.scheduleReconnect()
             }
         }
-        connection.start(queue: DispatchQueue(label: "com.rova.connection", qos: .userInitiated))
+        connection.start(queue: DispatchQueue(label: "com.wiqo.connection", qos: .userInitiated))
     }
 
     /// Builds TLS options outside the main-actor isolation domain.
@@ -483,7 +483,7 @@ final class IOSConnectionModel: ObservableObject {
                 return
             }
             completion(RovaCrypto.sha256Hex(certificateData) == fingerprint)
-        }, DispatchQueue(label: "com.rova.tls.verify", qos: .userInitiated))
+        }, DispatchQueue(label: "com.wiqo.tls.verify", qos: .userInitiated))
         let tcp = NWProtocolTCP.Options()
         tcp.enableKeepalive = true
         tcp.keepaliveIdle = 10
