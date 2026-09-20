@@ -456,25 +456,39 @@ struct PairingView: View {
                 Image(systemName: "laptopcomputer.and.iphone")
                     .font(.system(size: 54, weight: .medium))
                     .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
+                    .wiqoRiseIn()
                 Text("PC'ye bağlan")
                     .font(.title2.weight(.semibold))
+                    .wiqoRiseIn(delay: 0.08)
                 Text("Wiqo PC'de gösterilen QR kodu tara.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
+                    .wiqoRiseIn(delay: 0.16)
                 Button {
                     showingScanner = true
                 } label: {
                     Label("QR tara", systemImage: "qrcode.viewfinder")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                if model.isPairing { ProgressView("PC'yi bağlıyorum…") }
+                .buttonStyle(.wiqoPill(.accent))
+                .wiqoRiseIn(delay: 0.24)
+                if model.isPairing {
+                    WiqoStatusLine(text: "PC'yi bağlıyorum…")
+                        .font(.subheadline)
+                }
                 if let error = scanError ?? model.lastError {
-                    Text(error).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center)
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(WiqoTheme.red)
+                        .multilineTextAlignment(.center)
+                        .transition(.wiqoBlur)
                 }
                 Spacer()
             }
             .padding(28)
+            .wiqoAnimation(WiqoMotion.slide(), value: model.isPairing)
+            .wiqoAnimation(WiqoMotion.slide(), value: scanError ?? model.lastError)
             .navigationTitle("Wiqo")
             .sheet(isPresented: $showingScanner) {
                 QRScannerView { value in
@@ -522,36 +536,36 @@ private struct PairingCelebrationView: View {
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
-            Image(systemName: "sparkles")
-                .font(.system(size: 48))
-                .foregroundStyle(.tint)
-                    Text("Mac'in bağlandı!")
+            WiqoCheckmark(color: WiqoTheme.green, lineWidth: 5)
+                .frame(width: 54, height: 54)
+                .padding(20)
+                .background(WiqoTheme.tint(WiqoTheme.green), in: Circle())
+            Text("Mac'in bağlandı!")
                 .font(.title2.weight(.bold))
+                .wiqoRiseIn(delay: 0.2)
             Text("Şimdi yanındaki birine telefonundan söyle:")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .wiqoRiseIn(delay: 0.3)
             Text("\"Sesi kıs\"")
                 .font(.title3.weight(.semibold))
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
-                .background(Color(.secondarySystemBackground), in: Capsule())
+                .background(WiqoTheme.inset, in: Capsule())
+                .wiqoRiseIn(delay: 0.4)
             Text("Wiqo telefonundan gerçekten PC'ni kontrol ediyor - bunu görmek en iyi anlatımdır.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
+                .wiqoRiseIn(delay: 0.5)
             Spacer()
-            Button {
-                dismiss()
-            } label: {
-                Text("Harika!").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .padding(.horizontal, 24)
+            WiqoActionButton(title: "Harika!") { dismiss() }
+                .padding(.horizontal, 24)
         }
         .padding(.vertical, 32)
         .presentationDetents([.medium])
+        .onAppear { WiqoHaptics.success() }
     }
 }
 

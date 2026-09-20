@@ -15,6 +15,8 @@ struct AuthView: View {
     @State private var showingForgotPassword = false
     @State private var acceptedPrivacyPolicy = false
     @State private var acceptedTerms = false
+    @State private var showsPassword = false
+    @State private var errorTick = 0
     @FocusState private var focusedField: Field?
 
     private enum Field { case email, password, inviteCode }
@@ -34,9 +36,11 @@ struct AuthView: View {
                     Spacer(minLength: 32)
                     brandHeader
                         .offset(y: -brandHeaderLift(for: proxy.size.height))
+                        .wiqoRiseIn()
                     Spacer()
                     formCard
                         .offset(y: -formCardLift(for: proxy.size.height))
+                        .wiqoRiseIn(delay: 0.12)
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
@@ -103,31 +107,61 @@ struct AuthView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(spacing: 10) {
-                TextField("E-posta", text: $email)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.emailAddress)
-                    .autocorrectionDisabled()
-                    .textFieldStyle(RovaAuthFieldStyle())
-                    .focused($focusedField, equals: .email)
-                    .submitLabel(.next)
-                    .onSubmit { focusedField = .password }
+                WiqoField(isFocused: focusedField == .email, hasError: errorMessage != nil) {
+                    TextField("E-posta", text: $email)
+                        .textFieldStyle(.plain)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
+                        .autocorrectionDisabled()
+                        .focused($focusedField, equals: .email)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .password }
+                }
 
-                SecureField("Şifre", text: $password)
-                    .textFieldStyle(RovaAuthFieldStyle())
-                    .focused($focusedField, equals: .password)
-                    .submitLabel(isRegistering ? .next : .go)
-                    .onSubmit {
-                        if isRegistering { focusedField = .inviteCode } else if canSubmit { Task { await submit() } }
+                WiqoField(isFocused: focusedField == .password, hasError: errorMessage != nil) {
+                    HStack(spacing: 8) {
+                        Group {
+                            if showsPassword {
+                                TextField("Şifre", text: $password)
+                            } else {
+                                SecureField("Şifre", text: $password)
+                            }
+                        }
+                        .textFieldStyle(.plain)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textContentType(isRegistering ? .newPassword : .password)
+                        .focused($focusedField, equals: .password)
+                        .submitLabel(isRegistering ? .next : .go)
+                        .onSubmit {
+                            if isRegistering { focusedField = .inviteCode } else if canSubmit { Task { await submit() } }
+                        }
+
+                        Button {
+                            showsPassword.toggle()
+                        } label: {
+                            Image(systemName: showsPassword ? "eye.slash" : "eye")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 32, height: 32)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(showsPassword ? "Şifreyi gizle" : "Şifreyi göster")
                     }
+                }
 
                 if isRegistering {
-                    TextField("Davet kodu (opsiyonel)", text: $inviteCode)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                        .textFieldStyle(RovaAuthFieldStyle())
-                        .focused($focusedField, equals: .inviteCode)
-                        .submitLabel(.go)
-                        .onSubmit { if canSubmit { Task { await submit() } } }
+                    WiqoField(isFocused: focusedField == .inviteCode) {
+                        TextField("Davet kodu (opsiyonel)", text: $inviteCode)
+                            .textFieldStyle(.plain)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                            .focused($focusedField, equals: .inviteCode)
+                            .submitLabel(.go)
+                            .onSubmit { if canSubmit { Task { await submit() } } }
+                    }
+                    .transition(.wiqoBlur)
                 }
             }
 
@@ -156,27 +190,19 @@ struct AuthView: View {
             if let errorMessage {
                 Text(errorMessage)
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(WiqoTheme.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.wiqoBlur)
             }
 
-            Button {
+            WiqoActionButton(title: isRegistering ? "Hesap oluştur" : "Giriş yap", isLoading: isSubmitting) {
                 focusedField = nil
                 Task { await submit() }
-            } label: {
-                if isSubmitting {
-                    ProgressView().frame(maxWidth: .infinity)
-                } else {
-                    Text(isRegistering ? "Hesap oluştur" : "Giriş yap")
-                        .frame(maxWidth: .infinity)
-                }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!canSubmit)
+            .disabled(!canSubmit && !isSubmitting)
 
             Button {
-                withAnimation(.easeInOut(duration: 0.18)) {
+                withAnimation(WiqoMotion.slide()) {
                     isRegistering.toggle()
                     errorMessage = nil
                 }
@@ -188,12 +214,9 @@ struct AuthView: View {
             .foregroundStyle(.secondary)
         }
         .padding(20)
-        .background(RovaDesign.cardSurface.opacity(0.92), in: RoundedRectangle(cornerRadius: RovaDesign.cardRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: RovaDesign.cardRadius, style: .continuous)
-                .strokeBorder(.white.opacity(0.45), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.06), radius: 16, y: 6)
+        .wiqoCard(radius: RovaDesign.cardRadius)
+        .wiqoShake(trigger: errorTick)
+        .wiqoAnimation(WiqoMotion.slide(), value: errorMessage)
     }
 
     private var switchModeLabel: Text {
@@ -229,9 +252,7 @@ struct AuthView: View {
                 isAccepted.wrappedValue.toggle()
             } label: {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: isAccepted.wrappedValue ? "checkmark.square.fill" : "square")
-                        .font(.title3)
-                        .foregroundStyle(RovaDesign.ink)
+                    WiqoCheckbox(isOn: isAccepted.wrappedValue)
                     Text(title)
                         .font(.footnote)
                         .multilineTextAlignment(.leading)
@@ -269,16 +290,31 @@ struct AuthView: View {
             onAuthenticated()
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "İşlem tamamlanamadı. Lütfen tekrar dene."
+            errorTick += 1
+            WiqoHaptics.failure()
         }
     }
 }
 
-private struct RovaAuthFieldStyle: TextFieldStyle {
-    func _body(configuration: TextField<Self._Label>) -> some View {
-        configuration
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+/// The consent box: an empty well that fills and draws its check when accepted.
+private struct WiqoCheckbox: View {
+    let isOn: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(isOn ? WiqoTheme.ink : WiqoTheme.inset)
+            .frame(width: 22, height: 22)
+            .overlay {
+                if isOn {
+                    WiqoCheckmark(color: Color(uiColor: .systemBackground), lineWidth: 2)
+                        .padding(4)
+                } else {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(WiqoTheme.lineStrong, lineWidth: 1)
+                }
+            }
+            .wiqoAnimation(WiqoMotion.ease(0.2), value: isOn)
+            .accessibilityHidden(true)
     }
 }
 
@@ -300,10 +336,12 @@ struct ForgotPasswordView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var infoMessage: String?
+    @State private var errorTick = 0
     @State private var resendCooldownSecondsRemaining = 0
-    @FocusState private var isCodeFieldFocused: Bool
+    @FocusState private var focusedField: ResetField?
 
     private enum Step { case requestCode, resetPassword }
+    private enum ResetField { case email, password }
 
     init(initialEmail: String, onCompleted: @escaping () -> Void) {
         self.initialEmail = initialEmail
@@ -313,14 +351,20 @@ struct ForgotPasswordView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 16) {
                 switch step {
-                case .requestCode: requestCodeForm
-                case .resetPassword: resetPasswordForm
+                case .requestCode:
+                    requestCodeForm
+                        .transition(.wiqoBlur)
+                case .resetPassword:
+                    resetPasswordForm
+                        .transition(.wiqoBlur)
                 }
                 Spacer()
             }
             .padding(20)
+            .wiqoShake(trigger: errorTick)
+            .wiqoAnimation(WiqoMotion.slide(), value: step)
             .navigationTitle("Şifremi Unuttum")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -340,85 +384,97 @@ struct ForgotPasswordView: View {
     }
 
     private var requestCodeForm: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 16) {
             Text("E-posta adresine 6 haneli bir sıfırlama kodu göndereceğiz.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            TextField("E-posta", text: $email)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.emailAddress)
-                .autocorrectionDisabled()
-                .textFieldStyle(RovaAuthFieldStyle())
-
-            if let errorMessage {
-                Text(errorMessage).font(.footnote).foregroundStyle(.red)
+            WiqoField(isFocused: focusedField == .email, hasError: errorMessage != nil) {
+                TextField("E-posta", text: $email)
+                    .textFieldStyle(.plain)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.emailAddress)
+                    .textContentType(.emailAddress)
+                    .autocorrectionDisabled()
+                    .focused($focusedField, equals: .email)
+                    .submitLabel(.send)
+                    .onSubmit { if canRequestCode { Task { await requestCode() } } }
             }
 
-            Button {
+            errorText
+
+            WiqoActionButton(title: "Kod gönder", isLoading: isSubmitting) {
                 Task { await requestCode() }
-            } label: {
-                if isSubmitting {
-                    ProgressView().frame(maxWidth: .infinity)
-                } else {
-                    Text("Kod gönder").frame(maxWidth: .infinity)
-                }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(email.trimmingCharacters(in: .whitespaces).isEmpty || isSubmitting)
+            .disabled(!canRequestCode && !isSubmitting)
         }
     }
 
     private var resetPasswordForm: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 16) {
             if let infoMessage {
-                Text(infoMessage).font(.subheadline).foregroundStyle(.secondary)
+                Text(infoMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
 
-            TextField("6 haneli kod", text: $code)
-                .keyboardType(.numberPad)
-                .textFieldStyle(RovaAuthFieldStyle())
-                .focused($isCodeFieldFocused)
+            WiqoOTPField(code: $code, hasError: errorMessage != nil, autoFocus: true)
                 .onChange(of: code) { _, newValue in
-                    let sanitizedCode = String(newValue.filter(\.isNumber).prefix(6))
-                    code = sanitizedCode
-                    if sanitizedCode.count == 6 {
-                        isCodeFieldFocused = false
-                    }
+                    if newValue.count == 6 { focusedField = .password }
                 }
 
-            SecureField("Yeni şifre (en az 8 karakter)", text: $newPassword)
-                .textFieldStyle(RovaAuthFieldStyle())
-
-            if let errorMessage {
-                Text(errorMessage).font(.footnote).foregroundStyle(.red)
+            WiqoField(isFocused: focusedField == .password, hasError: false) {
+                SecureField("Yeni şifre (en az 8 karakter)", text: $newPassword)
+                    .textFieldStyle(.plain)
+                    .textContentType(.newPassword)
+                    .focused($focusedField, equals: .password)
+                    .submitLabel(.go)
+                    .onSubmit { if canResetPassword { Task { await resetPassword() } } }
             }
 
-            Button {
+            errorText
+
+            WiqoActionButton(title: "Şifreyi sıfırla", isLoading: isSubmitting) {
                 Task { await resetPassword() }
-            } label: {
-                if isSubmitting {
-                    ProgressView().frame(maxWidth: .infinity)
-                } else {
-                    Text("Şifreyi sıfırla").frame(maxWidth: .infinity)
-                }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(code.count != 6 || newPassword.count < 8 || isSubmitting)
+            .disabled(!canResetPassword && !isSubmitting)
 
             Button(resendCooldownSecondsRemaining > 0 ? "Tekrar gönder (\(resendCooldownSecondsRemaining)sn)" : "Kodu tekrar gönder") {
-                withAnimation(.easeInOut(duration: 0.18)) { step = .requestCode }
                 errorMessage = nil
                 code = ""
                 resendCooldownSecondsRemaining = 0
+                step = .requestCode
             }
             .buttonStyle(.plain)
             .font(.footnote)
             .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
             .disabled(resendCooldownSecondsRemaining > 0)
         }
+    }
+
+    @ViewBuilder
+    private var errorText: some View {
+        if let errorMessage {
+            Text(errorMessage)
+                .font(.footnote)
+                .foregroundStyle(WiqoTheme.red)
+                .transition(.wiqoBlur)
+        }
+    }
+
+    private var canRequestCode: Bool {
+        !email.trimmingCharacters(in: .whitespaces).isEmpty && !isSubmitting
+    }
+
+    private var canResetPassword: Bool {
+        code.count == 6 && newPassword.count >= 8 && !isSubmitting
+    }
+
+    private func fail(_ message: String) {
+        errorMessage = message
+        errorTick += 1
+        WiqoHaptics.failure()
     }
 
     private func requestCode() async {
@@ -429,9 +485,9 @@ struct ForgotPasswordView: View {
             try await RovaBackendClient.forgotPassword(email: email)
             infoMessage = "\(email) adresine bir kod gönderildi. Gelmediyse spam/gereksiz klasörünü kontrol et."
             resendCooldownSecondsRemaining = 30
-            withAnimation(.easeInOut(duration: 0.18)) { step = .resetPassword }
+            step = .resetPassword
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Şifre sıfırlama kodu istenemedi. Lütfen tekrar dene."
+            fail((error as? LocalizedError)?.errorDescription ?? "Şifre sıfırlama kodu istenemedi. Lütfen tekrar dene.")
         }
     }
 
@@ -441,9 +497,10 @@ struct ForgotPasswordView: View {
         defer { isSubmitting = false }
         do {
             try await RovaBackendClient.resetPassword(email: email, code: code, newPassword: newPassword)
+            WiqoHaptics.success()
             onCompleted()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Şifre sıfırlanamadı. Lütfen tekrar dene."
+            fail((error as? LocalizedError)?.errorDescription ?? "Şifre sıfırlanamadı. Lütfen tekrar dene.")
         }
     }
 }
