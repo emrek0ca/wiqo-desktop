@@ -1,6 +1,6 @@
 # Wiqo iOS - App Store gönderim rehberi
 
-Sürüm: 1.0.0 (1) · Bundle ID: `com.wiqo.ios` · Minimum iOS 17 · Sadece iPhone
+Sürüm: 1.0.0 (2) · Bundle ID: `com.wiqo.ios` · Minimum iOS 17 · Sadece iPhone
 
 ## 1. Gönderimden önce (sırayla)
 

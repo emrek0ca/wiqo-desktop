@@ -5,7 +5,7 @@ import Foundation
 /// command or lock-screen tap. Deliberately goes through `RovaBackendClient.sendDeviceCommand`
 /// (the backend relay), never `IOSConnectionModel`'s direct local-network socket - an intent can
 /// fire with the app not running and no owning view around to hold that live connection, while
-/// the relay only needs a stored auth token and a paired Mac, exactly like the in-app fallback
+/// the relay only needs a stored auth token and a paired PC, exactly like the in-app fallback
 /// already used when the phone isn't on the same network as the PC.
 enum WiqoIntentError: Error, CustomLocalizedStringResourceConvertible {
     case notSignedIn
@@ -48,27 +48,27 @@ private func performDeviceIntent(_ type: CommandType, payload: CommandPayload = 
     }
 }
 
-struct LockMacIntent: AppIntent {
-    static let title: LocalizedStringResource = "Mac'i Kilitle"
-    static let description = IntentDescription("Wiqo ile eşleştirilmiş Mac'i uzaktan kilitler.")
+struct LockPCIntent: AppIntent {
+    static let title: LocalizedStringResource = "PC'yi Kilitle"
+    static let description = IntentDescription("Wiqo ile eşleştirilmiş PC'yi uzaktan kilitler.")
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        try await performDeviceIntent(.lockMac, successMessage: "Mac kilitlendi.")
+        try await performDeviceIntent(.lockMac, successMessage: "PC kilitlendi.")
     }
 }
 
-struct SleepMacIntent: AppIntent {
-    static let title: LocalizedStringResource = "Mac'i Uyut"
-    static let description = IntentDescription("Wiqo ile eşleştirilmiş Mac'i uyku moduna alır.")
+struct SleepPCIntent: AppIntent {
+    static let title: LocalizedStringResource = "PC'yi Uyut"
+    static let description = IntentDescription("Wiqo ile eşleştirilmiş PC'yi uyku moduna alır.")
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        try await performDeviceIntent(.sleepMac, successMessage: "Mac uyku moduna alındı.")
+        try await performDeviceIntent(.sleepMac, successMessage: "PC uyku moduna alındı.")
     }
 }
 
 struct ToggleMuteIntent: AppIntent {
     static let title: LocalizedStringResource = "Sesi Kıs"
-    static let description = IntentDescription("Wiqo ile eşleştirilmiş Mac'in sesini kısar veya açar.")
+    static let description = IntentDescription("Wiqo ile eşleştirilmiş PC'nin sesini kısar veya açar.")
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         try await performDeviceIntent(.toggleMute, successMessage: "Ses durumu değiştirildi.")
@@ -77,7 +77,7 @@ struct ToggleMuteIntent: AppIntent {
 
 struct MediaPlayPauseIntent: AppIntent {
     static let title: LocalizedStringResource = "Müziği Oynat/Duraklat"
-    static let description = IntentDescription("Wiqo ile eşleştirilmiş Mac'te oynatmayı durdurur ya da devam ettirir.")
+    static let description = IntentDescription("Wiqo ile eşleştirilmiş PC'de oynatmayı durdurur ya da devam ettirir.")
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         try await performDeviceIntent(.mediaControl, payload: .media(.playPause), successMessage: "Oynatma değiştirildi.")
@@ -87,15 +87,15 @@ struct MediaPlayPauseIntent: AppIntent {
 struct WiqoAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
-            intent: LockMacIntent(),
-            phrases: ["\(.applicationName) ile Mac'imi kilitle"],
-            shortTitle: "Mac'i Kilitle",
+            intent: LockPCIntent(),
+            phrases: ["\(.applicationName) ile PC'mi kilitle"],
+            shortTitle: "PC'yi Kilitle",
             systemImageName: "lock.fill"
         )
         AppShortcut(
-            intent: SleepMacIntent(),
-            phrases: ["\(.applicationName) ile Mac'imi uyut"],
-            shortTitle: "Mac'i Uyut",
+            intent: SleepPCIntent(),
+            phrases: ["\(.applicationName) ile PC'mi uyut"],
+            shortTitle: "PC'yi Uyut",
             systemImageName: "moon.fill"
         )
         AppShortcut(
