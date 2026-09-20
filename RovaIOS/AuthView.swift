@@ -227,7 +227,7 @@ struct AuthView: View {
     private var registrationConsents: some View {
         VStack(alignment: .leading, spacing: 10) {
             consentRow(
-                title: "Gizlilik Politikası'nı okudum ve kabul ediyorum.",
+                title: "Gizlilik Politikası'nı okudum. Mesaj, ses ve görsellerimin yanıt üretmek için üçüncü taraf bir yapay zeka sağlayıcısına (Groq) iletilmesini kabul ediyorum.",
                 linkTitle: "Gizlilik Politikası'nı aç",
                 destination: WiqoWebsite.privacyPolicyURL,
                 isAccepted: $acceptedPrivacyPolicy
