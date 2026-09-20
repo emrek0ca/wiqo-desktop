@@ -41,8 +41,6 @@ enum RovaWindowID {
 /// default scene launch behavior is not available yet.
 @MainActor
 final class MacLaunchCoordinator: NSObject, ObservableObject, NSWindowDelegate {
-    private static let welcomeCompletedKey = "rova.mac.welcome.completed"
-
     private let runtime: MacRuntime
     private var welcomeWindow: NSWindow?
 
@@ -52,8 +50,8 @@ final class MacLaunchCoordinator: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     func presentWelcomeIfNeeded() {
-        guard !UserDefaults.standard.bool(forKey: Self.welcomeCompletedKey),
-              runtime.pairedDeviceID == nil,
+        guard !UserDefaults.standard.bool(forKey: MacStorage.welcomeCompletedKey),
+              !runtime.isPaired,
               welcomeWindow == nil else { return }
 
         let view = MacWelcomeView(
@@ -81,7 +79,7 @@ final class MacLaunchCoordinator: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     private func completeWelcome() {
-        UserDefaults.standard.set(true, forKey: Self.welcomeCompletedKey)
+        UserDefaults.standard.set(true, forKey: MacStorage.welcomeCompletedKey)
         welcomeWindow?.close()
     }
 

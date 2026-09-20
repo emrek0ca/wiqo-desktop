@@ -1,31 +1,31 @@
-# Rova V0
+# Wiqo
 
-Rova is a native, local-only iPhone-to-Mac command bridge. It has no cloud, account, database, AI, LLM, analytics, or arbitrary shell execution.
+Wiqo is an AI assistant for iPhone and Mac: chat, documents and cloud tools from the phone, and control of the paired PC when the Mac app is running. The backend lives in a separate repository (`rova-backend`, served at `https://api.wiqoai.com`).
 
 ## Targets
 
-- `RovaMac`: macOS 14+ menu bar app, TLS listener on TCP `47831`, Bonjour service `_rova._tcp`.
-- `RovaIOS`: iOS 17+ SwiftUI client with QR pairing, certificate pinning and reconnect.
-- `RovaShared`: Codable wire protocol, validation, framing, Keychain and QR helpers.
+- `RovaMac`: macOS 14+ menu bar app (product name Wiqo). Listens on TCP `47831` over TLS, advertises the Bonjour service `_rova._tcp`, and keeps a socket to the backend so the phone can reach it from anywhere.
+- `RovaIOS`: iOS 17+ SwiftUI app (`com.wiqo.ios`).
+- `RovaShared`: wire protocol, validation, framing, Keychain and QR helpers used by both.
+- `RovaMacTests`, `RovaSharedTests`: unit tests.
+
+The targets keep their original `Rova*` names. Renaming them would also rename persisted keychain items and preferences, which would unpair every installed Mac.
 
 ## Run
 
-1. Open `Rova.xcodeproj` in Xcode 26 or newer.
-2. Select an Apple Development Team for both app targets under Signing & Capabilities.
-3. Run the `RovaMac` scheme on the Mac. Rova appears in the menu bar and starts the listener asynchronously.
-4. Run the `RovaIOS` scheme on a physical iPhone (iOS 17+). The iPhone and Mac must be on the same local network.
+1. Open `Rova.xcodeproj` in Xcode and pick a Development Team for both app targets.
+2. Run the `RovaMac` scheme. Wiqo appears in the menu bar; the menu shows what start-up is doing and offers **Yeniden dene** and **Sertifikayı yenile** if it fails.
+3. Run the `RovaIOS` scheme on a physical iPhone.
+
+Xcode runs of the Mac app keep their own keychain items and paired-device records (`MacStorage`), so they never touch the installed app's.
 
 ## Pair
 
-1. Open the Rova menu bar item and choose **Show Pairing QR**.
-2. In the iPhone app choose **Scan Pairing QR** and allow camera/local-network access.
-3. The QR contains the Mac endpoint, pinned TLS certificate fingerprint, six-digit code and five-minute expiry. Pairing writes the token and fingerprint only to Keychain.
-4. After pairing, the iPhone reconnects with the token. Use **Retry** after a temporary network interruption.
+1. Menu bar → **Telefonu bağla**.
+2. In the iPhone app scan the code. It is an internet code (valid 10 minutes, renewed automatically). When the backend cannot be reached the window shows a same-Wi-Fi code instead.
+3. The window turns to **Telefon bağlandı** once the phone has claimed it.
 
-The Mac accepts only paired tokens and the fixed capabilities: system status, allow-listed application launch, `http`/`https` URL opening, lock and ping. The command ledger is persisted under Application Support and keeps the last 128 command IDs.
+## Docs
 
-## macOS permissions
-
-`lockMac` uses a fixed System Events AppleScript shortcut. macOS may ask for Automation/Accessibility permission; if denied, the command returns a safe error and does not execute an alternative command.
-
-The Debug build is intentionally unsigned (`CODE_SIGNING_ALLOWED=NO` in local verification). A physical iPhone install requires the normal Apple Development signing/profile configured in Xcode.
+- `docs/abonelik.md`: subscription and quota design.
+- `docs/app-store-gonderim.md`: App Store submission guide.

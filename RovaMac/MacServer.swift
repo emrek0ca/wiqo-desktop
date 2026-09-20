@@ -10,10 +10,10 @@ enum MacServiceState: String, Sendable {
 }
 
 final class MacServer: @unchecked Sendable {
-    private let logger = Logger(subsystem: "com.rova.local", category: "connection")
+    private let logger = Logger(subsystem: "com.wiqo.mac", category: "connection")
     private let port: NWEndpoint.Port
     private let identity: RovaTLSIdentity
-    private let queue = DispatchQueue(label: "com.rova.local.listener", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.wiqo.mac.listener", qos: .userInitiated)
     private var listener: NWListener?
 
     var onState: (@Sendable (MacServiceState, String?) -> Void)?
@@ -44,7 +44,7 @@ final class MacServer: @unchecked Sendable {
             let parameters = NWParameters(tls: tlsOptions, tcp: tcpOptions)
             parameters.allowLocalEndpointReuse = true
             let listener = try NWListener(using: parameters, on: port)
-            listener.service = NWListener.Service(name: Host.current().localizedName, type: "_rova._tcp", domain: nil)
+            listener.service = NWListener.Service(name: MacNetwork.computerName, type: "_rova._tcp", domain: nil)
             listener.newConnectionHandler = { [weak self] connection in
                 guard let self else { return }
                 self.logger.info("Accepted local connection")

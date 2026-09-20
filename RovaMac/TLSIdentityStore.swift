@@ -8,12 +8,25 @@ struct RovaTLSIdentity: @unchecked Sendable {
 }
 
 enum RovaTLSIdentityStore {
-    private static let certificateLabel = "com.rova.local.tls-certificate"
-    private static let keyTag = Data("com.rova.local.tls-key".utf8)
+    private static let certificateLabel = MacStorage.tlsCertificateLabel
+    private static let keyTag = MacStorage.tlsKeyTag
 
     static func loadOrCreate() throws -> RovaTLSIdentity {
         if let existing = try load() { return existing }
         return try create()
+    }
+
+    /// Removes the certificate and its key, so the next start creates a new pair. Phones paired
+    /// over the local network must pair again, because they pin the certificate's fingerprint.
+    static func reset() {
+        for query: [CFString: Any] in [
+            [kSecClass: kSecClassCertificate, kSecAttrLabel: certificateLabel],
+            [kSecClass: kSecClassKey, kSecAttrApplicationTag: keyTag]
+        ] {
+            // A Mac that hit an earlier failure can hold several copies.
+            var removed = 0
+            while removed < 10, SecItemDelete(query as CFDictionary) == errSecSuccess { removed += 1 }
+        }
     }
 
     private static func load() throws -> RovaTLSIdentity? {
@@ -32,7 +45,13 @@ enum RovaTLSIdentityStore {
 
         var identity: SecIdentity?
         guard SecIdentityCreateWithCertificate(nil, certificate, &identity) == errSecSuccess,
-              let identity else { return nil }
+              let identity else {
+            // The certificate is there but its key is not usable (created by a differently signed
+            // build, or deleted). Left alone, every start would add one more certificate and hand
+            // the phone a different fingerprint than the one it paired with.
+            reset()
+            return nil
+        }
         let fingerprint = RovaCrypto.sha256Hex(SecCertificateCopyData(certificate) as Data)
         return RovaTLSIdentity(identity: identity, certificateFingerprint: fingerprint)
     }
@@ -145,7 +164,7 @@ private enum DER {
 
     static func certificateBody(serial: Data, publicKey: Data, notBefore: Date, notAfter: Date) throws -> Data {
         let signatureAlgorithm = sequence(oid([1, 2, 840, 10045, 4, 3, 2]))
-        let name = sequence(set(sequence(oid([2, 5, 4, 3]), utf8("Rova Local"))))
+        let name = sequence(set(sequence(oid([2, 5, 4, 3]), utf8("Wiqo Local"))))
         let validity = sequence(utc(notBefore), utc(notAfter))
         let publicKeyInfo = sequence(
             sequence(oid([1, 2, 840, 10045, 2, 1]), oid([1, 2, 840, 10045, 3, 1, 7])),

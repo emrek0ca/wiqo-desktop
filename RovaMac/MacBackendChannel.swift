@@ -40,7 +40,7 @@ final class MacBackendChannel: NSObject {
     private static let openTimeout: UInt64 = 12
 
     private let engine: MacCommandEngine
-    private let tokenStore = BackendTokenStore(account: "rova-backend-token")
+    private let tokenStore = BackendTokenStore(account: MacStorage.backendTokenAccount)
     private let runtimeStatus: () -> String
     private let deviceInfo: () -> DeviceInfo
     private let pairedDeviceToken: () -> String?

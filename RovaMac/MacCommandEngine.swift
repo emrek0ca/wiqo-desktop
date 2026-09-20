@@ -444,7 +444,7 @@ actor MacCommandEngine {
             guard case .artifactFile(let artifact) = request.payload else {
                 return (nil, "Geçersiz artifact isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Artifact isteği geçersiz."))
             }
-            guard let tokenData = try? RovaKeychainStore.load(account: "rova-backend-token"),
+            guard let tokenData = try? RovaKeychainStore.load(account: MacStorage.backendTokenAccount),
                   let token = String(data: tokenData, encoding: .utf8),
                   !token.isEmpty else {
                 return (nil, "Backend oturumu bulunamadı.", RovaError(code: "BACKEND_AUTH_REQUIRED", message: "Artifact indirmek için Mac backend oturumu gerekli."))

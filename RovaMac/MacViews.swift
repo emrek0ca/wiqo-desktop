@@ -10,12 +10,17 @@ struct MacMenuView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(runtime.connectedDeviceID == nil ? .orange : .green)
+                    .fill(runtime.isPhoneConnected ? .green : .orange)
                     .frame(width: 8, height: 8)
                 Text("Wiqo").font(.headline)
             }
             Label(connectionStatusText, systemImage: connectionStatusIcon)
                 .font(.subheadline)
+            if runtime.serviceState == .failed {
+                failureActions
+            } else if let detail = runtime.startupDetail, runtime.serviceState != .starting {
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
             Divider()
             Button {
                 openWindow(id: RovaWindowID.pairingQR)
@@ -54,17 +59,31 @@ struct MacMenuView: View {
 
     private var connectionStatusText: String {
         if runtime.connectedDeviceID != nil { return "iPhone bağlı" }
-        if runtime.pairedDeviceID != nil { return "iPhone bağlı değil" }
-        if runtime.serviceState == .running { return "Telefonunu bağlamaya hazır" }
-        if runtime.serviceState == .starting { return "Wiqo açılıyor…" }
-        return "PC’ye ulaşılamıyor"
+        if runtime.backendSessionActive { return "İnternet üzerinden hazır" }
+        if runtime.isPaired { return "iPhone bağlı değil" }
+        switch runtime.serviceState {
+        case .running: return "Telefonunu bağlamaya hazır"
+        case .starting: return runtime.startupDetail ?? "Wiqo açılıyor…"
+        case .failed: return "Wiqo başlatılamadı"
+        case .stopped: return "PC’ye ulaşılamıyor"
+        }
     }
 
     private var connectionStatusIcon: String {
-        if runtime.connectedDeviceID != nil {
-            return "checkmark.circle.fill"
+        runtime.isPhoneConnected ? "checkmark.circle.fill" : "exclamationmark.triangle"
+    }
+
+    @ViewBuilder
+    private var failureActions: some View {
+        if let error = runtime.serviceError {
+            Text(error)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        return "exclamationmark.triangle"
+        Button("Yeniden dene") { runtime.restart() }
+        Button("Sertifikayı yenile") { runtime.resetCertificateAndRestart() }
+            .help("Yeni bir yerel sertifika oluşturur. Yerel ağ üzerinden eşleşmiş telefonlar yeniden eşleşmelidir.")
     }
 }
 
@@ -140,25 +159,7 @@ struct PairingQRView: View {
     var body: some View {
         VStack(spacing: 14) {
             Text("Telefonunu bağla").font(.title3.weight(.semibold))
-            if let relayPayload = runtime.relayPairingPayload, let value = try? RovaQRCodec.encode(relayPayload), let image = makeQRCode(value) {
-                Image(nsImage: image)
-                    .interpolation(.none)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 260, height: 260)
-                Text("İnternet üzerinden güvenli bağlantı").font(.subheadline.weight(.semibold))
-                Text("Bu kodu Wiqo uygulamasında tara. Kod 10 dakika geçerli.").font(.caption).foregroundStyle(.secondary)
-            } else if let payload = runtime.pairingPayload, let value = try? RovaQRCodec.encode(payload), let image = makeQRCode(value) {
-                Image(nsImage: image)
-                    .interpolation(.none)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 260, height: 260)
-                Text("Kod: \(payload.pairingCode)").font(.title2.monospacedDigit())
-                Text("Yerel ağ bağlantısı · 5 dakika geçerli.").font(.caption).foregroundStyle(.secondary)
-            } else {
-                ProgressView("Güvenli bağlantı kuruluyor…")
-            }
+            content
         }
         .padding(24)
         .frame(width: 320, height: 380)
@@ -173,6 +174,68 @@ struct PairingQRView: View {
                 window.level = .floating
                 window.orderFrontRegardless()
                 window.makeKey()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch runtime.relayPairing {
+        case .paired:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(.green)
+            Text("Telefon bağlandı").font(.headline)
+            Text("Wiqo'yu telefonundan kullanmaya başlayabilirsin.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        case .waiting(let payload):
+            if let value = try? RovaQRCodec.encode(payload) {
+                qrCode(value)
+                Text("İnternet üzerinden güvenli bağlantı").font(.subheadline.weight(.semibold))
+                Text("Bu kodu Wiqo uygulamasında tara. Kod 10 dakika geçerli.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                ProgressView("Güvenli bağlantı kuruluyor…")
+            }
+        case .preparing:
+            ProgressView("Güvenli bağlantı kuruluyor…")
+        case .unavailable:
+            localNetworkContent
+        }
+    }
+
+    /// The internet code needs the backend; without it the phone can still pair over the same Wi-Fi.
+    @ViewBuilder
+    private var localNetworkContent: some View {
+        if runtime.serviceState == .failed {
+            Text(runtime.serviceError ?? "Wiqo başlatılamadı.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        } else if runtime.serviceState == .running,
+                  runtime.localIPAddress != MacNetwork.unavailableAddress,
+                  let payload = runtime.pairingPayload,
+                  let value = try? RovaQRCodec.encode(payload) {
+            qrCode(value)
+            Text("Kod: \(payload.pairingCode)").font(.title2.monospacedDigit())
+            Text("İnternete ulaşılamıyor. Yalnızca aynı Wi-Fi ağında bağlanır.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        } else {
+            ProgressView("Ağ bağlantısı bekleniyor…")
+        }
+    }
+
+    private func qrCode(_ value: String) -> some View {
+        Group {
+            if let image = makeQRCode(value) {
+                Image(nsImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 260, height: 260)
             }
         }
     }
