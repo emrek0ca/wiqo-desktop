@@ -10,12 +10,12 @@ enum WiqoProduct {
 /// Wiqo's own web addresses. The app never links to a page that sells anything.
 enum WiqoWebsite {
     static let downloadURL = URL(string: "https://wiqoai.com")!
-    /// Wiqo's own legal/support pages (github.io while there's no dedicated domain yet - see
-    /// docs/abonelik.md). Required to be reachable from both the paywall (Guideline 3.1.2) and
-    /// Settings, and referenced as-is in App Store Connect's Privacy Policy/Support URL fields.
-    static let privacyPolicyURL = URL(string: "https://emrek0ca.github.io/wiqo/privacy.html")!
-    static let termsOfServiceURL = URL(string: "https://emrek0ca.github.io/wiqo/terms.html")!
-    static let supportURL = URL(string: "https://emrek0ca.github.io/wiqo/support.html")!
+    /// Wiqo's own legal/support pages. Required to be reachable from both the paywall
+    /// (Guideline 3.1.2) and Settings, and referenced as-is in App Store Connect's Privacy
+    /// Policy/Support URL fields.
+    static let privacyPolicyURL = URL(string: "https://wiqoai.com/privacy")!
+    static let termsOfServiceURL = URL(string: "https://wiqoai.com/terms")!
+    static let supportURL = URL(string: "https://wiqoai.com/support")!
 }
 
 /// Mirrors the backend's `GET /billing/subscription` response exactly - the single source of

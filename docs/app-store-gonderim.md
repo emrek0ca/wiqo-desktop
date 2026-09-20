@@ -37,9 +37,10 @@ Sürüm: 1.0.0 (1) · Bundle ID: `com.wiqo.ios` · Minimum iOS 17 · Sadece iPho
 >
 > Free plan sınırlıdır. Wiqo Pro aylık abonelikle daha fazla mesaj, görsel ve PC bağlantısı sunar. Abonelik Apple ID hesabından tahsil edilir ve dönem bitiminden en az 24 saat önce iptal edilmezse otomatik yenilenir; Ayarlar > Apple ID > Abonelikler'den yönetilir.
 
-**Destek URL'si:** https://emrek0ca.github.io/wiqo/support.html
-**Gizlilik Politikası URL'si:** https://emrek0ca.github.io/wiqo/privacy.html
-(wiqoai.com altında henüz bu sayfalar yok; taşınınca `RovaIOS/Billing.swift` içindeki `WiqoWebsite` adresleri ve buradaki alanlar birlikte güncellenmeli.)
+**Destek URL'si:** https://wiqoai.com/support
+**Gizlilik Politikası URL'si:** https://wiqoai.com/privacy
+**Kullanım Şartları:** https://wiqoai.com/terms
+(Üç sayfa da siteye eklenmeden gönderim yapılmamalı; uygulama bu adreslere bağlanıyor: `RovaIOS/Billing.swift` → `WiqoWebsite`.)
 
 ## 3. Gizlilik ("App Privacy") yanıtları
 
@@ -56,7 +57,7 @@ Sürüm: 1.0.0 (1) · Bundle ID: `com.wiqo.ios` · Minimum iOS 17 · Sadece iPho
 | Cihaz kimliği | Push bildirim jetonu |
 | Satın alma geçmişi | Abonelik durumu |
 
-Takip (tracking): **Hayır.** Üçüncü taraf: mesaj, ses ve görseller yanıt üretmek için bir yapay zeka sağlayıcısına (Groq) iletilir. Bu, kayıt ekranındaki açık onayda ve gizlilik politikasında yazmalıdır (App Store 5.1.2). **Gizlilik politikası sayfasında Groq'un adının ve amacının geçtiğini kontrol et.**
+Takip (tracking): **Hayır.** Mesaj, ses ve görseller yanıt üretmek için yapay zeka hizmet sağlayıcılarıyla işlenir. Bu, kayıt ekranındaki açık onayda ve gizlilik politikasında "yapay zeka hizmet sağlayıcıları" olarak yazmalıdır (App Store 5.1.2). Politikada verinin **sadece Wiqo'da kaldığı** yazılmamalı; doğru değil ve hem Apple hem kullanıcı için yanıltıcı olur. Sağlayıcı adını yazmak zorunlu değil, türünü yazmak zorunlu.
 
 Şifreleme (export compliance): `ITSAppUsesNonExemptEncryption = NO` (yalnızca TLS ve HMAC-SHA256 imza).
 
@@ -71,7 +72,7 @@ Takip (tracking): **Hayır.** Üçüncü taraf: mesaj, ses ve görseller yanıt 
 > 2. PC özellikleri için Mac uygulaması (https://wiqoai.com) gerekir; eşleştirme QR ile yapılır. Kısa bir demo videosu: [VİDEO BAĞLANTISI].
 > 3. Test hesabı: [E-POSTA] / [ŞİFRE] (Pro planı tanımlı).
 > 4. Abonelik yalnızca uygulama içi satın alma ile satılır; uygulama içinde harici ödeme bağlantısı yoktur.
-> 5. Yapay zeka sağlayıcısı (Groq) ile veri paylaşımı kayıt sırasında açıkça onaylatılır.
+> 5. Yapay zeka hizmet sağlayıcılarıyla veri işleme, kayıt sırasında açıkça onaylatılır. (İnceleyici sağlayıcıyı sorarsa Groq olarak yanıtlanır.)
 
 Doldurulacak: demo videosu, test hesabı.
 
