@@ -51,7 +51,7 @@ enum RovaBackendError: Error, LocalizedError {
 /// the AI copilot feature.
 enum RovaBackendClient {
     private static let tokenAccount = "rova-backend-token"
-    static let apnsBundleID = "com.rova.ios"
+    static let apnsBundleID = "com.wiqo.ios"
 
     #if DEBUG
     static let apnsEnvironment = "development"

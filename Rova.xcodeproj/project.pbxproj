@@ -61,6 +61,7 @@
 		D2000000000000000000000C /* WiqoContextCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000D /* WiqoContextCard.swift */; };
 		D2000000000000000000000E /* WiqoAppPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000F /* WiqoAppPreview.swift */; };
 		D20000000000000000000010 /* WiqoCanvasSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000011 /* WiqoCanvasSupport.swift */; };
+		D20000000000000000000028 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000029 /* PrivacyInfo.xcprivacy */; };
 		B026 /* ProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F026 /* ProtocolTests.swift */; };
 		B027 /* MacCommandEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F027 /* MacCommandEngineTests.swift */; };
 		B028 /* OperationManifest.swift in RovaSharedTests */ = {isa = PBXBuildFile; fileRef = F031 /* OperationManifest.swift */; };
@@ -168,6 +169,7 @@
 		D2000000000000000000000D /* WiqoContextCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoContextCard.swift; sourceTree = "<group>"; };
 		D2000000000000000000000F /* WiqoAppPreview.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoAppPreview.swift; sourceTree = "<group>"; };
 		D20000000000000000000011 /* WiqoCanvasSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoCanvasSupport.swift; sourceTree = "<group>"; };
+		D20000000000000000000029 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F021 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F022 /* Wiqo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Wiqo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F023 /* Rova.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Rova.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -281,6 +283,7 @@
 				D2000000000000000000000D /* WiqoContextCard.swift */,
 				D2000000000000000000000F /* WiqoAppPreview.swift */,
 				D20000000000000000000011 /* WiqoCanvasSupport.swift */,
+				D20000000000000000000029 /* PrivacyInfo.xcprivacy */,
 				F021 /* Info.plist */,
 				40F9B2AB5CBDF7E892477B13 /* CopilotView.swift */,
 				316BBB8D46F54C18809ADCAD /* DiscoveryView.swift */,
@@ -509,6 +512,7 @@
 				701B311C77C0CDA1CAFCAB78 /* Assets.xcassets in Resources */,
 				9D40EDE574A60751916C8895 /* wiqo.icon in Resources */,
 				CC224180A9C29B5B70DB3EC0 /* Localizable.strings in Resources */,
+				D20000000000000000000028 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -719,7 +723,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.rova.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wiqo.ios;
 				PRODUCT_NAME = Rova;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_MODULE_NAME = RovaIOS;
@@ -743,7 +747,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.rova.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wiqo.ios;
 				PRODUCT_NAME = Rova;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_MODULE_NAME = RovaIOS;
