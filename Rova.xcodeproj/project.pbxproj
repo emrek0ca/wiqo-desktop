@@ -52,6 +52,11 @@
 		B019 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F019 /* QRScannerView.swift */; };
 		B020 /* IOSViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F020 /* IOSViews.swift */; };
 		D10000000000000000000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* OnboardingView.swift */; };
+		D20000000000000000000039 /* CopilotConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000003A /* CopilotConversationStore.swift */; };
+		D20000000000000000000037 /* CopilotSpeechRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000038 /* CopilotSpeechRecorder.swift */; };
+		D20000000000000000000035 /* CopilotExecutionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000036 /* CopilotExecutionViews.swift */; };
+		D20000000000000000000033 /* CopilotMessageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000034 /* CopilotMessageViews.swift */; };
+		D20000000000000000000031 /* CopilotModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000032 /* CopilotModels.swift */; };
 		D2000000000000000000002C /* WiqoSettingsKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000002D /* WiqoSettingsKit.swift */; };
 		D2000000000000000000002A /* WiqoControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000002B /* WiqoControls.swift */; };
 		D20000000000000000000002 /* WiqoTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* WiqoTheme.swift */; };
@@ -163,6 +168,11 @@
 		F019 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		F020 /* IOSViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSViews.swift; sourceTree = "<group>"; };
 		D10000000000000000000002 /* OnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		D2000000000000000000003A /* CopilotConversationStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotConversationStore.swift; sourceTree = "<group>"; };
+		D20000000000000000000038 /* CopilotSpeechRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotSpeechRecorder.swift; sourceTree = "<group>"; };
+		D20000000000000000000036 /* CopilotExecutionViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotExecutionViews.swift; sourceTree = "<group>"; };
+		D20000000000000000000034 /* CopilotMessageViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotMessageViews.swift; sourceTree = "<group>"; };
+		D20000000000000000000032 /* CopilotModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotModels.swift; sourceTree = "<group>"; };
 		D2000000000000000000002D /* WiqoSettingsKit.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoSettingsKit.swift; sourceTree = "<group>"; };
 		D2000000000000000000002B /* WiqoControls.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoControls.swift; sourceTree = "<group>"; };
 		D20000000000000000000003 /* WiqoTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoTheme.swift; sourceTree = "<group>"; };
@@ -280,6 +290,11 @@
 				F019 /* QRScannerView.swift */,
 				F020 /* IOSViews.swift */,
 				D10000000000000000000002 /* OnboardingView.swift */,
+				D2000000000000000000003A /* CopilotConversationStore.swift */,
+				D20000000000000000000038 /* CopilotSpeechRecorder.swift */,
+				D20000000000000000000036 /* CopilotExecutionViews.swift */,
+				D20000000000000000000034 /* CopilotMessageViews.swift */,
+				D20000000000000000000032 /* CopilotModels.swift */,
 				D2000000000000000000002D /* WiqoSettingsKit.swift */,
 				D2000000000000000000002B /* WiqoControls.swift */,
 				D20000000000000000000003 /* WiqoTheme.swift */,
@@ -575,6 +590,11 @@
 				B019 /* QRScannerView.swift in Sources */,
 				B020 /* IOSViews.swift in Sources */,
 				D10000000000000000000001 /* OnboardingView.swift in Sources */,
+				D20000000000000000000039 /* CopilotConversationStore.swift in Sources */,
+				D20000000000000000000037 /* CopilotSpeechRecorder.swift in Sources */,
+				D20000000000000000000035 /* CopilotExecutionViews.swift in Sources */,
+				D20000000000000000000033 /* CopilotMessageViews.swift in Sources */,
+				D20000000000000000000031 /* CopilotModels.swift in Sources */,
 				D2000000000000000000002C /* WiqoSettingsKit.swift in Sources */,
 				D2000000000000000000002A /* WiqoControls.swift in Sources */,
 				D20000000000000000000002 /* WiqoTheme.swift in Sources */,
