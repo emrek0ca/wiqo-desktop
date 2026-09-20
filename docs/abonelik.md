@@ -101,33 +101,13 @@ kurulur.
 | Alan | Değer |
 |---|---|
 | Bundle ID | `com.wiqo.ios` (Developer hesabında kayıtlı; Push ve In-App Purchase açık) |
-| App Apple ID | yeni kaydın Apple Kimliği (sunucuda `APPLE_APP_ID`) |
+| App Apple ID | `6814282486` (sunucuda `APPLE_APP_ID`) |
+| Abonelik | `6814282634`, durum: MISSING_METADATA (App Review ekran görüntüsü eksik) |
 | Product ID | `com.wiqo.ios.pro.monthly` |
 | Abonelik grubu | "Wiqo Abonelikler" |
 | Süre / fiyat | 1 ay / $9.99 (ABD + TR) |
 
-Yeni kayıt oluşturulduktan sonra abonelik grubunu ve ürünü kurmak için (`asc` API anahtarıyla
-çalışır, Apple web oturumu gerekmez):
-
-```bash
-ASC=/opt/homebrew/Cellar/asc/5.3.1/bin/asc
-$ASC subscriptions setup \
-  --app <YENİ_APPLE_KİMLİĞİ> \
-  --group-display-name "Wiqo Abonelikler" \
-  --group-locale "tr" \
-  --reference-name "Wiqo Pro Aylık" \
-  --product-id "com.wiqo.ios.pro.monthly" \
-  --subscription-period ONE_MONTH \
-  --price "9.99" \
-  --price-territory "United States" \
-  --territories "US,TR" \
-  --available-in-new-territories true \
-  --locale "tr" \
-  --display-name "Wiqo Pro" \
-  --description "Günde 100 mesaj, 10 görsel ve PC bağlantısı." \
-  --no-verify \
-  --output json --pretty
-```
+Grup ve ürün `asc subscriptions setup --app 6814282486 --group-reference-name "Wiqo Abonelikler" --product-id com.wiqo.ios.pro.monthly …` ile kuruldu (aylık, $9.99, US + TR). Kalan tek eksik: paywall'un App Review ekran görüntüsü.
 
 App Store Connect'te bir kez ayarlanacak: **App Bilgileri → App Store Sunucu Bildirimleri**,
 hem Production hem Sandbox için URL: `https://api.wiqoai.com/billing/storekit/notifications` (V2).

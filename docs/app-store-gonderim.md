@@ -5,8 +5,8 @@ Sürüm: 1.0.0 (1) · Bundle ID: `com.wiqo.ios` · Minimum iOS 17 · Sadece iPho
 ## 1. Gönderimden önce (sırayla)
 
 1. Apple Developer'da `com.wiqo.ios` App ID'si kayıtlı (Push ve In-App Purchase açık).
-2. App Store Connect'te **yeni uygulama** kaydı: bundle `com.wiqo.ios`, SKU `wiqoios001`, birincil dil Türkçe. (Eski `Wiqo`/`com.rova.ios` kaydı kullanılmaz; bundle kimliği kayıtta değiştirilemez.) Ad, mevcut "Wiqo" ile çakışırsa örn. "Wiqo: PC'ni Konuşarak Yönet"; ana ekrandaki ad `CFBundleDisplayName` ile yine "Wiqo" kalır.
-3. Yeni kaydın Apple Kimliği ile abonelik ürününü kur (`docs/abonelik.md` bölüm 5.1), sunucu `.env`'ye `APPLE_APP_ID=<yeni kimlik>` yaz, `APPLE_BUNDLE_ID=com.wiqo.ios` ve `APNS_BUNDLE_ID=com.wiqo.ios` olmalı.
+2. App Store Connect'te **yeni uygulama** kaydı: bundle `com.wiqo.ios`, SKU `wiqoios001`, ad Wiqo, Apple Kimliği `6814282486`. Eski `com.rova.ios` kaydı (6811908101) kullanılmaz; bundle kimliği kayıtta değiştirilemez.
+3. Abonelik ürünü kurulu (`docs/abonelik.md` bölüm 5.1); sunucu `.env`'de `APPLE_APP_ID=6814282486` olmalı, `APPLE_BUNDLE_ID=com.wiqo.ios` ve `APNS_BUNDLE_ID=com.wiqo.ios` olmalı.
 4. Xcode: Signing & Capabilities → Team seç, Push Notifications ve Sign-in yeteneklerinin yeni App ID ile eşleştiğini doğrula.
 5. TestFlight: kendi iPhone'unda ve 3-5 tanıdık kişide şu akışı dene: kayıt → onboarding → QR eşleştirme → "Sesi kıs" → onay kartı → Pro satın alma (sandbox) → satın alımı geri yükle → hesabı sil.
 6. Product → Archive → Distribute → App Store Connect.
