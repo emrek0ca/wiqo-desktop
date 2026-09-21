@@ -102,6 +102,7 @@ final class IOSConnectionModel: ObservableObject {
     private var reconnectAttempt = 0
     private var heartbeatTask: Task<Void, Never>?
     private var relayProbeTask: Task<Void, Never>?
+    private var deviceEventsTask: Task<Void, Never>?
     private var browser: NWBrowser?
     private let pathMonitor = NWPathMonitor()
     private let pathMonitorQueue = DispatchQueue(label: "com.wiqo.path-monitor", qos: .utility)
@@ -186,6 +187,7 @@ final class IOSConnectionModel: ObservableObject {
     }
 
     func connect() {
+        startDeviceEvents()
         if state == .connected && isUsingRelay {
             return
         }
@@ -239,6 +241,8 @@ final class IOSConnectionModel: ObservableObject {
     }
 
     func disconnect() {
+        deviceEventsTask?.cancel()
+        deviceEventsTask = nil
         pairingTimeoutTask?.cancel()
         pairingTimeoutTask = nil
         connectTimeoutTask?.cancel()
@@ -301,6 +305,7 @@ final class IOSConnectionModel: ObservableObject {
                 isPaired = true
                 isPairing = false
                 appendActivity(title: "Eşleşme", detail: "İnternet bağlantısı hazır")
+                startDeviceEvents()
                 scheduleRelayProbe()
             } catch {
                 isPairing = false
@@ -733,6 +738,52 @@ final class IOSConnectionModel: ObservableObject {
         heartbeatTask = nil
     }
 
+    /// Presence events wake an offline phone as soon as the Mac registers again. The backend
+    /// sends its current snapshot on subscription, so a reconnect cannot be lost between a
+    /// separate fetch and stream setup.
+    private func startDeviceEvents() {
+        guard deviceEventsTask == nil, isPaired, RovaBackendClient.isAuthenticated else { return }
+        deviceEventsTask = Task { @MainActor [weak self] in
+            var retrySeconds: UInt64 = 1
+            while let self, !Task.isCancelled, self.isPaired, RovaBackendClient.isAuthenticated {
+                do {
+                    try await RovaBackendClient.observeDeviceEvents { [weak self] event in
+                        guard let self,
+                              let id = self.pairedMacDeviceID,
+                              event.device.id.caseInsensitiveCompare(id.uuidString) == .orderedSame else { return }
+                        self.handleDevicePresence(online: event.device.online)
+                    }
+                    retrySeconds = 1
+                } catch is CancellationError {
+                    break
+                } catch RovaBackendError.notAuthenticated {
+                    break
+                } catch {
+                    retrySeconds = min(retrySeconds * 2, 30)
+                }
+                do { try await Task.sleep(nanoseconds: retrySeconds * 1_000_000_000) } catch { break }
+            }
+            self?.deviceEventsTask = nil
+        }
+    }
+
+    private func handleDevicePresence(online: Bool) {
+        if online {
+            guard state != .connected else { return }
+            relayProbeTask?.cancel()
+            relayProbeTask = nil
+            isReconnecting = true
+            state = .connecting
+            scheduleRelayProbe()
+        } else if !authenticated {
+            relayProbeTask?.cancel()
+            relayProbeTask = nil
+            isUsingRelay = false
+            isReconnecting = false
+            state = .failed
+        }
+    }
+
     private func scheduleRelayProbe() {
         guard RovaConnectionRoutePolicy.shouldProbeRelay(
             isPaired: isPaired,
@@ -742,7 +793,9 @@ final class IOSConnectionModel: ObservableObject {
         ) else { return }
         relayProbeTask = Task { @MainActor [weak self] in
             defer { self?.relayProbeTask = nil }
-            for delay in [0, 1, 2, 4, 8, 16, 30] {
+            // Presence stream supplies later online transitions; a short bounded probe is only
+            // for the registration race, not a permanent series of failed device commands.
+            for delay in [0, 1, 2] {
                 if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000) }
                 guard let self, !Task.isCancelled, self.isPaired, self.state != .connected else { return }
                 let result = await self.send(.ping)

@@ -883,17 +883,34 @@ enum RovaBackendClient {
     }
 
     static func fetchDevices() async throws -> [DeviceStatus] {
-        let key = mobileReadCacheKey("devices")
-        if let data = WiqoMobileReadCache.shared.data(for: key, maxAge: 15),
-           let cached = try? JSONDecoder().decode([DeviceStatus].self, from: data) {
-            return cached
-        }
         struct Response: Decodable { let devices: [DeviceStatus] }
-        let devices = try await authorizedGet("devices", as: Response.self).devices
-        if let data = try? JSONEncoder().encode(devices) {
-            WiqoMobileReadCache.shared.store(data, for: key)
+        // Presence changes independently of account/device metadata; a cached `online` value
+        // must never be presented as current after a disconnect or wake.
+        return try await authorizedGet("devices", as: Response.self).devices
+    }
+
+    struct DeviceEvent: Decodable {
+        let type: String
+        let device: DeviceStatus
+    }
+
+    static func observeDeviceEvents(_ onEvent: @escaping @MainActor @Sendable (DeviceEvent) -> Void) async throws {
+        guard let token else { throw RovaBackendError.notAuthenticated }
+        var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("devices/events"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 60
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else { throw RovaBackendError.invalidResponse }
+        if http.statusCode == 401 { throw RovaBackendError.notAuthenticated }
+        guard http.statusCode == 200 else { throw RovaBackendError.network("Cihaz bağlantısı izlenemiyor.") }
+        for try await line in bytes.lines {
+            try Task.checkCancellation()
+            guard line.hasPrefix("data: "),
+                  let data = String(line.dropFirst(6)).data(using: .utf8),
+                  let event = try? JSONDecoder().decode(DeviceEvent.self, from: data) else { continue }
+            await onEvent(event)
         }
-        return devices
     }
 
     struct AccountInfo: Decodable {
@@ -1043,6 +1060,50 @@ enum RovaBackendClient {
         let isActive: Bool
         let lastRunAt: String?
         let nextRunAt: String?
+        let lifecycleStatus: String?
+        let targetDeviceId: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case id, prompt, cron, isActive, lastRunAt, nextRunAt, lifecycleStatus, targetDeviceId
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            id = try values.decode(Int.self, forKey: .id)
+            prompt = try values.decode(String.self, forKey: .prompt)
+            cron = try values.decode(String.self, forKey: .cron)
+            isActive = try values.decode(Bool.self, forKey: .isActive)
+            lastRunAt = try values.decodeIfPresent(String.self, forKey: .lastRunAt)
+            nextRunAt = try values.decodeIfPresent(String.self, forKey: .nextRunAt)
+            lifecycleStatus = try values.decodeIfPresent(String.self, forKey: .lifecycleStatus)
+            targetDeviceId = try values.decodeIfPresent(String.self, forKey: .targetDeviceId)
+        }
+    }
+
+    struct AutomationReviewItem: Decodable, Identifiable {
+        let runId: Int
+        let automationId: Int
+        let title: String
+        let status: String
+        let reply: String?
+        let error: String?
+        let delivered: Bool
+        let currentStep: Int
+        let waitingReason: String?
+        let errorCategory: String?
+        let checkpointAt: String?
+        let lastProgressAt: String?
+        let finishedAt: String?
+
+        var id: Int { runId }
+    }
+
+    struct AutomationActionResponse: Decodable {
+        let ok: Bool
+        let status: String?
+        let runId: Int?
+        let coalesced: Bool?
+        let nextRunAt: String?
     }
 
     /// One step of a past automation run.
@@ -1129,6 +1190,55 @@ enum RovaBackendClient {
     static func fetchAutomations() async throws -> [RovaAutomation] {
         struct Response: Decodable { let automations: [RovaAutomation] }
         return try await authorizedGet("automations", as: Response.self).automations
+    }
+
+    static func fetchAutomationReview() async throws -> [AutomationReviewItem] {
+        struct Response: Decodable { let items: [AutomationReviewItem] }
+        return try await authorizedGet("automations/review", as: Response.self).items
+    }
+
+    static func pauseAutomation(id: Int) async throws -> AutomationActionResponse {
+        try await authorizedPost("automations/\(id)/pause", body: [:], as: AutomationActionResponse.self)
+    }
+
+    static func resumeAutomation(id: Int) async throws -> AutomationActionResponse {
+        try await authorizedPost("automations/\(id)/resume", body: [:], as: AutomationActionResponse.self)
+    }
+
+    static func runAutomationNow(id: Int) async throws -> AutomationActionResponse {
+        try await authorizedPost("automations/\(id)/run-now", body: [:], as: AutomationActionResponse.self)
+    }
+
+    static func updateAutomation(
+        id: Int,
+        prompt: String? = nil,
+        cron: String? = nil,
+        timezone: String? = nil,
+        targetDeviceId: String? = nil
+    ) async throws {
+        var values: [String: Any] = [:]
+        if let prompt { values["prompt"] = prompt }
+        if let cron { values["cron"] = cron }
+        if let timezone { values["timezone"] = timezone }
+        if let targetDeviceId { values["targetDeviceId"] = targetDeviceId }
+        let data = try JSONSerialization.data(withJSONObject: values)
+        _ = try await authorizedJSON("automations/\(id)", method: "PATCH", body: data)
+    }
+
+    static func retryAutomationRun(automationID: Int, runID: Int) async throws -> AutomationActionResponse {
+        try await authorizedPost("automations/\(automationID)/runs/\(runID)/retry", body: [:], as: AutomationActionResponse.self)
+    }
+
+    static func resolveUnknownAutomationRun(
+        automationID: Int,
+        runID: Int,
+        resolution: String
+    ) async throws -> AutomationActionResponse {
+        try await authorizedPost(
+            "automations/\(automationID)/runs/\(runID)/resolve-unknown",
+            body: ["resolution": resolution],
+            as: AutomationActionResponse.self
+        )
     }
 
     static func cancelAutomation(id: Int) async throws {

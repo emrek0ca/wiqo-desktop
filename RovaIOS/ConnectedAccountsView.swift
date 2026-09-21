@@ -48,9 +48,9 @@ struct ConnectedAccountsView: View {
     @State private var errorMessage: String?
     @State private var runner = OAuthSessionRunner()
 
-    private let providers: [(id: String, name: String, icon: String, description: String)] = [
-        ("google", "Google", "calendar", "Takvim, Gmail, Docs, Sheets, Drive, Kişiler - PC bağlı olmasa bile çalışır"),
-        ("notion", "Notion", "doc.text", "Sayfa arama, okuma ve oluşturma")
+    private let providers: [(id: String, name: String, icon: String)] = [
+        ("google", "Google", "calendar"),
+        ("notion", "Notion", "doc.text")
     ]
 
     private func connection(for provider: String) -> RovaBackendClient.OAuthConnection? {
@@ -60,11 +60,6 @@ struct ConnectedAccountsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Wiqo'nun bu hesaplara erişimi yalnızca kendi kullanıcı hesabına özeldir; bağlantıyı istediğin an buradan kesebilirsin.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-
                 WiqoSettingsGroup {
                     ForEach(providers, id: \.id) { provider in
                         row(for: provider, isLast: provider.id == providers.last?.id)
@@ -89,12 +84,12 @@ struct ConnectedAccountsView: View {
         .refreshable { await load() }
     }
 
-    private func row(for provider: (id: String, name: String, icon: String, description: String), isLast: Bool) -> some View {
+    private func row(for provider: (id: String, name: String, icon: String), isLast: Bool) -> some View {
         let connected = connection(for: provider.id)
         return WiqoRow(
             systemImage: provider.icon,
             title: provider.name,
-            subtitle: connected != nil ? (connected?.accountLabel ?? "Bağlı") : provider.description,
+            subtitle: connected != nil ? (connected?.accountLabel ?? "Bağlı") : "Bağlı değil",
             showsDivider: !isLast
         ) {
             if connectingProvider == provider.id {

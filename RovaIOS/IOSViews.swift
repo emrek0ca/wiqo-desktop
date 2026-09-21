@@ -600,9 +600,9 @@ struct SettingsView: View {
     @ObservedObject var subscriptionStore: SubscriptionStore
     @State private var showingPaywall = false
     @State private var showingSignOutConfirmation = false
-    @State private var showingPCSettings = false
     @State private var tasks: [RovaBackendClient.RovaTask] = []
     @State private var automations: [RovaBackendClient.RovaAutomation] = []
+    @State private var reviewItems: [RovaBackendClient.AutomationReviewItem] = []
     @State private var taskAutomationError: String?
     @State private var accountInfo: RovaBackendClient.AccountInfo?
     @State private var inviteCodes: [RovaBackendClient.InviteCode] = []
@@ -613,17 +613,7 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 22) {
-                    pcSection
-                    accountSection
-                    if taskAutomationError != nil || !pendingTasks.isEmpty || !activeAutomations.isEmpty {
-                        tasksAutomationsSection
-                    }
-                    if accountInfo?.isFoundingMember == true || firstUnusedInviteCode != nil {
-                        inviteSection
-                    }
-                    legalSection
-                    signOutSection
-                    versionFooter
+                    settingsNavigation
                 }
                 .padding(RovaDesign.screenPadding)
             }
@@ -637,9 +627,6 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showingPaywall) {
                 PaywallView(subscriptionStore: subscriptionStore)
-            }
-            .sheet(isPresented: $showingPCSettings) {
-                PCSettingsView(model: model, subscriptionStore: subscriptionStore)
             }
         }
         .wiqoToastHost(level: 1)
@@ -661,40 +648,111 @@ struct SettingsView: View {
         inviteCodes.first(where: { !$0.used })?.code
     }
 
-    // MARK: PC
+    private var settingsNavigation: some View {
+        WiqoSettingsGroup {
+            NavigationLink {
+                PCSettingsView(model: model, subscriptionStore: subscriptionStore)
+            } label: {
+                settingsNavigationRow(title: "PC", systemImage: "laptopcomputer", value: model.isPaired ? model.userFacingConnectionLabel : "Bağla")
+            }
+            .buttonStyle(WiqoRowButtonStyle())
 
-    /// The one thing this app is for, first: is the computer ready, and a way into its settings.
-    private var pcSection: some View {
-        Button { showingPCSettings = true } label: {
-            HStack(spacing: 14) {
-                Image(systemName: "laptopcomputer")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(RovaConnectionStatus.color(for: model))
-                    .frame(width: 44, height: 44)
-                    .background(WiqoTheme.tint(RovaConnectionStatus.color(for: model)), in: Circle())
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(model.isPaired ? "PC" : "PC ekle")
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    Text(model.isPaired ? model.userFacingConnectionLabel : "Bilgisayarını bağla ve telefondan yönet")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
-                if model.state == .connecting || model.isReconnecting {
-                    ProgressView().controlSize(.small)
+            NavigationLink {
+                tasksSettingsPage
+            } label: {
+                settingsNavigationRow(title: "Görevler", systemImage: "checklist", value: taskNavigationValue)
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+
+            NavigationLink {
+                accountSettingsPage
+            } label: {
+                settingsNavigationRow(title: "Hesap", systemImage: "person.crop.circle", value: profileStore.profile.visibleName)
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+
+            NavigationLink {
+                advancedSettingsPage
+            } label: {
+                settingsNavigationRow(title: "Gelişmiş", systemImage: "slider.horizontal.3", value: "Yasal ve destek")
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+        }
+    }
+
+    private func settingsNavigationRow(title: String, systemImage: String, value: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+            Text(title)
+                .font(.body.weight(.medium))
+                .foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            WiqoChevron()
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 52)
+        .contentShape(Rectangle())
+    }
+
+    private var taskNavigationValue: String {
+        if !reviewItems.isEmpty { return "İncele" }
+        if !activeAutomations.isEmpty { return "(activeAutomations.count) otomasyon" }
+        return pendingTasks.isEmpty ? "Boş" : "(pendingTasks.count) bekliyor"
+    }
+
+    private var tasksSettingsPage: some View {
+        ScrollView {
+            VStack(spacing: 22) {
+                if taskAutomationError != nil || !pendingTasks.isEmpty || !activeAutomations.isEmpty || !reviewItems.isEmpty {
+                    tasksAutomationsSection
                 } else {
-                    WiqoChevron()
+                    ContentUnavailableView("Görev yok", systemImage: "checklist")
+                        .frame(maxWidth: .infinity)
                 }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .wiqoCard()
-            .contentShape(Rectangle())
+            .padding(RovaDesign.screenPadding)
         }
-        .buttonStyle(WiqoCardButtonStyle())
-        .accessibilityElement(children: .combine)
+        .background(RovaDesign.canvas)
+        .navigationTitle("Görevler")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var accountSettingsPage: some View {
+        ScrollView {
+            VStack(spacing: 22) {
+                accountSection
+                if accountInfo?.isFoundingMember == true || firstUnusedInviteCode != nil {
+                    inviteSection
+                }
+                signOutSection
+            }
+            .padding(RovaDesign.screenPadding)
+        }
+        .background(RovaDesign.canvas)
+        .navigationTitle("Hesap")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var advancedSettingsPage: some View {
+        ScrollView {
+            VStack(spacing: 22) {
+                legalSection
+                WiqoSettingsGroup(title: "Sürüm") {
+                    versionFooter
+                }
+            }
+            .padding(RovaDesign.screenPadding)
+        }
+        .background(RovaDesign.canvas)
+        .navigationTitle("Gelişmiş")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     // MARK: Account
@@ -735,7 +793,7 @@ struct SettingsView: View {
             NavigationLink {
                 ConnectedAccountsView()
             } label: {
-                WiqoRow(systemImage: "link", title: "Bağlı hesaplar", subtitle: "Google, Notion", showsDivider: false)
+                WiqoRow(systemImage: "link", title: "Bağlı hesaplar", showsDivider: false)
             }
             .buttonStyle(WiqoRowButtonStyle())
         }
@@ -807,14 +865,26 @@ struct SettingsView: View {
                     Button {
                         Task { await cancel(automation) }
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                        Menu {
+                            Button("Şimdi çalıştır") {
+                                Task { await runNow(automation) }
+                            }
+                            Button("Duraklat") {
+                                Task { await pause(automation) }
+                            }
+                            Button("İptal et", role: .destructive) {
+                                Task { await cancel(automation) }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Otomasyonu iptal et")
+                    .accessibilityLabel("Otomasyon seçenekleri")
                 }
                 .overlay(alignment: .bottom) {
                     if automation.id != activeAutomations.last?.id {
@@ -822,6 +892,45 @@ struct SettingsView: View {
                     }
                 }
             }
+            ForEach(reviewItems) { item in
+                reviewRow(item, showsDivider: item.id != reviewItems.last?.id)
+            }
+        }
+    }
+
+    private func reviewRow(_ item: RovaBackendClient.AutomationReviewItem, showsDivider: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: item.status == "needs_attention" ? "exclamationmark.circle" : "clock")
+                    .foregroundStyle(item.status == "needs_attention" ? WiqoTheme.orange : .secondary)
+                    .frame(width: 22)
+                Text(item.title)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(2)
+                Spacer(minLength: 4)
+                Menu {
+                    if item.status == "needs_attention" {
+                        Button("Tamamlandı") { Task { await resolve(item, as: "completed") } }
+                        Button("Başarısız") { Task { await resolve(item, as: "failed") } }
+                    } else {
+                        Button("Tekrar dene") { Task { await retry(item) } }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let message = item.error ?? item.reply, !message.isEmpty {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) {
+            if showsDivider { Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 46) }
         }
     }
 
@@ -832,6 +941,26 @@ struct SettingsView: View {
             WiqoToastCenter.shared.show("Otomasyon iptal edildi", kind: .success)
         } catch {
             taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Otomasyon iptal edilemedi."
+        }
+    }
+
+    private func runNow(_ automation: RovaBackendClient.RovaAutomation) async {
+        do {
+            _ = try await RovaBackendClient.runAutomationNow(id: automation.id)
+            await loadTasksAndAutomations()
+            WiqoToastCenter.shared.show("Çalıştırıyorum", kind: .success)
+        } catch {
+            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Otomasyon başlatılamadı."
+        }
+    }
+
+    private func pause(_ automation: RovaBackendClient.RovaAutomation) async {
+        do {
+            _ = try await RovaBackendClient.pauseAutomation(id: automation.id)
+            await loadTasksAndAutomations()
+            WiqoToastCenter.shared.show("Otomasyon duraklatıldı", kind: .success)
+        } catch {
+            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Otomasyon duraklatılamadı."
         }
     }
 
@@ -923,11 +1052,33 @@ struct SettingsView: View {
         do {
             async let fetchedTasks = RovaBackendClient.fetchTasks()
             async let fetchedAutomations = RovaBackendClient.fetchAutomations()
+            async let fetchedReview = RovaBackendClient.fetchAutomationReview()
             tasks = try await fetchedTasks
             automations = try await fetchedAutomations
+            reviewItems = (try? await fetchedReview) ?? []
             taskAutomationError = nil
         } catch {
             taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Görev ve otomasyonlar yüklenemedi."
+        }
+    }
+
+    private func retry(_ item: RovaBackendClient.AutomationReviewItem) async {
+        do {
+            _ = try await RovaBackendClient.retryAutomationRun(automationID: item.automationId, runID: item.runId)
+            await loadTasksAndAutomations()
+            WiqoToastCenter.shared.show("Tekrar deniyorum", kind: .success)
+        } catch {
+            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Tekrar denenemedi."
+        }
+    }
+
+    private func resolve(_ item: RovaBackendClient.AutomationReviewItem, as resolution: String) async {
+        do {
+            _ = try await RovaBackendClient.resolveUnknownAutomationRun(automationID: item.automationId, runID: item.runId, resolution: resolution)
+            await loadTasksAndAutomations()
+            WiqoToastCenter.shared.show("Kaydedildi", kind: .success)
+        } catch {
+            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Sonuç kaydedilemedi."
         }
     }
 }

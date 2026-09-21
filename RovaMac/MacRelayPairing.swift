@@ -51,10 +51,11 @@ struct RelayPairingAPI: Sendable {
                 return try RelayPairingWire.decodeSession(data)
             },
             poll: { session in
-                var components = URLComponents(url: baseURL.appendingPathComponent("device-pairing/sessions/\(session.id)"), resolvingAgainstBaseURL: false)
-                components?.queryItems = [URLQueryItem(name: "secret", value: session.secret)]
-                guard let url = components?.url else { throw RelayPairingError.requestFailed }
-                let (data, response) = try await urlSession.data(for: URLRequest(url: url, timeoutInterval: 10))
+                var request = URLRequest(url: baseURL.appendingPathComponent("device-pairing/sessions/\(session.id)/poll"), timeoutInterval: 10)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = try JSONSerialization.data(withJSONObject: ["secret": session.secret])
+                let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse else { throw RelayPairingError.requestFailed }
                 switch http.statusCode {
                 case 200..<300: return try RelayPairingWire.decodePoll(data)
