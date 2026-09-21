@@ -106,6 +106,7 @@ final class IOSConnectionModel: ObservableObject {
     private let pathMonitor = NWPathMonitor()
     private let pathMonitorQueue = DispatchQueue(label: "com.wiqo.path-monitor", qos: .utility)
     private var pathAvailable = true
+    private var pathUsesCellular = false
     private var pathSignature: String?
     private let discoveryQueue = DispatchQueue(label: "com.wiqo.discovery", qos: .utility)
     private var discoveredServiceName: String?
@@ -132,8 +133,9 @@ final class IOSConnectionModel: ObservableObject {
         pathMonitor.pathUpdateHandler = { [weak self] path in
             let available = path.status == .satisfied
             let signature = "\(path.status):\(path.availableInterfaces.map(\.name).sorted().joined(separator: ","))"
+            let usesCellular = path.usesInterfaceType(.cellular) && !path.usesInterfaceType(.wifi)
             Task { @MainActor [weak self] in
-                self?.handleNetworkPath(available: available, signature: signature)
+                self?.handleNetworkPath(available: available, signature: signature, usesCellular: usesCellular)
             }
         }
         pathMonitor.start(queue: pathMonitorQueue)
@@ -184,14 +186,25 @@ final class IOSConnectionModel: ObservableObject {
     }
 
     func connect() {
+        if state == .connected && isUsingRelay {
+            return
+        }
         guard let endpoint = savedEndpoint, let fingerprint = certificateFingerprint else {
             if isPaired {
-                isUsingRelay = true
+                isUsingRelay = false
                 state = .connecting
+                isReconnecting = true
                 scheduleRelayProbe()
             } else {
                 state = .disconnected
             }
+            return
+        }
+        if RovaConnectionRoutePolicy.shouldPreferRelay(isPaired: isPaired, pathUsesCellular: pathUsesCellular) {
+            isUsingRelay = false
+            state = .connecting
+            isReconnecting = true
+            scheduleRelayProbe()
             return
         }
         if state == .connected {
@@ -458,6 +471,7 @@ final class IOSConnectionModel: ObservableObject {
                 self.connection?.cancel()
                 self.connection = nil
                 self.state = .disconnected
+                self.scheduleRelayProbe()
                 self.scheduleReconnect()
             }
         }
@@ -550,6 +564,7 @@ final class IOSConnectionModel: ObservableObject {
             // way, so "can't reach the PC right now" is a status, not an error to nag about.
             let isActivePairingAttempt: Bool = { if case .pairing = mode { return true } else { return false } }()
             fail(error.localizedDescription.isEmpty ? "Bağlantı kurulamadı." : "PC bağlantısı kurulamadı.", silent: !isActivePairingAttempt)
+            scheduleRelayProbe()
             scheduleReconnect()
         case .cancelled:
             connectTimeoutTask?.cancel()
@@ -586,6 +601,7 @@ final class IOSConnectionModel: ObservableObject {
                     self.authenticated = false
                     self.state = .disconnected
                     self.failPending(IOSConnectionError.disconnected)
+                    self.scheduleRelayProbe()
                     self.scheduleReconnect()
                 } else {
                     self.receiveNext(on: source)
@@ -692,6 +708,7 @@ final class IOSConnectionModel: ObservableObject {
             connection = nil
             authenticated = false
             state = .disconnected
+            scheduleRelayProbe()
             scheduleReconnect()
         }
     }
@@ -716,7 +733,12 @@ final class IOSConnectionModel: ObservableObject {
     }
 
     private func scheduleRelayProbe() {
-        guard isPaired, isUsingRelay, relayProbeTask == nil else { return }
+        guard RovaConnectionRoutePolicy.shouldProbeRelay(
+            isPaired: isPaired,
+            directConnected: state == .connected && authenticated,
+            relayConnected: state == .connected && isUsingRelay,
+            probeInFlight: relayProbeTask != nil
+        ) else { return }
         relayProbeTask = Task { @MainActor [weak self] in
             defer { self?.relayProbeTask = nil }
             for delay in [0, 1, 2, 4, 8, 16, 30] {
@@ -725,6 +747,9 @@ final class IOSConnectionModel: ObservableObject {
                 let result = await self.send(.ping)
                 if result.error == nil { return }
             }
+            guard let self, self.state != .connected, self.connection == nil else { return }
+            self.isReconnecting = false
+            self.state = .failed
         }
     }
 
@@ -760,10 +785,11 @@ final class IOSConnectionModel: ObservableObject {
         connect()
     }
 
-    private func handleNetworkPath(available: Bool, signature: String) {
+    private func handleNetworkPath(available: Bool, signature: String, usesCellular: Bool) {
         let changed = pathSignature != nil && pathSignature != signature
         pathSignature = signature
         pathAvailable = available
+        pathUsesCellular = usesCellular
 
         guard isPaired else { return }
         if !available {
@@ -778,6 +804,19 @@ final class IOSConnectionModel: ObservableObject {
             return
         }
 
+        if usesCellular && !isUsingRelay {
+            reconnectTask?.cancel()
+            reconnectTask = nil
+            stopHeartbeat()
+            connection?.cancel()
+            connection = nil
+            authenticated = false
+            state = .connecting
+            isReconnecting = true
+            scheduleRelayProbe()
+            return
+        }
+
         // A changed interface invalidates the local route (Wi-Fi handoff, sleep/wake). The next
         // command can use the relay while the local socket is rebuilt in the background.
         if changed && !isUsingRelay && state == .connected {
@@ -787,9 +826,11 @@ final class IOSConnectionModel: ObservableObject {
             authenticated = false
             state = .disconnected
             isReconnecting = true
+            scheduleRelayProbe()
             scheduleReconnect()
         } else if state != .connected {
             reconnectAttempt = 0
+            scheduleRelayProbe()
             scheduleReconnect()
         }
     }

@@ -17,6 +17,8 @@ enum MacStorage {
 
     static let pairedTokenAccount = "paired-device-token" + flavor
     static let backendTokenAccount = "rova-backend-token" + flavor
+    static let backendAccountTokenAccount = "rova-backend-account-token" + flavor
+    static let backendRefreshTokenAccount = "rova-backend-refresh-token" + flavor
     static let tlsCertificateLabel = "com.rova.local.tls-certificate" + flavor
     static let tlsKeyTag = Data(("com.rova.local.tls-key" + flavor).utf8)
 }

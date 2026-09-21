@@ -124,6 +124,24 @@ final class ProtocolTests: XCTestCase {
         }
     }
 
+    func testTerminalPayloadDefaultsRemainBackwardCompatible() throws {
+        let legacy = """
+        {"kind":"codeExecution","value":{"language":"shell","code":"pwd","arguments":[],"timeoutSeconds":30,"allowNetwork":false}}
+        """
+        let decoded = try JSONDecoder().decode(CommandPayload.self, from: Data(legacy.utf8))
+        guard case .codeExecution(let payload) = decoded else {
+            return XCTFail("Legacy code execution payload did not decode")
+        }
+        XCTAssertEqual(payload.scope, "sandbox")
+        XCTAssertNil(payload.workingDirectory)
+
+        let computer = CodeExecutionPayload(language: "shell", code: "pwd", scope: "computer", shell: "default", workingDirectory: "/tmp")
+        let request = CommandRequest(type: .executeCode, payload: .codeExecution(computer))
+        XCTAssertNil(RovaValidation.validate(request))
+        let encoded = try JSONEncoder().encode(request.payload)
+        XCTAssertTrue(String(decoding: encoded, as: UTF8.self).contains("computer"))
+    }
+
     func testNewCapabilityValidationRejectsUnsafeInputs() {
         let start = Date(timeIntervalSince1970: 1_000_000)
         let validMessage = CommandRequest(type: .sendMessage, payload: .message(MessagePayload(recipient: "user@example.com", body: "Merhaba")))
@@ -156,6 +174,19 @@ final class ProtocolTests: XCTestCase {
         """
         let decoded = try JSONDecoder().decode(DeviceInfo.self, from: Data(json.utf8))
         XCTAssertEqual(decoded.platform, "macOS")
+    }
+
+    func testCellularPathPrefersRelayOverRememberedLocalEndpoint() {
+        XCTAssertTrue(RovaConnectionRoutePolicy.shouldPreferRelay(isPaired: true, pathUsesCellular: true))
+        XCTAssertFalse(RovaConnectionRoutePolicy.shouldPreferRelay(isPaired: true, pathUsesCellular: false))
+        XCTAssertFalse(RovaConnectionRoutePolicy.shouldPreferRelay(isPaired: false, pathUsesCellular: true))
+    }
+
+    func testRelayProbeDoesNotDuplicateLiveDirectConnection() {
+        XCTAssertTrue(RovaConnectionRoutePolicy.shouldProbeRelay(isPaired: true, directConnected: false, relayConnected: false, probeInFlight: false))
+        XCTAssertFalse(RovaConnectionRoutePolicy.shouldProbeRelay(isPaired: true, directConnected: true, relayConnected: false, probeInFlight: false))
+        XCTAssertFalse(RovaConnectionRoutePolicy.shouldProbeRelay(isPaired: true, directConnected: false, relayConnected: true, probeInFlight: false))
+        XCTAssertFalse(RovaConnectionRoutePolicy.shouldProbeRelay(isPaired: true, directConnected: false, relayConnected: false, probeInFlight: true))
     }
 
     func testOperationManifestIsCompleteAndDeterministic() throws {

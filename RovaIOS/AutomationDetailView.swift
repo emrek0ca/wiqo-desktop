@@ -43,7 +43,7 @@ struct AutomationDetailView: View {
                 } else {
                     Text("Çalışma Geçmişi").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                     ForEach(runs) { run in
-                        RunCard(run: run)
+                        RunCard(automationID: automation.id, run: run)
                     }
                 }
             }
@@ -77,13 +77,19 @@ struct AutomationDetailView: View {
 }
 
 private struct RunCard: View {
+    let automationID: Int
     let run: RovaBackendClient.AutomationRun
     @State private var expanded = false
+    @State private var journal: [RovaBackendClient.ExecutionJournalEntry] = []
+    @State private var journalError: String?
 
     var body: some View {
         RovaCard {
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
+                if !expanded && journal.isEmpty {
+                    Task { await loadJournal() }
+                }
             } label: {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: statusIcon)
@@ -155,6 +161,52 @@ private struct RunCard: View {
                     .padding(.vertical, 2)
                 }
             }
+            if expanded && !journal.isEmpty {
+                Divider().padding(.vertical, 2)
+                Text("İşlem kanıtı").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(journal) { entry in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: entry.verified ? "checkmark.seal.fill" : "circle.dotted")
+                            .font(.caption)
+                            .foregroundStyle(entry.verified ? .green : .secondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(humanEvent(entry.event)).font(.caption.weight(.medium))
+                            Text(entry.summary).font(.caption2).foregroundStyle(.secondary)
+                            if entry.sideEffectUncertain {
+                                Text("Sonuç belirsiz; tekrar çalıştırılmadı.")
+                                    .font(.caption2).foregroundStyle(.orange)
+                            }
+                        }
+                        Spacer(minLength: 4)
+                    }
+                    .padding(.vertical, 2)
+                }
+            } else if expanded, let journalError {
+                Text(journalError).font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func loadJournal() async {
+        do {
+            journal = try await RovaBackendClient.fetchAutomationJournal(automationID: automationID, runID: run.id)
+            journalError = nil
+        } catch {
+            journalError = "İşlem kanıtı şu anda yüklenemedi."
+        }
+    }
+
+    private func humanEvent(_ event: String) -> String {
+        switch event {
+        case "created": return "Görev kaydedildi"
+        case "started": return "İşlem başladı"
+        case "waiting": return "Bekliyor"
+        case "approval_required": return "Onay gerekiyor"
+        case "retry_scheduled": return "Tekrar denenecek"
+        case "completed": return "Sonuç doğrulandı"
+        case "unknown": return "Sonuç doğrulanamadı"
+        case "failed": return "İşlem tamamlanamadı"
+        default: return "İşlem güncellendi"
         }
     }
 

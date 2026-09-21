@@ -79,7 +79,7 @@ final class MacRelayPairingTests: XCTestCase {
     func testClaimedSessionHandsOverBothTokens() async {
         let backend = FakeBackend(
             sessions: [.success(session("a"))],
-            polls: [.success(.waiting), .success(.claimed(pairingToken: "pair", backendToken: "backend"))]
+            polls: [.success(.waiting), .success(.claimed(pairingToken: "pair", backendToken: "backend", deviceAccessToken: nil, deviceRefreshToken: nil))]
         )
         let recorder = await run(backend) { !$0.claims.isEmpty }
         XCTAssertEqual(recorder.claims.first?.pairingToken, "pair")
@@ -92,7 +92,7 @@ final class MacRelayPairingTests: XCTestCase {
     func testExpiredSessionIsReplacedWithANewCode() async {
         let backend = FakeBackend(
             sessions: [.success(session("old")), .success(session("new"))],
-            polls: [.success(.expired), .success(.claimed(pairingToken: "p", backendToken: "b"))]
+            polls: [.success(.expired), .success(.claimed(pairingToken: "p", backendToken: "b", deviceAccessToken: nil, deviceRefreshToken: nil))]
         )
         let recorder = await run(backend) { !$0.claims.isEmpty }
         XCTAssertEqual(backend.createCalls, 2)
@@ -103,7 +103,7 @@ final class MacRelayPairingTests: XCTestCase {
     func testAFewFailedPollsDoNotEndPairing() async {
         let backend = FakeBackend(
             sessions: [.success(session("a"))],
-            polls: [.failure(Offline()), .failure(Offline()), .success(.claimed(pairingToken: "p", backendToken: "b"))]
+            polls: [.failure(Offline()), .failure(Offline()), .success(.claimed(pairingToken: "p", backendToken: "b", deviceAccessToken: nil, deviceRefreshToken: nil))]
         )
         let recorder = await run(backend) { !$0.claims.isEmpty }
         XCTAssertEqual(recorder.claims.count, 1)
@@ -129,7 +129,7 @@ final class MacRelayPairingTests: XCTestCase {
     func testPollBodyMapsToOutcomes() throws {
         XCTAssertEqual(try RelayPairingWire.decodePoll(Data(#"{"status":"waiting","expiresAt":"x"}"#.utf8)), .waiting)
         let claimed = #"{"status":"claimed","pairingToken":"p","backendToken":"b","deviceId":"d"}"#
-        XCTAssertEqual(try RelayPairingWire.decodePoll(Data(claimed.utf8)), .claimed(pairingToken: "p", backendToken: "b"))
+        XCTAssertEqual(try RelayPairingWire.decodePoll(Data(claimed.utf8)), .claimed(pairingToken: "p", backendToken: "b", deviceAccessToken: nil, deviceRefreshToken: nil))
         XCTAssertThrowsError(try RelayPairingWire.decodePoll(Data(#"{"status":"claimed"}"#.utf8)))
     }
 }

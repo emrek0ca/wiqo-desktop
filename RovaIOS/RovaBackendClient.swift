@@ -1048,9 +1048,34 @@ enum RovaBackendClient {
         let steps: [AutomationRunStep]
     }
 
+    struct ExecutionJournalEntry: Decodable, Identifiable {
+        let id: Int
+        let stepId: String?
+        let event: String
+        let toolName: String?
+        let status: String?
+        let verified: Bool
+        let retryable: Bool
+        let sideEffectUncertain: Bool
+        let errorCode: String?
+        let summary: String
+        let durationMs: Int?
+        let createdAt: String
+    }
+
     static func fetchAutomationRuns(id: Int) async throws -> [AutomationRun] {
         struct Response: Decodable { let runs: [AutomationRun] }
         return try await authorizedGet("automations/\(id)/runs", as: Response.self).runs
+    }
+
+    static func fetchAutomationJournal(automationID: Int, runID: Int) async throws -> [ExecutionJournalEntry] {
+        struct Response: Decodable { let entries: [ExecutionJournalEntry] }
+        return try await authorizedGet("automations/\(automationID)/runs/\(runID)/journal", as: Response.self).entries
+    }
+
+    static func fetchCopilotJournal(requestID: UUID) async throws -> [ExecutionJournalEntry] {
+        struct Response: Decodable { let entries: [ExecutionJournalEntry] }
+        return try await authorizedGet("copilot/requests/\(requestID.uuidString)/journal", as: Response.self).entries
     }
 
     static func fetchTasks() async throws -> [RovaTask] {

@@ -5,6 +5,9 @@ import Foundation
 /// Running code in a sandbox and the process helper it shares.
 extension MacSystem {
     static func executeCode(_ payload: CodeExecutionPayload) -> (data: CommandData?, error: RovaError?) {
+        if payload.scope.lowercased() == "computer" {
+            return executeComputerTerminal(payload)
+        }
         // `/private/tmp/...` and `/tmp/...` refer to the same inode, but the sandbox's `subpath`
         // rules match against the resolved path - a profile built from the raw `/var/folders/...`
         // URL (which is really a symlink through `/private/var`) silently denies the very
@@ -90,6 +93,89 @@ extension MacSystem {
         } catch {
             return (nil, localFileError(code: "CODE_SANDBOX_FAILED", fallback: "Kod izole ortamda başlatılamadı.", error: error))
         }
+    }
+
+    /// Explicit terminal scope for a user-approved PC task. The historical sandbox path above
+    /// remains the default; this branch is deliberately opt-in so old requests cannot silently
+    /// gain access to the user's files or applications.
+    private static func executeComputerTerminal(_ payload: CodeExecutionPayload) -> (data: CommandData?, error: RovaError?) {
+        let directoryPath = payload.workingDirectory ?? NSHomeDirectory()
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: directoryPath, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return (nil, RovaError(code: "INVALID_WORKING_DIRECTORY", message: "Çalışma klasörü bulunamadı.", category: "validation"))
+        }
+
+        let shell = (payload.shell ?? "default").lowercased()
+        let environment = terminalEnvironment(workingDirectory: directoryPath)
+        let snapshot: ProcessSnapshot
+        switch payload.language.lowercased() {
+        case "shell":
+            let executable: String
+            switch shell {
+            case "bash": executable = "/bin/bash"
+            case "zsh", "default": executable = "/bin/zsh"
+            default:
+                return (nil, RovaError(code: "UNSUPPORTED_SHELL", message: "Bu shell Mac'te desteklenmiyor.", category: "validation"))
+            }
+            snapshot = runProcess(
+                executable: executable,
+                arguments: ["-lc", payload.code, "wiqo-terminal"] + payload.arguments,
+                timeoutSeconds: payload.timeoutSeconds,
+                workingDirectory: URL(fileURLWithPath: directoryPath),
+                environment: environment
+            )
+        case "python", "javascript":
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-terminal-\(UUID().uuidString)", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let extensionName = payload.language.lowercased() == "python" ? "py" : "js"
+                let script = directory.appendingPathComponent("main.\(extensionName)")
+                try Data(payload.code.utf8).write(to: script, options: [.atomic])
+                let executable = payload.language.lowercased() == "python" ? "/usr/bin/env" : "/usr/bin/env"
+                let interpreter = payload.language.lowercased() == "python" ? "python3" : "node"
+                snapshot = runProcess(
+                    executable: executable,
+                    arguments: [interpreter, script.path] + payload.arguments,
+                    timeoutSeconds: payload.timeoutSeconds,
+                    workingDirectory: URL(fileURLWithPath: directoryPath),
+                    environment: environment
+                )
+            } catch {
+                return (nil, localFileError(code: "TERMINAL_PREPARE_FAILED", fallback: "Terminal komutu hazırlanamadı.", error: error))
+            }
+        default:
+            return (nil, RovaError(code: "UNSUPPORTED_LANGUAGE", message: "Yalnızca Python, JavaScript veya shell çalıştırılabilir.", category: "validation"))
+        }
+
+        let output = ProcessOutputContent(
+            language: payload.language,
+            exitCode: snapshot.timedOut ? -1 : snapshot.exitCode,
+            stdout: String(decoding: snapshot.stdout, as: UTF8.self),
+            stderr: String(decoding: snapshot.stderr, as: UTF8.self),
+            truncated: snapshot.truncated,
+            durationMs: snapshot.durationMs
+        )
+        if snapshot.timedOut {
+            return (.processOutput(output), RovaError(code: "CODE_TIMEOUT", message: "Terminal komutu zaman aşımına uğradı; sonucu doğrulanamadı.", category: "timeout"))
+        }
+        if snapshot.exitCode != 0 {
+            let detail = String(decoding: snapshot.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            let message = detail.isEmpty ? "Terminal komutu çıkış kodu \(snapshot.exitCode) ile sonlandı." : "Terminal komutu hata verdi: \(detail.prefix(300))"
+            return (.processOutput(output), RovaError(code: "CODE_FAILED", message: message, category: "tool_failure"))
+        }
+        return (.processOutput(output), nil)
+    }
+
+    private static func terminalEnvironment(workingDirectory: String) -> [String: String] {
+        let inherited = ProcessInfo.processInfo.environment
+        let allowed = ["PATH", "HOME", "USER", "LANG", "LC_ALL"]
+        var result = allowed.reduce(into: [String: String]()) { values, key in
+            if let value = inherited[key] { values[key] = value }
+        }
+        result["PATH"] = result["PATH"] ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        result["PWD"] = workingDirectory
+        return result
     }
 
     private static func sandboxProfile(for directory: URL, allowNetwork: Bool) -> String {

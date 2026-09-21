@@ -89,6 +89,8 @@
 		D30000000000000000000005 /* MacNetworkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000069 /* MacNetworkTests.swift */; };
 		D30000000000000000000006 /* MacTimeoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000006A /* MacTimeoutTests.swift */; };
 		D30000000000000000000007 /* MacRelayPairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000006B /* MacRelayPairingTests.swift */; };
+		D30000000000000000000008 /* ConnectionRoutePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000070 /* ConnectionRoutePolicy.swift */; };
+		D30000000000000000000009 /* ConnectionRoutePolicy.swift in RovaSharedTests */ = {isa = PBXBuildFile; fileRef = D30000000000000000000070 /* ConnectionRoutePolicy.swift */; };
 		B028 /* OperationManifest.swift in RovaSharedTests */ = {isa = PBXBuildFile; fileRef = F031 /* OperationManifest.swift */; };
 		B029 /* OperationManifest.swift in RovaIOS */ = {isa = PBXBuildFile; fileRef = F031 /* OperationManifest.swift */; };
 		C100 /* WiqoFocusDoNotDisturbOn.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C110 /* WiqoFocusDoNotDisturbOn.shortcut */; };
@@ -215,6 +217,7 @@
 		D30000000000000000000066 /* MacTimeout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTimeout.swift; sourceTree = "<group>"; };
 		D30000000000000000000067 /* MacNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNetwork.swift; sourceTree = "<group>"; };
 		D30000000000000000000068 /* MacRelayPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelayPairing.swift; sourceTree = "<group>"; };
+		D30000000000000000000070 /* ConnectionRoutePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionRoutePolicy.swift; sourceTree = "<group>"; };
 		D30000000000000000000080 /* MacSystem+Applications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Applications.swift"; sourceTree = "<group>"; };
 		D30000000000000000000081 /* MacSystem+Permissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Permissions.swift"; sourceTree = "<group>"; };
 		D30000000000000000000082 /* MacSystem+Device.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Device.swift"; sourceTree = "<group>"; };
@@ -282,6 +285,7 @@
 			children = (
 				F001 /* Protocol.swift */,
 				F031 /* OperationManifest.swift */,
+				D30000000000000000000070 /* ConnectionRoutePolicy.swift */,
 				F002 /* Validation.swift */,
 				F003 /* Framing.swift */,
 				F004 /* KeychainStore.swift */,
@@ -631,6 +635,7 @@
 				D30000000000000000000002 /* MacTimeout.swift in Sources */,
 				D30000000000000000000003 /* MacNetwork.swift in Sources */,
 				D30000000000000000000004 /* MacRelayPairing.swift in Sources */,
+				D30000000000000000000008 /* ConnectionRoutePolicy.swift in Sources */,
 				D30000000000000000000020 /* MacSystem+Applications.swift in Sources */,
 				D30000000000000000000021 /* MacSystem+Permissions.swift in Sources */,
 				D30000000000000000000022 /* MacSystem+Device.swift in Sources */,
@@ -666,6 +671,7 @@
 				D2000000000000000000000C /* WiqoContextCard.swift in Sources */,
 				D2000000000000000000000E /* WiqoAppPreview.swift in Sources */,
 				D20000000000000000000010 /* WiqoCanvasSupport.swift in Sources */,
+				D30000000000000000000008 /* ConnectionRoutePolicy.swift in Sources */,
 				FF28DCBE30573E6C0006FF82 /* Protocol.swift in Sources */,
 				FF28DCBF30573E6C0006FF82 /* Validation.swift in Sources */,
 				FF28DCC030573E6C0006FF82 /* Framing.swift in Sources */,
@@ -711,6 +717,7 @@
 				FF28DCC830573E6C0006FF82 /* CryptoSupport.swift in Sources */,
 				FF28DCC930573E6C0006FF82 /* QRPairing.swift in Sources */,
 				B028 /* OperationManifest.swift in RovaSharedTests */,
+				D30000000000000000000009 /* ConnectionRoutePolicy.swift in RovaSharedTests */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -19,7 +19,7 @@ struct RelayPairingSession: Equatable, Sendable {
 
 enum RelayPollOutcome: Equatable, Sendable {
     case waiting
-    case claimed(pairingToken: String, backendToken: String)
+    case claimed(pairingToken: String, backendToken: String, deviceAccessToken: String?, deviceRefreshToken: String?)
     /// Expired, or replaced by a newer session for this PC.
     case expired
 }
@@ -80,6 +80,8 @@ enum RelayPairingWire {
         let status: String
         let pairingToken: String?
         let backendToken: String?
+        let deviceAccessToken: String?
+        let deviceRefreshToken: String?
     }
 
     static func decodeSession(_ data: Data) throws -> RelayPairingSession {
@@ -92,7 +94,7 @@ enum RelayPairingWire {
         let body = try JSONDecoder().decode(PollBody.self, from: data)
         guard body.status == "claimed" else { return .waiting }
         guard let pairingToken = body.pairingToken, let backendToken = body.backendToken else { throw RelayPairingError.requestFailed }
-        return .claimed(pairingToken: pairingToken, backendToken: backendToken)
+        return .claimed(pairingToken: pairingToken, backendToken: backendToken, deviceAccessToken: body.deviceAccessToken, deviceRefreshToken: body.deviceRefreshToken)
     }
 
     static func parseDate(_ value: String) -> Date? {
@@ -114,7 +116,7 @@ final class MacRelayPairing {
     }
 
     private enum WatchResult {
-        case claimed(pairingToken: String, backendToken: String)
+        case claimed(pairingToken: String, backendToken: String, deviceAccessToken: String?, deviceRefreshToken: String?)
         case expired
         case offline
         case cancelled
@@ -123,14 +125,14 @@ final class MacRelayPairing {
     private let api: RelayPairingAPI
     private let timing: Timing
     private let onState: @MainActor (RelayPairingState) -> Void
-    private let onClaimed: @MainActor (_ pairingToken: String, _ backendToken: String) async -> Void
+    private let onClaimed: @MainActor (_ pairingToken: String, _ backendToken: String, _ deviceAccessToken: String?, _ deviceRefreshToken: String?) async -> Void
     private var task: Task<Void, Never>?
 
     init(
         api: RelayPairingAPI,
         timing: Timing = Timing(),
         onState: @escaping @MainActor (RelayPairingState) -> Void,
-        onClaimed: @escaping @MainActor (_ pairingToken: String, _ backendToken: String) async -> Void
+        onClaimed: @escaping @MainActor (_ pairingToken: String, _ backendToken: String, _ deviceAccessToken: String?, _ deviceRefreshToken: String?) async -> Void
     ) {
         self.api = api
         self.timing = timing
@@ -161,8 +163,8 @@ final class MacRelayPairing {
             }
             onState(.waiting(RelayPairingPayload(sessionID: session.id, secret: session.secret, expiresAt: session.expiresAt)))
             switch await watch(session) {
-            case .claimed(let pairingToken, let backendToken):
-                await onClaimed(pairingToken, backendToken)
+            case .claimed(let pairingToken, let backendToken, let deviceAccessToken, let deviceRefreshToken):
+                await onClaimed(pairingToken, backendToken, deviceAccessToken, deviceRefreshToken)
                 return
             case .expired:
                 onState(.preparing)
@@ -190,7 +192,7 @@ final class MacRelayPairing {
             if Task.isCancelled { return .cancelled }
             do {
                 switch try await api.poll(session) {
-                case .claimed(let pairingToken, let backendToken): return .claimed(pairingToken: pairingToken, backendToken: backendToken)
+                case .claimed(let pairingToken, let backendToken, let deviceAccessToken, let deviceRefreshToken): return .claimed(pairingToken: pairingToken, backendToken: backendToken, deviceAccessToken: deviceAccessToken, deviceRefreshToken: deviceRefreshToken)
                 case .expired: return .expired
                 case .waiting: failures = 0
                 }

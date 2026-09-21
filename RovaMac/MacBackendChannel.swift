@@ -1,24 +1,55 @@
 import Foundation
 
 private actor BackendTokenStore {
-    private let account: String
+    private let accessAccount: String
+    private let refreshAccount: String
+    private let accountAccount: String
 
-    init(account: String) {
-        self.account = account
+    init(accessAccount: String, refreshAccount: String, accountAccount: String) {
+        self.accessAccount = accessAccount
+        self.refreshAccount = refreshAccount
+        self.accountAccount = accountAccount
     }
 
-    func load() -> String? {
-        guard let data = try? RovaKeychainStore.load(account: account) else { return nil }
+    func loadAccess() -> String? {
+        guard let data = try? RovaKeychainStore.load(account: accessAccount) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
-    func save(_ token: String) throws {
-        try RovaKeychainStore.save(Data(token.utf8), account: account)
+    func loadRefresh() -> String? {
+        guard let data = try? RovaKeychainStore.load(account: refreshAccount) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    func loadAccount() -> String? {
+        guard let data = try? RovaKeychainStore.load(account: accountAccount) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    func save(accessToken: String, refreshToken: String?, accountToken: String?) throws {
+        try RovaKeychainStore.save(Data(accessToken.utf8), account: accessAccount)
+        if let refreshToken, !refreshToken.isEmpty {
+            try RovaKeychainStore.save(Data(refreshToken.utf8), account: refreshAccount)
+        } else {
+            try? RovaKeychainStore.delete(account: refreshAccount)
+        }
+        if let accountToken, !accountToken.isEmpty {
+            try RovaKeychainStore.save(Data(accountToken.utf8), account: accountAccount)
+        }
     }
 
     func delete() throws {
-        try RovaKeychainStore.delete(account: account)
+        try RovaKeychainStore.delete(account: accessAccount)
+        try? RovaKeychainStore.delete(account: refreshAccount)
+        try? RovaKeychainStore.delete(account: accountAccount)
     }
+}
+
+private struct BackendSessionCredentials: Decodable, Sendable {
+    let accessToken: String
+    let refreshToken: String
+    let accessTokenExpiresIn: Int
+    let refreshTokenExpiresAt: String
 }
 
 /// Persistent connection from this Mac to Rova's backend, so a scheduled automation (something
@@ -40,7 +71,11 @@ final class MacBackendChannel: NSObject {
     private static let openTimeout: UInt64 = 12
 
     private let engine: MacCommandEngine
-    private let tokenStore = BackendTokenStore(account: MacStorage.backendTokenAccount)
+    private let tokenStore = BackendTokenStore(
+        accessAccount: MacStorage.backendTokenAccount,
+        refreshAccount: MacStorage.backendRefreshTokenAccount,
+        accountAccount: MacStorage.backendAccountTokenAccount
+    )
     private let runtimeStatus: () -> String
     private let deviceInfo: () -> DeviceInfo
     private let pairedDeviceToken: () -> String?
@@ -51,6 +86,8 @@ final class MacBackendChannel: NSObject {
     private var openTimeoutTask: Task<Void, Never>?
     private var reconnectAttempt = 0
     private var currentToken: String?
+    private var currentRefreshToken: String?
+    private var currentAccountToken: String?
     private var registrationSent = false
     private let onConnectionStateChange: (Bool) -> Void
 
@@ -71,17 +108,39 @@ final class MacBackendChannel: NSObject {
     /// Reconnects with a stored token, if any - call once at app launch.
     @discardableResult
     func connectWithStoredTokenIfAvailable() async -> Bool {
-        let token = await tokenStore.load()
+        let token = await tokenStore.loadAccess()
         guard let token, !token.isEmpty else { return false }
         guard currentToken == nil || !registrationSent else { return registrationSent }
-        await connect(token: token)
-        return registrationSent && currentToken == token
+        let refreshToken = await tokenStore.loadRefresh()
+        let accountToken = await tokenStore.loadAccount()
+        await connect(token: token, refreshToken: refreshToken, accountToken: accountToken)
+        return registrationSent && currentToken != nil
     }
 
-    func connect(token: String) async {
+    /// Accepts either the legacy account token (from local pairing) or a scoped device access
+    /// token. New pairing responses provide the refresh token explicitly; local pairing bootstraps
+    /// a scoped session once, keeping the existing Protocol v2 message unchanged.
+    func connect(token: String, refreshToken: String? = nil, accountToken: String? = nil) async {
         guard !token.isEmpty else { return }
-        if token == currentToken, registrationSent { return }
+        if token == currentToken, refreshToken == currentRefreshToken, registrationSent { return }
         if token == currentToken, task != nil { return }
+        let credentials: (access: String, refresh: String?)
+        if let refreshToken, !refreshToken.isEmpty {
+            credentials = (token, refreshToken)
+        } else if let bootstrapped = await bootstrapCredentials(accountToken: token) {
+            credentials = (bootstrapped.accessToken, bootstrapped.refreshToken)
+        } else {
+            // Backward compatibility for an older backend. The socket still accepts the account
+            // token, but no refresh loop is possible until the next successful bootstrap.
+            credentials = (token, nil)
+        }
+        await establish(accessToken: credentials.access, refreshToken: credentials.refresh, accountToken: accountToken ?? (refreshToken == nil ? token : nil))
+    }
+
+    private func establish(accessToken: String, refreshToken: String?, accountToken: String?) async {
+        guard !accessToken.isEmpty else { return }
+        if accessToken == currentToken, refreshToken == currentRefreshToken, registrationSent { return }
+        if accessToken == currentToken, task != nil { return }
         reconnectTask?.cancel()
         reconnectTask = nil
         heartbeatTask?.cancel()
@@ -94,16 +153,18 @@ final class MacBackendChannel: NSObject {
         session = nil
         registrationSent = false
         publishConnectionState()
-        currentToken = token
+        currentToken = accessToken
+        currentRefreshToken = refreshToken
+        if let accountToken, !accountToken.isEmpty { currentAccountToken = accountToken }
         reconnectAttempt = 0
         do {
-            try await tokenStore.save(token)
+            try await tokenStore.save(accessToken: accessToken, refreshToken: refreshToken, accountToken: accountToken)
         } catch {
             // Keep the live connection attempt possible, but do not pretend the token was
             // persisted. The next launch will require the phone to hand the token over again.
         }
-        guard currentToken == token else { return }
-        open(token: token)
+        guard currentToken == accessToken else { return }
+        open(token: accessToken)
     }
 
     func disconnect() async {
@@ -111,6 +172,8 @@ final class MacBackendChannel: NSObject {
         reconnectTask?.cancel()
         reconnectTask = nil
         currentToken = nil
+        currentRefreshToken = nil
+        currentAccountToken = nil
         do { try await tokenStore.delete() } catch { }
     }
 
@@ -156,13 +219,44 @@ final class MacBackendChannel: NSObject {
     }
 
     private func authenticatedRequest(path: String) throws -> URLRequest {
-        guard let token = currentToken else {
+        guard let token = currentAccountToken ?? currentToken else {
             throw MacBackendChannelError.notAuthenticated
         }
         var request = URLRequest(url: Self.apiBaseURL.appendingPathComponent(path))
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         return request
+    }
+
+    private func bootstrapCredentials(accountToken: String) async -> BackendSessionCredentials? {
+        guard let body = try? JSONSerialization.data(withJSONObject: ["deviceId": deviceInfo().id.uuidString]) else { return nil }
+        var request = URLRequest(url: Self.apiBaseURL.appendingPathComponent("device-sessions/bootstrap"))
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(accountToken)", forHTTPHeaderField: "Authorization")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else { return nil }
+        return try? JSONDecoder().decode(BackendSessionCredentials.self, from: data)
+    }
+
+    private func refreshCredentials(refreshToken: String) async -> BackendSessionCredentials? {
+        guard let body = try? JSONSerialization.data(withJSONObject: [
+            "deviceId": deviceInfo().id.uuidString,
+            "refreshToken": refreshToken
+        ]) else { return nil }
+        var request = URLRequest(url: Self.apiBaseURL.appendingPathComponent("device-sessions/refresh"))
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              let credentials = try? JSONDecoder().decode(BackendSessionCredentials.self, from: data),
+              !credentials.accessToken.isEmpty,
+              !credentials.refreshToken.isEmpty else { return nil }
+        return credentials
     }
 
     private func open(token: String) {
@@ -519,7 +613,15 @@ final class MacBackendChannel: NSObject {
             }
             guard !Task.isCancelled, let self else { return }
             self.reconnectTask = nil
-            self.open(token: currentToken)
+            if let refreshToken = self.currentRefreshToken,
+               let credentials = await self.refreshCredentials(refreshToken: refreshToken) {
+                self.currentToken = credentials.accessToken
+                self.currentRefreshToken = credentials.refreshToken
+                try? await self.tokenStore.save(accessToken: credentials.accessToken, refreshToken: credentials.refreshToken, accountToken: await self.tokenStore.loadAccount())
+                self.open(token: credentials.accessToken)
+            } else {
+                self.open(token: currentToken)
+            }
         }
     }
 }

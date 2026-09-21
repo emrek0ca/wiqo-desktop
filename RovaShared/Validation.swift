@@ -163,7 +163,10 @@ public enum RovaValidation {
                   !execution.code.isEmpty, execution.code.count <= 100_000,
                   execution.arguments.count <= 20,
                   execution.arguments.allSatisfy({ !$0.isEmpty && $0.count <= 200 && !$0.contains("\0") }),
-                  (1...30).contains(execution.timeoutSeconds) else {
+                  (1...30).contains(execution.timeoutSeconds),
+                  ["sandbox", "computer"].contains(execution.scope.lowercased()),
+                  execution.shell.map({ ["default", "zsh", "bash", "powershell", "cmd"].contains($0.lowercased()) }) ?? true,
+                  execution.workingDirectory.map(isValidTerminalWorkingDirectory) ?? true else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Kod çalıştırma isteği geçersiz.")
             }
         case .captureScreen:
@@ -214,6 +217,15 @@ public enum RovaValidation {
 
     private static func isValidBundleIdentifier(_ value: String) -> Bool {
         value.count <= 200 && value.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]*$", options: .regularExpression) != nil
+    }
+
+    private static func isValidTerminalWorkingDirectory(_ value: String) -> Bool {
+        guard isSafeText(value, maxLength: 2_000), !value.contains("\r"), !value.contains("\n") else { return false }
+        #if os(Windows)
+        return value.count >= 3 && value[value.index(value.startIndex, offsetBy: 1)] == ":"
+        #else
+        return value.hasPrefix("/")
+        #endif
     }
 
     /// Shared with the Mac's AX layer and intentionally small. A matching label makes a generic

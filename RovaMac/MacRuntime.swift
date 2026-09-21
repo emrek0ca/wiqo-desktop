@@ -84,8 +84,8 @@ final class MacRuntime: ObservableObject {
     private lazy var relayPairingService = MacRelayPairing(
         api: .live(baseURL: MacBackendChannel.apiBaseURL, deviceID: deviceID, displayName: MacNetwork.computerName),
         onState: { [weak self] state in self?.relayPairing = state },
-        onClaimed: { [weak self] pairingToken, backendToken in
-            await self?.relayPairingClaimed(pairingToken: pairingToken, backendToken: backendToken)
+        onClaimed: { [weak self] pairingToken, backendToken, deviceAccessToken, deviceRefreshToken in
+            await self?.relayPairingClaimed(pairingToken: pairingToken, backendToken: backendToken, deviceAccessToken: deviceAccessToken, deviceRefreshToken: deviceRefreshToken)
         }
     )
     private var sessions: [ObjectIdentifier: MacClientSession] = [:]
@@ -336,7 +336,7 @@ final class MacRuntime: ObservableObject {
 
     /// The phone claimed the internet pairing code: keep the token it will sign commands with and
     /// sign in to the backend with the account it belongs to.
-    private func relayPairingClaimed(pairingToken: String, backendToken: String) async {
+    private func relayPairingClaimed(pairingToken: String, backendToken: String, deviceAccessToken: String?, deviceRefreshToken: String?) async {
         do {
             try await pairedDeviceTokenStore.save(pairingToken)
         } catch {
@@ -349,7 +349,7 @@ final class MacRuntime: ObservableObject {
         pairedDeviceName = "iPhone"
         UserDefaults.standard.set("iPhone", forKey: MacStorage.pairedNameKey)
         relayPairing = .paired
-        await backendChannel.connect(token: backendToken)
+        await backendChannel.connect(token: deviceAccessToken ?? backendToken, refreshToken: deviceRefreshToken, accountToken: backendToken)
     }
 
     func refreshAutomations() async {

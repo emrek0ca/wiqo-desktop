@@ -435,13 +435,46 @@ public struct CodeExecutionPayload: Codable, Equatable, Sendable {
     public let arguments: [String]
     public let timeoutSeconds: Int
     public let allowNetwork: Bool
+    /// `sandbox` preserves the historical isolated execution path. `computer` is an explicit,
+    /// user-approved local terminal command running in the selected working directory.
+    public let scope: String
+    public let shell: String?
+    public let workingDirectory: String?
 
-    public init(language: String, code: String, arguments: [String] = [], timeoutSeconds: Int = 30, allowNetwork: Bool = false) {
+    private enum CodingKeys: String, CodingKey {
+        case language, code, arguments, timeoutSeconds, allowNetwork, scope, shell, workingDirectory
+    }
+
+    public init(
+        language: String,
+        code: String,
+        arguments: [String] = [],
+        timeoutSeconds: Int = 30,
+        allowNetwork: Bool = false,
+        scope: String = "sandbox",
+        shell: String? = nil,
+        workingDirectory: String? = nil
+    ) {
         self.language = language
         self.code = code
         self.arguments = arguments
         self.timeoutSeconds = timeoutSeconds
         self.allowNetwork = allowNetwork
+        self.scope = scope
+        self.shell = shell
+        self.workingDirectory = workingDirectory
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.language = try container.decode(String.self, forKey: .language)
+        self.code = try container.decode(String.self, forKey: .code)
+        self.arguments = try container.decodeIfPresent([String].self, forKey: .arguments) ?? []
+        self.timeoutSeconds = try container.decodeIfPresent(Int.self, forKey: .timeoutSeconds) ?? 30
+        self.allowNetwork = try container.decodeIfPresent(Bool.self, forKey: .allowNetwork) ?? false
+        self.scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? "sandbox"
+        self.shell = try container.decodeIfPresent(String.self, forKey: .shell)
+        self.workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
     }
 }
 

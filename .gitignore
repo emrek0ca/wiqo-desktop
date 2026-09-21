@@ -12,3 +12,6 @@ xcuserdata/
 
 # Archives
 *.xcarchive
+
+# Local verification artifacts
+.verification/
