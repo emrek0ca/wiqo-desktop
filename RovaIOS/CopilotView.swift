@@ -206,8 +206,6 @@ struct CopilotView: View {
                 .frame(width: 96, height: 96)
                 .accessibilityLabel("Wiqo")
                 .wiqoRiseIn()
-            connectionPill
-                .wiqoRiseIn(delay: 0.14)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -222,24 +220,6 @@ struct CopilotView: View {
         async let suggestions: Void = loadProactiveSuggestions()
         async let candidates: Void = loadMemoryCandidates()
         _ = await (suggestions, candidates)
-    }
-
-    /// One quiet line about the PC, so the first screen answers "is my computer ready?" without a
-    /// greeting or a paragraph.
-    private var connectionPill: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(RovaConnectionStatus.color(for: model))
-                .frame(width: 7, height: 7)
-            Text(RovaConnectionStatus.label(for: model))
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 12)
-        .frame(height: 30)
-        .background(WiqoTheme.inset, in: Capsule())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("PC durumu: \(RovaConnectionStatus.label(for: model))")
     }
 
     /// A Mac suggestion is only actually actionable when one is paired, currently reachable, and

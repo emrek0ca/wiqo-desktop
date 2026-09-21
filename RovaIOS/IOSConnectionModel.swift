@@ -718,10 +718,11 @@ final class IOSConnectionModel: ObservableObject {
     /// and so `connectionQuality` stays a live signal rather than a one-time measurement.
     private func startHeartbeat() {
         heartbeatTask?.cancel()
+        guard !isUsingRelay else { return }
         heartbeatTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
-                guard let self, !Task.isCancelled, self.state == .connected else { return }
+                guard let self, !Task.isCancelled, self.state == .connected, !self.isUsingRelay else { return }
                 _ = await self.send(.ping)
             }
         }
@@ -814,6 +815,24 @@ final class IOSConnectionModel: ObservableObject {
             state = .connecting
             isReconnecting = true
             scheduleRelayProbe()
+            return
+        }
+
+        // When the phone returns from cellular to Wi-Fi, prefer the low-latency local
+        // connection again. Relay remains the fallback if the remembered endpoint is not
+        // reachable; commands are never queued behind this route switch.
+        if changed && !usesCellular && isUsingRelay && savedEndpoint != nil {
+            reconnectTask?.cancel()
+            reconnectTask = nil
+            stopHeartbeat()
+            connection?.cancel()
+            connection = nil
+            authenticated = false
+            isUsingRelay = false
+            state = .disconnected
+            isReconnecting = true
+            reconnectAttempt = 0
+            connect()
             return
         }
 

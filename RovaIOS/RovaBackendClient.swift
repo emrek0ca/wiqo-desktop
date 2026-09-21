@@ -66,6 +66,10 @@ enum RovaBackendClient {
         return String(data: data, encoding: .utf8)
     }
 
+    private static func mobileReadCacheKey(_ path: String) -> String {
+        "\(currentUserID ?? currentUserEmail ?? "anonymous"):\(path)"
+    }
+
     /// Stable per-account key for namespacing anything cached locally (conversation history,
     /// etc.) so one signed-in account can never read another account's data on a shared device.
     /// Read from the session JWT's own payload - not re-verified here, only used as a local
@@ -90,6 +94,7 @@ enum RovaBackendClient {
 
     static func signOut() {
         try? RovaKeychainStore.delete(account: tokenAccount)
+        WiqoMobileReadCache.shared.removeAll()
     }
 
     static func registerAPNsToken(_ token: String) async throws {
@@ -710,25 +715,46 @@ enum RovaBackendClient {
     }
 
     static func fetchMemoryCandidates() async throws -> [MemoryCandidate] {
+        let key = mobileReadCacheKey("memory/candidates")
+        if let data = WiqoMobileReadCache.shared.data(for: key, maxAge: 20),
+           let cached = try? JSONDecoder().decode([MemoryCandidate].self, from: data) {
+            return cached
+        }
         struct Response: Decodable { let candidates: [MemoryCandidate] }
-        return try await authorizedGet("memory/candidates", as: Response.self).candidates
+        let candidates = try await authorizedGet("memory/candidates", as: Response.self).candidates
+        if let data = try? JSONEncoder().encode(candidates) {
+            WiqoMobileReadCache.shared.store(data, for: key)
+        }
+        return candidates
     }
 
     static func acceptMemoryCandidate(id: Int) async throws {
         _ = try await authorizedMutate("memory/candidates/\(id)/accept", method: "POST")
+        WiqoMobileReadCache.shared.invalidate(mobileReadCacheKey("memory/candidates"))
     }
 
     static func dismissMemoryCandidate(id: Int) async throws {
         _ = try await authorizedMutate("memory/candidates/\(id)/dismiss", method: "POST")
+        WiqoMobileReadCache.shared.invalidate(mobileReadCacheKey("memory/candidates"))
     }
 
     static func fetchTrustGrants() async throws -> [TrustGrant] {
+        let key = mobileReadCacheKey("trust-grants")
+        if let data = WiqoMobileReadCache.shared.data(for: key, maxAge: 20),
+           let cached = try? JSONDecoder().decode([TrustGrant].self, from: data) {
+            return cached
+        }
         struct Response: Decodable { let grants: [TrustGrant] }
-        return try await authorizedGet("trust-grants", as: Response.self).grants
+        let grants = try await authorizedGet("trust-grants", as: Response.self).grants
+        if let data = try? JSONEncoder().encode(grants) {
+            WiqoMobileReadCache.shared.store(data, for: key)
+        }
+        return grants
     }
 
     static func revokeTrustGrant(id: Int) async throws {
         _ = try await authorizedMutate("trust-grants/\(id)", method: "DELETE")
+        WiqoMobileReadCache.shared.invalidate(mobileReadCacheKey("trust-grants"))
     }
 
     /// Explicit "always allow" from the confirmation sheet - only ever called right after the
@@ -737,7 +763,9 @@ enum RovaBackendClient {
     /// anything else is rejected there rather than silently ignored.
     @discardableResult
     static func grantTrust(type: String, summary: String) async throws -> TrustGrant {
-        try await authorizedPost("trust-grants", body: ["type": type, "summary": summary], as: TrustGrant.self)
+        let result = try await authorizedPost("trust-grants", body: ["type": type, "summary": summary], as: TrustGrant.self)
+        WiqoMobileReadCache.shared.invalidate(mobileReadCacheKey("trust-grants"))
+        return result
     }
 
     // MARK: - Profile & account
@@ -855,8 +883,17 @@ enum RovaBackendClient {
     }
 
     static func fetchDevices() async throws -> [DeviceStatus] {
+        let key = mobileReadCacheKey("devices")
+        if let data = WiqoMobileReadCache.shared.data(for: key, maxAge: 15),
+           let cached = try? JSONDecoder().decode([DeviceStatus].self, from: data) {
+            return cached
+        }
         struct Response: Decodable { let devices: [DeviceStatus] }
-        return try await authorizedGet("devices", as: Response.self).devices
+        let devices = try await authorizedGet("devices", as: Response.self).devices
+        if let data = try? JSONEncoder().encode(devices) {
+            WiqoMobileReadCache.shared.store(data, for: key)
+        }
+        return devices
     }
 
     struct AccountInfo: Decodable {
@@ -921,6 +958,7 @@ enum RovaBackendClient {
         let body = try JSONSerialization.data(withJSONObject: ["displayName": value])
         let data = try await authorizedJSON("devices/\(id)", method: "PATCH", body: body)
         guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else { throw RovaBackendError.invalidResponse }
+        WiqoMobileReadCache.shared.invalidate(mobileReadCacheKey("devices"))
         return decoded.device
     }
 
@@ -928,6 +966,7 @@ enum RovaBackendClient {
     /// not the phone's own direct pairing (see IOSConnectionModel.forgetPairing for that).
     static func deleteDevice(id: String) async throws {
         _ = try await authorizedMutate("devices/\(id)", method: "DELETE")
+        WiqoMobileReadCache.shared.invalidate(mobileReadCacheKey("devices"))
     }
 
     /// The interactive fallback used when the direct local connection to the paired PC isn't
@@ -1332,5 +1371,97 @@ private struct BackendErrorEnvelope: Decodable {
         case error
         case message
         case result
+    }
+}
+
+/// Short-lived cache for repeatable mobile reads. Commands, writes, auth, and live chat never use
+/// this cache. Keeping it in the existing client avoids another project-file entry and keeps the
+/// read policy next to the requests it protects.
+private final class WiqoMobileReadCache: @unchecked Sendable {
+    static let shared = WiqoMobileReadCache()
+
+    private struct Entry {
+        let data: Data
+        let storedAt: Date
+    }
+
+    private let lock = NSLock()
+    private var entries: [String: Entry] = [:]
+
+    private init() {}
+
+    func data(for key: String, maxAge: TimeInterval, now: Date = Date()) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let entry = entries[key] else { return nil }
+        guard now.timeIntervalSince(entry.storedAt) <= maxAge else {
+            entries.removeValue(forKey: key)
+            return nil
+        }
+        return entry.data
+    }
+
+    func store(_ data: Data, for key: String, now: Date = Date()) {
+        lock.lock()
+        entries[key] = Entry(data: data, storedAt: now)
+        lock.unlock()
+    }
+
+    func invalidate(_ key: String) {
+        lock.lock()
+        entries.removeValue(forKey: key)
+        lock.unlock()
+    }
+
+    func removeAll() {
+        lock.lock()
+        entries.removeAll(keepingCapacity: true)
+        lock.unlock()
+    }
+}
+
+extension RovaBackendClient.DeviceStatus: Encodable {
+    private enum CodingKeys: String, CodingKey {
+        case id, displayName, platform, capabilities, online, lastSeenAt
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(displayName, forKey: .displayName)
+        try container.encode(platform, forKey: .platform)
+        try container.encode(capabilities, forKey: .capabilities)
+        try container.encode(online, forKey: .online)
+        try container.encodeIfPresent(lastSeenAt, forKey: .lastSeenAt)
+    }
+}
+
+extension RovaBackendClient.TrustGrant: Encodable {
+    private enum CodingKeys: String, CodingKey {
+        case id, label, grantedAt
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(label, forKey: .label)
+        try container.encode(grantedAt, forKey: .grantedAt)
+    }
+}
+
+extension RovaBackendClient.MemoryCandidate: Encodable {
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, content, sourceText, status, similarity, createdAt
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(content, forKey: .content)
+        try container.encode(sourceText, forKey: .sourceText)
+        try container.encode(status, forKey: .status)
+        try container.encodeIfPresent(similarity, forKey: .similarity)
+        try container.encode(createdAt, forKey: .createdAt)
     }
 }
