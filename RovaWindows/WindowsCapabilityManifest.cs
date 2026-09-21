@@ -11,7 +11,6 @@ public static class WindowsCapabilityManifest
     {
         "runtime.status",
         "device.url.open",
-        "device.app.open_by_name",
         "device.app.list",
         "device.code.execute"
     };
@@ -21,7 +20,6 @@ public static class WindowsCapabilityManifest
         "ping",
         "getSystemStatus",
         "openURL",
-        "openApplicationByName",
         "listRunningApplications",
         "executeCode"
     };
@@ -30,7 +28,6 @@ public static class WindowsCapabilityManifest
     {
         "ping" or "getSystemStatus" => "runtime.status",
         "openURL" => "device.url.open",
-        "openApplicationByName" => "device.app.open_by_name",
         "listRunningApplications" => "device.app.list",
         "executeCode" => "device.code.execute",
         _ => ""

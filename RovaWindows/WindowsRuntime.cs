@@ -59,7 +59,7 @@ public sealed class WindowsRuntime : IAsyncDisposable
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, cancellationToken);
             linked.CancelAfter(timeout);
             // Side effects remain ordered; read-only operations can execute without this gate.
-            var sideEffect = operation is "openURL" or "openApplicationByName";
+            var sideEffect = operation is "openURL";
             if (sideEffect) await sideEffectGate.WaitAsync(linked.Token).ConfigureAwait(false);
             try
             {
@@ -109,13 +109,6 @@ public sealed class WindowsRuntime : IAsyncDisposable
                     return Failed(commandId, started, "INVALID_PAYLOAD", "Açılacak bağlantı geçersiz.");
                 Process.Start(new ProcessStartInfo(parsed.AbsoluteUri) { UseShellExecute = true });
                 message = "Bağlantı Windows'ta açıldı.";
-                break;
-            case "openApplicationByName":
-                var application = PayloadString(payload);
-                if (string.IsNullOrWhiteSpace(application) || application.Length > 160)
-                    return Failed(commandId, started, "INVALID_PAYLOAD", "Uygulama adı geçersiz.");
-                Process.Start(new ProcessStartInfo(application) { UseShellExecute = true });
-                message = $"{application} açıldı.";
                 break;
             case "listRunningApplications":
                 data = new

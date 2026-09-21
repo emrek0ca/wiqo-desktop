@@ -15,6 +15,7 @@ public sealed class ProtocolV2Client : IAsyncDisposable
     private readonly CancellationTokenSource lifetime = new();
     private readonly Dictionary<string, WindowsCommandResult> completed = new(StringComparer.Ordinal);
     private readonly object completedGate = new();
+    private const int CompletedLimit = 128;
 
     public ProtocolV2Client(WindowsRuntime runtime, Uri? endpoint = null, DeviceSessionClient? sessions = null)
     {
@@ -117,14 +118,32 @@ public sealed class ProtocolV2Client : IAsyncDisposable
         var requestId = request.GetProperty("id").GetString() ?? commandId;
         var operation = request.GetProperty("type").GetString() ?? "";
         var payload = request.TryGetProperty("payload", out var rawPayload) ? rawPayload : default;
+        WindowsCommandResult? cached = null;
         lock (completedGate)
         {
-            if (completed.ContainsKey(commandId)) return;
+            completed.TryGetValue(commandId, out cached);
+        }
+
+        // A reconnect or relay retry must receive the existing result, not execute the
+        // side effect again and not silently leave the backend waiting for a receipt.
+        if (cached is not null)
+        {
+            await SendResultAsync(currentSocket, commandId, cached, cancellationToken).ConfigureAwait(false);
+            return;
         }
 
         var result = await runtime.ExecuteAsync(requestId, operation, payload, TimeSpan.FromSeconds(45), cancellationToken).ConfigureAwait(false);
-        lock (completedGate) completed[commandId] = result;
-        await SendAsync(currentSocket, new
+        lock (completedGate)
+        {
+            completed[commandId] = result;
+            while (completed.Count > CompletedLimit)
+                completed.Remove(completed.Keys.First());
+        }
+        await SendResultAsync(currentSocket, commandId, result, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static Task SendResultAsync(ClientWebSocket currentSocket, string commandId, WindowsCommandResult result, CancellationToken cancellationToken)
+        => SendAsync(currentSocket, new
         {
             type = "interactiveCommandResult",
             commandId,
@@ -138,8 +157,7 @@ public sealed class ProtocolV2Client : IAsyncDisposable
                 data = result.Data,
                 error = result.Error
             }
-        }, cancellationToken).ConfigureAwait(false);
-    }
+        }, cancellationToken);
 
     private static async Task SendAsync(ClientWebSocket currentSocket, object value, CancellationToken cancellationToken)
     {

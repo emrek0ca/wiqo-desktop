@@ -82,7 +82,11 @@ public enum RovaOperationManifest {
 
     private static func makeEntry(_ operation: CommandType) -> RovaOperationManifestEntry {
         let capability = capability(for: operation)
-        let platform: [RovaPlatform] = macOnly(operation) ? [.macOS] : [.macOS, .windows]
+        let platform: [RovaPlatform] = macOnly(operation)
+            ? [.macOS]
+            : windowsSupported(operation)
+              ? [.macOS, .windows]
+              : [.macOS]
         return RovaOperationManifestEntry(
             operation: operation,
             payloadKind: payloadKind(for: operation),
@@ -225,6 +229,18 @@ public enum RovaOperationManifest {
         case .sendMessage, .listCalendarEvents,
              .createCalendarEvent, .listReminders, .createReminder, .completeReminder,
              .createNote, .sendEmail, .runShortcut:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Windows currently ships a deliberately small, verified adapter. Keeping this list
+    /// beside the shared manifest prevents the capability catalogue from promising operations
+    /// that the Windows companion cannot execute yet.
+    private static func windowsSupported(_ operation: CommandType) -> Bool {
+        switch operation {
+        case .ping, .getSystemStatus, .openURL, .listRunningApplications, .executeCode:
             return true
         default:
             return false
