@@ -1564,6 +1564,7 @@ struct CopilotView: View {
                 screenshotObservationCount += 1
             }
             result = await model.send(step.type, payload: step.payload, commandID: step.id)
+            let delivery = deliveredFile(step: step, data: result.data)
             let deviceResult = RovaBackendClient.DeviceExecutionResult(
                 stepID: step.id,
                 type: step.type,
@@ -1572,7 +1573,10 @@ struct CopilotView: View {
                 message: result.message,
                 error: result.error,
                 dataText: encodedCommandData(result.data),
-                imageBase64: screenshotBase64(result.data)
+                imageBase64: screenshotBase64(result.data),
+                fileBase64: delivery?.base64,
+                fileName: delivery?.name,
+                mimeType: delivery?.mimeType
             )
             recentDeviceResults.append(deviceResult)
             recentDeviceResults = Array(recentDeviceResults.suffix(12))
@@ -1593,8 +1597,13 @@ struct CopilotView: View {
         // `stepResults` live for as long as this session runs - none of that survives a restart
         // (see CopilotStoredMessage), so a short summary line is still folded into `text` here as
         // the one thing that does.
+        // The model's own follow-up answer describes the outcome; this one line is kept only when
+        // the bubble would otherwise be empty after a restart (steps don't survive one).
         if let bubble = bubbles.first(where: { $0.id == bubbleID }), let summary = overallStepsSummary(bubble) {
-            setBubble(bubbleID) { $0.text = executionNoticeFreeText($0.text) + "\n\n" + summary }
+            setBubble(bubbleID) { bubble in
+                let text = executionNoticeFreeText(bubble.text)
+                bubble.text = text.isEmpty ? summary : text
+            }
         }
         persistConversation()
     }
@@ -1846,9 +1855,12 @@ struct CopilotView: View {
                 "value": files.map { ["path": $0.path, "name": $0.name, "byteCount": $0.byteCount, "isDirectory": $0.isDirectory] }
             ], options: [.sortedKeys])
         case .fileData(let content):
+            // Raw bytes never go in dataText: the model can't use base64, and it pushed the field
+            // past the backend's 12,000-character limit so the whole follow-up was rejected. A
+            // file the user asked to receive travels separately (deliveredFile).
             var value: [String: Any] = ["path": content.path, "mimeType": content.mimeType, "truncated": content.truncated]
             if let text = content.text { value["text"] = String(text.prefix(10_000)) }
-            if let base64 = content.base64 { value["base64"] = String(base64.prefix(900_000)) }
+            if let base64 = content.base64 { value["binaryBytes"] = base64.count * 3 / 4 }
             encoded = try? JSONSerialization.data(withJSONObject: ["kind": "fileData", "value": value], options: [.sortedKeys])
         case .screenshot(let content):
             encoded = try? JSONSerialization.data(withJSONObject: [
@@ -1859,6 +1871,20 @@ struct CopilotView: View {
         }
         guard let encoded else { return nil }
         return String(data: encoded, encoding: .utf8)
+    }
+
+    /// Must match SEND_TO_PHONE_SUMMARY_PREFIX in rova-backend/src/tools/deviceTools.ts.
+    private static let sendToPhonePrefix = "Telefona gönder: "
+
+    /// The bytes of a file the user asked Wiqo to send to the phone. Only a step the backend
+    /// planned as "Telefona gönder" uploads anything; an ordinary read keeps its content local.
+    private func deliveredFile(step: PlannedCommand, data: CommandData?) -> (base64: String, name: String, mimeType: String)? {
+        guard step.type == .readFile, step.summary.hasPrefix(Self.sendToPhonePrefix),
+              case .fileData(let content) = data else { return nil }
+        let base64 = content.base64 ?? content.text.map { Data($0.utf8).base64EncodedString() }
+        guard let base64, !base64.isEmpty, !content.truncated else { return nil }
+        let name = (content.path as NSString).lastPathComponent
+        return (base64, name.isEmpty ? "dosya" : name, content.mimeType)
     }
 
     private func screenshotBase64(_ data: CommandData?) -> String? {
@@ -2036,6 +2062,9 @@ struct CopilotView: View {
 
     private func executionNoticeFreeText(_ text: String) -> String {
         let notices = [
+            "\n\nİstediklerini sırayla yapıyorum…",
+            "İstediklerini sırayla yapıyorum…",
+            "\n\nİstediklerini yaptım.",
             "\n\nOnayını bekliyor; onay verdiğinde PC'de çalıştırılacak.",
             "\n\nBu cihaz eylemleri henüz çalıştırılmadı; önce uygulamadaki onayını bekliyor.",
             "\n\nBu PC komutları hazırlanıp yerel cihaza gönderilecek; gerçek sonucu henüz doğrulamadım.",
@@ -2051,9 +2080,10 @@ struct CopilotView: View {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Live progress is the execution card's job ("Şimdi şunu yapıyorum: …"); writing a filler line
+    /// into the answer text only stacked "İstediklerini sırayla yapıyorum…" once per round.
     private func executionStartedText(_ text: String) -> String {
-        let base = executionNoticeFreeText(text)
-        return base.isEmpty ? "İstediklerini sırayla yapıyorum…" : base + "\n\nİstediklerini sırayla yapıyorum…"
+        executionNoticeFreeText(text)
     }
 
     private func cancelConfirmation(for bubbleID: UUID) {

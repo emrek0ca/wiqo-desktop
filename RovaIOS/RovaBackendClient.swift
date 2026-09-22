@@ -413,6 +413,9 @@ enum RovaBackendClient {
                 if let error = result.error { value["error"] = error.message }
                 if let dataText = result.dataText { value["dataText"] = dataText }
                 if let imageBase64 = result.imageBase64 { value["imageBase64"] = imageBase64 }
+                if let fileBase64 = result.fileBase64 { value["fileBase64"] = fileBase64 }
+                if let fileName = result.fileName { value["fileName"] = fileName }
+                if let mimeType = result.mimeType { value["mimeType"] = mimeType }
                 return value
             }
         ]
@@ -613,8 +616,13 @@ enum RovaBackendClient {
         let error: RovaError?
         let dataText: String?
         let imageBase64: String?
+        /// Bytes of a file the user asked to receive; the backend turns them into a downloadable
+        /// artifact and never shows them to the model. Set only for a "Telefona gönder" step.
+        let fileBase64: String?
+        let fileName: String?
+        let mimeType: String?
 
-        init(stepID: UUID, type: CommandType, summary: String? = nil, status: CommandStatus, message: String, error: RovaError?, dataText: String? = nil, imageBase64: String? = nil) {
+        init(stepID: UUID, type: CommandType, summary: String? = nil, status: CommandStatus, message: String, error: RovaError?, dataText: String? = nil, imageBase64: String? = nil, fileBase64: String? = nil, fileName: String? = nil, mimeType: String? = nil) {
             self.stepID = stepID
             self.type = type
             self.summary = summary
@@ -623,6 +631,9 @@ enum RovaBackendClient {
             self.error = error
             self.dataText = dataText
             self.imageBase64 = imageBase64
+            self.fileBase64 = fileBase64
+            self.fileName = fileName
+            self.mimeType = mimeType
         }
     }
 
