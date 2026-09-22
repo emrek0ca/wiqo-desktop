@@ -43,7 +43,7 @@ final class MacRelayPairingTests: XCTestCase {
 
     private final class Recorder {
         var states: [RelayPairingState] = []
-        var claims: [(pairingToken: String, backendToken: String)] = []
+        var claims: [(pairingToken: String, backendToken: String?, deviceAccessToken: String?, deviceRefreshToken: String?)] = []
     }
 
     private let fast = MacRelayPairing.Timing(
@@ -64,7 +64,7 @@ final class MacRelayPairingTests: XCTestCase {
             api: backend.api,
             timing: fast,
             onState: { recorder.states.append($0) },
-            onClaimed: { recorder.claims.append(($0, $1)) }
+            onClaimed: { recorder.claims.append(($0, $1, $2, $3)) }
         )
         pairing.start()
         var waited = 0

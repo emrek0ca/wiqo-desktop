@@ -12,6 +12,20 @@ final class MacCommandEngineTests: XCTestCase {
         XCTAssertEqual(apiBaseURL.absoluteString, "https://api.wiqoai.com")
     }
 
+    @MainActor
+    func testResendRegistrationIsANoOpWithoutALiveSocket() {
+        // Regression guard: `MacRuntime.broadcastDeviceInfo()` calls this unconditionally after
+        // every device scan, including the very first one before any backend connection exists.
+        // It must never assume a socket is present.
+        let channel = MacBackendChannel(
+            engine: MacCommandEngine(ledger: CommandLedger(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("resend-noop-\(UUID().uuidString).json"))),
+            runtimeStatus: { "running" },
+            deviceInfo: { DeviceInfo(id: UUID(), displayName: "Test Mac", hostname: "test", localIPAddress: "127.0.0.1", port: 47831, serviceStatus: "running", availableApplications: []) },
+            pairedDeviceToken: { nil }
+        )
+        channel.resendRegistration()
+    }
+
     func testDuplicateCommandIDIsNotExecutedTwice() async {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("rova-ledger-\(UUID().uuidString).json")
         let engine = MacCommandEngine(ledger: CommandLedger(fileURL: url))

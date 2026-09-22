@@ -418,6 +418,21 @@ final class MacRuntime: ObservableObject {
         cachedApplicationTargets = snapshot.applicationTargets
         cachedCapabilities = snapshot.capabilities
         cachedAuthorities = snapshot.authorities
+        broadcastDeviceInfo()
+    }
+
+    /// Pushes the just-scanned catalog to whoever already has a snapshot from before the scan
+    /// finished. The listener and pairing code intentionally come up before this scan does (see
+    /// `bringUp()`), so a phone that connects in that window - or one that has been connected for
+    /// a while, as apps open and close - would otherwise be stuck forever with the empty catalog
+    /// it got at `.hello`/`.authenticated` time: every "kapat"/"aç" on a real app then fails with
+    /// "uygulama kataloğu alınamadı", because the tool never has a catalog to validate against.
+    private func broadcastDeviceInfo() {
+        let info = deviceInfo
+        for session in sessions.values {
+            session.send(WireEnvelope(message: .hello(info)))
+        }
+        if backendSessionActive { backendChannel.resendRegistration() }
     }
 
     private func startDeviceInfoRefresh() {

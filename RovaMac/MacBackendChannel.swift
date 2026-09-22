@@ -101,6 +101,14 @@ final class MacBackendChannel: NSObject {
         self.onConnectionStateChange = onConnectionStateChange
     }
 
+    /// Re-sends the current catalog (apps, capabilities, authorities) on the live socket, so a
+    /// snapshot the backend already has from a slower or earlier scan does not stay stale for the
+    /// rest of the connection. A no-op while there is no open, registered socket.
+    func resendRegistration() {
+        guard let task, registrationSent else { return }
+        sendRegistration(on: task)
+    }
+
     /// Reconnects with a stored token, if any - call once at app launch.
     @discardableResult
     func connectWithStoredTokenIfAvailable() async -> Bool {
