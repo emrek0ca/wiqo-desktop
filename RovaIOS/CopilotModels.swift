@@ -67,4 +67,7 @@ struct ChatBubble: Identifiable {
     /// codeRuns/failedSteps above: after a restart, only the short summary line folded into
     /// `text` (see execute()) survives, not this per-step detail.
     var stepResults: [UUID: CommandResult] = [:]
+    /// `text` is only the backend's "doing it now" line; once the steps finish with nothing left
+    /// for the model to read, it is replaced by the verified outcome (DeviceOutcomeNarrator).
+    var replyIsProgress = false
 }

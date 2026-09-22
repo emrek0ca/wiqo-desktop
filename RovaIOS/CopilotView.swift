@@ -1367,6 +1367,7 @@ struct CopilotView: View {
                 bubbles[index].text = replyText
                 bubbles[index].steps = result.steps
                 bubbles[index].executionState = result.executionState
+                bubbles[index].replyIsProgress = result.replyIsProgress
                 bubbles[index].artifacts = result.artifacts
                 bubbles[index].backendConfirmations = mergedBackendConfirmations(
                     existing: bubbles[index].backendConfirmations,
@@ -1398,7 +1399,8 @@ struct CopilotView: View {
                 steps: result.steps,
                 artifacts: result.artifacts,
                 executionState: result.executionState,
-                backendConfirmations: result.backendConfirmations.map { BackendConfirmationRow(confirmation: $0) }
+                backendConfirmations: result.backendConfirmations.map { BackendConfirmationRow(confirmation: $0) },
+                replyIsProgress: result.replyIsProgress
             )
             bubbles.append(reply)
             liveReply.reset()
@@ -1600,9 +1602,18 @@ struct CopilotView: View {
         // The model's own follow-up answer describes the outcome; this one line is kept only when
         // the bubble would otherwise be empty after a restart (steps don't survive one).
         if let bubble = bubbles.first(where: { $0.id == bubbleID }), let summary = overallStepsSummary(bubble) {
+            // A "doing it now" reply becomes what actually happened, unless the model still has to
+            // read a result (that follow-up turn writes the final answer itself).
+            let replaceProgress = bubble.replyIsProgress && !bubble.steps.contains(where: needsLocalResultFollowUp)
+            let outcome = replaceProgress ? DeviceOutcomeNarrator.text(steps: bubble.steps, results: bubble.stepResults) : nil
             setBubble(bubbleID) { bubble in
-                let text = executionNoticeFreeText(bubble.text)
-                bubble.text = text.isEmpty ? summary : text
+                if let outcome {
+                    bubble.text = outcome
+                    bubble.replyIsProgress = false
+                } else {
+                    let text = executionNoticeFreeText(bubble.text)
+                    bubble.text = text.isEmpty ? summary : text
+                }
             }
         }
         persistConversation()
@@ -1734,6 +1745,7 @@ struct CopilotView: View {
             bubble.artifacts.append(contentsOf: result.artifacts.filter { !existingArtifactIDs.contains($0.id) })
             bubble.text = text
             bubble.executionState = result.executionState
+            bubble.replyIsProgress = result.replyIsProgress
             bubble.backendConfirmations = mergedBackendConfirmations(
                 existing: bubble.backendConfirmations,
                 incoming: result.backendConfirmations,
@@ -2032,8 +2044,11 @@ struct CopilotView: View {
 
     private func needsLocalResultFollowUp(_ step: PlannedCommand) -> Bool {
         switch step.type {
-        case .readDocument, .readDesktopFile, .readFile, .listFiles, .captureScreen,
-             .runShortcut, .controlUIElement, .clickScreen, .listRunningApplications:
+        // Every step whose result the model has to read before it can answer. A missing type here
+        // ended the turn on "Masaüstüne bakıyorum" with the listing never shown to the model.
+        case .readDocument, .readDesktopFile, .readFile, .listFiles, .listDesktopFiles, .captureScreen,
+             .runShortcut, .controlUIElement, .clickScreen, .listRunningApplications, .getSystemStatus,
+             .listCalendarEvents, .listReminders, .getClipboardText, .getClipboardHistory:
             return true
         default:
             return false

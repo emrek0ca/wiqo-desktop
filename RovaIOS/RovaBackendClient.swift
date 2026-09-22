@@ -237,6 +237,9 @@ enum RovaBackendClient {
         let executionState: String?
         let artifacts: [ArtifactDescriptor]
         let backendConfirmations: [BackendConfirmation]
+        /// The reply is only a "doing it now" line; replace it with the verified outcome once the
+        /// steps finish (see DeviceOutcomeNarrator).
+        var replyIsProgress = false
     }
 
     /// Result of running code on the canvas (`/canvas/run`) - the same sandbox run_python uses,
@@ -281,6 +284,7 @@ enum RovaBackendClient {
         let executionState: String?
         let artifacts: [ArtifactDescriptor]?
         let backendConfirmations: [BackendConfirmation]?
+        let replyIsProgress: Bool?
     }
 
     private struct CopilotErrorResponse: Decodable {
@@ -451,6 +455,7 @@ enum RovaBackendClient {
             let executionState: String?
             let artifacts: [ArtifactDescriptor]?
             let backendConfirmations: [BackendConfirmation]?
+            let replyIsProgress: Bool?
         }
         struct ConfirmationNeededEvent: Decodable {
             let steps: [CopilotStepResponse]
@@ -514,7 +519,8 @@ enum RovaBackendClient {
                         steps: event.steps,
                         executionState: event.executionState,
                         artifacts: event.artifacts ?? [],
-                        backendConfirmations: event.backendConfirmations ?? []
+                        backendConfirmations: event.backendConfirmations ?? [],
+                        replyIsProgress: event.replyIsProgress ?? false
                     )
                 case "error":
                     let event = try? decoder.decode(ErrorEvent.self, from: json)
@@ -548,7 +554,8 @@ enum RovaBackendClient {
         steps: [CopilotStepResponse],
         executionState: String?,
         artifacts: [ArtifactDescriptor],
-        backendConfirmations: [BackendConfirmation]
+        backendConfirmations: [BackendConfirmation],
+        replyIsProgress: Bool = false
     ) -> ConverseResult {
         let planned = steps.map { step in
             let localDestructive = RovaCommandAuthority.isDestructive(type: step.type, payload: step.payload)
@@ -567,7 +574,8 @@ enum RovaBackendClient {
             steps: planned,
             executionState: executionState,
             artifacts: artifacts,
-            backendConfirmations: backendConfirmations
+            backendConfirmations: backendConfirmations,
+            replyIsProgress: replyIsProgress
         )
     }
 
@@ -590,7 +598,8 @@ enum RovaBackendClient {
                         steps: response.steps,
                         executionState: response.executionState,
                         artifacts: response.artifacts ?? [],
-                        backendConfirmations: response.backendConfirmations ?? []
+                        backendConfirmations: response.backendConfirmations ?? [],
+                        replyIsProgress: response.replyIsProgress ?? false
                     )
                 case "failed":
                     throw RovaBackendError.declined(nonEmptyMessage(state.error?.message, fallback: "İşlem tamamlanamadı."))
