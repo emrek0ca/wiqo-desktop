@@ -59,7 +59,7 @@ public sealed class WindowsRuntime : IAsyncDisposable
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, cancellationToken);
             linked.CancelAfter(timeout);
             // Side effects remain ordered; read-only operations can execute without this gate.
-            var sideEffect = operation is "openURL";
+            var sideEffect = operation is "openURL" or "executeCode";
             if (sideEffect) await sideEffectGate.WaitAsync(linked.Token).ConfigureAwait(false);
             try
             {
@@ -107,7 +107,8 @@ public sealed class WindowsRuntime : IAsyncDisposable
                 var url = PayloadString(payload);
                 if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var parsed) || parsed.Scheme is not ("http" or "https"))
                     return Failed(commandId, started, "INVALID_PAYLOAD", "Açılacak bağlantı geçersiz.");
-                Process.Start(new ProcessStartInfo(parsed.AbsoluteUri) { UseShellExecute = true });
+                if (Process.Start(new ProcessStartInfo(parsed.AbsoluteUri) { UseShellExecute = true }) is null)
+                    return Failed(commandId, started, "LAUNCH_FAILED", "Bağlantı Windows'ta açılamadı.");
                 message = "Bağlantı Windows'ta açıldı.";
                 break;
             case "listRunningApplications":
@@ -147,6 +148,8 @@ public sealed class WindowsRuntime : IAsyncDisposable
         var workingDirectory = StringProperty(value, "workingDirectory");
         if (string.IsNullOrWhiteSpace(code) || code.Length > 100_000 || language is not ("shell" or "python" or "javascript") || scope is not ("sandbox" or "computer"))
             return Failed(commandId, started, "INVALID_PAYLOAD", "Terminal dili, kodu veya kapsamı geçersiz.");
+        if (scope == "sandbox")
+            return Failed(commandId, started, "SANDBOX_UNAVAILABLE", "Windows izole kod ortamı bu sürümde kullanılamıyor; gerçek PC terminali için açık onay gerekir.");
 
         var arguments = new List<string>();
         if (value.TryGetProperty("arguments", out var rawArguments) && rawArguments.ValueKind == JsonValueKind.Array)
@@ -154,52 +157,40 @@ public sealed class WindowsRuntime : IAsyncDisposable
         if (arguments.Count > 20 || arguments.Any(argument => argument.Length == 0 || argument.Length > 200 || argument.Contains('\0')))
             return Failed(commandId, started, "INVALID_PAYLOAD", "Terminal argümanları geçersiz.");
 
-        var temporaryDirectory = scope == "sandbox"
-            ? Directory.CreateTempSubdirectory("wiqo-terminal-")
-            : null;
+        var directory = string.IsNullOrWhiteSpace(workingDirectory) ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) : workingDirectory;
+        if (!Directory.Exists(directory))
+            return Failed(commandId, started, "INVALID_WORKING_DIRECTORY", "Çalışma klasörü bulunamadı.");
+
+        var command = BuildCommand(language, shell, code, arguments, directory);
+        if (command is null) return Failed(commandId, started, "UNSUPPORTED_SHELL", "Bu shell Windows'ta desteklenmiyor.");
+        var scriptPath = language == "shell" ? null : command.Value.Arguments.FirstOrDefault();
+        ProcessOutcome outcome;
         try
         {
-            var directory = scope == "sandbox"
-                ? temporaryDirectory!.FullName
-                : (string.IsNullOrWhiteSpace(workingDirectory) ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) : workingDirectory);
-            if (!Directory.Exists(directory))
-                return Failed(commandId, started, "INVALID_WORKING_DIRECTORY", "Çalışma klasörü bulunamadı.");
-
-            var command = BuildCommand(language, shell, code, arguments, directory);
-            if (command is null) return Failed(commandId, started, "UNSUPPORTED_SHELL", "Bu shell Windows'ta desteklenmiyor.");
-            var scriptPath = language == "shell" ? null : command.Value.Arguments.FirstOrDefault();
-            ProcessOutcome outcome;
-            try
-            {
-                outcome = await RunProcessAsync(command.Value.FileName, command.Value.Arguments, directory, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                if (scriptPath is not null) try { File.Delete(scriptPath); } catch { }
-            }
-            var output = new
-            {
-                kind = "processOutput",
-                value = new
-                {
-                    language,
-                    exitCode = outcome.TimedOut ? -1 : outcome.ExitCode,
-                    stdout = outcome.Stdout,
-                    stderr = outcome.Stderr,
-                    truncated = outcome.Truncated,
-                    durationMs = outcome.DurationMs
-                }
-            };
-            if (outcome.TimedOut)
-                return new WindowsCommandResult(commandId, "unknown", "Terminal komutu zaman aşımına uğradı; sonucu doğrulanamadı.", started, DateTimeOffset.UtcNow, output, new { code = "CODE_TIMEOUT", message = "Terminal komutu zaman aşımına uğradı." });
-            if (outcome.ExitCode != 0)
-                return new WindowsCommandResult(commandId, "failed", "Terminal komutu hata verdi.", started, DateTimeOffset.UtcNow, output, new { code = "CODE_FAILED", message = outcome.Stderr[..Math.Min(outcome.Stderr.Length, 300)] });
-            return new WindowsCommandResult(commandId, "completed", "Terminal komutu çalıştırıldı.", started, DateTimeOffset.UtcNow, output);
+            outcome = await RunProcessAsync(command.Value.FileName, command.Value.Arguments, directory, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            try { temporaryDirectory?.Delete(true); } catch { }
+            if (scriptPath is not null) try { File.Delete(scriptPath); } catch { }
         }
+        var output = new
+        {
+            kind = "processOutput",
+            value = new
+            {
+                language,
+                exitCode = outcome.TimedOut ? -1 : outcome.ExitCode,
+                stdout = outcome.Stdout,
+                stderr = outcome.Stderr,
+                truncated = outcome.Truncated,
+                durationMs = outcome.DurationMs
+            }
+        };
+        if (outcome.TimedOut)
+            return new WindowsCommandResult(commandId, "unknown", "Terminal komutu zaman aşımına uğradı; sonucu doğrulanamadı.", started, DateTimeOffset.UtcNow, output, new { code = "CODE_TIMEOUT", message = "Terminal komutu zaman aşımına uğradı." });
+        if (outcome.ExitCode != 0)
+            return new WindowsCommandResult(commandId, "failed", "Terminal komutu hata verdi.", started, DateTimeOffset.UtcNow, output, new { code = "CODE_FAILED", message = outcome.Stderr[..Math.Min(outcome.Stderr.Length, 300)] });
+        return new WindowsCommandResult(commandId, "completed", "Terminal komutu çalıştırıldı.", started, DateTimeOffset.UtcNow, output);
     }
 
     private static (string FileName, string[] Arguments)? BuildCommand(string language, string shell, string code, IReadOnlyList<string> arguments, string directory)
@@ -241,8 +232,8 @@ public sealed class WindowsRuntime : IAsyncDisposable
         foreach (var argument in arguments) process.StartInfo.ArgumentList.Add(argument);
         try { process.Start(); }
         catch { return new ProcessOutcome("", "İşlem başlatılamadı.", -1, false, false, ElapsedMs(started)); }
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        var stdoutTask = ReadBoundedAsync(process.StandardOutput, cancellationToken);
+        var stderrTask = ReadBoundedAsync(process.StandardError, cancellationToken);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
         var timedOut = false;
@@ -253,11 +244,32 @@ public sealed class WindowsRuntime : IAsyncDisposable
             try { process.Kill(entireProcessTree: true); } catch { }
             await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
         }
+        catch (OperationCanceledException)
+        {
+            try { process.Kill(entireProcessTree: true); } catch { }
+            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
         var stdout = await stdoutTask.ConfigureAwait(false);
         var stderr = await stderrTask.ConfigureAwait(false);
+        return new ProcessOutcome(stdout.Text, stderr.Text, process.ExitCode, timedOut, stdout.Truncated || stderr.Truncated, ElapsedMs(started));
+    }
+
+    private static async Task<(string Text, bool Truncated)> ReadBoundedAsync(StreamReader reader, CancellationToken cancellationToken)
+    {
         const int cap = 200_000;
-        var truncated = stdout.Length > cap || stderr.Length > cap;
-        return new ProcessOutcome(stdout[..Math.Min(stdout.Length, cap)], stderr[..Math.Min(stderr.Length, cap)], process.ExitCode, timedOut, truncated, ElapsedMs(started));
+        var buffer = new char[4096];
+        var output = new StringBuilder(Math.Min(cap, 16_384));
+        var truncated = false;
+        while (true)
+        {
+            var count = await reader.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+            if (count == 0) break;
+            var remaining = cap - output.Length;
+            if (remaining > 0) output.Append(buffer, 0, Math.Min(count, remaining));
+            if (count > remaining) truncated = true;
+        }
+        return (output.ToString(), truncated);
     }
 
     private static string StringProperty(JsonElement value, string name) => value.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String ? property.GetString() ?? "" : "";

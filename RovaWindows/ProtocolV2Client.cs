@@ -16,6 +16,7 @@ public sealed class ProtocolV2Client : IAsyncDisposable
     private readonly Dictionary<string, WindowsCommandResult> completed = new(StringComparer.Ordinal);
     private readonly object completedGate = new();
     private const int CompletedLimit = 128;
+    private const int MaxFrameBytes = 1_500_000;
 
     public ProtocolV2Client(WindowsRuntime runtime, Uri? endpoint = null, DeviceSessionClient? sessions = null)
     {
@@ -102,21 +103,51 @@ public sealed class ProtocolV2Client : IAsyncDisposable
             {
                 result = await currentSocket.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
                 if (result.MessageType == WebSocketMessageType.Close) return;
+                if (result.MessageType != WebSocketMessageType.Text || message.Length + result.Count > MaxFrameBytes)
+                {
+                    await currentSocket.CloseAsync(WebSocketCloseStatus.MessageTooBig, "Invalid command frame", cancellationToken).ConfigureAwait(false);
+                    return;
+                }
                 await message.WriteAsync(buffer.AsMemory(0, result.Count), cancellationToken).ConfigureAwait(false);
             } while (!result.EndOfMessage);
 
-            using var document = JsonDocument.Parse(message.ToArray());
-            if (document.RootElement.TryGetProperty("type", out var type) && type.GetString() == "interactiveCommand")
-                await HandleInteractiveCommandAsync(currentSocket, document.RootElement, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                using var document = JsonDocument.Parse(message.GetBuffer().AsMemory(0, checked((int)message.Length)));
+                if (document.RootElement.TryGetProperty("type", out var type) && type.GetString() == "interactiveCommand")
+                    await HandleInteractiveCommandAsync(currentSocket, document.RootElement, cancellationToken).ConfigureAwait(false);
+            }
+            catch (JsonException)
+            {
+                await currentSocket.CloseAsync(WebSocketCloseStatus.InvalidPayloadData, "Malformed JSON", cancellationToken).ConfigureAwait(false);
+                return;
+            }
         }
     }
 
     private async Task HandleInteractiveCommandAsync(ClientWebSocket currentSocket, JsonElement envelope, CancellationToken cancellationToken)
     {
-        var commandId = envelope.GetProperty("commandId").GetString() ?? "";
-        var request = envelope.GetProperty("request");
-        var requestId = request.GetProperty("id").GetString() ?? commandId;
-        var operation = request.GetProperty("type").GetString() ?? "";
+        if (!envelope.TryGetProperty("commandId", out var rawCommandId) ||
+            rawCommandId.ValueKind != JsonValueKind.String ||
+            !Guid.TryParse(rawCommandId.GetString(), out _) ||
+            !envelope.TryGetProperty("request", out var request) ||
+            request.ValueKind != JsonValueKind.Object)
+        {
+            await currentSocket.CloseAsync(WebSocketCloseStatus.InvalidPayloadData, "Invalid command envelope", cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        var commandId = rawCommandId.GetString()!;
+        var requestId = request.TryGetProperty("id", out var rawRequestId) && rawRequestId.ValueKind == JsonValueKind.String
+            ? rawRequestId.GetString() ?? commandId
+            : commandId;
+        var operation = request.TryGetProperty("type", out var rawOperation) && rawOperation.ValueKind == JsonValueKind.String
+            ? rawOperation.GetString() ?? ""
+            : "";
+        if (requestId.Length is < 1 or > 160 || operation.Length is < 1 or > 120)
+        {
+            await currentSocket.CloseAsync(WebSocketCloseStatus.InvalidPayloadData, "Invalid command request", cancellationToken).ConfigureAwait(false);
+            return;
+        }
         var payload = request.TryGetProperty("payload", out var rawPayload) ? rawPayload : default;
         WindowsCommandResult? cached = null;
         lock (completedGate)

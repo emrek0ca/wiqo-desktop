@@ -19,7 +19,7 @@ struct RelayPairingSession: Equatable, Sendable {
 
 enum RelayPollOutcome: Equatable, Sendable {
     case waiting
-    case claimed(pairingToken: String, backendToken: String, deviceAccessToken: String?, deviceRefreshToken: String?)
+    case claimed(pairingToken: String, backendToken: String?, deviceAccessToken: String?, deviceRefreshToken: String?)
     /// Expired, or replaced by a newer session for this PC.
     case expired
 }
@@ -94,8 +94,11 @@ enum RelayPairingWire {
     static func decodePoll(_ data: Data) throws -> RelayPollOutcome {
         let body = try JSONDecoder().decode(PollBody.self, from: data)
         guard body.status == "claimed" else { return .waiting }
-        guard let pairingToken = body.pairingToken, let backendToken = body.backendToken else { throw RelayPairingError.requestFailed }
-        return .claimed(pairingToken: pairingToken, backendToken: backendToken, deviceAccessToken: body.deviceAccessToken, deviceRefreshToken: body.deviceRefreshToken)
+        guard let pairingToken = body.pairingToken else { throw RelayPairingError.requestFailed }
+        guard (body.deviceAccessToken != nil && body.deviceRefreshToken != nil) || body.backendToken != nil else {
+            throw RelayPairingError.requestFailed
+        }
+        return .claimed(pairingToken: pairingToken, backendToken: body.backendToken, deviceAccessToken: body.deviceAccessToken, deviceRefreshToken: body.deviceRefreshToken)
     }
 
     static func parseDate(_ value: String) -> Date? {
@@ -117,7 +120,7 @@ final class MacRelayPairing {
     }
 
     private enum WatchResult {
-        case claimed(pairingToken: String, backendToken: String, deviceAccessToken: String?, deviceRefreshToken: String?)
+        case claimed(pairingToken: String, backendToken: String?, deviceAccessToken: String?, deviceRefreshToken: String?)
         case expired
         case offline
         case cancelled
@@ -126,14 +129,14 @@ final class MacRelayPairing {
     private let api: RelayPairingAPI
     private let timing: Timing
     private let onState: @MainActor (RelayPairingState) -> Void
-    private let onClaimed: @MainActor (_ pairingToken: String, _ backendToken: String, _ deviceAccessToken: String?, _ deviceRefreshToken: String?) async -> Void
+    private let onClaimed: @MainActor (_ pairingToken: String, _ backendToken: String?, _ deviceAccessToken: String?, _ deviceRefreshToken: String?) async -> Void
     private var task: Task<Void, Never>?
 
     init(
         api: RelayPairingAPI,
         timing: Timing = Timing(),
         onState: @escaping @MainActor (RelayPairingState) -> Void,
-        onClaimed: @escaping @MainActor (_ pairingToken: String, _ backendToken: String, _ deviceAccessToken: String?, _ deviceRefreshToken: String?) async -> Void
+        onClaimed: @escaping @MainActor (_ pairingToken: String, _ backendToken: String?, _ deviceAccessToken: String?, _ deviceRefreshToken: String?) async -> Void
     ) {
         self.api = api
         self.timing = timing

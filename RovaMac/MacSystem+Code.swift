@@ -188,17 +188,12 @@ extension MacSystem {
         // below plus this run's own directory. `mach-lookup`/`iokit-open`/`signal` are required
         // for essentially any dynamically-linked macOS binary to even launch under `deny default`
         // (dyld and libSystem talk to several system services before `main()` runs) - none of
-        // that grants filesystem or network access on its own. `lsopen`/`appleevent-send` are
-        // what let a script use `open -a "App"` or `osascript`/AppleScript to control another
-        // app (the model's terminal-based fallback for anything computer_application can't
-        // resolve) - without them Launch Services and Apple Events both fail closed inside the
-        // sandbox even though the app is actually installed and running. Neither one bypasses
-        // macOS's own per-app Automation permission prompt; the user still approves that once,
-        // the same as any AppleScript control elsewhere in this app.
+        // that grants filesystem or network access on its own. App launching and Apple Events are
+        // intentionally absent: isolated code must not escape into UI/app control. Those actions
+        // use the explicit computer scope and its structural user-presence gate.
         return """
         (version 1) (deny default) \
         (allow process*) (allow sysctl-read) (allow mach-lookup) (allow iokit-open) (allow signal) \
-        (allow lsopen) (allow appleevent-send) \
         (allow file-read-metadata) \
         (allow file-read-data \
           (literal "/") \
@@ -245,6 +240,7 @@ extension MacSystem {
 
         do {
             try process.run()
+            let ownsProcessGroup = setpgid(process.processIdentifier, process.processIdentifier) == 0
             _ = fcntl(stdoutPipe.fileHandleForReading.fileDescriptor, F_SETFL, O_NONBLOCK)
             _ = fcntl(stderrPipe.fileHandleForReading.fileDescriptor, F_SETFL, O_NONBLOCK)
             let deadline = Date().addingTimeInterval(TimeInterval(max(1, timeoutSeconds)))
@@ -253,9 +249,15 @@ extension MacSystem {
                 drainProcessPipe(stderrPipe.fileHandleForReading, into: &stderr, truncated: &truncated)
                 if process.isRunning && Date() >= deadline {
                     timedOut = true
-                    process.terminate()
+                    if ownsProcessGroup {
+                        kill(-process.processIdentifier, SIGTERM)
+                    } else {
+                        process.terminate()
+                    }
                     Thread.sleep(forTimeInterval: 0.15)
-                    if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+                    if process.isRunning {
+                        kill(ownsProcessGroup ? -process.processIdentifier : process.processIdentifier, SIGKILL)
+                    }
                 }
                 if process.isRunning { Thread.sleep(forTimeInterval: 0.01) }
             }

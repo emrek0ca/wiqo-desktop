@@ -21,11 +21,6 @@ private actor BackendTokenStore {
         return String(data: data, encoding: .utf8)
     }
 
-    func loadAccount() -> String? {
-        guard let data = try? RovaKeychainStore.load(account: accountAccount) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
     func save(accessToken: String, refreshToken: String?, accountToken: String?) throws {
         try RovaKeychainStore.save(Data(accessToken.utf8), account: accessAccount)
         if let refreshToken, !refreshToken.isEmpty {
@@ -35,6 +30,8 @@ private actor BackendTokenStore {
         }
         if let accountToken, !accountToken.isEmpty {
             try RovaKeychainStore.save(Data(accountToken.utf8), account: accountAccount)
+        } else {
+            try? RovaKeychainStore.delete(account: accountAccount)
         }
     }
 
@@ -54,9 +51,9 @@ private struct BackendSessionCredentials: Decodable, Sendable {
 
 /// Persistent connection from this Mac to Rova's backend, so a scheduled automation (something
 /// the user set up conversationally, e.g. "her sabah 9'da...") can reach this Mac even when no
-/// iPhone is around to ask for anything. Authenticates with the same login JWT the iPhone used
-/// to sign in to the Rova backend - handed over once via WireMessage.backendToken on the existing
-/// local pairing connection, so this needs no separate Mac-side login screen.
+/// iPhone is around to ask for anything. Current clients persist only short-lived, device-scoped
+/// access plus rotating refresh credentials. A legacy local account token is used only long enough
+/// to bootstrap that scoped session, so this needs no separate Mac-side login screen.
 ///
 /// Only ever receives already-vetted, non-destructive steps (the backend filters out anything
 /// destructive before it reaches here - see rova-backend/src/automation/scheduler.ts) and runs
@@ -87,7 +84,6 @@ final class MacBackendChannel: NSObject {
     private var reconnectAttempt = 0
     private var currentToken: String?
     private var currentRefreshToken: String?
-    private var currentAccountToken: String?
     private var registrationSent = false
     private let onConnectionStateChange: (Bool) -> Void
 
@@ -112,8 +108,7 @@ final class MacBackendChannel: NSObject {
         guard let token, !token.isEmpty else { return false }
         guard currentToken == nil || !registrationSent else { return registrationSent }
         let refreshToken = await tokenStore.loadRefresh()
-        let accountToken = await tokenStore.loadAccount()
-        await connect(token: token, refreshToken: refreshToken, accountToken: accountToken)
+        await connect(token: token, refreshToken: refreshToken)
         return registrationSent && currentToken != nil
     }
 
@@ -134,7 +129,8 @@ final class MacBackendChannel: NSObject {
             // token, but no refresh loop is possible until the next successful bootstrap.
             credentials = (token, nil)
         }
-        await establish(accessToken: credentials.access, refreshToken: credentials.refresh, accountToken: accountToken ?? (refreshToken == nil ? token : nil))
+        let legacyAccountToken = credentials.refresh == nil ? (accountToken ?? token) : nil
+        await establish(accessToken: credentials.access, refreshToken: credentials.refresh, accountToken: legacyAccountToken)
     }
 
     private func establish(accessToken: String, refreshToken: String?, accountToken: String?) async {
@@ -155,7 +151,6 @@ final class MacBackendChannel: NSObject {
         publishConnectionState()
         currentToken = accessToken
         currentRefreshToken = refreshToken
-        if let accountToken, !accountToken.isEmpty { currentAccountToken = accountToken }
         reconnectAttempt = 0
         do {
             try await tokenStore.save(accessToken: accessToken, refreshToken: refreshToken, accountToken: accountToken)
@@ -173,7 +168,6 @@ final class MacBackendChannel: NSObject {
         reconnectTask = nil
         currentToken = nil
         currentRefreshToken = nil
-        currentAccountToken = nil
         do { try await tokenStore.delete() } catch { }
     }
 
@@ -219,7 +213,7 @@ final class MacBackendChannel: NSObject {
     }
 
     private func authenticatedRequest(path: String) throws -> URLRequest {
-        guard let token = currentAccountToken ?? currentToken else {
+        guard let token = currentToken else {
             throw MacBackendChannelError.notAuthenticated
         }
         var request = URLRequest(url: Self.apiBaseURL.appendingPathComponent(path))
@@ -617,7 +611,7 @@ final class MacBackendChannel: NSObject {
                let credentials = await self.refreshCredentials(refreshToken: refreshToken) {
                 self.currentToken = credentials.accessToken
                 self.currentRefreshToken = credentials.refreshToken
-                try? await self.tokenStore.save(accessToken: credentials.accessToken, refreshToken: credentials.refreshToken, accountToken: await self.tokenStore.loadAccount())
+                try? await self.tokenStore.save(accessToken: credentials.accessToken, refreshToken: credentials.refreshToken, accountToken: nil)
                 self.open(token: credentials.accessToken)
             } else {
                 self.open(token: currentToken)

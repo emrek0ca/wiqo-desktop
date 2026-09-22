@@ -336,7 +336,7 @@ final class MacRuntime: ObservableObject {
 
     /// The phone claimed the internet pairing code: keep the token it will sign commands with and
     /// sign in to the backend with the account it belongs to.
-    private func relayPairingClaimed(pairingToken: String, backendToken: String, deviceAccessToken: String?, deviceRefreshToken: String?) async {
+    private func relayPairingClaimed(pairingToken: String, backendToken: String?, deviceAccessToken: String?, deviceRefreshToken: String?) async {
         do {
             try await pairedDeviceTokenStore.save(pairingToken)
         } catch {
@@ -349,7 +349,12 @@ final class MacRuntime: ObservableObject {
         pairedDeviceName = "iPhone"
         UserDefaults.standard.set("iPhone", forKey: MacStorage.pairedNameKey)
         relayPairing = .paired
-        await backendChannel.connect(token: deviceAccessToken ?? backendToken, refreshToken: deviceRefreshToken, accountToken: backendToken)
+        guard let accessToken = deviceAccessToken ?? backendToken else {
+            serviceError = "İnternet bağlantısı kurulamadı. Eşleştirmeyi yeniden dene."
+            relayPairingService.start()
+            return
+        }
+        await backendChannel.connect(token: accessToken, refreshToken: deviceRefreshToken)
     }
 
     func refreshAutomations() async {
