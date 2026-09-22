@@ -182,14 +182,22 @@ struct PairingQRView: View {
     private var content: some View {
         switch runtime.relayPairing {
         case .paired:
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.green)
-            Text("Telefon bağlandı").font(.headline)
-            Text("Wiqo'yu telefonundan kullanmaya başlayabilirsin.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            if runtime.backendSessionActive {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(.green)
+                Text("Telefon bağlandı").font(.headline)
+                Text("Wiqo'yu telefonundan kullanmaya başlayabilirsin.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                ProgressView("Bağlantı yeniden kuruluyor…")
+                Text("Mac'in açık ve internete bağlı olduğundan emin ol.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
         case .waiting(let payload):
             if let value = try? RovaQRCodec.encode(payload) {
                 qrCode(value)

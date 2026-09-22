@@ -598,14 +598,10 @@ struct SettingsView: View {
     @ObservedObject var authSession: AuthSessionStore
     @ObservedObject var profileStore: ProfileStore
     @ObservedObject var subscriptionStore: SubscriptionStore
-    @State private var showingPaywall = false
-    @State private var showingSignOutConfirmation = false
     @State private var tasks: [RovaBackendClient.RovaTask] = []
     @State private var automations: [RovaBackendClient.RovaAutomation] = []
     @State private var reviewItems: [RovaBackendClient.AutomationReviewItem] = []
     @State private var taskAutomationError: String?
-    @State private var accountInfo: RovaBackendClient.AccountInfo?
-    @State private var inviteCodes: [RovaBackendClient.InviteCode] = []
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
@@ -625,27 +621,12 @@ struct SettingsView: View {
                     Button { dismiss() } label: { Text("Kapat").font(.body.weight(.medium)) }
                 }
             }
-            .sheet(isPresented: $showingPaywall) {
-                PaywallView(subscriptionStore: subscriptionStore)
-            }
         }
         .wiqoToastHost(level: 1)
         .task {
             await loadTasksAndAutomations()
             await subscriptionStore.refreshIfStale(maxAge: 60)
-            await loadAccountAndInviteCodes()
         }
-    }
-
-    private func loadAccountAndInviteCodes() async {
-        async let fetchedAccount = try? RovaBackendClient.fetchAccountInfo()
-        async let fetchedCodes = try? RovaBackendClient.fetchInviteCodes()
-        accountInfo = await fetchedAccount
-        inviteCodes = (await fetchedCodes) ?? []
-    }
-
-    private var firstUnusedInviteCode: String? {
-        inviteCodes.first(where: { !$0.used })?.code
     }
 
     private var settingsNavigation: some View {
@@ -665,7 +646,7 @@ struct SettingsView: View {
             .buttonStyle(WiqoRowButtonStyle())
 
             NavigationLink {
-                accountSettingsPage
+                AccountSettingsView(profileStore: profileStore, authSession: authSession, subscriptionStore: subscriptionStore)
             } label: {
                 settingsNavigationRow(title: "Hesap", systemImage: "person.crop.circle", value: profileStore.profile.visibleName)
             }
@@ -724,22 +705,6 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var accountSettingsPage: some View {
-        ScrollView {
-            VStack(spacing: 22) {
-                accountSection
-                if accountInfo?.isFoundingMember == true || firstUnusedInviteCode != nil {
-                    inviteSection
-                }
-                signOutSection
-            }
-            .padding(RovaDesign.screenPadding)
-        }
-        .background(RovaDesign.canvas)
-        .navigationTitle("Hesap")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
     private var advancedSettingsPage: some View {
         ScrollView {
             VStack(spacing: 22) {
@@ -753,73 +718,6 @@ struct SettingsView: View {
         .background(RovaDesign.canvas)
         .navigationTitle("Gelişmiş")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    // MARK: Account
-
-    private var accountSection: some View {
-        WiqoSettingsGroup(title: "Hesap") {
-            NavigationLink {
-                ProfileSettingsView(profileStore: profileStore, authSession: authSession)
-            } label: {
-                HStack(spacing: 12) {
-                    AvatarView(profile: profileStore.profile, image: profileStore.avatarImage, size: 44)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(profileStore.profile.visibleName)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        Text(profileStore.profile.email)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 8)
-                    WiqoChevron()
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .frame(minHeight: 64)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(alignment: .bottom) {
-                    Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 14)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-
-            planRow
-
-            NavigationLink {
-                ConnectedAccountsView()
-            } label: {
-                WiqoRow(systemImage: "link", title: "Bağlı hesaplar", showsDivider: false)
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-        }
-    }
-
-    /// Current plan and today's usage, straight from the backend (`GET /billing/subscription`) -
-    /// the same numbers copilot.ts/creativeTools.ts actually enforce, so this can never promise
-    /// more than the backend will allow. See docs/abonelik.md for the full billing design.
-    private var planRow: some View {
-        let info = subscriptionStore.info
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(info.label)
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Button(info.tier == "free" ? "Yükselt" : "Planlar") { showingPaywall = true }
-                    .buttonStyle(.wiqoPill(info.tier == "free" ? .accent : .secondary))
-            }
-            WiqoUsageBar(title: "Bugünkü mesajlar", used: info.usage.messages.used, limit: info.usage.messages.limit)
-            WiqoUsageBar(title: "Bugünkü görseller", used: info.usage.images.used, limit: info.usage.images.limit)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 14)
-        }
     }
 
     // MARK: Tasks and automations
@@ -964,38 +862,6 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: Invite
-
-    /// The whole point is that Wiqo spreads through people who already use it: a founding-member
-    /// badge for whoever got here early, and a code to hand a friend that credits both sides a
-    /// Pro bonus the moment it's redeemed (see rova-backend's grantReferralBonus).
-    private var inviteSection: some View {
-        WiqoSettingsGroup(title: "Arkadaşını davet et") {
-            if accountInfo?.isFoundingMember == true {
-                WiqoRow(
-                    systemImage: "seal.fill",
-                    tint: .yellow,
-                    title: "Kurucu üye",
-                    showsDivider: firstUnusedInviteCode != nil
-                ) { EmptyView() }
-            }
-            if let code = firstUnusedInviteCode {
-                WiqoRow(
-                    systemImage: "gift.fill",
-                    title: code,
-                    subtitle: "Katılırsa ikiniz de 14 gün Pro kazanırsınız.",
-                    showsDivider: false
-                ) {
-                    ShareLink(item: "Wiqo'yu deniyorum, davet kodumla katıl ve ikimiz de Pro kazanalım: \(code)") {
-                        Image(systemName: "square.and.arrow.up")
-                            .frame(width: 36, height: 36)
-                            .contentShape(Rectangle())
-                    }
-                }
-            }
-        }
-    }
-
     // MARK: Legal and account
 
     /// App Store Connect's Support URL is required to actually resolve to something useful, and
@@ -1018,23 +884,6 @@ struct SettingsView: View {
             }
         }
         .buttonStyle(WiqoRowButtonStyle())
-    }
-
-    private var signOutSection: some View {
-        WiqoSettingsGroup {
-            Button(role: .destructive) {
-                showingSignOutConfirmation = true
-            } label: {
-                WiqoRow(systemImage: "rectangle.portrait.and.arrow.right", title: "Çıkış yap", isDestructive: true, showsDivider: false) {
-                    EmptyView()
-                }
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-        }
-        .confirmationDialog("Wiqo hesabından çıkmak istediğine emin misin?", isPresented: $showingSignOutConfirmation, titleVisibility: .visible) {
-            Button("Çıkış yap", role: .destructive) { authSession.signOut(); dismiss() }
-            Button("Vazgeç", role: .cancel) { }
-        }
     }
 
     private var versionFooter: some View {

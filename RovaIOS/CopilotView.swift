@@ -451,8 +451,29 @@ struct CopilotView: View {
         let hasExecution = !deviceSteps.isEmpty || !bubble.backendConfirmations.isEmpty || !liveOnlyUpdates.isEmpty
         let rows = toolRows(for: bubble, deviceSteps: deviceSteps, liveOnlyUpdates: liveOnlyUpdates)
         let chunks = contextChunks(for: bubble)
+        let needsExecutionAttention = bubble.needsConfirmation
+            || !bubble.inFlightStepIDs.isEmpty
+            || !bubble.failedSteps.isEmpty
+            || deviceSteps.contains { step in
+                guard let result = bubble.stepResults[step.id] else {
+                    return !bubble.executedStepIDs.contains(step.id)
+                }
+                return result.status != .completed
+            }
+            || bubble.backendConfirmations.contains { $0.status == .pending || $0.status == .processing || $0.status == .failed }
+            || liveOnlyUpdates.contains {
+                $0.status == LiveExecutionStatus.awaitingConfirmation.rawValue
+                    || $0.status == LiveExecutionStatus.dispatching.rawValue
+                    || $0.status == LiveExecutionStatus.running.rawValue
+                    || $0.status == LiveExecutionStatus.failed.rawValue
+                    || $0.status == LiveExecutionStatus.denied.rawValue
+            }
         return Group {
-            if hasExecution {
+            // A verified, ordinary completion is already described by Wiqo's reply. Keep the
+            // execution details only while the user needs to act, something needs attention, or
+            // a read result itself is useful context; don't leave a completed status widget under
+            // every successful chat turn.
+            if hasExecution && (needsExecutionAttention || !chunks.isEmpty) {
                 VStack(alignment: .leading, spacing: 10) {
                     if shouldShowExecutionNarration(bubble, liveOnlyUpdates: liveOnlyUpdates) {
                         HStack(spacing: 8) {

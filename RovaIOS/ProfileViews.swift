@@ -139,11 +139,11 @@ struct AvatarView: View {
     }
 }
 
-/// Profile editor. Edits are kept in a local draft and sent together with "Kaydet", so a half-typed
-/// name never reaches the server and nothing changes until the user commits.
-struct ProfileSettingsView: View {
+/// Account and profile live on one page. Profile edits stay local until "Kaydet" is tapped.
+struct AccountSettingsView: View {
     @ObservedObject var profileStore: ProfileStore
     @ObservedObject var authSession: AuthSessionStore
+    @ObservedObject var subscriptionStore: SubscriptionStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft: UserProfile
@@ -152,12 +152,17 @@ struct ProfileSettingsView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var showingDeleteAccount = false
+    @State private var showingSignOutConfirmation = false
+    @State private var showingPaywall = false
+    @State private var accountInfo: RovaBackendClient.AccountInfo?
+    @State private var inviteCodes: [RovaBackendClient.InviteCode] = []
     @State private var deletePassword = ""
     @State private var isDeleting = false
 
-    init(profileStore: ProfileStore, authSession: AuthSessionStore) {
+    init(profileStore: ProfileStore, authSession: AuthSessionStore, subscriptionStore: SubscriptionStore) {
         self.profileStore = profileStore
         self.authSession = authSession
+        self.subscriptionStore = subscriptionStore
         _draft = State(initialValue: profileStore.profile)
         _draftImage = State(initialValue: profileStore.avatarImage)
     }
@@ -217,6 +222,39 @@ struct ProfileSettingsView: View {
                 }
             }
 
+            Section("Plan") {
+                let info = subscriptionStore.info
+                HStack {
+                    Text(info.label)
+                    Spacer()
+                    Button(info.tier == "free" ? "Yükselt" : "Planlar") { showingPaywall = true }
+                        .buttonStyle(.wiqoPill(info.tier == "free" ? .accent : .secondary))
+                }
+                WiqoUsageBar(title: "Bugünkü mesajlar", used: info.usage.messages.used, limit: info.usage.messages.limit)
+                WiqoUsageBar(title: "Bugünkü görseller", used: info.usage.images.used, limit: info.usage.images.limit)
+            }
+
+            Section("Bağlantılar") {
+                NavigationLink("Bağlı hesaplar") { ConnectedAccountsView() }
+            }
+
+            if accountInfo?.isFoundingMember == true || firstUnusedInviteCode != nil {
+                Section("Arkadaşını davet et") {
+                    if accountInfo?.isFoundingMember == true {
+                        Label("Kurucu üye", systemImage: "seal.fill")
+                    }
+                    if let code = firstUnusedInviteCode {
+                        ShareLink(item: "Wiqo'yu deniyorum, davet kodumla katıl ve ikimiz de Pro kazanalım: \(code)") {
+                            Label(code, systemImage: "gift.fill")
+                        }
+                    }
+                }
+            }
+
+            Section {
+                Button("Çıkış yap", role: .destructive) { showingSignOutConfirmation = true }
+            }
+
             Section {
                 Button("Hesabı sil", role: .destructive) {
                     deletePassword = ""
@@ -228,7 +266,7 @@ struct ProfileSettingsView: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
-        .navigationTitle("Profil")
+        .navigationTitle("Hesap")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -244,6 +282,19 @@ struct ProfileSettingsView: View {
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             Task { await loadPhoto(item) }
+        }
+        .task {
+            async let fetchedAccount = try? RovaBackendClient.fetchAccountInfo()
+            async let fetchedCodes = try? RovaBackendClient.fetchInviteCodes()
+            accountInfo = await fetchedAccount
+            inviteCodes = (await fetchedCodes) ?? []
+        }
+        .sheet(isPresented: $showingPaywall) {
+            PaywallView(subscriptionStore: subscriptionStore)
+        }
+        .confirmationDialog("Wiqo hesabından çıkmak istediğine emin misin?", isPresented: $showingSignOutConfirmation, titleVisibility: .visible) {
+            Button("Çıkış yap", role: .destructive) { authSession.signOut(); dismiss() }
+            Button("Vazgeç", role: .cancel) { }
         }
         .onChange(of: profileStore.profile) { old, fresh in
             // Adopt a background refresh only while the user hasn't started editing.
@@ -264,6 +315,10 @@ struct ProfileSettingsView: View {
         } message: {
             Text("Bu işlem geri alınamaz. Onaylamak için şifreni gir.")
         }
+    }
+
+    private var firstUnusedInviteCode: String? {
+        inviteCodes.first(where: { !$0.used })?.code
     }
 
     private var avatarSection: some View {

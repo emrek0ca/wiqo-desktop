@@ -285,6 +285,11 @@ final class IOSConnectionModel: ObservableObject {
             fail("Eşleşme QR kodunun süresi doldu.")
             return
         }
+        let previousState = state
+        let previousRelay = isUsingRelay
+        let previousReconnecting = isReconnecting
+        connectionGeneration += 1
+        let generation = connectionGeneration
         isPairing = true
         isReconnecting = true
         isUsingRelay = true
@@ -294,7 +299,14 @@ final class IOSConnectionModel: ObservableObject {
             guard let self else { return }
             do {
                 let claim = try await RovaBackendClient.claimRelayPairing(sessionID: payload.sessionID, secret: payload.secret)
+                guard connectionGeneration == generation else { return }
                 guard let deviceID = UUID(uuidString: claim.deviceId) else { throw RovaBackendError.invalidResponse }
+                // Claiming only reserves the QR session. The Mac may have closed before it
+                // polled the claim; do not replace a working pairing with an unproven token.
+                guard await verifyRelayPairing(deviceID: deviceID, pairingToken: claim.pairingToken) else {
+                    throw IOSConnectionError.disconnected
+                }
+                guard connectionGeneration == generation else { return }
                 try RovaKeychainStore.save(Data(claim.pairingToken.utf8), account: "ios-device-token")
                 try RovaKeychainStore.save(Data("relay".utf8), account: "ios-certificate-fingerprint")
                 token = claim.pairingToken
@@ -308,13 +320,32 @@ final class IOSConnectionModel: ObservableObject {
                 startDeviceEvents()
                 scheduleRelayProbe()
             } catch {
+                guard connectionGeneration == generation else { return }
                 isPairing = false
-                isReconnecting = false
-                isUsingRelay = false
-                state = .failed
-                lastError = (error as? LocalizedError)?.errorDescription ?? "Eşleşme tamamlanamadı."
+                isReconnecting = isPaired ? previousReconnecting : false
+                isUsingRelay = isPaired ? previousRelay : false
+                state = isPaired ? previousState : .failed
+                lastError = userFacingConnectionError
             }
         }
+    }
+
+    private func verifyRelayPairing(deviceID: UUID, pairingToken: String) async -> Bool {
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline && !Task.isCancelled {
+            let commandID = UUID()
+            guard let nonce = try? RovaCrypto.randomToken() else { return false }
+            let signature = RovaValidation.signRequest(id: commandID, type: .ping, nonce: nonce, token: pairingToken)
+            let request = CommandRequest(id: commandID, type: .ping, payload: .none, signature: signature, nonce: nonce)
+            if let devices = try? await RovaBackendClient.fetchDevices(),
+               devices.contains(where: { $0.id.caseInsensitiveCompare(deviceID.uuidString) == .orderedSame && $0.online }),
+               let result = try? await RovaBackendClient.sendDeviceCommand(request, deviceId: deviceID.uuidString),
+               result.status == .completed, result.error == nil {
+                return true
+            }
+            try? await Task.sleep(for: .seconds(1))
+        }
+        return false
     }
 
     func authenticateBiometrics(reason: String = "Wiqo komutunu onaylayın") async -> Bool {
@@ -804,6 +835,9 @@ final class IOSConnectionModel: ObservableObject {
             guard let self, self.state != .connected, self.connection == nil else { return }
             self.isReconnecting = false
             self.state = .failed
+            // A transient timeout can happen without another presence event (for example,
+            // while a Mac is paused in a debugger). Retry with the existing bounded backoff.
+            self.scheduleReconnect()
         }
     }
 
