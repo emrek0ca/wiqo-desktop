@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import CryptoKit
 import UniformTypeIdentifiers
 
 /// Reading, writing and moving files and documents on this Mac.
@@ -136,6 +137,7 @@ extension MacSystem {
     }
 
     private static let maxLocalReadBytes = 512 * 1024
+    private static let maxPhoneTransferBytes: Int64 = 25 * 1024 * 1024
 
     static let maxProcessOutputBytes = 50 * 1024
 
@@ -157,6 +159,47 @@ extension MacSystem {
             return (.files(Array(page)), nil)
         } catch {
             return (nil, localFileError(code: "FILE_LIST_FAILED", fallback: "Klasör içeriği listelenemedi.", error: error))
+        }
+    }
+
+    static func searchFiles(_ payload: FileSearchPayload) async -> (data: CommandData?, message: String, error: RovaError?) {
+        await MacSearchRegistry.shared.search(payload)
+    }
+
+    static func sendFileToPhone(_ payload: LocalFileOperationPayload, commandID: UUID, accessToken: String) async -> (data: CommandData?, error: RovaError?) {
+        guard let file = resolvedLocalURL(payload.path), isRegularFile(file), !isSymbolicLink(file),
+              let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size > 0, Int64(size) <= maxPhoneTransferBytes else {
+            return (nil, RovaError(code: "FILE_TOO_LARGE", message: "Yalnızca 25 MB veya daha küçük normal dosyalar gönderilebilir."))
+        }
+        do {
+            let handle = try FileHandle(forReadingFrom: file)
+            defer { try? handle.close() }
+            var digest = SHA256()
+            while let chunk = try handle.read(upToCount: 256 * 1024), !chunk.isEmpty {
+                if Task.isCancelled { throw CancellationError() }
+                digest.update(data: chunk)
+            }
+            let sha256 = digest.finalize().map { String(format: "%02x", $0) }.joined()
+            let baseURL = await MainActor.run { MacBackendChannel.apiBaseURL }
+            var request = URLRequest(url: baseURL.appendingPathComponent("file-transfers/\(commandID.uuidString)"))
+            request.httpMethod = "PUT"
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+            request.setValue(file.lastPathComponent.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? "dosya", forHTTPHeaderField: "X-File-Name")
+            request.setValue(sha256, forHTTPHeaderField: "X-File-SHA256")
+            request.timeoutInterval = 120
+            let (data, response) = try await URLSession.shared.upload(for: request, fromFile: file)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 201,
+                  let body = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let artifactID = body["artifactId"] as? String else {
+                return (nil, RovaError(code: "TRANSFER_FAILED", message: "Dosya telefona iletilemedi."))
+            }
+            return (.fileTransfer(artifactID), nil)
+        } catch is CancellationError {
+            return (nil, RovaError(code: "CANCELLED", message: "Dosya aktarımı iptal edildi."))
+        } catch {
+            return (nil, RovaError(code: "TRANSFER_FAILED", message: "Dosya telefona iletilemedi."))
         }
     }
 
@@ -335,5 +378,86 @@ extension MacSystem {
     private static func safeDesktopURL(_ filename: String) -> URL? {
         guard RovaValidation.isValidDesktopFilename(filename), let desktop = desktopURL() else { return nil }
         return desktop.appendingPathComponent(filename, isDirectory: false)
+    }
+}
+
+private actor MacSearchRegistry {
+    static let shared = MacSearchRegistry()
+
+    private final class Session {
+        let query: String
+        var enumerator: FileManager.DirectoryEnumerator?
+        var skipped = 0
+        var expiresAt = Date().addingTimeInterval(10 * 60)
+
+        init?(query: String) {
+            self.query = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard let enumerator = FileManager.default.enumerator(
+                at: URL(fileURLWithPath: "/", isDirectory: true),
+                includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey],
+                options: [.skipsPackageDescendants],
+                errorHandler: { [weak self] _, _ in
+                    self?.skipped += 1
+                    return true
+                }
+            ) else { return nil }
+            self.enumerator = enumerator
+        }
+    }
+
+    private var sessions: [String: Session] = [:]
+
+    func search(_ payload: FileSearchPayload) -> (data: CommandData?, message: String, error: RovaError?) {
+        sessions = sessions.filter { $0.value.expiresAt > Date() }
+        let id: String
+        let session: Session
+        if let cursor = payload.cursor {
+            guard let existing = sessions[cursor], existing.query == payload.query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current) else {
+                return (nil, "Arama sürdürülemedi.", RovaError(code: "INVALID_CURSOR", message: "Aramayı yeniden başlat."))
+            }
+            id = cursor
+            session = existing
+        } else {
+            guard sessions.count < 5 else {
+                return (nil, "Çok fazla arama açık.", RovaError(code: "SEARCH_LIMIT", message: "Biraz sonra tekrar dene."))
+            }
+            id = UUID().uuidString
+            guard let created = Session(query: payload.query) else {
+                return (nil, "Dosyalar aranamadı.", RovaError(code: "SEARCH_FAILED", message: "Dosyalar aranamadı."))
+            }
+            session = created
+            sessions[id] = session
+        }
+        var matches: [FileSystemEntry] = []
+        var visited = 0
+        let deadline = Date().addingTimeInterval(15)
+        while let url = session.enumerator?.nextObject() as? URL {
+            if Task.isCancelled {
+                sessions.removeValue(forKey: id)
+                return (nil, "Arama iptal edildi.", RovaError(code: "CANCELLED", message: "Arama iptal edildi."))
+            }
+            visited += 1
+            if ["/dev", "/proc", "/System/Volumes/Preboot", "/System/Volumes/VM"].contains(where: { url.path == $0 || url.path.hasPrefix($0 + "/") }) {
+                session.enumerator?.skipDescendants()
+                continue
+            }
+            guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]) else {
+                session.skipped += 1
+                continue
+            }
+            if values.isSymbolicLink == true { session.enumerator?.skipDescendants(); continue }
+            if values.isRegularFile == true && url.path.count <= 500 &&
+                url.lastPathComponent.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).contains(session.query) {
+                matches.append(FileSystemEntry(path: url.standardizedFileURL.path, name: url.lastPathComponent,
+                    byteCount: Int64(values.fileSize ?? 0), modifiedAt: values.contentModificationDate,
+                    isDirectory: false, fileType: url.pathExtension.lowercased()))
+            }
+            if matches.count >= 12 || visited >= 25_000 || Date() >= deadline {
+                session.expiresAt = Date().addingTimeInterval(10 * 60)
+                return (.files(matches), "Kısmi sonuç; devam kodu \(id). Erişilemeyen öğe: \(session.skipped).", nil)
+            }
+        }
+        sessions.removeValue(forKey: id)
+        return (.files(matches), "Arama tamamlandı. Erişilemeyen öğe: \(session.skipped).", nil)
     }
 }

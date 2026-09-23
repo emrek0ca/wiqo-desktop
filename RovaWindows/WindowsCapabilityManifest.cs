@@ -12,7 +12,9 @@ public static class WindowsCapabilityManifest
         "runtime.status",
         "device.url.open",
         "device.app.list",
-        "device.code.execute"
+        "device.code.execute",
+        "device.files.list",
+        "device.files.read"
     };
 
     public static readonly IReadOnlySet<string> Operations = new HashSet<string>(StringComparer.Ordinal)
@@ -21,7 +23,9 @@ public static class WindowsCapabilityManifest
         "getSystemStatus",
         "openURL",
         "listRunningApplications",
-        "executeCode"
+        "executeCode",
+        "searchFiles",
+        "sendFileToPhone"
     };
 
     public static string CapabilityFor(string operation) => operation switch
@@ -30,6 +34,8 @@ public static class WindowsCapabilityManifest
         "openURL" => "device.url.open",
         "listRunningApplications" => "device.app.list",
         "executeCode" => "device.code.execute",
+        "searchFiles" => "device.files.list",
+        "sendFileToPhone" => "device.files.read",
         _ => ""
     };
 }

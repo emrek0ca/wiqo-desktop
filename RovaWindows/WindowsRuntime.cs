@@ -21,6 +21,13 @@ public sealed class WindowsRuntime : IAsyncDisposable
     private readonly CancellationTokenSource lifetime = new();
     private readonly int queueCapacity;
     private int queued;
+    private Func<string, string, CancellationToken, Task<string?>>? fileUploader;
+    private Func<string, string, CancellationToken, Task<bool>>? fileAccessApproval;
+
+    public void ConfigureFileUploader(Func<string, string, CancellationToken, Task<string?>> uploader) => fileUploader = uploader;
+    /// The future Windows host must present the exact search/send target to its user.
+    /// Without a host approval provider, private-file capabilities are not advertised or run.
+    public void ConfigureFileAccessApproval(Func<string, string, CancellationToken, Task<bool>> approval) => fileAccessApproval = approval;
 
     public WindowsRuntime(int queueCapacity = 64)
     {
@@ -31,14 +38,16 @@ public sealed class WindowsRuntime : IAsyncDisposable
     public string DeviceId { get; } = LoadDeviceId();
     public string DisplayName => Environment.MachineName;
 
-    public IReadOnlyList<string> Capabilities => WindowsCapabilityManifest.Capabilities.OrderBy(value => value, StringComparer.Ordinal).ToArray();
+    public IReadOnlyList<string> Capabilities => WindowsCapabilityManifest.Capabilities
+        .Where(value => fileAccessApproval is not null || !value.StartsWith("device.files.", StringComparison.Ordinal))
+        .OrderBy(value => value, StringComparer.Ordinal).ToArray();
 
     public object[] Authorities => Capabilities.Select(capability => new
     {
         capability,
         displayName = capability,
-        access = capability == "device.code.execute" ? "confirmation" : "automatic",
-        requiredPermissions = capability == "device.code.execute" ? new[] { "user_presence" } : Array.Empty<string>(),
+        access = capability == "device.code.execute" || capability.StartsWith("device.files.", StringComparison.Ordinal) ? "confirmation" : "automatic",
+        requiredPermissions = capability == "device.code.execute" || capability.StartsWith("device.files.", StringComparison.Ordinal) ? new[] { "user_presence" } : Array.Empty<string>(),
         message = ""
     }).Cast<object>().ToArray();
 
@@ -57,9 +66,17 @@ public sealed class WindowsRuntime : IAsyncDisposable
         try
         {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, cancellationToken);
-            linked.CancelAfter(timeout);
+            linked.CancelAfter(operation == "sendFileToPhone" ? TimeSpan.FromSeconds(120) : timeout);
+            if (operation is "searchFiles" or "sendFileToPhone")
+            {
+                var target = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.Object
+                    ? StringProperty(value, operation == "searchFiles" ? "query" : "path") : "";
+                if (fileAccessApproval is null || string.IsNullOrWhiteSpace(target) ||
+                    !await fileAccessApproval(operation, target, linked.Token).ConfigureAwait(false))
+                    return Failed(commandId, started, "FILE_ACCESS_DENIED", "Dosya erişimine izin verilmedi.");
+            }
             // Side effects remain ordered; read-only operations can execute without this gate.
-            var sideEffect = operation is "openURL" or "executeCode";
+            var sideEffect = operation is "openURL" or "executeCode" or "sendFileToPhone";
             if (sideEffect) await sideEffectGate.WaitAsync(linked.Token).ConfigureAwait(false);
             try
             {
@@ -84,7 +101,7 @@ public sealed class WindowsRuntime : IAsyncDisposable
         }
     }
 
-    private static async Task<WindowsCommandResult> RunAsync(string commandId, string operation, JsonElement payload, DateTimeOffset started, CancellationToken cancellationToken)
+    private async Task<WindowsCommandResult> RunAsync(string commandId, string operation, JsonElement payload, DateTimeOffset started, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         object? data = null;
@@ -125,6 +142,20 @@ public sealed class WindowsRuntime : IAsyncDisposable
                 };
                 message = "Açık uygulamalar listelendi.";
                 break;
+            case "searchFiles":
+                return SearchFiles(commandId, payload, started, cancellationToken);
+            case "sendFileToPhone":
+                if (!payload.TryGetProperty("value", out var fileValue) || fileValue.ValueKind != JsonValueKind.Object || fileUploader is null)
+                    return Failed(commandId, started, "TRANSFER_UNAVAILABLE", "Dosya aktarımı hazır değil.");
+                var filePath = StringProperty(fileValue, "path");
+                if (!Path.IsPathFullyQualified(filePath) || !File.Exists(filePath) || IsReparsePoint(filePath))
+                    return Failed(commandId, started, "INVALID_FILE", "Dosya bulunamadı veya erişilemiyor.");
+                var fileInfo = new FileInfo(filePath);
+                if (fileInfo.Length is < 1 or > 25 * 1024 * 1024)
+                    return Failed(commandId, started, "FILE_TOO_LARGE", "Yalnızca 25 MB veya daha küçük dosyalar gönderilebilir.");
+                var artifactId = await fileUploader(filePath, commandId, cancellationToken).ConfigureAwait(false);
+                if (artifactId is null) return Failed(commandId, started, "TRANSFER_FAILED", "Dosya telefona iletilemedi.");
+                return new WindowsCommandResult(commandId, "completed", "Dosya telefona gönderildi.", started, DateTimeOffset.UtcNow, new { kind = "fileTransfer", value = artifactId });
             case "executeCode":
                 return await ExecuteCodeAsync(commandId, payload, started, cancellationToken).ConfigureAwait(false);
             default:
@@ -132,6 +163,108 @@ public sealed class WindowsRuntime : IAsyncDisposable
         }
 
         return new WindowsCommandResult(commandId, "completed", message, started, DateTimeOffset.UtcNow, data);
+    }
+
+    private static bool IsReparsePoint(string path)
+    {
+        try { return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0; }
+        catch { return true; }
+    }
+
+    private sealed class SearchSession
+    {
+        public required string Query { get; init; }
+        public required Stack<string> Directories { get; init; }
+        public IEnumerator<string>? Entries { get; set; }
+        public int Skipped { get; set; }
+        public DateTimeOffset ExpiresAt { get; set; } = DateTimeOffset.UtcNow.AddMinutes(10);
+        public void Close() { Entries?.Dispose(); Entries = null; }
+    }
+
+    private static readonly object SearchGate = new();
+    private static readonly Dictionary<string, SearchSession> Searches = new(StringComparer.Ordinal);
+
+    private static WindowsCommandResult SearchFiles(string commandId, JsonElement payload, DateTimeOffset started, CancellationToken cancellationToken)
+    {
+        if (!payload.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Object)
+            return Failed(commandId, started, "INVALID_PAYLOAD", "Dosya arama isteği geçersiz.");
+        var query = StringProperty(value, "query").Trim();
+        var cursor = StringProperty(value, "cursor");
+        if (query.Length is < 1 or > 120 || (!string.IsNullOrEmpty(cursor) && !Guid.TryParse(cursor, out _)))
+            return Failed(commandId, started, "INVALID_PAYLOAD", "Dosya arama isteği geçersiz.");
+        lock (SearchGate)
+        {
+            foreach (var expired in Searches.Where(item => item.Value.ExpiresAt < DateTimeOffset.UtcNow).Select(item => item.Key).ToArray())
+            {
+                Searches[expired].Close();
+                Searches.Remove(expired);
+            }
+            SearchSession session;
+            string id;
+            if (!string.IsNullOrEmpty(cursor))
+            {
+                if (!Searches.TryGetValue(cursor, out var existing) || !string.Equals(existing.Query, query, StringComparison.OrdinalIgnoreCase))
+                    return Failed(commandId, started, "INVALID_CURSOR", "Aramayı yeniden başlat.");
+                id = cursor;
+                session = existing;
+            }
+            else
+            {
+                if (Searches.Count >= 5) return Failed(commandId, started, "SEARCH_LIMIT", "Çok fazla arama açık.");
+                try {
+                    session = new SearchSession { Query = query, Directories = new Stack<string>(DriveInfo.GetDrives().Where(drive => drive.IsReady).Select(drive => drive.RootDirectory.FullName)) };
+                } catch { return Failed(commandId, started, "SEARCH_FAILED", "Diskler aranamadı."); }
+                id = Guid.NewGuid().ToString();
+                Searches[id] = session;
+            }
+            var matches = new List<object>();
+            var visited = 0;
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(15);
+            while (session.Entries is not null || session.Directories.Count > 0)
+            {
+                if (cancellationToken.IsCancellationRequested) {
+                    Searches.Remove(id);
+                    session.Close();
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+                if (session.Entries is null)
+                {
+                    var directory = session.Directories.Pop();
+                    try { session.Entries = Directory.EnumerateFileSystemEntries(directory).GetEnumerator(); }
+                    catch (UnauthorizedAccessException) { session.Skipped++; continue; }
+                    catch (IOException) { session.Skipped++; continue; }
+                }
+                bool more;
+                try { more = session.Entries.MoveNext(); }
+                catch (UnauthorizedAccessException) { session.Skipped++; more = false; }
+                catch (IOException) { session.Skipped++; more = false; }
+                if (!more) { session.Close(); continue; }
+                var path = session.Entries.Current;
+                visited++;
+                if (!IsReparsePoint(path))
+                {
+                    bool isDirectory;
+                    try { isDirectory = Directory.Exists(path); }
+                    catch { session.Skipped++; continue; }
+                    if (isDirectory) session.Directories.Push(path);
+                    else if (path.Length <= 500 && Path.GetFileName(path).Contains(query, StringComparison.OrdinalIgnoreCase))
+                    {
+                        try {
+                            var info = new FileInfo(path);
+                            matches.Add(new { path = info.FullName, name = info.Name, fileType = info.Extension.TrimStart('.').ToLowerInvariant(), byteCount = info.Length, modifiedAt = info.LastWriteTimeUtc, isDirectory = false });
+                        } catch { session.Skipped++; }
+                    }
+                }
+                if (matches.Count >= 12 || visited >= 25_000 || DateTimeOffset.UtcNow >= deadline)
+                {
+                    session.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10);
+                    return new WindowsCommandResult(commandId, "completed", $"Kısmi sonuç; devam kodu {id}. Erişilemeyen öğe: {session.Skipped}.", started, DateTimeOffset.UtcNow, new { kind = "files", value = matches });
+                }
+            }
+            Searches.Remove(id);
+            session.Close();
+            return new WindowsCommandResult(commandId, "completed", $"Arama tamamlandı. Erişilemeyen öğe: {session.Skipped}.", started, DateTimeOffset.UtcNow, new { kind = "files", value = matches });
+        }
     }
 
     private static async Task<WindowsCommandResult> ExecuteCodeAsync(string commandId, JsonElement payload, DateTimeOffset started, CancellationToken cancellationToken)

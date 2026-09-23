@@ -13,6 +13,7 @@ import UIKit
 private struct QuickSuggestion { let title: String; let icon: String; let requiresDevice: Bool }
 
 private let allSuggestions: [QuickSuggestion] = [
+    QuickSuggestion(title: "Dosya bul ve gönder", icon: "doc.badge.arrow.up", requiresDevice: true),
     QuickSuggestion(title: "Sesi kıs", icon: "speaker.wave.1.fill", requiresDevice: true),
     QuickSuggestion(title: "Ekranı kısarak odaklan", icon: "moon.stars.fill", requiresDevice: true),
     QuickSuggestion(title: "Bugün hava nasıl?", icon: "cloud.sun.fill", requiresDevice: false),
@@ -715,7 +716,7 @@ struct CopilotView: View {
         case .openApplication, .openApplicationByName, .controlApplication, .quitApplication, .listRunningApplications:
             return "app.fill"
         case .listDesktopFiles, .readDesktopFile, .moveDesktopFile, .renameDesktopFile, .saveTextFile,
-             .saveArtifact, .readDocument, .editDocument, .listFiles, .readFile, .writeFile, .moveFile,
+             .saveArtifact, .readDocument, .editDocument, .listFiles, .searchFiles, .readFile, .sendFileToPhone, .writeFile, .moveFile,
              .copyFile, .deleteFile:
             return "doc.fill"
         case .executeCode: return "terminal"
@@ -1331,7 +1332,7 @@ struct CopilotView: View {
                 applicationTargets: model.deviceInfo?.applicationTargets ?? [],
                 availableCapabilities: model.deviceInfo?.capabilities ?? [],
                 authorities: model.deviceInfo?.authorities ?? [],
-                deviceID: model.deviceInfo?.id,
+                deviceID: model.pairedDeviceIDForTransfer,
                 conversationID: conversationID,
                 turnCount: turnCount,
                 deviceResults: recentDeviceResults,
@@ -1565,7 +1566,18 @@ struct CopilotView: View {
                 }
                 screenshotObservationCount += 1
             }
-            result = await model.send(step.type, payload: step.payload, commandID: step.id)
+            if step.type == .sendFileToPhone {
+                do {
+                    guard let deviceID = model.pairedDeviceIDForTransfer else { throw RovaBackendError.invalidResponse }
+                    try await RovaBackendClient.registerFileTransfer(commandID: step.id, deviceID: deviceID)
+                    result = await model.send(step.type, payload: step.payload, commandID: step.id)
+                } catch {
+                    let now = Date()
+                    result = CommandResult(commandID: step.id, status: .failed, message: "Dosya aktarımı başlatılamadı.", startedAt: now, finishedAt: now, error: RovaError(code: "TRANSFER_UNAVAILABLE", message: "Dosya aktarımı başlatılamadı."))
+                }
+            } else {
+                result = await model.send(step.type, payload: step.payload, commandID: step.id)
+            }
             let delivery = deliveredFile(step: step, data: result.data)
             let deviceResult = RovaBackendClient.DeviceExecutionResult(
                 stepID: step.id,
@@ -1577,6 +1589,10 @@ struct CopilotView: View {
                 dataText: encodedCommandData(result.data),
                 imageBase64: screenshotBase64(result.data),
                 fileBase64: delivery?.base64,
+                artifactID: {
+                    if case .fileTransfer(let id) = result.data { return id }
+                    return nil
+                }(),
                 fileName: delivery?.name,
                 mimeType: delivery?.mimeType
             )
@@ -1665,7 +1681,7 @@ struct CopilotView: View {
                 applicationTargets: model.deviceInfo?.applicationTargets ?? [],
                 availableCapabilities: model.deviceInfo?.capabilities ?? [],
                 authorities: model.deviceInfo?.authorities ?? [],
-                deviceID: model.deviceInfo?.id,
+                deviceID: model.pairedDeviceIDForTransfer,
                 conversationID: conversationID,
                 turnCount: turnCount,
                 deviceResults: localResults,
@@ -1864,7 +1880,7 @@ struct CopilotView: View {
         case .files(let files):
             encoded = try? JSONSerialization.data(withJSONObject: [
                 "kind": "files",
-                "value": files.map { ["path": $0.path, "name": $0.name, "byteCount": $0.byteCount, "isDirectory": $0.isDirectory] }
+                "value": files.map { ["path": $0.path, "name": $0.name, "fileType": $0.fileType ?? "", "byteCount": $0.byteCount, "isDirectory": $0.isDirectory] }
             ], options: [.sortedKeys])
         case .fileData(let content):
             // Raw bytes never go in dataText: the model can't use base64, and it pushed the field
@@ -1878,6 +1894,8 @@ struct CopilotView: View {
             encoded = try? JSONSerialization.data(withJSONObject: [
                 "kind": "screenshot", "value": ["filename": content.filename, "mimeType": content.mimeType, "width": content.width, "height": content.height]
             ], options: [.sortedKeys])
+        case .fileTransfer:
+            return nil
         default:
             encoded = try? JSONEncoder.rovaISO8601.encode(data)
         }
@@ -2046,7 +2064,7 @@ struct CopilotView: View {
         switch step.type {
         // Every step whose result the model has to read before it can answer. A missing type here
         // ended the turn on "Masaüstüne bakıyorum" with the listing never shown to the model.
-        case .readDocument, .readDesktopFile, .readFile, .listFiles, .listDesktopFiles, .captureScreen,
+        case .readDocument, .readDesktopFile, .readFile, .sendFileToPhone, .searchFiles, .listFiles, .listDesktopFiles, .captureScreen,
              .runShortcut, .controlUIElement, .clickScreen, .listRunningApplications, .getSystemStatus,
              .listCalendarEvents, .listReminders, .getClipboardText, .getClipboardHistory:
             return true

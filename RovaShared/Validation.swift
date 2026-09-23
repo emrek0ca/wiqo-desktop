@@ -137,6 +137,17 @@ public enum RovaValidation {
                   operation.pageSize > 0, operation.pageSize <= 500 else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolu veya listeleme aralığı geçersiz.")
             }
+        case .sendFileToPhone:
+            guard case .fileOperation(let operation) = request.payload,
+                  isValidLocalPath(operation.path) || isValidWindowsLocalPath(operation.path) else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolu geçersiz.")
+            }
+        case .searchFiles:
+            guard case .fileSearch(let search) = request.payload,
+                  isSafeText(search.query, maxLength: 120),
+                  search.cursor.map({ UUID(uuidString: $0) != nil }) ?? true else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Dosya arama isteği geçersiz.")
+            }
         case .writeFile:
             guard case .fileOperation(let operation) = request.payload,
                   isValidLocalPath(operation.path),
@@ -258,6 +269,18 @@ public enum RovaValidation {
         return true
     }
 
+    public static func isValidWindowsLocalPath(_ rawPath: String) -> Bool {
+        let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard path.count >= 3, path.count <= 2_048,
+              path.first?.isASCII == true,
+              path.first?.isLetter == true,
+              path.dropFirst().first == ":",
+              path.dropFirst(2).first == "\\" || path.dropFirst(2).first == "/",
+              !path.contains("\0"), !path.contains(where: { $0.isNewline }),
+              !path.split(whereSeparator: { $0 == "/" || $0 == "\\" }).contains("..") else { return false }
+        return true
+    }
+
     public static func isRequestTimestampValid(_ createdAt: Date, now: Date = Date(), maxSkewSeconds: TimeInterval = 600) -> Bool {
         abs(now.timeIntervalSince(createdAt)) <= maxSkewSeconds
     }
@@ -341,8 +364,8 @@ public enum RovaCommandAuthority {
         case .getClipboardText, .getClipboardHistory: return "device.clipboard"
         case .createNote: return "notes.write"
         case .sendEmail: return "mail.send"
-        case .listDesktopFiles, .listFiles: return "device.files.list"
-        case .readDesktopFile, .readFile: return "device.files.read"
+        case .listDesktopFiles, .listFiles, .searchFiles: return "device.files.list"
+        case .readDesktopFile, .readFile, .sendFileToPhone: return "device.files.read"
         case .saveTextFile, .writeFile: return "device.files.write"
         case .moveDesktopFile, .renameDesktopFile, .moveFile: return "device.files.move"
         case .copyFile: return "device.files.copy"
@@ -390,7 +413,7 @@ public enum RovaCommandAuthority {
         if isDestructive(type: type, payload: payload) { return true }
         switch type {
         case .saveTextFile, .readDocument, .editDocument, .saveArtifact,
-             .listFiles, .readFile, .writeFile, .moveFile, .copyFile, .deleteFile,
+             .listFiles, .searchFiles, .readFile, .sendFileToPhone, .writeFile, .moveFile, .copyFile, .deleteFile,
              .executeCode, .captureScreen, .controlUIElement, .clickScreen,
              .controlApplication, .getClipboardText, .getClipboardHistory:
             return true
@@ -405,7 +428,7 @@ public enum RovaCommandAuthority {
     public static func permitsUnattended(type: CommandType, payload: CommandPayload) -> Bool {
         if requiresUserPresence(type: type, payload: payload) { return false }
         switch type {
-        case .readDocument, .listFiles, .readFile, .captureScreen, .controlUIElement, .clickScreen:
+        case .readDocument, .listFiles, .searchFiles, .readFile, .sendFileToPhone, .captureScreen, .controlUIElement, .clickScreen:
             return false
         case .controlApplication, .quitApplication, .runShortcut:
             return false

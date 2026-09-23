@@ -133,6 +133,9 @@ final class MacRuntime: ObservableObject {
     /// something listening. The slow parts (scanning installed apps, reconnecting to the backend)
     /// run afterwards, and every step that can block on the keychain has a time limit.
     private func bringUp() async {
+        await engine.setFileTransferTokenProvider { [weak self] in
+            await self?.backendChannel.accessTokenForFileTransfer()
+        }
         let tokenStore = pairedDeviceTokenStore
         async let storedToken = MacTimeout.run(seconds: 10, priority: .utility) { await tokenStore.load() }
         let loaded = await MacTimeout.run(seconds: 10) { Result { try RovaTLSIdentityStore.loadOrCreate() } }

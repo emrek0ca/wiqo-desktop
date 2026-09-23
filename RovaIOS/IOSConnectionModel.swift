@@ -69,6 +69,7 @@ final class IOSConnectionModel: ObservableObject {
     /// of quietly leaving the user thinking they're on the fast local path, or worse, "offline"
     /// even though the command just worked.
     @Published private(set) var isUsingRelay = false
+    var pairedDeviceIDForTransfer: UUID? { pairedMacDeviceID ?? deviceInfo?.id }
 
     /// Transport details stay internal; the UI gets one small, stable vocabulary.
     var userFacingConnectionLabel: String {
@@ -316,6 +317,8 @@ final class IOSConnectionModel: ObservableObject {
                 certificateFingerprint = "relay"
                 isPaired = true
                 isPairing = false
+                state = .connected
+                isReconnecting = false
                 appendActivity(title: "Eşleşme", detail: "İnternet bağlantısı hazır")
                 startDeviceEvents()
                 scheduleRelayProbe()
@@ -392,8 +395,13 @@ final class IOSConnectionModel: ObservableObject {
                 connection.send(content: data, completion: .contentProcessed { [weak self] error in
                     if error != nil { Task { @MainActor in self?.timeout(request.id, message: "Bağlantı koptu.") } }
                 })
+                let timeoutSeconds: UInt64 = switch RovaOperationManifest.entry(for: type).timeoutClass {
+                case .short: 10
+                case .medium: 25
+                case .long: type == .sendFileToPhone ? 130 : 65
+                }
                 Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: 10_000_000_000)
+                    try? await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
                     self?.timeout(request.id, message: "Komut zaman aşımına uğradı.")
                 }
             }
@@ -404,7 +412,7 @@ final class IOSConnectionModel: ObservableObject {
             // the relay could have avoided. Ping is exempt: it exists to measure the direct path
             // itself, so a relay retry would misreport connection quality rather than fix it.
             if type != .ping, result.error?.code == "TIMEOUT" {
-                return await sendViaBackendRelay(type: type, payload: payload, commandID: resolvedCommandID)
+                return await sendViaBackendRelay(type: type, payload: payload, commandID: resolvedCommandID, mayHaveExecuted: true)
             }
             if let error = result.error {
                 self.lastError = error.message
@@ -428,6 +436,9 @@ final class IOSConnectionModel: ObservableObject {
             }
             return result
         } catch {
+            if type != .ping, error is IOSConnectionError {
+                return await sendViaBackendRelay(type: type, payload: payload, commandID: resolvedCommandID, mayHaveExecuted: true)
+            }
             let rovaError = (error as? RovaError) ?? RovaError(code: "COMMAND_FAILED", message: error.localizedDescription.isEmpty ? "Komut başarısız oldu." : error.localizedDescription)
             let result = failureResult(id: request.id, error: rovaError)
             self.lastError = rovaError.message
@@ -1004,6 +1015,8 @@ final class IOSConnectionModel: ObservableObject {
         case .openApplicationByName: return "Uygulama aç"
         case .listFiles: return "Dosyaları listele"
         case .readFile: return "Dosya oku"
+        case .searchFiles: return "Dosya ara"
+        case .sendFileToPhone: return "Dosya gönder"
         case .writeFile: return "Dosya yaz"
         case .moveFile: return "Dosya taşı"
         case .copyFile: return "Dosya kopyala"
@@ -1028,9 +1041,12 @@ final class IOSConnectionModel: ObservableObject {
     /// as the Mac's persistent backend socket, but the Mac itself only trusts the device-pairing
     /// token - so this signs the request exactly like the direct path does, rather than relying on
     /// account auth alone to stand in for device-pairing trust the Mac never actually granted it.
-    private func sendViaBackendRelay(type: CommandType, payload: CommandPayload, commandID: UUID) async -> CommandResult {
+    private func sendViaBackendRelay(type: CommandType, payload: CommandPayload, commandID: UUID, mayHaveExecuted: Bool = false) async -> CommandResult {
         guard RovaBackendClient.isAuthenticated else {
-            return failureResult(id: commandID, error: RovaError(code: "OFFLINE", message: "PC bağlı değil."))
+            return mayHaveExecuted ? uncertainResult(id: commandID) : failureResult(id: commandID, error: RovaError(code: "OFFLINE", message: "PC bağlı değil."))
+        }
+        guard let targetDeviceID = pairedMacDeviceID ?? deviceInfo?.id else {
+            return mayHaveExecuted ? uncertainResult(id: commandID) : failureResult(id: commandID, error: RovaError(code: "DEVICE_UNKNOWN", message: "Hedef PC belirlenemedi. PC ile yeniden eşleşin."))
         }
         let nonce = try? RovaCrypto.randomToken()
         let signature = token.map { RovaValidation.signRequest(id: commandID, type: type, nonce: nonce ?? "", token: $0) }
@@ -1040,9 +1056,9 @@ final class IOSConnectionModel: ObservableObject {
         }
         appendActivity(title: title(for: request), detail: "PC yerel ağda değil, sunucu üzerinden deneniyor…")
         do {
-            let result = try await RovaBackendClient.sendDeviceCommand(request, deviceId: pairedMacDeviceID?.uuidString ?? deviceInfo?.id.uuidString)
-            isUsingRelay = result.error == nil
-            if result.error == nil {
+            let result = try await RovaBackendClient.sendDeviceCommand(request, deviceId: targetDeviceID.uuidString)
+            isUsingRelay = result.status == .completed && result.error == nil
+            if isUsingRelay {
                 state = .connected
                 isReconnecting = false
                 startHeartbeat()
@@ -1052,11 +1068,19 @@ final class IOSConnectionModel: ObservableObject {
             return result
         } catch {
             isUsingRelay = false
+            if mayHaveExecuted { return uncertainResult(id: commandID) }
             let message = (error as? LocalizedError)?.errorDescription ?? "PC'ye ulaşılamadı."
             self.lastError = message
             appendActivity(title: title(for: request), detail: message)
             return failureResult(id: request.id, error: RovaError(code: "RELAY_FAILED", message: message))
         }
+    }
+
+    private func uncertainResult(id: UUID) -> CommandResult {
+        let now = Date()
+        let message = "PC bağlantısı koptu; işlemin sonucu doğrulanamadı. Aynı komutu otomatik tekrar çalıştırmadım."
+        let error = RovaError(code: "OUTCOME_UNCERTAIN", message: message, category: "timeout")
+        return CommandResult(commandID: id, status: .unknown, message: message, startedAt: now, finishedAt: now, error: error)
     }
 
     private func rememberMacDevice(_ info: DeviceInfo) {

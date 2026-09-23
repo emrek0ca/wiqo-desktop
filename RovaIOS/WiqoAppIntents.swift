@@ -31,13 +31,17 @@ private func pairedDeviceToken() -> String? {
 
 private func performDeviceIntent(_ type: CommandType, payload: CommandPayload = .none, successMessage: String) async throws -> some IntentResult & ProvidesDialog {
     guard RovaBackendClient.isAuthenticated else { throw WiqoIntentError.notSignedIn }
+    guard let deviceID = UserDefaults.standard.string(forKey: "rova.ios.mac-device-id"), UUID(uuidString: deviceID) != nil else {
+        throw WiqoIntentError.deviceFailure("Hedef PC belirlenemedi. Wiqo'da PC ile yeniden eşleşin.")
+    }
     do {
         let commandID = UUID()
         let nonce = try? RovaCrypto.randomToken()
         let signature = pairedDeviceToken().map { RovaValidation.signRequest(id: commandID, type: type, nonce: nonce ?? "", token: $0) }
         let request = CommandRequest(id: commandID, type: type, payload: payload, signature: signature, nonce: nonce)
-        let result = try await RovaBackendClient.sendDeviceCommand(request, deviceId: nil)
+        let result = try await RovaBackendClient.sendDeviceCommand(request, deviceId: deviceID)
         if let error = result.error { throw WiqoIntentError.deviceFailure(error.message) }
+        guard result.status == .completed else { throw WiqoIntentError.deviceFailure("PC komutunun sonucu doğrulanamadı.") }
         return .result(dialog: IntentDialog(stringLiteral: successMessage))
     } catch let error as WiqoIntentError {
         throw error

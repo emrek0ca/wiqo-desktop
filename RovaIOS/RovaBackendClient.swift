@@ -418,6 +418,7 @@ enum RovaBackendClient {
                 if let dataText = result.dataText { value["dataText"] = dataText }
                 if let imageBase64 = result.imageBase64 { value["imageBase64"] = imageBase64 }
                 if let fileBase64 = result.fileBase64 { value["fileBase64"] = fileBase64 }
+                if let artifactID = result.artifactID { value["artifactId"] = artifactID }
                 if let fileName = result.fileName { value["fileName"] = fileName }
                 if let mimeType = result.mimeType { value["mimeType"] = mimeType }
                 return value
@@ -628,10 +629,11 @@ enum RovaBackendClient {
         /// Bytes of a file the user asked to receive; the backend turns them into a downloadable
         /// artifact and never shows them to the model. Set only for a "Telefona gönder" step.
         let fileBase64: String?
+        let artifactID: String?
         let fileName: String?
         let mimeType: String?
 
-        init(stepID: UUID, type: CommandType, summary: String? = nil, status: CommandStatus, message: String, error: RovaError?, dataText: String? = nil, imageBase64: String? = nil, fileBase64: String? = nil, fileName: String? = nil, mimeType: String? = nil) {
+        init(stepID: UUID, type: CommandType, summary: String? = nil, status: CommandStatus, message: String, error: RovaError?, dataText: String? = nil, imageBase64: String? = nil, fileBase64: String? = nil, artifactID: String? = nil, fileName: String? = nil, mimeType: String? = nil) {
             self.stepID = stepID
             self.type = type
             self.summary = summary
@@ -641,6 +643,7 @@ enum RovaBackendClient {
             self.dataText = dataText
             self.imageBase64 = imageBase64
             self.fileBase64 = fileBase64
+            self.artifactID = artifactID
             self.fileName = fileName
             self.mimeType = mimeType
         }
@@ -909,6 +912,11 @@ enum RovaBackendClient {
         return try await authorizedGet("devices", as: Response.self).devices
     }
 
+    static func registerFileTransfer(commandID: UUID, deviceID: UUID) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["commandId": commandID.uuidString, "deviceId": deviceID.uuidString])
+        _ = try await authorizedJSON("file-transfers/intents", method: "POST", body: body)
+    }
+
     struct DeviceEvent: Decodable {
         let type: String
         let device: DeviceStatus
@@ -1010,11 +1018,15 @@ enum RovaBackendClient {
     /// available (different network, PC just woke up, etc.) - relays the same already-confirmed
     /// CommandRequest through the PC's own persistent backend connection (the one automations
     /// already use) and returns the real CommandResult once the PC replies. `deviceId` targets a
-    /// specific paired PC when known; omitted, the backend picks the first one online.
-    static func sendDeviceCommand(_ request: CommandRequest, deviceId: String?) async throws -> CommandResult {
+    /// specific paired PC. Callers must never select an arbitrary online PC.
+    static func sendDeviceCommand(_ request: CommandRequest, deviceId: String) async throws -> CommandResult {
         let body = try Self.iso8601Encoder.encode(request)
-        let path = "devices/\(deviceId ?? "default")/command"
-        let data = try await authorizedJSON(path, method: "POST", body: body)
+        let path = "devices/\(deviceId)/command"
+        let timeout: TimeInterval = switch RovaOperationManifest.entry(for: request.type).timeoutClass {
+        case .short, .medium: 35
+        case .long: request.type == .sendFileToPhone ? 130 : 75
+        }
+        let data = try await authorizedJSON(path, method: "POST", body: body, timeout: timeout)
         do {
             return try Self.iso8601Decoder.decode(CommandResult.self, from: data)
         } catch {
@@ -1301,10 +1313,11 @@ enum RovaBackendClient {
         return data
     }
 
-    private static func authorizedJSON(_ path: String, method: String, body: Data) async throws -> Data {
+    private static func authorizedJSON(_ path: String, method: String, body: Data, timeout: TimeInterval = 60) async throws -> Data {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
         request.httpMethod = method
+        request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = body

@@ -84,6 +84,16 @@ final class MacBackendChannel: NSObject {
     private var reconnectAttempt = 0
     private var currentToken: String?
     private var currentRefreshToken: String?
+    func accessTokenForFileTransfer() async -> String? {
+        if let refresh = currentRefreshToken,
+           let credentials = await refreshCredentials(refreshToken: refresh),
+           currentRefreshToken == refresh {
+            currentRefreshToken = credentials.refreshToken
+            try? await tokenStore.save(accessToken: credentials.accessToken, refreshToken: credentials.refreshToken, accountToken: nil)
+            return credentials.accessToken
+        }
+        return currentToken
+    }
     private var registrationSent = false
     private let onConnectionStateChange: (Bool) -> Void
 

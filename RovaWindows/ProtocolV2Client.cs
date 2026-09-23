@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
 
 namespace RovaWindows;
 
@@ -12,6 +13,10 @@ public sealed class ProtocolV2Client : IAsyncDisposable
     private readonly Uri endpoint;
     private readonly DeviceSessionClient? sessions;
     private ClientWebSocket? socket;
+    private readonly HttpClient uploadHttp = new();
+    private string? currentAccessToken;
+    private DeviceSessionCredentials? currentCredentials;
+    private readonly SemaphoreSlim transferGate = new(1, 1);
     private readonly CancellationTokenSource lifetime = new();
     private readonly Dictionary<string, WindowsCommandResult> completed = new(StringComparer.Ordinal);
     private readonly object completedGate = new();
@@ -23,10 +28,12 @@ public sealed class ProtocolV2Client : IAsyncDisposable
         this.runtime = runtime;
         this.endpoint = endpoint ?? new Uri("wss://api.wiqoai.com/device/socket");
         this.sessions = sessions;
+        runtime.ConfigureFileUploader(UploadFileAsync);
     }
 
     public async Task RunAsync(string accessToken, CancellationToken cancellationToken = default)
     {
+        currentAccessToken = accessToken;
         var currentSocket = new ClientWebSocket();
         currentSocket.Options.SetRequestHeader("Authorization", $"Bearer {accessToken}");
         socket = currentSocket;
@@ -43,6 +50,38 @@ public sealed class ProtocolV2Client : IAsyncDisposable
         }
     }
 
+    private async Task<string?> UploadFileAsync(string path, string commandId, CancellationToken cancellationToken)
+    {
+        await transferGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+        var token = currentAccessToken;
+        if (sessions is not null && currentCredentials is { } credentials)
+        {
+            var refreshed = await sessions.RefreshAsync(runtime.DeviceId, credentials.RefreshToken, cancellationToken).ConfigureAwait(false);
+            if (refreshed is null) return null;
+            currentCredentials = refreshed;
+            token = currentAccessToken = refreshed.AccessToken;
+        }
+        if (string.IsNullOrEmpty(token)) return null;
+        await using var hashStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 256 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var digest = Convert.ToHexString(await SHA256.HashDataAsync(hashStream, cancellationToken).ConfigureAwait(false)).ToLowerInvariant();
+        await using var uploadStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 256 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var request = new HttpRequestMessage(HttpMethod.Put, new Uri("https://api.wiqoai.com/file-transfers/" + commandId));
+        request.Headers.Authorization = new("Bearer", token);
+        request.Headers.TryAddWithoutValidation("X-File-Name", Uri.EscapeDataString(Path.GetFileName(path)));
+        request.Headers.TryAddWithoutValidation("X-File-SHA256", digest);
+        request.Content = new StreamContent(uploadStream, 256 * 1024);
+        request.Content.Headers.ContentType = new("application/octet-stream");
+        request.Content.Headers.ContentLength = uploadStream.Length;
+        using var response = await uploadHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) return null;
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        return document.RootElement.TryGetProperty("artifactId", out var id) ? id.GetString() : null;
+        }
+        finally { transferGate.Release(); }
+    }
+
     /// Keeps a scoped socket alive across access-token expiry. A reconnect never replays a
     /// completed command: the in-memory ledger filters duplicate command IDs for this process,
     /// while the backend durable ledger remains the final authority after a restart.
@@ -50,6 +89,7 @@ public sealed class ProtocolV2Client : IAsyncDisposable
     {
         if (sessions is null) throw new InvalidOperationException("DeviceSessionClient is required for refresh.");
         var current = credentials;
+        currentCredentials = credentials;
         var retryDelay = TimeSpan.FromSeconds(1);
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -68,9 +108,11 @@ public sealed class ProtocolV2Client : IAsyncDisposable
                 // ledger prevents unsafe replay. Reconnect only for the next server command.
             }
 
+            current = currentCredentials ?? current;
             var refreshed = await sessions.RefreshAsync(runtime.DeviceId, current.RefreshToken, cancellationToken).ConfigureAwait(false);
             if (refreshed is null) return;
             current = refreshed;
+            currentCredentials = refreshed;
             await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
             retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, 30));
         }
@@ -203,6 +245,8 @@ public sealed class ProtocolV2Client : IAsyncDisposable
         if (socket is { State: WebSocketState.Open or WebSocketState.CloseReceived } current)
             await current.CloseAsync(WebSocketCloseStatus.NormalClosure, "shutdown", CancellationToken.None).ConfigureAwait(false);
         socket?.Dispose();
+        uploadHttp.Dispose();
+        transferGate.Dispose();
         lifetime.Dispose();
     }
 }

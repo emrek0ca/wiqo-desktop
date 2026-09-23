@@ -147,6 +147,11 @@ actor MacCommandEngine {
     private let executionGate = MacExecutionGate()
     private var completed: [UUID: CommandResult]
     private var inFlight: [UUID: Task<CommandResult, Never>] = [:]
+    private var fileTransferToken: (@Sendable () async -> String?)?
+
+    func setFileTransferTokenProvider(_ provider: @escaping @Sendable () async -> String?) {
+        fileTransferToken = provider
+    }
 
     init(ledger: CommandLedger = CommandLedger()) {
         self.ledger = ledger
@@ -289,7 +294,7 @@ actor MacCommandEngine {
         switch type {
         case .getSystemStatus, .getClipboardText, .getClipboardHistory,
              .listCalendarEvents, .listReminders, .listDesktopFiles, .readDesktopFile,
-             .listFiles, .readFile, .readDocument, .captureScreen, .listRunningApplications,
+             .listFiles, .searchFiles, .readFile, .readDocument, .captureScreen, .listRunningApplications,
              .ping:
             return .readOnly
         default:
@@ -299,7 +304,9 @@ actor MacCommandEngine {
 
     private func timeoutNanoseconds(for type: CommandType) -> UInt64 {
         switch type {
-        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut:
+        case .sendFileToPhone:
+            return 120_000_000_000
+        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles:
             return 60_000_000_000
         case .listCalendarEvents, .createCalendarEvent, .listReminders, .createReminder,
              .completeReminder, .listDesktopFiles, .readDesktopFile, .listFiles, .readFile,
@@ -545,12 +552,24 @@ actor MacCommandEngine {
                 return nil
             } ?? 0
             return (outcome.data, outcome.error == nil ? "\(count) dosya bulundu." : outcome.error!.message, outcome.error)
+        case .searchFiles:
+            guard case .fileSearch(let payload) = request.payload else {
+                return (nil, "Arama isteği geçersiz.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya arama isteği geçersiz."))
+            }
+            let outcome = await MacSystem.searchFiles(payload)
+            return (outcome.data, outcome.message, outcome.error)
         case .readFile:
             guard case .fileOperation(let payload) = request.payload else {
                 return (nil, "Geçersiz dosya okuma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolu geçersiz.", category: "tool_failure"))
             }
             let outcome = await Task.detached(priority: .userInitiated) { MacSystem.readFile(payload) }.value
             return (outcome.data, outcome.error == nil ? "Dosya okundu." : outcome.error!.message, outcome.error)
+        case .sendFileToPhone:
+            guard case .fileOperation(let payload) = request.payload, let token = await fileTransferToken?() else {
+                return (nil, "Dosya gönderilemedi.", RovaError(code: "TRANSFER_UNAVAILABLE", message: "PC aktarım bağlantısı hazır değil."))
+            }
+            let outcome = await MacSystem.sendFileToPhone(payload, commandID: request.id, accessToken: token)
+            return (outcome.data, outcome.error == nil ? "Dosya telefona gönderildi." : outcome.error!.message, outcome.error)
         case .writeFile:
             guard case .fileOperation(let payload) = request.payload else {
                 return (nil, "Geçersiz dosya yazma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolu veya içeriği geçersiz.", category: "tool_failure"))

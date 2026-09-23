@@ -120,8 +120,8 @@ public enum RovaOperationManifest {
         case .createReminder, .completeReminder: return "reminders.write"
         case .createNote: return "notes.write"
         case .sendEmail: return "mail.send"
-        case .listDesktopFiles, .listFiles: return "device.files.list"
-        case .readDesktopFile, .readFile: return "device.files.read"
+        case .listDesktopFiles, .listFiles, .searchFiles: return "device.files.list"
+        case .readDesktopFile, .readFile, .sendFileToPhone: return "device.files.read"
         case .saveTextFile, .writeFile: return "device.files.write"
         case .moveDesktopFile, .renameDesktopFile, .moveFile: return "device.files.move"
         case .copyFile: return "device.files.copy"
@@ -163,7 +163,8 @@ public enum RovaOperationManifest {
         case .moveDesktopFile, .renameDesktopFile: return "fileMove"
         case .saveArtifact: return "artifactFile"
         case .listDesktopFiles: return "none"
-        case .listFiles, .readFile, .writeFile, .moveFile, .copyFile, .deleteFile: return "fileOperation"
+        case .listFiles, .readFile, .sendFileToPhone, .writeFile, .moveFile, .copyFile, .deleteFile: return "fileOperation"
+        case .searchFiles: return "fileSearch"
         case .editDocument: return "document"
         case .executeCode: return "codeExecution"
         case .captureScreen: return "screenCapture"
@@ -187,7 +188,7 @@ public enum RovaOperationManifest {
 
     private static func presence(for operation: CommandType) -> Bool {
         destructive(for: operation) || [
-            CommandType.saveTextFile, .readDocument, .listFiles, .readFile, .writeFile,
+            CommandType.saveTextFile, .readDocument, .listFiles, .searchFiles, .readFile, .sendFileToPhone, .writeFile,
             .moveFile, .copyFile, .deleteFile, .executeCode, .captureScreen,
             .controlUIElement, .clickScreen, .controlApplication, .getClipboardText,
             .getClipboardHistory
@@ -196,7 +197,7 @@ public enum RovaOperationManifest {
 
     private static func timeoutClass(for operation: CommandType) -> RovaOperationTimeoutClass {
         switch operation {
-        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut:
+        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles, .sendFileToPhone:
             return .long
         case .listCalendarEvents, .createCalendarEvent, .listReminders, .createReminder,
              .completeReminder, .listDesktopFiles, .readDesktopFile, .listFiles, .readFile,
@@ -215,7 +216,8 @@ public enum RovaOperationManifest {
         case .setClipboardText: return "clipboard_readback"
         case .getClipboardText, .getClipboardHistory: return "clipboard_snapshot"
         case .saveTextFile, .writeFile, .moveFile, .copyFile, .deleteFile, .saveArtifact: return "filesystem_state"
-        case .readDesktopFile, .readDocument, .listDesktopFiles, .listFiles, .readFile: return "filesystem_snapshot"
+        case .readDesktopFile, .readDocument, .listDesktopFiles, .listFiles, .searchFiles, .readFile: return "filesystem_snapshot"
+        case .sendFileToPhone: return "artifact_delivery"
         case .editDocument: return "document_content"
         case .executeCode: return "process_exit"
         case .captureScreen: return "screen_capture"
@@ -240,7 +242,7 @@ public enum RovaOperationManifest {
     /// that the Windows companion cannot execute yet.
     private static func windowsSupported(_ operation: CommandType) -> Bool {
         switch operation {
-        case .ping, .getSystemStatus, .openURL, .listRunningApplications, .executeCode:
+        case .ping, .getSystemStatus, .openURL, .listRunningApplications, .executeCode, .searchFiles, .sendFileToPhone:
             return true
         default:
             return false

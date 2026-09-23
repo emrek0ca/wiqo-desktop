@@ -44,7 +44,9 @@ public enum CommandType: String, Codable, CaseIterable, Sendable {
     case readDocument
     case editDocument
     case listFiles
+    case searchFiles
     case readFile
+    case sendFileToPhone
     case writeFile
     case moveFile
     case copyFile
@@ -429,6 +431,16 @@ public struct LocalFileOperationPayload: Codable, Equatable, Sendable {
     }
 }
 
+public struct FileSearchPayload: Codable, Equatable, Sendable {
+    public let query: String
+    public let cursor: String?
+
+    public init(query: String, cursor: String? = nil) {
+        self.query = query
+        self.cursor = cursor
+    }
+}
+
 public struct CodeExecutionPayload: Codable, Equatable, Sendable {
     public let language: String
     public let code: String
@@ -653,6 +665,7 @@ public enum CommandPayload: Codable, Equatable, Sendable {
     case document(DocumentPayload)
     case artifactFile(ArtifactFilePayload)
     case fileOperation(LocalFileOperationPayload)
+    case fileSearch(FileSearchPayload)
     case codeExecution(CodeExecutionPayload)
     case screenCapture(ScreenCapturePayload)
     case shortcut(ShortcutPayload)
@@ -664,7 +677,7 @@ public enum CommandPayload: Codable, Equatable, Sendable {
     case email(EmailPayload)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, codeExecution, screenCapture, shortcut, uiElement, screenClick, reminder, completeReminder, note, email }
+    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, fileSearch, codeExecution, screenCapture, shortcut, uiElement, screenClick, reminder, completeReminder, note, email }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -704,6 +717,8 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             self = .artifactFile(try container.decode(ArtifactFilePayload.self, forKey: .value))
         case .fileOperation:
             self = .fileOperation(try container.decode(LocalFileOperationPayload.self, forKey: .value))
+        case .fileSearch:
+            self = .fileSearch(try container.decode(FileSearchPayload.self, forKey: .value))
         case .codeExecution:
             self = .codeExecution(try container.decode(CodeExecutionPayload.self, forKey: .value))
         case .screenCapture:
@@ -777,6 +792,9 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             try container.encode(payload, forKey: .value)
         case .fileOperation(let payload):
             try container.encode(Kind.fileOperation, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .fileSearch(let payload):
+            try container.encode(Kind.fileSearch, forKey: .kind)
             try container.encode(payload, forKey: .value)
         case .codeExecution(let payload):
             try container.encode(Kind.codeExecution, forKey: .kind)
@@ -877,15 +895,17 @@ public struct DesktopFileInfo: Codable, Equatable, Sendable, Identifiable {
 public struct FileSystemEntry: Codable, Equatable, Sendable, Identifiable {
     public let path: String
     public let name: String
+    public let fileType: String?
     public let byteCount: Int64
     public let modifiedAt: Date?
     public let isDirectory: Bool
 
     public var id: String { path }
 
-    public init(path: String, name: String, byteCount: Int64, modifiedAt: Date?, isDirectory: Bool) {
+    public init(path: String, name: String, byteCount: Int64, modifiedAt: Date?, isDirectory: Bool, fileType: String? = nil) {
         self.path = path
         self.name = name
+        self.fileType = fileType
         self.byteCount = byteCount
         self.modifiedAt = modifiedAt
         self.isDirectory = isDirectory
@@ -1041,6 +1061,7 @@ public enum CommandData: Codable, Equatable, Sendable {
     case documentContent(DocumentContent)
     case installedApplications([InstalledApplicationInfo])
     case files([FileSystemEntry])
+    case fileTransfer(String)
     case fileData(FileDataContent)
     case processOutput(ProcessOutputContent)
     case screenshot(ScreenshotContent)
@@ -1051,7 +1072,7 @@ public enum CommandData: Codable, Equatable, Sendable {
     case runningApplications([RunningApplicationInfo])
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileData, processOutput, screenshot, shortcutResult, uiElement, screenClick, applicationControl, runningApplications }
+    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileTransfer, fileData, processOutput, screenshot, shortcutResult, uiElement, screenClick, applicationControl, runningApplications }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1080,6 +1101,8 @@ public enum CommandData: Codable, Equatable, Sendable {
             self = .installedApplications(try container.decode([InstalledApplicationInfo].self, forKey: .value))
         case .files:
             self = .files(try container.decode([FileSystemEntry].self, forKey: .value))
+        case .fileTransfer:
+            self = .fileTransfer(try container.decode(String.self, forKey: .value))
         case .fileData:
             self = .fileData(try container.decode(FileDataContent.self, forKey: .value))
         case .processOutput:
@@ -1137,6 +1160,9 @@ public enum CommandData: Codable, Equatable, Sendable {
             try container.encode(value, forKey: .value)
         case .files(let value):
             try container.encode(Kind.files, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .fileTransfer(let value):
+            try container.encode(Kind.fileTransfer, forKey: .kind)
             try container.encode(value, forKey: .value)
         case .fileData(let value):
             try container.encode(Kind.fileData, forKey: .kind)

@@ -57,8 +57,10 @@ struct WiqoHomeView: View {
     @State private var showPCSettings = false
     @State private var showTemplates = false
     @State private var showWelcome = false
+    @State private var showQuickPairing = false
+    @State private var openQuickPairingAfterWelcome = false
+    @State private var openFirstCommandAfterPairing = false
     @State private var didCheckWelcome = false
-    @State private var openPCSettingsAfterWelcome = false
     @State private var draftPrompt: String?
 
     var body: some View {
@@ -130,6 +132,12 @@ struct WiqoHomeView: View {
         .sheet(isPresented: $showPCSettings) {
             PCSettingsView(model: model, subscriptionStore: subscriptionStore)
         }
+        .sheet(isPresented: $showQuickPairing, onDismiss: completeQuickPairing) {
+            PairingView(model: model, onReady: {
+                openFirstCommandAfterPairing = true
+                showQuickPairing = false
+            }, scanOnAppear: true)
+        }
         .sheet(isPresented: $showTemplates) {
             AutomationTemplatesView { prompt in
                 showTemplates = false
@@ -142,7 +150,7 @@ struct WiqoHomeView: View {
             WiqoWelcomeView(
                 onDismiss: { showWelcome = false },
                 onConnect: {
-                    openPCSettingsAfterWelcome = true
+                    openQuickPairingAfterWelcome = true
                     showWelcome = false
                 }
             )
@@ -196,17 +204,31 @@ struct WiqoHomeView: View {
         guard !didCheckWelcome else { return }
         didCheckWelcome = true
         guard let key = welcomeCompletionKey,
-              !UserDefaults.standard.bool(forKey: key) else { return }
+              !UserDefaults.standard.bool(forKey: key),
+              !model.isPaired else { return }
         showWelcome = true
     }
 
-    private func completeWelcome() {
+    private func completeQuickPairing() {
+        guard openFirstCommandAfterPairing else { return }
+        openFirstCommandAfterPairing = false
         if let key = welcomeCompletionKey {
             UserDefaults.standard.set(true, forKey: key)
         }
-        guard openPCSettingsAfterWelcome else { return }
-        openPCSettingsAfterWelcome = false
-        showPCSettings = true
+        conversations = CopilotConversationStore.all()
+        draftPrompt = "Sesi kıs"
+        conversationID = CopilotConversationStore.newIdentifier()
+    }
+
+    private func completeWelcome() {
+        if openQuickPairingAfterWelcome {
+            openQuickPairingAfterWelcome = false
+            showQuickPairing = true
+            return
+        }
+        if let key = welcomeCompletionKey {
+            UserDefaults.standard.set(true, forKey: key)
+        }
     }
 
     /// Pulls this account's conversation list from the backend and folds it into the local cache -
@@ -446,6 +468,8 @@ private struct ConversationRow: View {
 
 struct PairingView: View {
     @ObservedObject var model: IOSConnectionModel
+    var onReady: (() -> Void)? = nil
+    var scanOnAppear = false
     @State private var showingScanner = false
     @State private var scanError: String?
     @State private var showingCelebration = false
@@ -516,14 +540,21 @@ struct PairingView: View {
         // closes the *outer* "PC'ye bağlan" screen once that scan actually finishes pairing -
         // without it, a successful pairing left the user staring at a screen that had already
         // done its job, with no obvious next step but to swipe it away manually.
-        .onChange(of: model.isPaired) { _, paired in
-            guard paired else { return }
+        .onChange(of: model.state) { _, state in
+            guard model.isPaired, state == .connected else { return }
+            if let onReady {
+                onReady()
+                return
+            }
             if hasSeenPairingCelebration {
                 dismiss()
             } else {
                 hasSeenPairingCelebration = true
                 showingCelebration = true
             }
+        }
+        .onAppear {
+            if scanOnAppear && !model.isPaired { showingScanner = true }
         }
         .sheet(isPresented: $showingCelebration, onDismiss: { dismiss() }) {
             PairingCelebrationView()
