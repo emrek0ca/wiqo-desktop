@@ -87,12 +87,36 @@ struct PaywallView: View {
             features: ["Günde 100 mesaj", "Günde 10 görsel", "PC bağlantısı"],
             isCurrent: currentTier == "pro"
         ) {
-            if currentTier != "pro" {
-                WiqoActionButton(title: "Pro'ya geç", isLoading: storeKit.isPurchasing) {
-                    Task { await purchasePro() }
+            switch storeKit.productLoadState {
+            case .idle, .loading:
+                if currentTier != "pro" {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("App Store fiyatı yükleniyor…")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .disabled(storeKit.proProduct == nil && !storeKit.isPurchasing)
-                .padding(.top, 4)
+            case .available:
+                if currentTier != "pro" {
+                    WiqoActionButton(title: "Pro'ya geç", isLoading: storeKit.isPurchasing) {
+                        Task { await purchasePro() }
+                    }
+                    .disabled(storeKit.isPurchasing)
+                    .padding(.top, 4)
+                }
+            case .unavailable:
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Wiqo Pro şu anda App Store’dan yüklenemedi. Bağlantını kontrol edip tekrar dene.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    WiqoActionButton(title: "Tekrar dene", kind: .secondary) {
+                        Task { await storeKit.retryLoadingProducts() }
+                    }
+                    .padding(.top, 2)
+                }
             }
         }
     }
@@ -167,7 +191,18 @@ struct PaywallView: View {
                         .foregroundStyle(.secondary)
                         .transition(.wiqoBlur)
                 } else if title == "Pro" {
-                    WiqoSkeleton(width: 64, height: 14)
+                    switch storeKit.productLoadState {
+                    case .idle, .loading:
+                        WiqoSkeleton(width: 64, height: 14)
+                    case .available:
+                        Text("Fiyat bilgisi yok")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    case .unavailable:
+                        Text("Fiyat yüklenemedi")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(WiqoTheme.orange)
+                    }
                 }
             }
             VStack(alignment: .leading, spacing: 8) {

@@ -212,6 +212,13 @@ enum PurchaseOutcome {
     case cancelled
 }
 
+enum StoreKitProductLoadState: Equatable {
+    case idle
+    case loading
+    case available
+    case unavailable
+}
+
 enum PurchaseError: Error, LocalizedError {
     case productUnavailable
     case verificationFailed
@@ -236,10 +243,12 @@ enum PurchaseError: Error, LocalizedError {
 @MainActor
 final class StoreKitManager: ObservableObject {
     @Published private(set) var proProduct: Product?
+    @Published private(set) var productLoadState: StoreKitProductLoadState = .idle
     @Published private(set) var isPurchasing = false
 
     private weak var subscriptionStore: SubscriptionStore?
     private var updatesTask: Task<Void, Never>?
+    private var productLoadTask: Task<Void, Never>?
 
     init() {
         updatesTask = Task { [weak self] in
@@ -258,8 +267,48 @@ final class StoreKitManager: ObservableObject {
     }
 
     func loadProducts() async {
-        guard proProduct == nil else { return }
-        proProduct = try? await Product.products(for: [WiqoProduct.proMonthly]).first
+        await loadProducts(retrying: false)
+    }
+
+    func retryLoadingProducts() async {
+        await loadProducts(retrying: true)
+    }
+
+    private func loadProducts(retrying: Bool) async {
+        if proProduct != nil {
+            productLoadState = .available
+            return
+        }
+        if let productLoadTask {
+            await productLoadTask.value
+            return
+        }
+        guard retrying || productLoadState != .unavailable else { return }
+
+        productLoadState = .loading
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.fetchProProduct()
+            self.productLoadTask = nil
+        }
+        productLoadTask = task
+        await task.value
+    }
+
+    private func fetchProProduct() async {
+        do {
+            let products = try await Product.products(for: [WiqoProduct.proMonthly])
+            guard let product = products.first(where: { $0.id == WiqoProduct.proMonthly }) else {
+                proProduct = nil
+                productLoadState = .unavailable
+                return
+            }
+            proProduct = product
+            productLoadState = .available
+        } catch {
+            proProduct = nil
+            productLoadState = .unavailable
+        }
     }
 
     @discardableResult

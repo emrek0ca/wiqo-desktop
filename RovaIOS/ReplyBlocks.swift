@@ -8,21 +8,33 @@ import WebKit
 /// plain paragraph, and a partially streamed reply (an unclosed code fence, a half-written table)
 /// still renders sensibly at every intermediate step.
 enum ReplyBlock {
+    enum InlineContent {
+        case markdown(AttributedString)
+        case math(String)
+
+        var plainText: String {
+            switch self {
+            case .markdown(let text): return String(text.characters)
+            case .math(let text): return text
+            }
+        }
+    }
+
     struct ListItem {
         let marker: String
         let indent: Int
-        let text: AttributedString
+        let text: InlineContent
     }
 
     case paragraph(AttributedString)
-    case heading(level: Int, text: AttributedString)
+    case heading(level: Int, text: InlineContent)
     case list([ListItem])
-    case quote(AttributedString)
+    case quote(InlineContent)
     case rule
     case codeBlock(language: String?, code: String)
-    case table(headers: [AttributedString], rows: [[AttributedString]])
-    /// A paragraph that contains LaTeX (`$...$` inline or `$$...$$` display, in any mix with
-    /// ordinary prose) - rendered via KaTeX's auto-render extension in RichMathTextView, which
+    case table(headers: [InlineContent], rows: [[InlineContent]])
+    /// Text containing LaTeX (dollar, parenthesis, bracket, or supported environment delimiters),
+    /// rendered via KaTeX's auto-render extension in RichMathTextView, which
     /// finds and typesets the math in place while leaving the surrounding text alone. Covers both
     /// a formula-only line and a sentence with a formula in the middle, in one code path.
     case richText(String)
@@ -98,17 +110,15 @@ enum ReplyBlockParser {
                 continue
             }
 
-            // A `$$` block that spans several lines still needs to be swallowed as one paragraph
-            // (rather than split line-by-line into the accumulator, which would let a blank-looking
-            // line inside it - there usually isn't one, but a stray one must not fall through to
-            // flushParagraph mid-formula) before the ordinary per-line handling below runs.
-            if line.hasPrefix("$$"), !(line.hasSuffix("$$") && line.count > 2) {
+            // Display math can contain blank lines; keep the entire delimiter/environment together
+            // so the ordinary Markdown paragraph splitter cannot strand half a formula.
+            if let closingDelimiter = multilineMathClosingDelimiter(for: line) {
                 var mathLines = [rawLine]
                 index += 1
                 while index < lines.count {
                     let current = lines[index]
                     mathLines.append(current)
-                    if current.trimmingCharacters(in: .whitespaces).hasSuffix("$$") {
+                    if current.contains(closingDelimiter) {
                         index += 1
                         break
                     }
@@ -122,14 +132,14 @@ enum ReplyBlockParser {
                 flushParagraph()
                 let headers = tableCells(line)
                 index += 2
-                var rows: [[AttributedString]] = []
+                var rows: [[ReplyBlock.InlineContent]] = []
                 while index < lines.count, lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("|") {
                     var cells = tableCells(lines[index])
                     if cells.count < headers.count { cells += Array(repeating: "", count: headers.count - cells.count) }
-                    rows.append(cells.prefix(max(headers.count, 1)).map(inline))
+                    rows.append(cells.prefix(max(headers.count, 1)).map(inlineContent))
                     index += 1
                 }
-                blocks.append(.table(headers: headers.map(inline), rows: rows))
+                blocks.append(.table(headers: headers.map(inlineContent), rows: rows))
                 continue
             }
 
@@ -146,7 +156,7 @@ enum ReplyBlockParser {
                     .trimmingCharacters(in: .whitespaces)
                     .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
                     .trimmingCharacters(in: .whitespaces)
-                blocks.append(.heading(level: level, text: inline(content)))
+                blocks.append(.heading(level: level, text: inlineContent(content)))
                 index += 1
                 continue
             }
@@ -160,7 +170,7 @@ enum ReplyBlockParser {
                     quoteLines.append(current.dropFirst().trimmingCharacters(in: .whitespaces))
                     index += 1
                 }
-                blocks.append(.quote(inline(quoteLines.joined(separator: "\n"))))
+                blocks.append(.quote(inlineContent(quoteLines.joined(separator: "\n"))))
                 continue
             }
 
@@ -169,7 +179,7 @@ enum ReplyBlockParser {
                 var items: [ReplyBlock.ListItem] = []
                 while index < lines.count, let (marker, body) = listMarker(lines[index].trimmingCharacters(in: .whitespaces)) {
                     let leadingSpaces = lines[index].prefix(while: { $0 == " " || $0 == "\t" }).reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
-                    items.append(.init(marker: marker, indent: min(leadingSpaces / 2, 3), text: inline(body)))
+                    items.append(.init(marker: marker, indent: min(leadingSpaces / 2, 3), text: inlineContent(body)))
                     index += 1
                 }
                 blocks.append(.list(items))
@@ -230,6 +240,27 @@ enum ReplyBlockParser {
         return attributed
     }
 
+    private static func inlineContent(_ raw: String) -> ReplyBlock.InlineContent {
+        containsMath(raw) ? .math(raw) : .markdown(inline(raw))
+    }
+
+    private static let displayMathEnvironments = [
+        "equation", "equation*", "align", "align*", "alignat", "alignat*",
+        "gather", "gather*", "multline", "multline*", "CD"
+    ]
+
+    private static func multilineMathClosingDelimiter(for line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("$$"), !(trimmed.hasSuffix("$$") && trimmed.count > 2) { return "$$" }
+        if trimmed.hasPrefix(#"\["#), !trimmed.contains(#"\]"#) { return #"\]"# }
+        for environment in displayMathEnvironments {
+            let opening = #"\begin{"# + environment + "}"
+            let closing = #"\end{"# + environment + "}"
+            if trimmed.hasPrefix(opening), !trimmed.contains(closing) { return closing }
+        }
+        return nil
+    }
+
     private static func headingLevel(_ line: String) -> Int? {
         guard line.hasPrefix("#") else { return nil }
         let hashes = line.prefix(while: { $0 == "#" }).count
@@ -237,16 +268,14 @@ enum ReplyBlockParser {
         return hashes
     }
 
-    /// Matches a `$$...$$` display block anywhere, a `$...$` inline span whose body has at least
-    /// one LaTeX-ish character (`\`, `^`, `_`, `{`, `}` - that guard is what keeps an ordinary
-    /// price mention like "$50 today" from being misread as an unterminated formula), or a
-    /// `[[formula:ID]]` marker - the backend's own pre-rendered-SVG replacement for a `$$...$$`
-    /// it already typeset server-side (see RichMathWebView's markdownToHTML).
+    /// Recognizes paired inline/display dollar delimiters, the standard `\(...\)` / `\[...\]`
+    /// forms, and backend-pre-rendered formula markers. Requiring a matching closing delimiter
+    /// keeps ordinary text such as "$50 today" in the native Markdown renderer.
     private static let mathPattern = try! NSRegularExpression(
-        pattern: #"\$\$[\s\S]+?\$\$|\$[^$\n]*[\\^_{}][^$\n]*\$|\[\[formula:[^\]]+\]\]"#
+        pattern: #"\$\$[\s\S]+?\$\$|(?<!\\)\$(?!\$)(?:\\.|[^$\n])+?(?<!\\)\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\\begin\{(equation\*?|align\*?|alignat\*?|gather\*?|multline\*?|CD)\}[\s\S]+?\\end\{\1\}|\[\[formula:[^\]]+\]\]"#
     )
 
-    private static func containsMath(_ text: String) -> Bool {
+    static func containsMath(_ text: String) -> Bool {
         let range = NSRange(text.startIndex..., in: text)
         return mathPattern.firstMatch(in: text, range: range) != nil
     }
@@ -319,10 +348,12 @@ struct ReplyBlocksView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         case .heading(let level, let text):
-            Text(text)
-                .font(level <= 1 ? .title3.weight(.bold) : level == 2 ? .headline : .subheadline.weight(.semibold))
+            inlineContentView(
+                text,
+                font: level <= 1 ? .title3.weight(.bold) : level == 2 ? .headline : .subheadline.weight(.semibold),
+                fontSize: level <= 1 ? 22 : level == 2 ? 17 : 15
+            )
                 .padding(.top, level <= 2 ? 4 : 0)
-                .textSelection(.enabled)
         case .list(let items):
             VStack(alignment: .leading, spacing: 7) {
                 ForEach(Array(items.enumerated()), id: \.offset) { position, item in
@@ -331,11 +362,7 @@ struct ReplyBlocksView: View {
                             .font(.body.weight(.medium))
                             .foregroundStyle(.secondary)
                             .frame(minWidth: item.marker == "•" ? 10 : 22, alignment: .trailing)
-                        Text(fadesTail && position == items.count - 1 ? WiqoStreamingTail.fade(item.text) : item.text)
-                            .font(.body)
-                            .lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
+                        inlineContentView(item.text, fadesTail: fadesTail && position == items.count - 1)
                     }
                     .padding(.leading, CGFloat(item.indent) * 18)
                 }
@@ -345,20 +372,37 @@ struct ReplyBlocksView: View {
                 RoundedRectangle(cornerRadius: 1.5)
                     .fill(Color.secondary.opacity(0.35))
                     .frame(width: 3)
-                Text(text)
-                    .font(.body)
+                inlineContentView(text)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
             }
         case .rule:
             Divider().padding(.vertical, 4)
         case .codeBlock(let language, let code):
             CodeBlockView(language: language, code: code, showsAppPreview: !isStreaming)
         case .table(let headers, let rows):
-            TableBlockView(headers: headers, rows: rows)
+            TableBlockView(headers: headers, rows: rows, artifacts: artifacts)
         case .richText(let raw):
             RichMathTextView(raw: raw, artifacts: artifacts)
+        }
+    }
+
+    @ViewBuilder
+    private func inlineContentView(
+        _ content: ReplyBlock.InlineContent,
+        font: Font = .body,
+        fontSize: CGFloat = 17,
+        fadesTail: Bool = false
+    ) -> some View {
+        switch content {
+        case .markdown(let text):
+            Text(fadesTail ? WiqoStreamingTail.fade(text) : text)
+                .font(font)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        case .math(let raw):
+            RichMathTextView(raw: raw, artifacts: artifacts, fontSize: fontSize)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -567,8 +611,9 @@ private extension Array {
 /// headers/rows the plain render already had; nothing about how the model produces a table needed
 /// to change for this.
 private struct TableBlockView: View {
-    let headers: [AttributedString]
-    let rows: [[AttributedString]]
+    let headers: [ReplyBlock.InlineContent]
+    let rows: [[ReplyBlock.InlineContent]]
+    let artifacts: [RovaBackendClient.ArtifactDescriptor]
 
     @State private var sortColumn: Int?
     @State private var sortAscending = true
@@ -577,7 +622,7 @@ private struct TableBlockView: View {
     /// Plain-text mirror of `rows`, computed once per render rather than per comparison - sorting
     /// and filtering both need to compare raw text, not AttributedString runs.
     private var plainRows: [[String]] {
-        rows.map { row in row.map { String($0.characters) } }
+        rows.map { row in row.map(\.plainText) }
     }
 
     private var filteredIndices: [Int] {
@@ -662,7 +707,7 @@ private struct TableBlockView: View {
         .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    private func headerCell(_ value: AttributedString, column: Int) -> some View {
+    private func headerCell(_ value: ReplyBlock.InlineContent, column: Int) -> some View {
         Button {
             if sortColumn == column {
                 sortAscending.toggle()
@@ -672,8 +717,7 @@ private struct TableBlockView: View {
             }
         } label: {
             HStack(spacing: 3) {
-                Text(value)
-                    .font(.footnote.weight(.semibold))
+                cellText(value, isHeader: true)
                 if sortColumn == column {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
                         .font(.caption2.weight(.bold))
@@ -689,31 +733,39 @@ private struct TableBlockView: View {
         .foregroundStyle(.primary)
     }
 
-    private func cell(_ value: AttributedString, isHeader: Bool) -> some View {
-        Text(value)
-            .font(isHeader ? .footnote.weight(.semibold) : .footnote)
+    private func cell(_ value: ReplyBlock.InlineContent, isHeader: Bool) -> some View {
+        cellText(value, isHeader: isHeader)
             .frame(minWidth: 72, maxWidth: 240, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
-            .textSelection(.enabled)
+    }
+
+    @ViewBuilder
+    private func cellText(_ value: ReplyBlock.InlineContent, isHeader: Bool) -> some View {
+        switch value {
+        case .markdown(let text):
+            Text(text)
+                .font(isHeader ? .footnote.weight(.semibold) : .footnote)
+                .textSelection(.enabled)
+        case .math(let raw):
+            RichMathTextView(raw: raw, artifacts: artifacts, fontSize: 13)
+        }
     }
 }
 
-/// Renders a paragraph (or several merged ones - see `mergeAdjacentRichText`) that mixes ordinary
-/// prose with LaTeX - a formula-only line, a sentence with one inline `$...$` in the middle, a
-/// `[[formula:ID]]` reference to a formula the backend already rendered to SVG server-side, or any
-/// mix of these - via a single WKWebView per merged group instead of one per formula. Auto-render
-/// finds every remaining `$...$`/`$$...$$` span in the content and typesets just that span, so
+/// Renders prose or a structured inline block that mixes ordinary text with LaTeX through KaTeX.
+/// Auto-render finds each supported math delimiter and typesets just that span, so
 /// plain text and live-rendered math can sit in the same line without Swift splitting them apart.
 ///
 /// A `[[formula:ID]]` marker is resolved by downloading that artifact - the same authenticated
 /// path any other artifact already uses - and inlined as a `data:` image, so the heavy formula
-/// itself never touches the CDN-dependent client-side KaTeX path at all; only whatever raw `$...$`
-/// the backend left alone (typically short inline symbols) still goes through auto-render.
+/// itself never touches the CDN-dependent client-side KaTeX path at all; formulas without an
+/// artifact are rendered from their original delimiters by auto-render.
 private struct RichMathTextView: View {
     let raw: String
     let artifacts: [RovaBackendClient.ArtifactDescriptor]
+    var fontSize: CGFloat = 17
     @Environment(\.colorScheme) private var colorScheme
     @State private var height: CGFloat = 24
     /// Formula ID -> the artifact's own SVG markup (spliced directly into the page as inline
@@ -733,17 +785,22 @@ private struct RichMathTextView: View {
         }
     }
 
+    private var resolveKey: String {
+        raw + "\n" + artifacts.map(\.id).sorted().joined(separator: "\n")
+    }
+
     var body: some View {
         Group {
             if didResolve {
-                RichMathWebView(raw: raw, formulaSVGs: resolvedSVGs, colorScheme: colorScheme, height: $height)
+                RichMathWebView(raw: raw, formulaSVGs: resolvedSVGs, colorScheme: colorScheme, fontSize: fontSize, height: $height)
                     .frame(height: height)
             } else {
                 Color.clear.frame(height: 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task(id: raw) {
+        .task(id: resolveKey) {
+            didResolve = false
             await resolveSVGs()
         }
     }
@@ -774,6 +831,7 @@ private struct RichMathWebView: UIViewRepresentable {
     /// RichMathTextView's doc comment for why this has to be inline markup, not an `<img>`).
     let formulaSVGs: [String: String]
     let colorScheme: ColorScheme
+    let fontSize: CGFloat
     @Binding var height: CGFloat
 
     /// Whether anything in this block still needs the live, CDN-loaded KaTeX renderer - false for
@@ -782,7 +840,12 @@ private struct RichMathWebView: UIViewRepresentable {
     /// that case is a real speed win on mobile: no external script fetch, no font wait, no
     /// auto-render scan - just local HTML and already-downloaded SVGs.
     private var needsLiveKaTeX: Bool {
-        raw.replacingOccurrences(of: #"\[\[formula:[^\]]+\]\]"#, with: "", options: .regularExpression).contains("$")
+        let withoutRenderedFormulas = raw.replacingOccurrences(
+            of: #"\[\[formula:[^\]]+\]\]"#,
+            with: "",
+            options: .regularExpression
+        )
+        return ReplyBlockParser.containsMath(withoutRenderedFormulas)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -803,7 +866,7 @@ private struct RichMathWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        let cacheKey = "\(colorScheme)|\(raw)|\(formulaSVGs.count)"
+        let cacheKey = "\(colorScheme)|\(fontSize)|\(raw)|\(formulaSVGs.keys.sorted().joined(separator: ","))"
         guard context.coordinator.lastRendered != cacheKey else { return }
         context.coordinator.lastRendered = cacheKey
         let textColor = colorScheme == .dark ? "#f2f2f7" : "#111318"
@@ -817,6 +880,19 @@ private struct RichMathWebView: UIViewRepresentable {
             renderMathInElement(document.getElementById('content'), {
               delimiters: [
                 {left: "$$", right: "$$", display: true},
+                {left: "\\\\(", right: "\\\\)", display: false},
+                {left: "\\\\begin{equation*}", right: "\\\\end{equation*}", display: true},
+                {left: "\\\\begin{alignat*}", right: "\\\\end{alignat*}", display: true},
+                {left: "\\\\begin{align*}", right: "\\\\end{align*}", display: true},
+                {left: "\\\\begin{gather*}", right: "\\\\end{gather*}", display: true},
+                {left: "\\\\begin{multline*}", right: "\\\\end{multline*}", display: true},
+                {left: "\\\\begin{multline}", right: "\\\\end{multline}", display: true},
+                {left: "\\\\begin{equation}", right: "\\\\end{equation}", display: true},
+                {left: "\\\\begin{align}", right: "\\\\end{align}", display: true},
+                {left: "\\\\begin{alignat}", right: "\\\\end{alignat}", display: true},
+                {left: "\\\\begin{gather}", right: "\\\\end{gather}", display: true},
+                {left: "\\\\begin{CD}", right: "\\\\end{CD}", display: true},
+                {left: "\\\\[", right: "\\\\]", display: true},
                 {left: "$", right: "$", display: false}
               ],
               throwOnError: false
@@ -829,11 +905,12 @@ private struct RichMathWebView: UIViewRepresentable {
         \(katexHead)
         <style>
           html,body{margin:0;padding:0;background:transparent;color:\(textColor);}
-          #content{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;font-size:17px;line-height:1.42;word-wrap:break-word;}
+          #content{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;font-size:\(fontSize)px;line-height:1.42;word-wrap:break-word;}
           #content p{margin:0.35em 0;}
           #content p:first-child{margin-top:0;}
           #content p:last-child{margin-bottom:0;}
           #content code{font-family:ui-monospace,Menlo,monospace;font-size:15px;background:rgba(127,127,127,0.16);border-radius:4px;padding:1px 4px;}
+          #content a{color:#0a84ff;text-decoration:underline;}
           #content svg{display:block;max-width:100%;height:auto;margin:0.4em 0;}
           .katex-display{margin:0.5em 0;overflow-x:auto;overflow-y:hidden;}
           .katex-error{color:#e5484d;}
@@ -869,6 +946,8 @@ private struct RichMathWebView: UIViewRepresentable {
         text.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
     }
 
     /// Just enough markdown to match what `inline()` already renders for plain paragraphs (bold,
@@ -883,7 +962,13 @@ private struct RichMathWebView: UIViewRepresentable {
             html = replaceFormulaMarkers(in: html)
             html = html.replacingOccurrences(of: #"\*\*([^*\n]+)\*\*"#, with: "<b>$1</b>", options: .regularExpression)
             html = html.replacingOccurrences(of: #"(?<!\*)\*([^*\n]+)\*(?!\*)"#, with: "<i>$1</i>", options: .regularExpression)
+            html = html.replacingOccurrences(of: #"~~([^~\n]+)~~"#, with: "<del>$1</del>", options: .regularExpression)
             html = html.replacingOccurrences(of: #"`([^`\n]+)`"#, with: "<code>$1</code>", options: .regularExpression)
+            html = html.replacingOccurrences(
+                of: #"\[([^\]\n]+)\]\(((?:https?://|mailto:)[^\s)<>\"]+)\)"#,
+                with: "<a href=\"$2\">$1</a>",
+                options: [.regularExpression, .caseInsensitive]
+            )
             html = html.replacingOccurrences(of: "\n", with: "<br>")
             return "<p>\(html)</p>"
         }.joined()
@@ -940,6 +1025,15 @@ final class LiveReplyText: ObservableObject {
     /// Reveals the authoritative final reply and returns once it is fully on screen. The server's
     /// final text is sanitized and may carry appended notes, so it replaces what streamed.
     func finish(with finalText: String) async {
+        // Re-loading the KaTeX WebView for every typed character repeatedly resets formula layout
+        // and remote font loading. Math/formula replies are short enough to reveal atomically.
+        if ReplyBlockParser.containsMath(finalText) {
+            revealTask?.cancel()
+            revealTask = nil
+            target = finalText
+            displayed = finalText
+            return
+        }
         let shown = displayed.trimmingCharacters(in: .whitespacesAndNewlines)
         if !shown.isEmpty, !finalText.hasPrefix(shown) {
             revealTask?.cancel()

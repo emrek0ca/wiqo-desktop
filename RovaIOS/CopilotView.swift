@@ -66,6 +66,7 @@ struct CopilotView: View {
     @State private var showingMicPermissionAlert = false
     @State private var showingDiscovery = false
     @StateObject private var liveReply = LiveReplyText()
+    @State private var liveReplyBubbleID: UUID?
     /// Follows the conversation's end only while the reader is already there: dragging up to read
     /// stops following, reaching the bottom again resumes it. Nothing ever yanks the view down.
     @State private var followsLatest = true
@@ -333,12 +334,7 @@ struct CopilotView: View {
                         bubbleView(bubble)
                             .id(bubble.id)
                     }
-                    if !liveReply.displayed.isEmpty {
-                        // Same layout as a finished assistant bubble, so swapping the live text
-                        // for the stored reply produces no visual jump.
-                        ReplyBlocksView(text: liveReply.displayed, isStreaming: true)
-                            .padding(.horizontal)
-                    } else if isSending {
+                    if isSending && liveReply.displayed.isEmpty {
                         thinkingStagesView
                     }
                     Color.clear
@@ -363,7 +359,11 @@ struct CopilotView: View {
                 followsLatest = true
                 withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom) }
             }
-            .onChange(of: liveReply.displayed) { _, _ in
+            .onChange(of: liveReply.displayed) { _, text in
+                if !text.isEmpty, let liveReplyBubbleID {
+                    setBubble(liveReplyBubbleID) { $0.text = text }
+                    persistConversation()
+                }
                 guard followsLatest else { return }
                 proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
             }
@@ -396,7 +396,11 @@ struct CopilotView: View {
             if bubble.role == .assistant {
                 // No bubble chrome for the assistant, matching ChatGPT/Gemini: clean, full-width,
                 // block-structured content rather than a colored speech bubble.
-                ReplyBlocksView(text: bubble.text, artifacts: bubble.artifacts)
+                ReplyBlocksView(
+                    text: bubble.text,
+                    artifacts: bubble.artifacts,
+                    isStreaming: bubble.id == liveReplyBubbleID
+                )
             } else if bubble.role == .system {
                 systemErrorView(for: bubble)
             } else {
@@ -1302,6 +1306,7 @@ struct CopilotView: View {
         screenshotObservationCount = 0
         bubbles.append(ChatBubble(role: .user, text: text, attachmentThumbnails: thumbnails))
         persistConversation()
+        liveReplyBubbleID = nil
         liveReply.reset()
         isSending = true
         statusMessages = ["Anlıyorum…"]
@@ -1317,13 +1322,17 @@ struct CopilotView: View {
         // drove token usage into Groq's per-minute rate limit during testing. Anything that
         // needs to survive past this window is what the memory/task tools are for.
         let history = bubbles
-            .filter { $0.role != .system }
+            .filter { $0.role != .system && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .suffix(16)
             .map { RovaBackendClient.ChatTurn(role: $0.role == .user ? "user" : "assistant", content: $0.text) }
         turnCount += 1
         CopilotConversationStore.saveTurnCount(turnCount, for: conversationID)
         let requestID = UUID()
-        var earlyConfirmationBubbleID: UUID?
+        let responseBubble = ChatBubble(role: .assistant, text: "")
+        bubbles.append(responseBubble)
+        liveReplyBubbleID = responseBubble.id
+        persistConversation()
+        var earlyConfirmationBubbleID: UUID? = responseBubble.id
 
         do {
             let result = try await RovaBackendClient.converse(
@@ -1339,8 +1348,10 @@ struct CopilotView: View {
                 requestID: requestID,
                 attachments: attachments,
                 onStatus: { text in statusMessages.append(text) },
-                onDelta: { text in liveReply.append(text) },
-                onReset: { liveReply.reset() },
+                // Model-turn deltas are provisional. Reveal only the terminal reply below so a
+                // repair/planning turn can never replace text already shown to the user.
+                onDelta: { _ in },
+                onReset: {},
                 onConfirmationNeeded: { steps, backendConfirmations in
                     earlyConfirmationBubbleID = presentEarlyConfirmationIfNeeded(
                         steps: steps,
@@ -1361,58 +1372,34 @@ struct CopilotView: View {
             )
             let replyText = result.reply.isEmpty ? "Bakıyorum…" : result.reply
             await liveReply.finish(with: replyText)
-            if let earlyID = earlyConfirmationBubbleID, let index = bubbles.firstIndex(where: { $0.id == earlyID }) {
-                // Reconcile the same bubble with the terminal plan rather than appending a second
-                // one. Existing backend row statuses are deliberately preserved because the user
-                // may already have approved one while the SSE turn was still streaming.
-                bubbles[index].text = replyText
-                bubbles[index].steps = result.steps
-                bubbles[index].executionState = result.executionState
-                bubbles[index].replyIsProgress = result.replyIsProgress
-                bubbles[index].artifacts = result.artifacts
-                bubbles[index].backendConfirmations = mergedBackendConfirmations(
-                    existing: bubbles[index].backendConfirmations,
+            let replyBubbleID = earlyConfirmationBubbleID ?? responseBubble.id
+            setBubble(replyBubbleID) { bubble in
+                // Reconcile the terminal result into the in-flight bubble. Existing execution
+                // rows are kept so an early confirmation remains attached to this same reply.
+                bubble.text = replyText
+                bubble.steps = result.steps
+                bubble.executionState = result.executionState
+                bubble.replyIsProgress = result.replyIsProgress
+                bubble.artifacts = result.artifacts
+                bubble.backendConfirmations = mergedBackendConfirmations(
+                    existing: bubble.backendConfirmations,
                     incoming: result.backendConfirmations,
-                    executionUpdates: bubbles[index].executionUpdates
+                    executionUpdates: bubble.executionUpdates
                 )
-                bubbles[index].needsConfirmation = false
-                liveReply.reset()
-                let advance = await advanceLocalExecution(bubbleID: earlyID)
-                if case .awaitingConfirmation = advance {
-                    // The next local step owns the confirmation sheet. Its approval continues
-                    // this same bubble; no second assistant message is created.
-                } else if shouldContinueAfterLocalExecution(bubbleID: earlyID) {
-                    await continueAfterLocalExecution(
-                        history: history,
-                        initialReply: result.reply,
-                        bubbleID: earlyID,
-                        recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
-                    )
-                } else {
-                    recentDeviceResults.removeAll(keepingCapacity: true)
-                }
-                persistConversation()
-                return
+                bubble.needsConfirmation = false
             }
-            let reply = ChatBubble(
-                role: .assistant,
-                text: replyText,
-                steps: result.steps,
-                artifacts: result.artifacts,
-                executionState: result.executionState,
-                backendConfirmations: result.backendConfirmations.map { BackendConfirmationRow(confirmation: $0) },
-                replyIsProgress: result.replyIsProgress
-            )
-            bubbles.append(reply)
+            liveReplyBubbleID = nil
             liveReply.reset()
-            let advance = await advanceLocalExecution(bubbleID: reply.id)
+            persistConversation()
+            CopilotConversationStore.flushPending()
+            let advance = await advanceLocalExecution(bubbleID: replyBubbleID)
             if case .awaitingConfirmation = advance {
                 // The sheet is presented by advanceLocalExecution for the next gated step.
-            } else if shouldContinueAfterLocalExecution(bubbleID: reply.id) {
+            } else if shouldContinueAfterLocalExecution(bubbleID: replyBubbleID) {
                 await continueAfterLocalExecution(
                     history: history,
                     initialReply: result.reply,
-                    bubbleID: reply.id,
+                    bubbleID: replyBubbleID,
                     recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
                 )
             } else {
@@ -1422,13 +1409,28 @@ struct CopilotView: View {
         } catch RovaBackendError.notAuthenticated {
             // Sends the whole app back to the login screen (RootView switches on this),
             // there's no local sheet/screen of our own to dismiss here.
+            liveReplyBubbleID = nil
+            setBubble(responseBubble.id) { bubble in
+                if bubble.text.isEmpty { bubble.text = "Oturum sona erdi; yanıt alınamadı." }
+            }
             liveReply.reset()
+            persistConversation()
+            CopilotConversationStore.flushPending()
             authSession.signOut()
         } catch {
-            liveReply.reset()
+            liveReplyBubbleID = nil
             let presentation = errorPresentation(error)
-            bubbles.append(ChatBubble(role: .system, text: presentation.message, errorDetail: presentation.detail))
+            setBubble(responseBubble.id) { bubble in
+                if bubble.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    bubble.text = presentation.message
+                } else {
+                    bubble.text += "\n\n" + presentation.message
+                }
+                bubble.errorDetail = presentation.detail
+            }
+            liveReply.reset()
             persistConversation()
+            CopilotConversationStore.flushPending()
         }
     }
 
@@ -1673,7 +1675,10 @@ struct CopilotView: View {
             RovaBackendClient.ChatTurn(role: "user", content: "Yerel PC sonuçları hazır. Bu sonuçları kullanarak önceki isteği şimdi tamamla; belge içeriğini yeniden isteme.")
         ]
         recentDeviceResults.removeAll(keepingCapacity: true)
-        var earlyConfirmationBubbleID: UUID?
+        liveReplyBubbleID = nil
+        liveReply.reset()
+        liveReplyBubbleID = bubbleID
+        var earlyConfirmationBubbleID: UUID? = bubbleID
         do {
             let result = try await RovaBackendClient.converse(
                 messages: continuationHistory,
@@ -1687,8 +1692,8 @@ struct CopilotView: View {
                 deviceResults: localResults,
                 requestID: UUID(),
                 onStatus: { text in statusMessages.append(text) },
-                onDelta: { text in liveReply.append(text) },
-                onReset: { liveReply.reset() },
+                onDelta: { _ in },
+                onReset: {},
                 onConfirmationNeeded: { steps, backendConfirmations in
                     earlyConfirmationBubbleID = presentEarlyConfirmationIfNeeded(
                         steps: steps,
@@ -1710,7 +1715,10 @@ struct CopilotView: View {
             let replyText = result.reply.isEmpty ? "Bakıyorum…" : result.reply
             await liveReply.finish(with: replyText)
             mergeContinuationResult(result, into: bubbleID, streamBubbleID: earlyConfirmationBubbleID, text: replyText)
+            liveReplyBubbleID = nil
             liveReply.reset()
+            persistConversation()
+            CopilotConversationStore.flushPending()
             let advance = await advanceLocalExecution(bubbleID: bubbleID)
             if case .awaitingConfirmation = advance {
                 // The next gated step presents its own sheet and continues this same bubble.
@@ -1727,11 +1735,13 @@ struct CopilotView: View {
             }
             persistConversation()
         } catch {
+            liveReplyBubbleID = nil
             liveReply.reset()
             // The first local read already succeeded and is visible in the original bubble. Keep
             // that evidence rather than replacing it with a generic network failure.
             setBubble(bubbleID) { $0.text = executionNoticeFreeText($0.text) + "\n\nYerel sonuç alındı; kalan adımı tamamlayamadım." }
             persistConversation()
+            CopilotConversationStore.flushPending()
         }
     }
 
