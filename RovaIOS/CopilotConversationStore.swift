@@ -16,12 +16,15 @@ struct CopilotStoredMessage: Codable, Hashable, Sendable {
     /// backward compatibility as `artifacts` above. Defaulted so call sites that never have
     /// thumbnails (server-fetched history) don't need to pass it explicitly.
     let attachmentThumbnails: [Data]?
+    /// The reply's thinking timeline - same nil-on-missing-key compatibility as above.
+    let thinking: ThinkingTrace?
 
-    init(role: Role, text: String, artifacts: [RovaBackendClient.ArtifactDescriptor]? = nil, attachmentThumbnails: [Data]? = nil) {
+    init(role: Role, text: String, artifacts: [RovaBackendClient.ArtifactDescriptor]? = nil, attachmentThumbnails: [Data]? = nil, thinking: ThinkingTrace? = nil) {
         self.role = role
         self.text = text
         self.artifacts = artifacts
         self.attachmentThumbnails = attachmentThumbnails
+        self.thinking = thinking
     }
 }
 
@@ -201,7 +204,7 @@ enum CopilotConversationStore {
         // A chat that was opened but never used must not clutter the history list.
         guard !messages.isEmpty else { return }
         let boundedMessages = Array(messages.suffix(80)).map {
-            CopilotStoredMessage(role: $0.role, text: String($0.text.prefix(12_000)), artifacts: $0.artifacts, attachmentThumbnails: $0.attachmentThumbnails)
+            CopilotStoredMessage(role: $0.role, text: String($0.text.prefix(12_000)), artifacts: $0.artifacts, attachmentThumbnails: $0.attachmentThumbnails, thinking: $0.thinking)
         }
         if let data = try? JSONEncoder().encode(boundedMessages) {
             UserDefaults.standard.set(data, forKey: keys.messagesPrefix + id)

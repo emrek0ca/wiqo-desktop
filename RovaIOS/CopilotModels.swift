@@ -70,4 +70,6 @@ struct ChatBubble: Identifiable {
     /// `text` is only the backend's "doing it now" line; once the steps finish with nothing left
     /// for the model to read, it is replaced by the verified outcome (DeviceOutcomeNarrator).
     var replyIsProgress = false
+    /// What Wiqo went through to produce this reply; nil for plain chat and older messages.
+    var thinking: ThinkingTrace? = nil
 }

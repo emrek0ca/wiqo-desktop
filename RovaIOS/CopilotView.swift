@@ -37,10 +37,9 @@ struct CopilotView: View {
     @State private var bubbles: [ChatBubble] = []
     @State private var inputText = ""
     @State private var isSending = false
-    /// Every progress checkpoint Wiqo reports for the turn in flight, oldest first - shown as a
-    /// growing stack of lines rather than one line overwriting the last, so a multi-step answer
-    /// visibly shows its own reasoning stages instead of a single static "thinking" label.
-    @State private var statusMessages: [String] = []
+    /// The thinking timeline of the turn in flight (see ThinkingTrace). It is copied onto the reply
+    /// bubble when the turn ends, where it folds into a "4 adımda tamamlandı · 9 sn" row.
+    @State private var thinking = ThinkingTrace()
     @State private var conversationID = ""
     @State private var turnCount = 0
     /// Results are sent with the next stateless backend turn, so the model can distinguish a
@@ -104,7 +103,9 @@ struct CopilotView: View {
             case .assistant: role = .assistant
             case .system: role = .system
             }
-            return ChatBubble(role: role, text: stored.text, artifacts: stored.artifacts ?? [], attachmentThumbnails: stored.attachmentThumbnails ?? [])
+            var bubble = ChatBubble(role: role, text: stored.text, artifacts: stored.artifacts ?? [], attachmentThumbnails: stored.attachmentThumbnails ?? [])
+            bubble.thinking = stored.thinking
+            return bubble
         }
         _bubbles = State(initialValue: loadedBubbles)
     }
@@ -334,7 +335,9 @@ struct CopilotView: View {
                         bubbleView(bubble)
                             .id(bubble.id)
                     }
-                    if isSending && liveReply.displayed.isEmpty {
+                    // A finished timeline already sits on its bubble; while the PC runs the steps, the
+                    // execution card is the live view.
+                    if isSending && liveReply.displayed.isEmpty && !thinking.isFinished {
                         thinkingStagesView
                     }
                     Color.clear
@@ -367,7 +370,7 @@ struct CopilotView: View {
                 guard followsLatest else { return }
                 proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
             }
-            .onChange(of: statusMessages.count) { _, _ in
+            .onChange(of: thinking.steps.count) { _, _ in
                 guard followsLatest else { return }
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom) }
             }
@@ -378,14 +381,19 @@ struct CopilotView: View {
         }
     }
 
-    /// Progress is one sentence about what is happening right now ("PC'ye bağlanıyorum"); when the
-    /// step changes it dissolves into the next one. No spinner, no "thinking" label.
+    /// A plain answer is one sentence about what is happening right now; a task grows into a
+    /// timeline of what Wiqo already did, with the current line and its clock at the bottom.
     private var thinkingStagesView: some View {
-        WiqoStatusLine(text: statusMessages.last(where: { !$0.isEmpty }) ?? "Bakıyorum…")
-            .font(.subheadline)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        ThinkingTimelineView(trace: thinking)
             .padding(.horizontal)
             .id("thinkingStages")
+    }
+
+    /// Ends the turn's timeline and keeps it on the reply bubble, so the steps stay readable later.
+    private func commitThinking(to bubbleID: UUID, failed: Bool = false) {
+        thinking.finish(failed: failed)
+        let trace = thinking
+        setBubble(bubbleID) { $0.thinking = trace.showsTimeline ? trace : nil }
     }
 
     private func bubbleView(_ bubble: ChatBubble) -> some View {
@@ -394,6 +402,10 @@ struct CopilotView: View {
                 AttachmentThumbnailStrip(thumbnails: bubble.attachmentThumbnails)
             }
             if bubble.role == .assistant {
+                if let trace = bubble.thinking, trace.isFinished {
+                    ThinkingSummaryView(trace: trace)
+                        .padding(.horizontal)
+                }
                 // No bubble chrome for the assistant, matching ChatGPT/Gemini: clean, full-width,
                 // block-structured content rather than a colored speech bubble.
                 ReplyBlocksView(
@@ -1309,7 +1321,8 @@ struct CopilotView: View {
         liveReplyBubbleID = nil
         liveReply.reset()
         isSending = true
-        statusMessages = ["Anlıyorum…"]
+        thinking = ThinkingTrace()
+        thinking.note("Anlıyorum…")
         // Results belong to the turn that produced them; never let an older device outcome alter
         // the model's interpretation of a new user message.
         recentDeviceResults.removeAll(keepingCapacity: true)
@@ -1347,7 +1360,7 @@ struct CopilotView: View {
                 deviceResults: recentDeviceResults,
                 requestID: requestID,
                 attachments: attachments,
-                onStatus: { text in statusMessages.append(text) },
+                onStatus: { text in thinking.note(text) },
                 // Model-turn deltas are provisional. Reveal only the terminal reply below so a
                 // repair/planning turn can never replace text already shown to the user.
                 onDelta: { _ in },
@@ -1366,13 +1379,22 @@ struct CopilotView: View {
                         existingBubbleID: earlyConfirmationBubbleID
                     )
                 },
+                onActivity: { activity in
+                    thinking.apply(
+                        id: activity.id,
+                        phase: activity.phase,
+                        label: activity.label,
+                        state: ThinkingTrace.Step.State(rawValue: activity.state) ?? .done
+                    )
+                },
                 onUsage: { used, limit in
                     subscriptionStore.applyMessageUsage(used: used, limit: limit)
                 }
             )
             let replyText = result.reply.isEmpty ? "Bakıyorum…" : result.reply
-            await liveReply.finish(with: replyText)
             let replyBubbleID = earlyConfirmationBubbleID ?? responseBubble.id
+            commitThinking(to: replyBubbleID)
+            await liveReply.finish(with: replyText)
             setBubble(replyBubbleID) { bubble in
                 // Reconcile the terminal result into the in-flight bubble. Existing execution
                 // rows are kept so an early confirmation remains attached to this same reply.
@@ -1410,6 +1432,7 @@ struct CopilotView: View {
             // Sends the whole app back to the login screen (RootView switches on this),
             // there's no local sheet/screen of our own to dismiss here.
             liveReplyBubbleID = nil
+            thinking.finish(failed: true)
             setBubble(responseBubble.id) { bubble in
                 if bubble.text.isEmpty { bubble.text = "Oturum sona erdi; yanıt alınamadı." }
             }
@@ -1419,6 +1442,7 @@ struct CopilotView: View {
             authSession.signOut()
         } catch {
             liveReplyBubbleID = nil
+            commitThinking(to: earlyConfirmationBubbleID ?? responseBubble.id, failed: true)
             let presentation = errorPresentation(error)
             setBubble(responseBubble.id) { bubble in
                 if bubble.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -1678,6 +1702,11 @@ struct CopilotView: View {
         liveReplyBubbleID = nil
         liveReply.reset()
         liveReplyBubbleID = bubbleID
+        // The follow-up is the same task: its lines extend the timeline already on this bubble,
+        // which goes live again (and leaves the bubble) until this round ends.
+        if let previous = bubbles.first(where: { $0.id == bubbleID })?.thinking { thinking = previous }
+        thinking.reopen()
+        setBubble(bubbleID) { $0.thinking = nil }
         var earlyConfirmationBubbleID: UUID? = bubbleID
         do {
             let result = try await RovaBackendClient.converse(
@@ -1691,7 +1720,7 @@ struct CopilotView: View {
                 turnCount: turnCount,
                 deviceResults: localResults,
                 requestID: UUID(),
-                onStatus: { text in statusMessages.append(text) },
+                onStatus: { text in thinking.note(text) },
                 onDelta: { _ in },
                 onReset: {},
                 onConfirmationNeeded: { steps, backendConfirmations in
@@ -1708,11 +1737,20 @@ struct CopilotView: View {
                         existingBubbleID: earlyConfirmationBubbleID
                     )
                 },
+                onActivity: { activity in
+                    thinking.apply(
+                        id: activity.id,
+                        phase: activity.phase,
+                        label: activity.label,
+                        state: ThinkingTrace.Step.State(rawValue: activity.state) ?? .done
+                    )
+                },
                 onUsage: { used, limit in
                     subscriptionStore.applyMessageUsage(used: used, limit: limit)
                 }
             )
             let replyText = result.reply.isEmpty ? "Bakıyorum…" : result.reply
+            commitThinking(to: bubbleID)
             await liveReply.finish(with: replyText)
             mergeContinuationResult(result, into: bubbleID, streamBubbleID: earlyConfirmationBubbleID, text: replyText)
             liveReplyBubbleID = nil
@@ -1737,6 +1775,7 @@ struct CopilotView: View {
         } catch {
             liveReplyBubbleID = nil
             liveReply.reset()
+            commitThinking(to: bubbleID, failed: true)
             // The first local read already succeeded and is visible in the original bubble. Keep
             // that evidence rather than replacing it with a generic network failure.
             setBubble(bubbleID) { $0.text = executionNoticeFreeText($0.text) + "\n\nYerel sonuç alındı; kalan adımı tamamlayamadım." }
@@ -2154,7 +2193,8 @@ struct CopilotView: View {
                 role: role,
                 text: bubble.text,
                 artifacts: bubble.artifacts.isEmpty ? nil : bubble.artifacts,
-                attachmentThumbnails: bubble.attachmentThumbnails.isEmpty ? nil : bubble.attachmentThumbnails
+                attachmentThumbnails: bubble.attachmentThumbnails.isEmpty ? nil : bubble.attachmentThumbnails,
+                thinking: bubble.thinking
             )
         }
         CopilotConversationStore.saveSoon(id: conversationID, messages: stored, turnCount: turnCount)

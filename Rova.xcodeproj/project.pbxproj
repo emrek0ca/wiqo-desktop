@@ -73,6 +73,10 @@
 		B026 /* ProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F026 /* ProtocolTests.swift */; };
 		D2000000000000000000003D /* ReplyStreamSplitterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000003E /* ReplyStreamSplitterTests.swift */; };
 		D2000000000000000000003F /* ReplyStreamSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000003C /* ReplyStreamSplitter.swift */; };
+		D20000000000000000000040 /* ThinkingTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000041 /* ThinkingTrace.swift */; };
+		D20000000000000000000042 /* ThinkingTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000041 /* ThinkingTrace.swift */; };
+		D20000000000000000000043 /* ThinkingTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000044 /* ThinkingTimelineView.swift */; };
+		D20000000000000000000045 /* ThinkingTraceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000046 /* ThinkingTraceTests.swift */; };
 		D2000000000000000000002E /* CanvasPackageDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000002F /* CanvasPackageDetectorTests.swift */; };
 		D20000000000000000000030 /* WiqoCanvasSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000011 /* WiqoCanvasSupport.swift */; };
 		B027 /* MacCommandEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F027 /* MacCommandEngineTests.swift */; };
@@ -189,6 +193,9 @@
 		F020 /* IOSViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSViews.swift; sourceTree = "<group>"; };
 		D10000000000000000000002 /* OnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		D2000000000000000000003C /* ReplyStreamSplitter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReplyStreamSplitter.swift; sourceTree = "<group>"; };
+		D20000000000000000000041 /* ThinkingTrace.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThinkingTrace.swift; sourceTree = "<group>"; };
+		D20000000000000000000044 /* ThinkingTimelineView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThinkingTimelineView.swift; sourceTree = "<group>"; };
+		D20000000000000000000046 /* ThinkingTraceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingTraceTests.swift; sourceTree = "<group>"; };
 		D40000000000000000000002 /* DeviceOutcomeNarrator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceOutcomeNarrator.swift; sourceTree = "<group>"; };
 		D2000000000000000000003A /* CopilotConversationStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotConversationStore.swift; sourceTree = "<group>"; };
 		D20000000000000000000038 /* CopilotSpeechRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotSpeechRecorder.swift; sourceTree = "<group>"; };
@@ -341,6 +348,8 @@
 				F020 /* IOSViews.swift */,
 				D10000000000000000000002 /* OnboardingView.swift */,
 				D2000000000000000000003C /* ReplyStreamSplitter.swift */,
+				D20000000000000000000041 /* ThinkingTrace.swift */,
+				D20000000000000000000044 /* ThinkingTimelineView.swift */,
 				D40000000000000000000002 /* DeviceOutcomeNarrator.swift */,
 				D2000000000000000000003A /* CopilotConversationStore.swift */,
 				D20000000000000000000038 /* CopilotSpeechRecorder.swift */,
@@ -409,6 +418,7 @@
 			children = (
 				F026 /* ProtocolTests.swift */,
 				D2000000000000000000003E /* ReplyStreamSplitterTests.swift */,
+				D20000000000000000000046 /* ThinkingTraceTests.swift */,
 				D2000000000000000000002F /* CanvasPackageDetectorTests.swift */,
 			);
 			path = RovaSharedTests;
@@ -659,6 +669,8 @@
 				B020 /* IOSViews.swift in Sources */,
 				D10000000000000000000001 /* OnboardingView.swift in Sources */,
 				D2000000000000000000003B /* ReplyStreamSplitter.swift in Sources */,
+				D20000000000000000000040 /* ThinkingTrace.swift in Sources */,
+				D20000000000000000000043 /* ThinkingTimelineView.swift in Sources */,
 				D40000000000000000000001 /* DeviceOutcomeNarrator.swift in Sources */,
 				D20000000000000000000039 /* CopilotConversationStore.swift in Sources */,
 				D20000000000000000000037 /* CopilotSpeechRecorder.swift in Sources */,
@@ -711,6 +723,8 @@
 				B026 /* ProtocolTests.swift in Sources */,
 				D2000000000000000000003D /* ReplyStreamSplitterTests.swift in Sources */,
 				D2000000000000000000003F /* ReplyStreamSplitter.swift in Sources */,
+				D20000000000000000000042 /* ThinkingTrace.swift in Sources */,
+				D20000000000000000000045 /* ThinkingTraceTests.swift in Sources */,
 				D2000000000000000000002E /* CanvasPackageDetectorTests.swift in Sources */,
 				D20000000000000000000030 /* WiqoCanvasSupport.swift in Sources */,
 				A5C0DE000000000000000003 /* WiqoSpeechPermissionBridge.swift in Sources */,

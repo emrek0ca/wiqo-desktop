@@ -219,6 +219,14 @@ enum RovaBackendClient {
     /// Live execution truth emitted by the backend while a chat turn is still running. The
     /// backend deliberately omits its internal tool name; the client only needs the stable id,
     /// user-facing summary, and lifecycle state to keep the compact execution widget current.
+    /// One line of the thinking timeline (see ThinkingTrace). `state` is running, done or failed.
+    struct ActivityUpdate: Decodable, Equatable, Sendable {
+        let id: String
+        let phase: String
+        let label: String
+        let state: String
+    }
+
     struct ExecutionStepUpdate: Decodable, Equatable {
         let id: UUID
         let kind: String
@@ -366,6 +374,7 @@ enum RovaBackendClient {
         onReset: @escaping @MainActor @Sendable () -> Void = {},
         onConfirmationNeeded: @escaping @MainActor @Sendable ([PlannedCommand], [BackendConfirmation]) -> Void = { _, _ in },
         onStepUpdate: @escaping @MainActor @Sendable (ExecutionStepUpdate) -> Void = { _ in },
+        onActivity: @escaping @MainActor @Sendable (ActivityUpdate) -> Void = { _ in },
         /// Today's message count as the server has just counted it (used, limit).
         onUsage: @escaping @MainActor @Sendable (Int, Int) -> Void = { _, _ in }
     ) async throws -> ConverseResult {
@@ -465,6 +474,9 @@ enum RovaBackendClient {
         struct StepUpdateEvent: Decodable {
             let step: ExecutionStepUpdate
         }
+        struct ActivityEvent: Decodable {
+            let activity: ActivityUpdate
+        }
         struct ErrorEvent: Decodable { let message: String; let code: String? }
         struct EventKind: Decodable { let type: String }
         struct UsageEvent: Decodable {
@@ -510,6 +522,10 @@ enum RovaBackendClient {
                 case "usage":
                     if let event = try? decoder.decode(UsageEvent.self, from: json) {
                         await onUsage(event.messages.used, event.messages.limit)
+                    }
+                case "activity":
+                    if let event = try? decoder.decode(ActivityEvent.self, from: json) {
+                        await onActivity(event.activity)
                     }
                 case "reset":
                     await onReset()
