@@ -40,6 +40,181 @@ struct RootView: View {
     }
 }
 
+private struct WiqoActivityView: View {
+    @State private var feed: RovaBackendClient.ActivityFeed?
+    @State private var error: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if let error { Text(error).font(.footnote).foregroundStyle(WiqoTheme.red) }
+                if let feed {
+                    section("İlgi bekleyen", items: feed.needsAttention)
+                    section("Yaklaşan", items: feed.upcoming)
+                    section("Son etkinlik", items: feed.recent)
+                } else if error == nil {
+                    ProgressView().frame(maxWidth: .infinity)
+                }
+            }
+            .padding(RovaDesign.screenPadding)
+        }
+        .background(RovaDesign.canvas)
+        .navigationTitle("Etkinlik")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private func section(_ title: String, items: [RovaBackendClient.ActivityItem]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            WiqoSettingsGroup {
+                if items.isEmpty {
+                    Text("Burada bir şey yok.").font(.subheadline).foregroundStyle(.secondary).padding(16)
+                } else {
+                    ForEach(items) { item in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.title).font(.body.weight(.medium))
+                            if let detail = item.detail { Text(detail).font(.subheadline).foregroundStyle(.secondary) }
+                            Text(label(for: item.state)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                    }
+                }
+            }
+        }
+    }
+
+    private func label(for state: String) -> String {
+        switch state {
+        case "needs_approval": return "Onay bekliyor"
+        case "needs_review": return "Kontrol gerekli"
+        case "waiting_for_pc": return "PC bekleniyor"
+        case "running": return "Çalışıyor"
+        case "scheduled": return "Zamanlandı"
+        case "watching": return "İzleniyor"
+        case "done": return "Tamamlandı"
+        case "failed": return "Başarısız"
+        default: return "Sonuç belirsiz"
+        }
+    }
+
+    private func load() async {
+        do { feed = try await RovaBackendClient.fetchActivity(); error = nil }
+        catch { self.error = "Etkinlikler yüklenemedi. Yeniden denemek için aşağı çek." }
+    }
+}
+
+private struct WiqoMemoryView: View {
+    @State private var memories: [RovaBackendClient.StoredMemory] = []
+    @State private var isLoading = true
+    @State private var error: String?
+    @State private var selected: RovaBackendClient.StoredMemory?
+    @State private var confirmAll = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Wiqo'nun hatırladıklarını burada görebilir ve silebilirsin.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                if let error { Text(error).font(.footnote).foregroundStyle(WiqoTheme.red) }
+                if isLoading { ProgressView().frame(maxWidth: .infinity) }
+                else if memories.isEmpty { Text("Kayıtlı hafıza yok.").foregroundStyle(.secondary) }
+                else {
+                    WiqoSettingsGroup {
+                        ForEach(memories) { memory in
+                            HStack(alignment: .top, spacing: 12) {
+                                Text(memory.content).font(.body).frame(maxWidth: .infinity, alignment: .leading)
+                                Button("Sil") { selected = memory }.font(.subheadline)
+                            }
+                            .padding(16)
+                        }
+                    }
+                    Button("Tüm hafızayı sil", role: .destructive) { confirmAll = true }
+                        .font(.subheadline)
+                }
+            }
+            .padding(RovaDesign.screenPadding)
+        }
+        .background(RovaDesign.canvas)
+        .navigationTitle("Hafıza")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .refreshable { await load() }
+        .confirmationDialog("Bu hafıza kaydı silinsin mi?", isPresented: Binding(get: { selected != nil }, set: { if !$0 { selected = nil } })) {
+            Button("Kaydı sil", role: .destructive) {
+                if let selected { Task { await remove(selected.id) } }
+            }
+        }
+        .confirmationDialog("Tüm hafıza silinsin mi?", isPresented: $confirmAll) {
+            Button("Tümünü sil", role: .destructive) { Task { await removeAll() } }
+        }
+    }
+
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do { memories = try await RovaBackendClient.fetchStoredMemories(); error = nil }
+        catch { self.error = "Hafıza yüklenemedi. Yeniden denemek için aşağı çek." }
+    }
+
+    private func remove(_ id: Int) async {
+        do { try await RovaBackendClient.deleteStoredMemory(id: id); memories.removeAll { $0.id == id }; selected = nil; error = nil }
+        catch { self.error = "Kayıt silinemedi. Tekrar dene." }
+    }
+
+    private func removeAll() async {
+        do { try await RovaBackendClient.deleteAllStoredMemories(); memories = []; error = nil }
+        catch { self.error = "Hafıza silinemedi. Tekrar dene." }
+    }
+}
+
+private struct WiqoGoalsView: View {
+    @State private var goals: [RovaBackendClient.RovaGoal] = []
+    @State private var isLoading = true
+    @State private var error: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Hedeflerini sohbette Wiqo'ya söyle. Alt görevler tamamlandıkça ilerleme burada güncellenir.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                if let error { Text(error).font(.footnote).foregroundStyle(WiqoTheme.red) }
+                if isLoading { ProgressView().frame(maxWidth: .infinity) }
+                else if goals.isEmpty { Text("Henüz hedef yok.").foregroundStyle(.secondary) }
+                else {
+                    WiqoSettingsGroup {
+                        ForEach(goals) { goal in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(goal.title).font(.body.weight(.medium))
+                                ProgressView(value: Double(goal.done), total: Double(max(1, goal.total)))
+                                Text("\(goal.done) / \(goal.total) alt görev tamamlandı")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                        }
+                    }
+                }
+            }
+            .padding(RovaDesign.screenPadding)
+        }
+        .background(RovaDesign.canvas)
+        .navigationTitle("Hedefler")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do { goals = try await RovaBackendClient.fetchGoals(); error = nil }
+        catch { self.error = "Hedefler yüklenemedi. Yeniden denemek için aşağı çek." }
+    }
+}
+
 /// Wiqo's main surface, ChatGPT-style: opens straight into a new conversation, a top bar (not a
 /// bottom tab bar) carries the sidebar toggle, the connection status, and "new chat", and the
 /// conversation history lives in a sliding sidebar instead of its own tab.
@@ -673,6 +848,27 @@ struct SettingsView: View {
                 tasksSettingsPage
             } label: {
                 settingsNavigationRow(title: "Görevler", systemImage: "checklist", value: taskNavigationValue)
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+
+            NavigationLink {
+                WiqoActivityView()
+            } label: {
+                settingsNavigationRow(title: "Etkinlik", systemImage: "clock.arrow.circlepath", value: "Yapılanlar ve bekleyenler")
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+
+            NavigationLink {
+                WiqoMemoryView()
+            } label: {
+                settingsNavigationRow(title: "Hafıza", systemImage: "brain.head.profile", value: "Gör ve yönet")
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+
+            NavigationLink {
+                WiqoGoalsView()
+            } label: {
+                settingsNavigationRow(title: "Hedefler", systemImage: "target", value: "İlerlemeyi gör")
             }
             .buttonStyle(WiqoRowButtonStyle())
 

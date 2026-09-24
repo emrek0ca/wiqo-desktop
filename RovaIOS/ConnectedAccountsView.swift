@@ -66,6 +66,22 @@ struct ConnectedAccountsView: View {
                     }
                 }
 
+                ForEach(providers, id: \.id) { provider in
+                    if let connected = connection(for: provider.id) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("\(provider.name) erişimi").font(.subheadline.weight(.medium))
+                            Picker("\(provider.name) erişimi", selection: Binding(
+                                get: { connected.accessLevel ?? "write" },
+                                set: { level in Task { await changeAccess(provider.id, to: level) } }
+                            )) {
+                                Text("Sadece oku").tag("read")
+                                Text("Oku ve yaz").tag("write")
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                    }
+                }
+
                 if let errorMessage {
                     Text(errorMessage)
                         .font(.footnote)
@@ -113,7 +129,12 @@ struct ConnectedAccountsView: View {
     private func load() async {
         isLoading = true
         defer { isLoading = false }
-        connections = (try? await RovaBackendClient.fetchOAuthConnections()) ?? []
+        do {
+            connections = try await RovaBackendClient.fetchOAuthConnections()
+            errorMessage = nil
+        } catch {
+            errorMessage = "Bağlı hesaplar yüklenemedi. Yeniden denemek için aşağı çek."
+        }
     }
 
     private func connect(_ provider: String) async {
@@ -147,6 +168,16 @@ struct ConnectedAccountsView: View {
             WiqoToastCenter.shared.show("Bağlantı kesildi")
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? "Bağlantı kesilemedi."
+        }
+    }
+
+    private func changeAccess(_ provider: String, to level: String) async {
+        errorMessage = nil
+        do {
+            try await RovaBackendClient.setOAuthAccessLevel(provider: provider, level: level)
+            await load()
+        } catch {
+            errorMessage = "Erişim seviyesi değiştirilemedi. Tekrar dene."
         }
     }
 }

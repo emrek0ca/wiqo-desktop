@@ -767,6 +767,48 @@ enum RovaBackendClient {
         return candidates
     }
 
+    struct ActivityItem: Decodable, Identifiable {
+        struct Reference: Decodable { let type: String; let id: String }
+        let id: String
+        let state: String
+        let source: String
+        let title: String
+        let detail: String?
+        let at: String
+        let ref: Reference?
+    }
+
+    struct ActivityFeed: Decodable {
+        let needsAttention: [ActivityItem]
+        let upcoming: [ActivityItem]
+        let recent: [ActivityItem]
+    }
+
+    static func fetchActivity() async throws -> ActivityFeed {
+        try await authorizedGet("activity", as: ActivityFeed.self)
+    }
+
+    struct StoredMemory: Decodable, Identifiable {
+        let id: Int
+        let kind: String
+        let content: String
+        let createdAt: String
+        let updatedAt: String
+    }
+
+    static func fetchStoredMemories() async throws -> [StoredMemory] {
+        struct Response: Decodable { let memories: [StoredMemory] }
+        return try await authorizedGet("memory/items", as: Response.self).memories
+    }
+
+    static func deleteStoredMemory(id: Int) async throws {
+        _ = try await authorizedMutate("memory/items/\(id)", method: "DELETE")
+    }
+
+    static func deleteAllStoredMemories() async throws {
+        _ = try await authorizedMutate("memory/items", method: "DELETE")
+    }
+
     static func acceptMemoryCandidate(id: Int) async throws {
         _ = try await authorizedMutate("memory/candidates/\(id)/accept", method: "POST")
         WiqoMobileReadCache.shared.invalidate(mobileReadCacheKey("memory/candidates"))
@@ -988,6 +1030,7 @@ enum RovaBackendClient {
         let provider: String
         let accountLabel: String?
         let connectedAt: String
+        let accessLevel: String?
     }
 
     static func fetchOAuthConnections() async throws -> [OAuthConnection] {
@@ -1007,6 +1050,11 @@ enum RovaBackendClient {
 
     static func disconnectOAuth(provider: String) async throws {
         _ = try await authorizedMutate("oauth/\(provider)", method: "DELETE")
+    }
+
+    static func setOAuthAccessLevel(provider: String, level: String) async throws {
+        guard level == "read" || level == "write", provider == "google" || provider == "notion" else { throw RovaBackendError.invalidResponse }
+        _ = try await authorizedPut("oauth/\(provider)/access", body: ["accessLevel": level])
     }
 
     /// Sets (or, with `nil`/empty, clears) a user-chosen name for one paired PC - lets more than
@@ -1231,6 +1279,19 @@ enum RovaBackendClient {
         return try await authorizedGet("tasks", as: Response.self).tasks
     }
 
+    struct RovaGoal: Decodable, Identifiable {
+        let id: Int
+        let title: String
+        let createdAt: String
+        let total: Int
+        let done: Int
+    }
+
+    static func fetchGoals() async throws -> [RovaGoal] {
+        struct Response: Decodable { let goals: [RovaGoal] }
+        return try await authorizedGet("tasks/goals", as: Response.self).goals
+    }
+
     static func completeTask(id: Int) async throws {
         _ = try await authorizedMutate("tasks/\(id)/complete", method: "POST")
     }
@@ -1312,6 +1373,21 @@ enum RovaBackendClient {
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
         return try decode(T.self, from: data, response: response)
+    }
+
+    private static func authorizedPut(_ path: String, body: [String: Any]) async throws -> Data {
+        guard let token else { throw RovaBackendError.notAuthenticated }
+        var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await send(request)
+        if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
+        guard (200..<300).contains(response.statusCode) else {
+            throw RovaBackendError.network(serverErrorMessage(from: data) ?? userFacingHTTPMessage(for: response.statusCode))
+        }
+        return data
     }
 
     @discardableResult
