@@ -154,7 +154,7 @@ extension MacSystem {
         let hunkRegex = try? NSRegularExpression(pattern: "^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@")
         while index < patchLines.count {
             if patchLines[index].isEmpty && index == patchLines.count - 1 { break }
-            guard let match = hunkRegex?.firstMatch(in: patchLines[index], range: NSRange(patchLines[index].startIndex..., in: patchLines[index]));
+            guard let match = hunkRegex?.firstMatch(in: patchLines[index], range: NSRange(patchLines[index].startIndex..., in: patchLines[index])),
                   let oldStartRange = Range(match.range(at: 1), in: patchLines[index]),
                   let oldStart = Int(patchLines[index][oldStartRange]) else { return nil }
             let oldCount: Int

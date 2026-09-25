@@ -1,5 +1,8 @@
 import CryptoKit
 import Foundation
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 /// A single step of an AI-generated plan, already translated into the exact same
 /// `CommandType`/`CommandPayload` pair the manual UI buttons send. The backend is the only
@@ -537,6 +540,12 @@ enum RovaBackendClient {
         }
         if let deviceID { requestBody["deviceId"] = deviceID.uuidString }
         if let turnCount { requestBody["turnCount"] = turnCount }
+        if deviceResults.isEmpty, files.isEmpty, attachments.isEmpty,
+           let lastUser = messages.last(where: { $0.role == "user" })?.content,
+           let hint = await WiqoOnDeviceRouter.hint(for: lastUser),
+           let object = try? JSONSerialization.jsonObject(with: hint) {
+            requestBody["intentHint"] = object
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [.fragmentsAllowed])
         guard (request.httpBody?.count ?? 0) <= Self.maxCopilotRequestBodyBytes else {
             throw RovaBackendError.copilotPayloadTooLarge
@@ -671,6 +680,7 @@ enum RovaBackendClient {
         if let terminalGrant {
             body["terminalGrant"] = ["grantId": terminalGrant.grantId, "signature": terminalGrant.signature]
         }
+        defer { reconcileLocalReminders() }
         return try await authorizedPost("copilot/confirm", body: body, as: BackendConfirmationResponse.self)
     }
 
@@ -1440,11 +1450,13 @@ enum RovaBackendClient {
     }
 
     static func pauseAutomation(id: Int) async throws -> AutomationActionResponse {
-        try await authorizedPost("automations/\(id)/pause", body: [:], as: AutomationActionResponse.self)
+        defer { reconcileLocalReminders() }
+        return try await authorizedPost("automations/\(id)/pause", body: [:], as: AutomationActionResponse.self)
     }
 
     static func resumeAutomation(id: Int) async throws -> AutomationActionResponse {
-        try await authorizedPost("automations/\(id)/resume", body: [:], as: AutomationActionResponse.self)
+        defer { reconcileLocalReminders() }
+        return try await authorizedPost("automations/\(id)/resume", body: [:], as: AutomationActionResponse.self)
     }
 
     static func runAutomationNow(id: Int) async throws -> AutomationActionResponse {
@@ -1465,6 +1477,7 @@ enum RovaBackendClient {
         if let targetDeviceId { values["targetDeviceId"] = targetDeviceId }
         let data = try JSONSerialization.data(withJSONObject: values)
         _ = try await authorizedJSON("automations/\(id)", method: "PATCH", body: data)
+        reconcileLocalReminders()
     }
 
     static func retryAutomationRun(automationID: Int, runID: Int) async throws -> AutomationActionResponse {
@@ -1502,6 +1515,37 @@ enum RovaBackendClient {
 
     static func cancelAutomation(id: Int) async throws {
         _ = try await authorizedMutate("automations/\(id)", method: "DELETE")
+        reconcileLocalReminders()
+    }
+
+    // MARK: - On-device reminders
+
+    /// A notification-only automation the phone schedules itself (backend: automation/localDelivery.ts).
+    struct LocalNotification: Decodable, Sendable {
+        let automationId: Int
+        let specHash: String?
+        let title: String
+        let body: String
+        let hour: Int
+        let minute: Int
+        /// 0 = Sunday ... 6 = Saturday, like cron; nil = every day.
+        let weekdays: [Int]?
+        let timezone: String
+    }
+
+    static func fetchLocalNotifications() async throws -> [LocalNotification] {
+        struct Response: Decodable { let notifications: [LocalNotification] }
+        return try await authorizedGet("automations/local-notifications", as: Response.self).notifications
+    }
+
+    static func leaseLocalDelivery(_ automationIDs: [Int]) async throws -> [Int] {
+        struct Response: Decodable { let leased: [Int] }
+        return try await authorizedPost("automations/local-delivery", body: ["automationIds": automationIDs], as: Response.self).leased
+    }
+
+    /// Automations can change from chat approvals or the detail screen; the phone's own schedule follows.
+    static func reconcileLocalReminders() {
+        Task { @MainActor in WiqoLocalReminders.shared.reconcile() }
     }
 
     private static func authorizedGet<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
@@ -1850,3 +1894,128 @@ extension RovaBackendClient.MemoryCandidate: Encodable {
         try container.encode(createdAt, forKey: .createdAt)
     }
 }
+
+
+/// Edge routing: when Apple's on-device model is available, the phone guesses the request's route
+/// itself and sends it as `intentHint`, so the backend can skip its paid 20b router call. It is only
+/// a hint - the backend validates it exactly like its own router's output, keeps every policy check,
+/// and never lets it ask the user a question. Returns JSON in route_intent's shape, or nil.
+enum WiqoOnDeviceRouter {
+    private static let timeout: Duration = .milliseconds(1_000)
+
+    static func hint(for message: String) async -> Data? {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.count >= 4, text.count <= 1_200 else { return nil }
+        #if canImport(FoundationModels)
+        // iPhone 13/14 and other devices without Apple Intelligence (or with it turned off) stop
+        // here at no cost: no hint is sent and the backend routes the request as before.
+        if #available(iOS 26.0, *), WiqoOnDeviceIntentModel.isUsable {
+            return await withTaskGroup(of: Data?.self) { group in
+                group.addTask { await WiqoOnDeviceIntentModel.route(text) }
+                group.addTask {
+                    try? await Task.sleep(for: timeout)
+                    return nil
+                }
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                return first
+            }
+        }
+        #endif
+        return nil
+    }
+}
+
+#if canImport(FoundationModels)
+@available(iOS 26.0, *)
+enum WiqoOnDeviceIntentModel {
+    @Generable
+    enum IntentClass: String {
+        case conversation, information, research, cloud_read, cloud_write, pc_action, terminal_action, document_project, automation_setup, automation_manage, clarification, other_task
+    }
+
+    @Generable
+    enum Target: String {
+        case chat, cloud_tool, pc, project, automation, research, clarification
+    }
+
+    @Generable
+    enum Freshness: String {
+        case none, current
+    }
+
+    @Generable
+    enum SideEffect: String {
+        case none, read, write, device
+    }
+
+    @Generable
+    enum ToolGroup: String {
+        case cloud, documents, images, code, automation, tasks, browser, research
+    }
+
+    @Generable
+    enum ProjectKind: String {
+        case website, document, presentation, images, none
+    }
+
+    @Generable
+    struct Decision {
+        @Guide(description: "İsteğin türü. Tekrarlı zamanlama veya hatırlatma automation_setup'tır; belge adı bunu değiştirmez.")
+        let intentClass: IntentClass
+        @Guide(description: "İşin yürütüleceği yer.")
+        let target: Target
+        @Guide(description: "Güncel/canlı bilgi gerekiyorsa current.")
+        let freshness: Freshness
+        let sideEffect: SideEffect
+        @Guide(description: "Gerekli araç grupları; en az olanı seç.", .maximumCount(4))
+        let candidateToolGroups: [ToolGroup]
+        @Guide(description: "Çok uzun belge, sunum, web sitesi veya görsel seti ise türü; değilse none.")
+        let projectKind: ProjectKind
+        @Guide(description: "Karardan ne kadar eminsin.", .range(0.0...1.0))
+        let confidence: Double
+    }
+
+    private static let instructions = """
+    Wiqo asistanına gelen bir isteği yalnızca sınıflandırırsın; işi yapmaz, araç çağırmaz, yetki vermezsin. \
+    Kullanıcının kendi PC/dosya kapsamı güncellik gerektirmez. Olumsuz istek ("gönderme") sohbettir. \
+    Emin değilsen düşük confidence ver.
+    """
+
+    /// Checked on every request (cheap): the user can turn Apple Intelligence on or off at any time.
+    static var isUsable: Bool {
+        let model = SystemLanguageModel.default
+        guard case .available = model.availability else { return false }
+        return model.supportsLocale(Locale(identifier: "tr_TR"))
+    }
+
+    static func route(_ message: String) async -> Data? {
+        let model = SystemLanguageModel.default
+        guard isUsable else { return nil }
+        do {
+            let session = LanguageModelSession(model: model, instructions: instructions)
+            let response = try await session.respond(
+                to: message,
+                generating: Decision.self,
+                options: GenerationOptions(sampling: .greedy, maximumResponseTokens: 160)
+            )
+            let decision = response.content
+            let value: [String: Any] = [
+                "intentClass": decision.intentClass.rawValue,
+                "target": decision.target.rawValue,
+                "freshness": decision.freshness.rawValue,
+                "sideEffect": decision.sideEffect.rawValue,
+                "clarificationQuestion": "",
+                "candidateToolGroups": decision.candidateToolGroups.map(\.rawValue),
+                "reason": "model_classification",
+                "confidence": decision.confidence,
+                "projectKind": decision.projectKind.rawValue,
+                "projectTitle": ""
+            ]
+            return try JSONSerialization.data(withJSONObject: value)
+        } catch {
+            return nil
+        }
+    }
+}
+#endif

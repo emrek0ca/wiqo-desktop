@@ -645,10 +645,13 @@ final class MacBackendChannel: NSObject {
         guard terminalJobs[id] == nil else { return }
         let job = TerminalJobRecord(id: id, grantId: grantId, workingDirectory: directory)
         terminalJobs[id] = job
+        // A weak reference that is itself a `let` can be captured by the process-start callback,
+        // which runs on another thread; capturing the detached task's own `self` var cannot.
+        weak let owner = self
         Task.detached(priority: .userInitiated) { [weak self] in
             let outcome = MacSystem.executeTerminalCommand(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, processStarted: { processIdentifier in
-                Task { @MainActor [weak self] in
-                    guard let self, let current = self.terminalJobs[id] else { return }
+                Task { @MainActor in
+                    guard let owner, let current = owner.terminalJobs[id] else { return }
                     current.processIdentifier = processIdentifier
                     if current.cancelRequested { MacSystem.terminateTerminalProcess(processIdentifier) }
                 }
