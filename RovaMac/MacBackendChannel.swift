@@ -84,6 +84,25 @@ final class MacBackendChannel: NSObject {
     private var reconnectAttempt = 0
     private var currentToken: String?
     private var currentRefreshToken: String?
+    private final class TerminalJobRecord {
+        let id: String
+        let grantId: String
+        let workingDirectory: String
+        var state = "running"
+        var processIdentifier: Int32?
+        var cancelRequested = false
+        var output: ProcessOutputContent?
+        var message = "Terminal işi çalışıyor."
+        var errorCode: String?
+        let startedAt = Date()
+
+        init(id: String, grantId: String, workingDirectory: String) {
+            self.id = id
+            self.grantId = grantId
+            self.workingDirectory = workingDirectory
+        }
+    }
+    private var terminalJobs: [String: TerminalJobRecord] = [:]
     func accessTokenForFileTransfer() async -> String? {
         if let refresh = currentRefreshToken,
            let credentials = await refreshCredentials(refreshToken: refresh),
@@ -472,6 +491,13 @@ final class MacBackendChannel: NSObject {
     /// signed in to the account (or the backend itself, if it were ever compromised) run commands
     /// this Mac never actually paired to accept unsigned.
     private func executeInteractiveCommand(_ payload: InteractiveCommandPayload, on task: URLSessionWebSocketTask) {
+        if payload.request.signatureVersion != 2 {
+            let now = Date()
+            let error = RovaError(code: "SIGNATURE_VERSION_REQUIRED", message: "Güvenli komut imzası için Wiqo iPhone uygulamasını güncelleyin.", category: "permission")
+            let result = CommandResult(commandID: payload.request.id, status: .failed, message: error.message, startedAt: now, finishedAt: now, error: error)
+            sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)
+            return
+        }
         guard let token = pairedDeviceToken(), RovaValidation.verifyRequestSignature(request: payload.request, token: token) else {
             let now = Date()
             let error = RovaError(code: "INVALID_SIGNATURE", message: "Komut kriptografik imzası geçersiz.")
@@ -492,12 +518,18 @@ final class MacBackendChannel: NSObject {
     /// turned off in Wiqo's capability settings turns this off too.
     private func executeTerminalCommand(_ payload: TerminalCommandPayload, on task: URLSessionWebSocketTask) {
         let request = payload.request
-        let grant = request.grant
+        pruneTerminalJobs()
+        let action = request.action ?? "run"
+        if action == "get_job" || action == "cancel_job" {
+            handleTerminalJobAction(action, jobId: request.jobId, grant: request.grant, commandId: payload.commandId, on: task)
+            return
+        }
+        guard let grant = request.grant else {
+            sendTerminalDenial(payload.commandId, code: "TERMINAL_GRANT_INVALID", message: "Terminal oturum izni eksik.", on: task)
+            return
+        }
         let deny: (String, String) -> Void = { [weak self] code, message in
-            let now = Date()
-            let error = RovaError(code: code, message: message, category: "permission")
-            let result = CommandResult(commandID: UUID(), status: .denied, message: message, startedAt: now, finishedAt: now, error: error)
-            self?.sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)
+            self?.sendTerminalDenial(payload.commandId, code: code, message: message, on: task)
         }
         guard CapabilityStore.shared.isEnabled("device.code.execute") else {
             deny("TERMINAL_DISABLED", "Kod çalıştırma Wiqo Mac ayarlarında kapalı.")
@@ -508,13 +540,38 @@ final class MacBackendChannel: NSObject {
             deny("TERMINAL_GRANT_INVALID", "Terminal oturum izni geçersiz ya da süresi dolmuş; telefondan yeniden onay gerekiyor.")
             return
         }
-        guard let root = RovaTerminalPolicy.resolveDirectory(grant.rootDirectory),
-              let directory = RovaTerminalPolicy.resolveDirectory(request.workingDirectory),
+        guard let requestedDirectory = request.workingDirectory,
+              let root = RovaTerminalPolicy.resolveDirectory(grant.rootDirectory),
+              let directory = RovaTerminalPolicy.resolveDirectory(requestedDirectory),
               RovaTerminalPolicy.isWithin(directory, root: root) else {
             deny("TERMINAL_OUTSIDE_GRANT", "Çalışma klasörü onaylanan klasörün dışında.")
             return
         }
-        let command = request.command
+        if action == "apply_patch" {
+            guard grant.mode == "full",
+                  let rawFilePath = request.filePath,
+                  let filePath = RovaTerminalPolicy.resolveExistingFile(rawFilePath, workingDirectory: directory, root: root),
+                  let patch = request.patch, patch.utf8.count <= 120_000 else {
+                deny("TERMINAL_PATCH_SCOPE", "Yama için tam izin ve onaylı klasördeki mevcut bir dosya gerekiyor.")
+                return
+            }
+            let applied = MacSystem.applyTerminalPatch(filePath: filePath, patch: patch, expectedPatchPath: rawFilePath)
+            let now = Date()
+            if let error = applied.error {
+                let result = CommandResult(commandID: UUID(), status: .failed, message: error.message, startedAt: now, finishedAt: now, error: error)
+                sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)
+                return
+            }
+            let job = TerminalJobContent(jobId: payload.commandId, status: "completed", diff: applied.diff, applied: true, message: "Yama uygulandı.")
+            let result = CommandResult(commandID: UUID(), status: .completed, message: "Yama uygulandı; değişiklik diff'i döndürüldü.", startedAt: now, finishedAt: now, data: .terminalJob(job))
+            sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)
+            return
+        }
+        guard action == "run" || action == "start_job" else {
+            deny("TERMINAL_ACTION_INVALID", "Terminal işlemi desteklenmiyor.")
+            return
+        }
+        let command = request.command ?? ""
         guard !command.isEmpty, command.count <= 4_000, !command.contains("\0") else {
             deny("TERMINAL_COMMAND_INVALID", "Komut geçersiz.")
             return
@@ -527,25 +584,126 @@ final class MacBackendChannel: NSObject {
             deny("TERMINAL_READ_ONLY", "Bu oturum yalnızca okuma izni veriyor; değiştiren komut için yeni onay gerekiyor.")
             return
         }
-        let execution = CodeExecutionPayload(
-            language: "shell",
-            code: command,
-            timeoutSeconds: max(1, min(110, request.timeoutSeconds ?? 60)),
-            allowNetwork: true,
-            scope: "computer",
-            shell: "zsh",
-            workingDirectory: directory
-        )
+        if action == "start_job" {
+            guard let jobId = request.jobId, UUID(uuidString: jobId) != nil else {
+                deny("TERMINAL_JOB_ID_INVALID", "Arka plan işi kimliği geçersiz.")
+                return
+            }
+            if let existing = terminalJobs[jobId], existing.grantId != grant.id {
+                deny("TERMINAL_GRANT_INVALID", "Bu iş farklı bir terminal iznine bağlı.")
+                return
+            }
+            let remainingSeconds = max(1, grant.expiresAt - Int(Date().timeIntervalSince1970))
+            startTerminalJob(id: jobId, grantId: grant.id, command: command, directory: directory, timeoutSeconds: max(1, min(1800, min(request.timeoutSeconds ?? 600, remainingSeconds))))
+            sendTerminalJobSnapshot(jobId, commandId: payload.commandId, on: task)
+            return
+        }
+        let timeoutSeconds = max(1, min(110, request.timeoutSeconds ?? 60))
         let commandId = payload.commandId
         Task.detached(priority: .userInitiated) { [weak self] in
             let started = Date()
-            let outcome = MacSystem.executeCode(execution)
+            let outcome = MacSystem.executeTerminalCommand(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, processStarted: { _ in })
             let finished = Date()
             let status: CommandStatus = outcome.error == nil ? .completed : (outcome.error?.category == "timeout" ? .unknown : .failed)
             let message = outcome.error?.message ?? "Komut tamamlandı."
             let result = CommandResult(commandID: UUID(), status: status, message: message, startedAt: started, finishedAt: finished, data: outcome.data, error: outcome.error)
             await MainActor.run { self?.sendInteractiveCommandResult(commandId: commandId, result: result, on: task) }
         }
+    }
+
+    private func sendTerminalDenial(_ commandId: String, code: String, message: String, on task: URLSessionWebSocketTask) {
+        let now = Date()
+        let error = RovaError(code: code, message: message, category: "permission")
+        let result = CommandResult(commandID: UUID(), status: .denied, message: message, startedAt: now, finishedAt: now, error: error)
+        sendInteractiveCommandResult(commandId: commandId, result: result, on: task)
+    }
+
+    private func handleTerminalJobAction(_ action: String, jobId: String?, grant: TerminalGrantPayload?, commandId: String, on task: URLSessionWebSocketTask) {
+        guard let jobId, UUID(uuidString: jobId) != nil, let job = terminalJobs[jobId] else {
+            let now = Date()
+            let value = TerminalJobContent(jobId: jobId ?? "", status: "unknown", message: "Bu Mac sürecinde iş bulunamadı; yeniden başlatıldıysa sonucu bilinmiyor.", errorCode: "TERMINAL_JOB_UNKNOWN")
+            let result = CommandResult(commandID: UUID(), status: .unknown, message: value.message ?? "İşin sonucu bilinmiyor.", startedAt: now, finishedAt: now, data: .terminalJob(value), error: RovaError(code: "TERMINAL_JOB_UNKNOWN", message: value.message ?? "İşin sonucu bilinmiyor.", category: "unknown"))
+            sendInteractiveCommandResult(commandId: commandId, result: result, on: task)
+            return
+        }
+        guard let grant, let token = pairedDeviceToken(), grant.id == job.grantId,
+              RovaTerminalPolicy.verifyGrant(grantId: grant.id, rootDirectory: grant.rootDirectory, mode: grant.mode, expiresAt: grant.expiresAt, signature: grant.signature, token: token),
+              let root = RovaTerminalPolicy.resolveDirectory(grant.rootDirectory),
+              RovaTerminalPolicy.isWithin(job.workingDirectory, root: root) else {
+            sendTerminalDenial(commandId, code: "TERMINAL_GRANT_INVALID", message: "İşin imzalı terminal izni doğrulanamadı.", on: task)
+            return
+        }
+        if action == "cancel_job", job.state == "running" {
+            job.cancelRequested = true
+            if let processIdentifier = job.processIdentifier { MacSystem.terminateTerminalProcess(processIdentifier) }
+            job.message = "İptal istendi; PC işlemi durduruluyor."
+        }
+        sendTerminalJobSnapshot(jobId, commandId: commandId, on: task)
+    }
+
+    private func startTerminalJob(id: String, grantId: String, command: String, directory: String, timeoutSeconds: Int) {
+        guard terminalJobs[id] == nil else { return }
+        let job = TerminalJobRecord(id: id, grantId: grantId, workingDirectory: directory)
+        terminalJobs[id] = job
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let outcome = MacSystem.executeTerminalCommand(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, processStarted: { processIdentifier in
+                Task { @MainActor [weak self] in
+                    guard let self, let current = self.terminalJobs[id] else { return }
+                    current.processIdentifier = processIdentifier
+                    if current.cancelRequested { MacSystem.terminateTerminalProcess(processIdentifier) }
+                }
+            })
+            await MainActor.run { [weak self] in
+                guard let self, let current = self.terminalJobs[id] else { return }
+                if case let .processOutput(output)? = outcome.data { current.output = output }
+                if current.cancelRequested {
+                    current.state = "cancelled"
+                    current.message = "Terminal işi kullanıcı tarafından durduruldu."
+                    current.errorCode = nil
+                } else if outcome.error?.category == "timeout" {
+                    current.state = "unknown"
+                    current.message = "Terminal işi zaman aşımına uğradı; sonucu doğrulanamadı."
+                    current.errorCode = outcome.error?.code
+                } else if let error = outcome.error {
+                    current.state = "failed"
+                    current.message = error.message
+                    current.errorCode = error.code
+                } else {
+                    current.state = "completed"
+                    current.message = "Terminal işi tamamlandı."
+                }
+                current.processIdentifier = nil
+                self.sendTerminalJobStateUpdate(current)
+            }
+        }
+    }
+
+    private func sendTerminalJobStateUpdate(_ job: TerminalJobRecord) {
+        guard let task, task.state == .running else { return }
+        let value: [String: Any] = [
+            "type": "terminalJobUpdate",
+            "jobId": job.id,
+            "state": job.state,
+            "errorCode": job.errorCode.map { $0 as Any } ?? NSNull()
+        ]
+        guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value), let text = String(data: data, encoding: .utf8) else { return }
+        task.send(.string(text)) { _ in }
+    }
+
+    private func sendTerminalJobSnapshot(_ id: String, commandId: String, on task: URLSessionWebSocketTask) {
+        let now = Date()
+        guard let job = terminalJobs[id] else { return }
+        let value = TerminalJobContent(jobId: job.id, status: job.state, output: job.output, message: job.message, errorCode: job.errorCode)
+        let commandStatus: CommandStatus = job.state == "unknown" ? .unknown : job.state == "failed" ? .failed : .completed
+        let result = CommandResult(commandID: UUID(uuidString: id) ?? UUID(), status: commandStatus, message: job.message, startedAt: job.startedAt, finishedAt: now, data: .terminalJob(value), error: job.errorCode.map { RovaError(code: $0, message: job.message, category: job.state == "unknown" ? "unknown" : "tool_failure") })
+        sendInteractiveCommandResult(commandId: commandId, result: result, on: task)
+    }
+
+    private func pruneTerminalJobs() {
+        let completed = terminalJobs.values.filter { $0.state != "running" }.sorted { $0.startedAt < $1.startedAt }
+        for job in completed where Date().timeIntervalSince(job.startedAt) > 24 * 60 * 60 { terminalJobs.removeValue(forKey: job.id) }
+        let remaining = terminalJobs.values.filter { $0.state != "running" }.sorted { $0.startedAt < $1.startedAt }
+        for job in remaining.prefix(max(0, remaining.count - 50)) { terminalJobs.removeValue(forKey: job.id) }
     }
 
     private func sendInteractiveCommandResult(commandId: String, result: CommandResult, on task: URLSessionWebSocketTask) {
@@ -760,10 +918,14 @@ private struct TerminalGrantPayload: Decodable, Sendable {
 }
 
 private struct TerminalCommandRequest: Decodable, Sendable {
-    let grant: TerminalGrantPayload
-    let command: String
-    let workingDirectory: String
+    let action: String?
+    let grant: TerminalGrantPayload?
+    let command: String?
+    let workingDirectory: String?
     let timeoutSeconds: Int?
+    let jobId: String?
+    let filePath: String?
+    let patch: String?
 }
 
 private struct TerminalCommandPayload: Decodable, Sendable {

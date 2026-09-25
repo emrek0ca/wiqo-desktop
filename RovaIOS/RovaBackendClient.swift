@@ -902,6 +902,25 @@ enum RovaBackendClient {
         try await authorizedGet("activity", as: ActivityFeed.self)
     }
 
+    struct TerminalJobCancellationResponse: Decodable {
+        let ok: Bool
+        let state: String
+        let errorCode: String?
+    }
+
+    struct TerminalGrantRevocationResponse: Decodable {
+        let revoked: Bool
+        let unknownJobCount: Int
+    }
+
+    static func cancelTerminalJob(id: String) async throws -> TerminalJobCancellationResponse {
+        try await authorizedPost("terminal-jobs/\(id)/cancel", body: [:], as: TerminalJobCancellationResponse.self)
+    }
+
+    static func revokeTerminalGrant(id: String) async throws -> TerminalGrantRevocationResponse {
+        try await authorizedPost("terminal-grants/\(id)/revoke", body: [:], as: TerminalGrantRevocationResponse.self)
+    }
+
     struct StoredMemory: Decodable, Identifiable {
         let id: Int
         let kind: String

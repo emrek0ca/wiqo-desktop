@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text;
+using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 
 namespace RovaWindows;
 
@@ -23,8 +25,28 @@ public sealed class WindowsRuntime : IAsyncDisposable
     private int queued;
     private Func<string, string, CancellationToken, Task<string?>>? fileUploader;
     private Func<string, string, CancellationToken, Task<bool>>? fileAccessApproval;
+    private Func<string, string, string?, Task>? terminalJobReporter;
+    private readonly ConcurrentDictionary<string, WindowsTerminalJob> terminalJobs = new(StringComparer.OrdinalIgnoreCase);
+    private string? pairingToken;
+
+    private sealed class WindowsTerminalJob(string id, string grantId, string directory)
+    {
+        public string Id { get; } = id;
+        public string GrantId { get; } = grantId;
+        public string Directory { get; } = directory;
+        public object Gate { get; } = new();
+        public string State { get; set; } = "running";
+        public string Message { get; set; } = "Terminal işi çalışıyor.";
+        public string? ErrorCode { get; set; }
+        public bool CancelRequested { get; set; }
+        public Process? Process { get; set; }
+        public Task? Worker { get; set; }
+        public object? Output { get; set; }
+        public DateTimeOffset StartedAt { get; } = DateTimeOffset.UtcNow;
+    }
 
     public void ConfigureFileUploader(Func<string, string, CancellationToken, Task<string?>> uploader) => fileUploader = uploader;
+    public void ConfigureTerminalJobReporter(Func<string, string, string?, Task> reporter) => terminalJobReporter = reporter;
     /// The future Windows host must present the exact search/send target to its user.
     /// Without a host approval provider, private-file capabilities are not advertised or run.
     public void ConfigureFileAccessApproval(Func<string, string, CancellationToken, Task<bool>> approval) => fileAccessApproval = approval;
@@ -37,6 +59,9 @@ public sealed class WindowsRuntime : IAsyncDisposable
 
     public string DeviceId { get; } = LoadDeviceId();
     public string DisplayName => Environment.MachineName;
+    public string? PairingToken => pairingToken;
+    public IReadOnlyList<string> Features => PairingToken is null ? Array.Empty<string>() : new[] { "terminal-session-v1" };
+    public void SetPairingToken(string? token) => pairingToken = string.IsNullOrWhiteSpace(token) ? null : token;
 
     public IReadOnlyList<string> Capabilities => WindowsCapabilityManifest.Capabilities
         .Where(value => fileAccessApproval is not null || !value.StartsWith("device.files.", StringComparison.Ordinal))
@@ -46,8 +71,8 @@ public sealed class WindowsRuntime : IAsyncDisposable
     {
         capability,
         displayName = capability,
-        access = capability == "device.code.execute" || capability.StartsWith("device.files.", StringComparison.Ordinal) ? "confirmation" : "automatic",
-        requiredPermissions = capability == "device.code.execute" || capability.StartsWith("device.files.", StringComparison.Ordinal) ? new[] { "user_presence" } : Array.Empty<string>(),
+        access = capability.StartsWith("device.files.", StringComparison.Ordinal) ? "confirmation" : "automatic",
+        requiredPermissions = capability.StartsWith("device.files.", StringComparison.Ordinal) ? new[] { "user_presence" } : Array.Empty<string>(),
         message = ""
     }).Cast<object>().ToArray();
 
@@ -76,7 +101,7 @@ public sealed class WindowsRuntime : IAsyncDisposable
                     return Failed(commandId, started, "FILE_ACCESS_DENIED", "Dosya erişimine izin verilmedi.");
             }
             // Side effects remain ordered; read-only operations can execute without this gate.
-            var sideEffect = operation is "openURL" or "executeCode" or "sendFileToPhone";
+            var sideEffect = operation is "openURL" or "sendFileToPhone";
             if (sideEffect) await sideEffectGate.WaitAsync(linked.Token).ConfigureAwait(false);
             try
             {
@@ -156,8 +181,6 @@ public sealed class WindowsRuntime : IAsyncDisposable
                 var artifactId = await fileUploader(filePath, commandId, cancellationToken).ConfigureAwait(false);
                 if (artifactId is null) return Failed(commandId, started, "TRANSFER_FAILED", "Dosya telefona iletilemedi.");
                 return new WindowsCommandResult(commandId, "completed", "Dosya telefona gönderildi.", started, DateTimeOffset.UtcNow, new { kind = "fileTransfer", value = artifactId });
-            case "executeCode":
-                return await ExecuteCodeAsync(commandId, payload, started, cancellationToken).ConfigureAwait(false);
             default:
                 return Failed(commandId, started, "UNSUPPORTED_OPERATION", "Bu işlem Windows'ta desteklenmiyor.");
         }
@@ -267,85 +290,260 @@ public sealed class WindowsRuntime : IAsyncDisposable
         }
     }
 
-    private static async Task<WindowsCommandResult> ExecuteCodeAsync(string commandId, JsonElement payload, DateTimeOffset started, CancellationToken cancellationToken)
+    /// Executes the terminal-session protocol. Authority comes from the phone-signed grant and is
+    /// revalidated locally for every command; backend routing alone never grants Windows access.
+    public async Task<WindowsCommandResult> ExecuteTerminalCommandAsync(string commandId, JsonElement request, CancellationToken cancellationToken = default)
     {
-        if (!payload.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Object)
-            return Failed(commandId, started, "INVALID_PAYLOAD", "Terminal isteği geçersiz.");
+        var started = DateTimeOffset.UtcNow;
+        var action = StringProperty(request, "action");
+        if (action.Length == 0) action = "run";
+        if (action is "get_job" or "cancel_job") return await HandleTerminalJobActionAsync(commandId, request, action, started, cancellationToken).ConfigureAwait(false);
+        if (action is not ("run" or "start_job" or "apply_patch")) return Failed(commandId, started, "TERMINAL_ACTION_INVALID", "Terminal işlemi desteklenmiyor.");
+        if (!request.TryGetProperty("grant", out var grant) || grant.ValueKind != JsonValueKind.Object ||
+            !RovaTerminalPolicy.VerifyGrant(grant, PairingToken, out var rawRoot, out var mode))
+            return Failed(commandId, started, "TERMINAL_GRANT_INVALID", "Terminal izni geçersiz veya süresi dolmuş.", "denied");
+        var root = RovaTerminalPolicy.ResolveDirectory(rawRoot);
+        var rawDirectory = StringProperty(request, "workingDirectory");
+        var directory = RovaTerminalPolicy.ResolveDirectory(rawDirectory);
+        if (root is null || directory is null || !RovaTerminalPolicy.IsWithin(directory, root))
+            return Failed(commandId, started, "TERMINAL_OUTSIDE_GRANT", "Çalışma klasörü imzalı iznin dışında veya güvenli biçimde çözümlenemedi.", "denied");
 
-        var language = StringProperty(value, "language").ToLowerInvariant();
-        var code = StringProperty(value, "code");
-        var scope = StringProperty(value, "scope").ToLowerInvariant();
-        if (scope.Length == 0) scope = "sandbox";
-        var shell = StringProperty(value, "shell").ToLowerInvariant();
-        if (shell.Length == 0) shell = "default";
-        var workingDirectory = StringProperty(value, "workingDirectory");
-        if (string.IsNullOrWhiteSpace(code) || code.Length > 100_000 || language is not ("shell" or "python" or "javascript") || scope is not ("sandbox" or "computer"))
-            return Failed(commandId, started, "INVALID_PAYLOAD", "Terminal dili, kodu veya kapsamı geçersiz.");
-        if (scope == "sandbox")
-            return Failed(commandId, started, "SANDBOX_UNAVAILABLE", "Windows izole kod ortamı bu sürümde kullanılamıyor; gerçek PC terminali için açık onay gerekir.");
+        if (action == "apply_patch")
+        {
+            if (mode != "full") return Failed(commandId, started, "TERMINAL_READ_ONLY", "Dosya yaması için tam terminal izni gerekiyor.", "denied");
+            var rawFilePath = StringProperty(request, "filePath");
+            var filePath = RovaTerminalPolicy.ResolveExistingFile(rawFilePath, directory, root);
+            var patch = StringProperty(request, "patch");
+            if (filePath is null || patch.Length is < 1 or > 120_000) return Failed(commandId, started, "TERMINAL_PATCH_SCOPE", "Yama mevcut dosya ve onaylı klasör sınırlarını karşılamıyor.", "denied");
+            var diff = ApplyTerminalPatch(filePath, rawFilePath, patch);
+            if (diff is null) return Failed(commandId, started, "TERMINAL_PATCH_REJECTED", "Yama mevcut dosyada bağlam eşleşmedi veya güvenli tek dosya biçiminde değil.");
+            return new WindowsCommandResult(commandId, "completed", "Yama uygulandı; değişiklik diff'i döndürüldü.", started, DateTimeOffset.UtcNow,
+                new { kind = "terminalJob", value = new { jobId = commandId, status = "completed", diff = diff[..Math.Min(diff.Length, 12_000)], applied = true, message = "Yama uygulandı." } });
+        }
 
-        var arguments = new List<string>();
-        if (value.TryGetProperty("arguments", out var rawArguments) && rawArguments.ValueKind == JsonValueKind.Array)
-            arguments.AddRange(rawArguments.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString() ?? ""));
-        if (arguments.Count > 20 || arguments.Any(argument => argument.Length == 0 || argument.Length > 200 || argument.Contains('\0')))
-            return Failed(commandId, started, "INVALID_PAYLOAD", "Terminal argümanları geçersiz.");
+        var command = StringProperty(request, "command").Trim();
+        var shell = StringProperty(request, "shell").ToLowerInvariant();
+        if (shell.Length == 0) shell = "powershell";
+        if (shell is not ("powershell" or "cmd")) return Failed(commandId, started, "TERMINAL_SHELL_UNSUPPORTED", "Windows'ta yalnızca PowerShell veya cmd destekleniyor.");
+        if (command.Length is < 1 or > 4_000 || command.Contains('\0')) return Failed(commandId, started, "TERMINAL_COMMAND_INVALID", "Terminal komutu geçersiz.");
+        if (RovaTerminalPolicy.IsForbidden(command)) return Failed(commandId, started, "TERMINAL_COMMAND_FORBIDDEN", "Bu komut Windows terminal oturumlarında yasak.", "denied");
+        if (mode != "full" && !RovaTerminalPolicy.IsReadOnly(command, shell)) return Failed(commandId, started, "TERMINAL_READ_ONLY", "Bu oturum yalnızca salt okuma komutlarına izin veriyor.", "denied");
+        var requestedSeconds = request.TryGetProperty("timeoutSeconds", out var timeout) && timeout.TryGetInt32(out var suppliedTimeout)
+            ? suppliedTimeout : action == "start_job" ? 600 : 60;
+        var remainingSeconds = Math.Max(1, (int)(grant.GetProperty("expiresAt").GetInt64() - DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+        var timeoutSeconds = Math.Clamp(requestedSeconds, 1, action == "start_job" ? Math.Min(1800, remainingSeconds) : 110);
+        var processCommand = BuildTerminalProcess(command, shell);
+        if (processCommand is null) return Failed(commandId, started, "TERMINAL_SHELL_UNSUPPORTED", "Windows shell başlatılamadı.");
+        if (action == "start_job")
+        {
+            var jobId = StringProperty(request, "jobId");
+            if (!Guid.TryParse(jobId, out _)) return Failed(commandId, started, "TERMINAL_JOB_ID_INVALID", "Arka plan işi kimliği geçersiz.");
+            PruneTerminalJobs();
+            var job = new WindowsTerminalJob(jobId, RovaTerminalPolicy.String(grant, "id"), directory);
+            if (!terminalJobs.TryAdd(jobId, job))
+                return terminalJobs.TryGetValue(jobId, out var existing) && string.Equals(existing.GrantId, job.GrantId, StringComparison.OrdinalIgnoreCase)
+                    ? TerminalJobResult(commandId, existing, started)
+                    : Failed(commandId, started, "TERMINAL_GRANT_INVALID", "Bu iş farklı bir terminal iznine bağlı.", "denied");
+            job.Worker = Task.Run(() => RunTerminalJobAsync(job, processCommand.Value.FileName, processCommand.Value.Arguments, timeoutSeconds));
+            return TerminalJobResult(commandId, job, started);
+        }
 
-        var directory = string.IsNullOrWhiteSpace(workingDirectory) ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) : workingDirectory;
-        if (!Directory.Exists(directory))
-            return Failed(commandId, started, "INVALID_WORKING_DIRECTORY", "Çalışma klasörü bulunamadı.");
-
-        var command = BuildCommand(language, shell, code, arguments, directory);
-        if (command is null) return Failed(commandId, started, "UNSUPPORTED_SHELL", "Bu shell Windows'ta desteklenmiyor.");
-        var scriptPath = language == "shell" ? null : command.Value.Arguments.FirstOrDefault();
-        ProcessOutcome outcome;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, cancellationToken);
         try
         {
-            outcome = await RunProcessAsync(command.Value.FileName, command.Value.Arguments, directory, cancellationToken).ConfigureAwait(false);
+            var outcome = await RunProcessAsync(processCommand.Value.FileName, processCommand.Value.Arguments, directory, linked.Token, timeoutSeconds).ConfigureAwait(false);
+            var stdout = RovaTerminalPolicy.RedactSecrets(outcome.Stdout);
+            var stderr = RovaTerminalPolicy.RedactSecrets(outcome.Stderr);
+            var output = new { kind = "processOutput", value = new { language = "shell", exitCode = outcome.TimedOut ? -1 : outcome.ExitCode, stdout, stderr, truncated = outcome.Truncated, durationMs = outcome.DurationMs } };
+            if (outcome.TimedOut) return new WindowsCommandResult(commandId, "unknown", "Terminal komutu zaman aşımına uğradı; sonucu doğrulanamadı.", started, DateTimeOffset.UtcNow, output, new { code = "TERMINAL_TIMEOUT", message = "Terminal komutu zaman aşımına uğradı." });
+            if (outcome.ExitCode != 0) return new WindowsCommandResult(commandId, "failed", "Terminal komutu hata verdi.", started, DateTimeOffset.UtcNow, output, new { code = "TERMINAL_COMMAND_FAILED", message = "Çıkış kodu sıfır değil." });
+            return new WindowsCommandResult(commandId, "completed", "Terminal komutu çalıştırıldı.", started, DateTimeOffset.UtcNow, output);
         }
-        finally
+        catch (OperationCanceledException)
         {
-            if (scriptPath is not null) try { File.Delete(scriptPath); } catch { }
+            return Failed(commandId, started, "TERMINAL_CANCELLED", "Terminal komutu durduruldu; yan etkiler kısmen uygulanmış olabilir.", "unknown");
         }
-        var output = new
-        {
-            kind = "processOutput",
-            value = new
-            {
-                language,
-                exitCode = outcome.TimedOut ? -1 : outcome.ExitCode,
-                stdout = outcome.Stdout,
-                stderr = outcome.Stderr,
-                truncated = outcome.Truncated,
-                durationMs = outcome.DurationMs
-            }
-        };
-        if (outcome.TimedOut)
-            return new WindowsCommandResult(commandId, "unknown", "Terminal komutu zaman aşımına uğradı; sonucu doğrulanamadı.", started, DateTimeOffset.UtcNow, output, new { code = "CODE_TIMEOUT", message = "Terminal komutu zaman aşımına uğradı." });
-        if (outcome.ExitCode != 0)
-            return new WindowsCommandResult(commandId, "failed", "Terminal komutu hata verdi.", started, DateTimeOffset.UtcNow, output, new { code = "CODE_FAILED", message = outcome.Stderr[..Math.Min(outcome.Stderr.Length, 300)] });
-        return new WindowsCommandResult(commandId, "completed", "Terminal komutu çalıştırıldı.", started, DateTimeOffset.UtcNow, output);
     }
 
-    private static (string FileName, string[] Arguments)? BuildCommand(string language, string shell, string code, IReadOnlyList<string> arguments, string directory)
+    private async Task<WindowsCommandResult> HandleTerminalJobActionAsync(string commandId, JsonElement request, string action, DateTimeOffset started, CancellationToken cancellationToken)
     {
-        if (language == "shell")
+        var id = StringProperty(request, "jobId");
+        if (!Guid.TryParse(id, out _) || !terminalJobs.TryGetValue(id, out var job))
         {
-            if (shell is "default" or "powershell") return ("powershell.exe", new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", code });
-            if (shell == "cmd") return ("cmd.exe", new[] { "/d", "/s", "/c", code });
-            if (shell == "bash") return ("bash.exe", new[] { "-lc", code });
-            return null;
+            var value = new { jobId = id, status = "unknown", message = "Bu Windows sürecinde iş bulunamadı; yeniden başlatıldıysa sonucu bilinmiyor.", errorCode = "TERMINAL_JOB_UNKNOWN" };
+            return new WindowsCommandResult(commandId, "unknown", "İşin sonucu bilinmiyor; yeniden başlatmadan önce yerel PC'de kontrol et.", started, DateTimeOffset.UtcNow, new { kind = "terminalJob", value }, new { code = "TERMINAL_JOB_UNKNOWN", message = "İş bu companion sürecinde bulunamadı." });
         }
-        var extension = language == "python" ? ".py" : ".js";
-        var script = Path.Combine(directory, $"wiqo-{Guid.NewGuid():N}{extension}");
-        File.WriteAllText(script, code, Encoding.UTF8);
-        return language == "python"
-            ? ("python.exe", new[] { script }.Concat(arguments).ToArray())
-            : ("node.exe", new[] { script }.Concat(arguments).ToArray());
+        if (!request.TryGetProperty("grant", out var grant) || grant.ValueKind != JsonValueKind.Object ||
+            !RovaTerminalPolicy.VerifyGrant(grant, PairingToken, out var rawRoot, out _) ||
+            !string.Equals(RovaTerminalPolicy.String(grant, "id"), job.GrantId, StringComparison.OrdinalIgnoreCase) ||
+            RovaTerminalPolicy.ResolveDirectory(rawRoot) is not { } root ||
+            !RovaTerminalPolicy.IsWithin(job.Directory, root))
+            return Failed(commandId, started, "TERMINAL_GRANT_INVALID", "İşin imzalı terminal izni doğrulanamadı.", "denied");
+        if (action == "cancel_job")
+        {
+            lock (job.Gate)
+            {
+                if (job.State == "running")
+                {
+                    job.CancelRequested = true;
+                    try { if (job.Process is { HasExited: false } process) process.Kill(entireProcessTree: true); } catch { }
+                }
+            }
+            if (job.Worker is { } worker) await Task.WhenAny(worker, Task.Delay(500, cancellationToken)).ConfigureAwait(false);
+        }
+        return TerminalJobResult(commandId, job, started);
+    }
+
+    private async Task RunTerminalJobAsync(WindowsTerminalJob job, string fileName, IReadOnlyList<string> arguments, int timeoutSeconds)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        try
+        {
+            var outcome = await RunProcessAsync(fileName, arguments, job.Directory, linked.Token, timeoutSeconds, process =>
+            {
+                var cancelNow = false;
+                lock (job.Gate) { job.Process = process; cancelNow = job.CancelRequested; }
+                if (cancelNow) try { process.Kill(entireProcessTree: true); } catch { }
+            }).ConfigureAwait(false);
+            var stdout = RovaTerminalPolicy.RedactSecrets(outcome.Stdout);
+            var stderr = RovaTerminalPolicy.RedactSecrets(outcome.Stderr);
+            var output = new { language = "shell", exitCode = outcome.TimedOut ? -1 : outcome.ExitCode, stdout, stderr, truncated = outcome.Truncated, durationMs = outcome.DurationMs };
+            lock (job.Gate)
+            {
+                job.Output = output;
+                if (job.CancelRequested) { job.State = "cancelled"; job.Message = "Terminal işi kullanıcı tarafından durduruldu."; }
+                else if (outcome.TimedOut) { job.State = "unknown"; job.Message = "Terminal işi zaman aşımına uğradı; sonucu doğrulanamadı."; job.ErrorCode = "TERMINAL_TIMEOUT"; }
+                else if (outcome.ExitCode != 0) { job.State = "failed"; job.Message = "Terminal işi hata verdi."; job.ErrorCode = "TERMINAL_COMMAND_FAILED"; }
+                else { job.State = "completed"; job.Message = "Terminal işi tamamlandı."; }
+                job.Process = null;
+            }
+            if (terminalJobReporter is { } report)
+            {
+                try { await report(job.Id, job.State, job.ErrorCode).ConfigureAwait(false); } catch { }
+            }
+        }
+        catch (Exception)
+        {
+            lock (job.Gate)
+            {
+                job.State = job.CancelRequested ? "cancelled" : "unknown";
+                job.Message = job.CancelRequested ? "Terminal işi kullanıcı tarafından durduruldu." : "Terminal işi tamamlanamadı; sonucu doğrulanamadı.";
+                job.ErrorCode = job.CancelRequested ? null : "TERMINAL_JOB_UNKNOWN";
+                job.Process = null;
+            }
+            if (terminalJobReporter is { } report)
+            {
+                try { await report(job.Id, job.State, job.ErrorCode).ConfigureAwait(false); } catch { }
+            }
+        }
+    }
+
+    private static WindowsCommandResult TerminalJobResult(string commandId, WindowsTerminalJob job, DateTimeOffset started)
+    {
+        lock (job.Gate)
+        {
+            var value = new { jobId = job.Id, status = job.State, output = job.Output, message = job.Message, errorCode = job.ErrorCode };
+            return new WindowsCommandResult(commandId, job.State == "unknown" ? "unknown" : job.State == "failed" ? "failed" : "completed", job.Message, started, DateTimeOffset.UtcNow, new { kind = "terminalJob", value }, job.ErrorCode is null ? null : new { code = job.ErrorCode, message = job.Message });
+        }
+    }
+
+    private static (string FileName, string[] Arguments)? BuildTerminalProcess(string command, string shell) => shell switch
+    {
+        "powershell" => ("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command]),
+        "cmd" => ("cmd.exe", ["/d", "/s", "/c", command]),
+        _ => null
+    };
+
+    private static string? ApplyTerminalPatch(string filePath, string requestPath, string patch)
+    {
+        try
+        {
+            var original = File.ReadAllText(filePath, Encoding.UTF8);
+            var hadBom = original.StartsWith('\uFEFF');
+            if (hadBom) original = original[1..];
+            var newline = original.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+            var normalized = original.Replace("\r\n", "\n", StringComparison.Ordinal);
+            var hadTrailing = normalized.EndsWith('\n');
+            var source = normalized.Split('\n').ToList();
+            if (hadTrailing) source.RemoveAt(source.Count - 1);
+            var lines = patch.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+            if (lines.Length < 4 || !HeaderMatches(lines[0], "--- ", requestPath) || !HeaderMatches(lines[1], "+++ ", requestPath)) return null;
+            var output = new List<string>();
+            var sourceIndex = 0;
+            var index = 2;
+            var sawHunk = false;
+            var hunkRegex = new Regex("^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+            while (index < lines.Length)
+            {
+                if (index == lines.Length - 1 && lines[index].Length == 0) break;
+                var match = hunkRegex.Match(lines[index]);
+                if (!match.Success) return null;
+                var oldStart = int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+                var oldCount = match.Groups[2].Success ? int.Parse(match.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture) : 1;
+                var oldCursor = oldCount == 0 && oldStart == 0 ? 0 : Math.Max(0, oldStart - 1);
+                if (oldCursor < sourceIndex || oldCursor > source.Count) return null;
+                output.AddRange(source.Skip(sourceIndex).Take(oldCursor - sourceIndex));
+                sourceIndex = oldCursor;
+                sawHunk = true;
+                index++;
+                var consumedOld = 0;
+                while (index < lines.Length && !lines[index].StartsWith("@@ ", StringComparison.Ordinal))
+                {
+                    var line = lines[index];
+                    if (line.StartsWith("\\ No newline at end of file", StringComparison.Ordinal)) { index++; continue; }
+                    if (line.Length == 0) return null;
+                    var content = line[1..];
+                    switch (line[0])
+                    {
+                        case ' ':
+                            if (sourceIndex >= source.Count || source[sourceIndex] != content) return null;
+                            output.Add(content); sourceIndex++; consumedOld++; break;
+                        case '-':
+                            if (sourceIndex >= source.Count || source[sourceIndex] != content) return null;
+                            sourceIndex++; consumedOld++; break;
+                        case '+': output.Add(content); break;
+                        default: return null;
+                    }
+                    index++;
+                }
+                if (consumedOld != oldCount) return null;
+            }
+            if (!sawHunk) return null;
+            output.AddRange(source.Skip(sourceIndex));
+            var result = string.Join(newline, output) + (hadTrailing ? newline : "");
+            if (result.Length == 0 || result == original) return null;
+            var temporary = filePath + ".wiqo-" + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(temporary, (hadBom ? "\uFEFF" : "") + result, new UTF8Encoding(false));
+                File.Move(temporary, filePath, true);
+            }
+            finally { try { File.Delete(temporary); } catch { } }
+            return patch;
+        }
+        catch { return null; }
+    }
+
+    private static bool HeaderMatches(string line, string prefix, string expected)
+    {
+        if (!line.StartsWith(prefix, StringComparison.Ordinal)) return false;
+        var path = line[prefix.Length..].Split('\t')[0];
+        if (path == "/dev/null" || path.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries).Any(part => part == "..")) return false;
+        if (path.StartsWith("a/", StringComparison.Ordinal) || path.StartsWith("b/", StringComparison.Ordinal)) path = path[2..];
+        var normalizedExpected = expected.StartsWith("a/", StringComparison.Ordinal) || expected.StartsWith("b/", StringComparison.Ordinal) ? expected[2..] : expected;
+        return path.Equals(normalizedExpected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void PruneTerminalJobs()
+    {
+        foreach (var job in terminalJobs.Values.Where(item => item.State != "running" && DateTimeOffset.UtcNow - item.StartedAt > TimeSpan.FromHours(24))) terminalJobs.TryRemove(job.Id, out _);
+        var finished = terminalJobs.Values.Where(item => item.State != "running").OrderBy(item => item.StartedAt).ToArray();
+        foreach (var job in finished.Take(Math.Max(0, finished.Length - 50))) terminalJobs.TryRemove(job.Id, out _);
     }
 
     private sealed record ProcessOutcome(string Stdout, string Stderr, int ExitCode, bool TimedOut, bool Truncated, int DurationMs);
 
-    private static async Task<ProcessOutcome> RunProcessAsync(string fileName, IReadOnlyList<string> arguments, string directory, CancellationToken cancellationToken)
+    private static async Task<ProcessOutcome> RunProcessAsync(string fileName, IReadOnlyList<string> arguments, string directory, CancellationToken cancellationToken, int timeoutSeconds = 30, Action<Process>? processStarted = null)
     {
         var started = Stopwatch.GetTimestamp();
         using var process = new Process
@@ -365,10 +563,11 @@ public sealed class WindowsRuntime : IAsyncDisposable
         foreach (var argument in arguments) process.StartInfo.ArgumentList.Add(argument);
         try { process.Start(); }
         catch { return new ProcessOutcome("", "İşlem başlatılamadı.", -1, false, false, ElapsedMs(started)); }
+        processStarted?.Invoke(process);
         var stdoutTask = ReadBoundedAsync(process.StandardOutput, cancellationToken);
         var stderrTask = ReadBoundedAsync(process.StandardError, cancellationToken);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 1, 1800)));
         var timedOut = false;
         try { await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false); }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -460,11 +659,20 @@ public sealed class WindowsRuntime : IAsyncDisposable
         }
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         lifetime.Cancel();
+        foreach (var job in terminalJobs.Values)
+        {
+            lock (job.Gate)
+            {
+                job.CancelRequested = true;
+                try { if (job.Process is { HasExited: false } process) process.Kill(entireProcessTree: true); } catch { }
+            }
+        }
+        var workers = terminalJobs.Values.Select(job => job.Worker).OfType<Task>().ToArray();
+        try { await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false); } catch { }
         sideEffectGate.Dispose();
         lifetime.Dispose();
-        return ValueTask.CompletedTask;
     }
 }

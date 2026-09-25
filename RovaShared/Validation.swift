@@ -1,6 +1,97 @@
+import CoreFoundation
 import Foundation
 
+private final class RovaRequestNonceCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seen: [String: Date] = [:]
+
+    func claim(token: String, nonce: String, now: Date) -> Bool {
+        let tokenHash = RovaCrypto.sha256Hex(Data(token.utf8))
+        let nonceHash = RovaCrypto.sha256Hex(Data(nonce.utf8))
+        let key = tokenHash + ":" + nonceHash
+        lock.lock()
+        defer { lock.unlock() }
+        seen = seen.filter { now.timeIntervalSince($0.value) <= 600 }
+        guard seen[key] == nil else { return false }
+        if seen.count >= 20_000, let oldest = seen.min(by: { $0.value < $1.value })?.key { seen.removeValue(forKey: oldest) }
+        seen[key] = now
+        return true
+    }
+}
+
+public enum RovaCanonicalJSON {
+    public static func data<T: Encodable>(_ value: T) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let encoded = try encoder.encode(value)
+        let object = try JSONSerialization.jsonObject(with: encoded, options: [.fragmentsAllowed])
+        return Data(try serialize(object).utf8)
+    }
+
+    private static func serialize(_ value: Any) throws -> String {
+        if value is NSNull { return "null" }
+        if let string = value as? String {
+            let encoded = try JSONSerialization.data(withJSONObject: [string], options: [.fragmentsAllowed, .withoutEscapingSlashes])
+            guard let text = String(data: encoded, encoding: .utf8), text.count >= 2 else { throw RovaCanonicalJSONError.invalidValue }
+            return String(text.dropFirst().dropLast())
+        }
+        if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() { return number.boolValue ? "true" : "false" }
+            // RFC 8785 parses every JSON number as IEEE-754 binary64 before serialization.
+            return try canonicalNumber(number.doubleValue)
+        }
+        if let array = value as? [Any] {
+            return "[" + (try array.map(serialize).joined(separator: ",")) + "]"
+        }
+        if let object = value as? [String: Any] {
+            let keys = object.keys.sorted { Array($0.utf16).lexicographicallyPrecedes(Array($1.utf16)) }
+            let members = try keys.map { key in
+                "\(try serialize(key)):\(try serialize(object[key]!))"
+            }
+            return "{" + members.joined(separator: ",") + "}"
+        }
+        throw RovaCanonicalJSONError.invalidValue
+    }
+
+    /// RFC 8785 uses ECMAScript's shortest finite number format. Swift's shortest round-trip
+    /// digits are converted to the same decimal/exponent layout, including -0 => 0.
+    private static func canonicalNumber(_ value: Double) throws -> String {
+        guard value.isFinite else { throw RovaCanonicalJSONError.invalidValue }
+        if value == 0 { return "0" }
+        let negative = value < 0
+        let raw = String(abs(value)).lowercased()
+        let parts = raw.split(separator: "e", maxSplits: 1, omittingEmptySubsequences: false)
+        let mantissa = String(parts[0])
+        let exponent = parts.count == 2 ? Int(parts[1]) ?? 0 : 0
+        let integerDigits = mantissa.firstIndex(of: ".").map { mantissa.distance(from: mantissa.startIndex, to: $0) } ?? mantissa.count
+        var digits = mantissa.filter(\.isNumber)
+        var decimalPosition = integerDigits + exponent
+        while digits.first == "0" { digits.removeFirst(); decimalPosition -= 1 }
+        while digits.last == "0" { digits.removeLast() }
+        guard !digits.isEmpty else { return "0" }
+        let sign = negative ? "-" : ""
+        if decimalPosition > 0 && decimalPosition <= 21 {
+            if digits.count <= decimalPosition {
+                return sign + digits + String(repeating: "0", count: decimalPosition - digits.count)
+            }
+            let split = digits.index(digits.startIndex, offsetBy: decimalPosition)
+            return sign + String(digits[..<split]) + "." + String(digits[split...])
+        }
+        if decimalPosition <= 0 && decimalPosition > -6 {
+            return sign + "0." + String(repeating: "0", count: -decimalPosition) + digits
+        }
+        let scientificExponent = decimalPosition - 1
+        let coefficient = digits.count == 1 ? digits : String(digits.first!) + "." + String(digits.dropFirst())
+        return sign + coefficient + "e" + (scientificExponent >= 0 ? "+" : "") + String(scientificExponent)
+    }
+}
+
+public enum RovaCanonicalJSONError: Error {
+    case invalidValue
+}
+
 public enum RovaValidation {
+    private static let requestNonceCache = RovaRequestNonceCache()
     // Commands carry structured document metadata and small local read results. Large generated
     // binaries never cross this wire; they are downloaded by the Mac from the authenticated
     // backend artifact endpoint.
@@ -285,19 +376,35 @@ public enum RovaValidation {
         abs(now.timeIntervalSince(createdAt)) <= maxSkewSeconds
     }
 
-    public static func signRequest(id: UUID, type: CommandType, nonce: String, token: String) -> String {
-        let message = "\(id.uuidString):\(type.rawValue):\(nonce)"
+    public static func signedRequest(id: UUID, type: CommandType, payload: CommandPayload, createdAt: Date = Date(), nonce: String, token: String) -> CommandRequest {
+        let unsigned = CommandRequest(id: id, type: type, payload: payload, createdAt: createdAt, signatureVersion: 2, nonce: nonce)
+        let signature = signRequest(request: unsigned, token: token)
+        return CommandRequest(id: id, type: type, payload: payload, createdAt: createdAt, signatureVersion: 2, createdAtEpochMs: unsigned.createdAtEpochMs, signature: signature, nonce: nonce)
+    }
+
+    public static func signRequest(request: CommandRequest, token: String) -> String {
+        guard request.signatureVersion == 2,
+              let nonce = request.nonce, !nonce.isEmpty, nonce.count <= 200,
+              let timestamp = request.createdAtEpochMs,
+              let payload = try? RovaCanonicalJSON.data(request.payload) else { return "" }
+        let digest = RovaCrypto.sha256Hex(payload)
+        let message = "wiqo-command:v2:\(request.id.uuidString.lowercased()):\(request.type.rawValue):\(timestamp):\(nonce):\(digest)"
         return RovaCrypto.hmacSHA256Hex(key: token, message: message)
     }
 
     public static func verifyRequestSignature(request: CommandRequest, token: String) -> Bool {
         guard let signature = request.signature, !signature.isEmpty,
-              let nonce = request.nonce, !nonce.isEmpty else {
+              request.signatureVersion == 2,
+              let timestamp = request.createdAtEpochMs,
+              abs(Date().timeIntervalSince1970 * 1_000 - Double(timestamp)) <= 600_000,
+              abs(request.createdAt.timeIntervalSince1970 * 1_000 - Double(timestamp)) < 1_000,
+              let nonce = request.nonce, !nonce.isEmpty, nonce.count <= 200 else {
             return false
         }
-        let message = "\(request.id.uuidString):\(request.type.rawValue):\(nonce)"
-        let expected = RovaCrypto.hmacSHA256Hex(key: token, message: message)
-        return RovaCrypto.constantTimeEquals(signature, expected)
+        let expected = signRequest(request: request, token: token)
+        guard !expected.isEmpty else { return false }
+        guard RovaCrypto.constantTimeEquals(signature, expected), requestNonceCache.claim(token: token, nonce: nonce, now: Date()) else { return false }
+        return true
     }
 
     /// Checks the payload's *shape* only (well-formed host/port/fingerprint/code) - deliberately
@@ -497,6 +604,9 @@ public enum RovaTerminalPolicy {
     /// Conservative: anything that is not clearly an inspection needs a "full" grant.
     public static func isReadOnly(_ command: String) -> Bool {
         let withoutStderrMerge = command.replacingOccurrences(of: "2>&1", with: "")
+        // Read grants accept relative paths only. Full shell access cannot be a filesystem
+        // sandbox; this at least prevents inspection commands from naming an outside path.
+        if withoutStderrMerge.contains("..") || withoutStderrMerge.contains("~") || withoutStderrMerge.contains("$") || matches(#"(^|[\s"'=])/"#, withoutStderrMerge) { return false }
         if matches(#"[`<]|\$\(|>(?!&1|\s*/dev/null)|(^|[^&])&($|[^&])"#, withoutStderrMerge) { return false }
         let segments = command
             .replacingOccurrences(of: "||", with: "\n").replacingOccurrences(of: "&&", with: "\n")
@@ -536,6 +646,28 @@ public enum RovaTerminalPolicy {
 
     public static func isWithin(_ directory: String, root: String) -> Bool {
         directory == root || directory.hasPrefix(root == "/" ? "/" : root + "/")
+    }
+
+    /// Resolve an existing file and reject symlinks at each path component. Callers must already
+    /// have verified the time-limited grant and directory boundary before applying a patch.
+    public static func resolveExistingFile(_ path: String, workingDirectory: String, root: String) -> String? {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("\0"), !trimmed.split(separator: "/").contains("..") else { return nil }
+        let candidate = trimmed.hasPrefix("/") ? trimmed : URL(fileURLWithPath: workingDirectory).appendingPathComponent(trimmed).path
+        let standardized = URL(fileURLWithPath: candidate).standardizedFileURL.path
+        guard isWithin(standardized, root: root) else { return nil }
+        let components = standardized.split(separator: "/").map(String.init)
+        var current = ""
+        for component in components {
+            current += "/" + component
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: current, isDirectory: &isDirectory) else { return nil }
+            guard (try? URL(fileURLWithPath: current).resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else { return nil }
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: standardized, isDirectory: &isDirectory), !isDirectory.boolValue else { return nil }
+        let resolved = URL(fileURLWithPath: standardized).resolvingSymlinksInPath().path
+        return isWithin(resolved, root: root) ? resolved : nil
     }
 
     private static let secretPatterns: [String] = [

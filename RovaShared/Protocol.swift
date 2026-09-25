@@ -548,6 +548,28 @@ public struct ProcessOutputContent: Codable, Equatable, Sendable {
     }
 }
 
+/// A bounded status snapshot for a companion-owned background terminal job. Raw output stays in
+/// the companion's short-lived in-memory job store and is fetched only when the user asks.
+public struct TerminalJobContent: Codable, Equatable, Sendable {
+    public let jobId: String
+    public let status: String
+    public let output: ProcessOutputContent?
+    public let diff: String?
+    public let applied: Bool?
+    public let message: String?
+    public let errorCode: String?
+
+    public init(jobId: String, status: String, output: ProcessOutputContent? = nil, diff: String? = nil, applied: Bool? = nil, message: String? = nil, errorCode: String? = nil) {
+        self.jobId = jobId
+        self.status = status
+        self.output = output
+        self.diff = diff
+        self.applied = applied
+        self.message = message
+        self.errorCode = errorCode
+    }
+}
+
 public struct ScreenshotContent: Codable, Equatable, Sendable {
     public let filename: String
     public let mimeType: String
@@ -1064,6 +1086,7 @@ public enum CommandData: Codable, Equatable, Sendable {
     case fileTransfer(String)
     case fileData(FileDataContent)
     case processOutput(ProcessOutputContent)
+    case terminalJob(TerminalJobContent)
     case screenshot(ScreenshotContent)
     case shortcutResult(ShortcutExecutionContent)
     case uiElement(UIElementContent)
@@ -1072,7 +1095,7 @@ public enum CommandData: Codable, Equatable, Sendable {
     case runningApplications([RunningApplicationInfo])
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileTransfer, fileData, processOutput, screenshot, shortcutResult, uiElement, screenClick, applicationControl, runningApplications }
+    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileTransfer, fileData, processOutput, terminalJob, screenshot, shortcutResult, uiElement, screenClick, applicationControl, runningApplications }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1107,6 +1130,8 @@ public enum CommandData: Codable, Equatable, Sendable {
             self = .fileData(try container.decode(FileDataContent.self, forKey: .value))
         case .processOutput:
             self = .processOutput(try container.decode(ProcessOutputContent.self, forKey: .value))
+        case .terminalJob:
+            self = .terminalJob(try container.decode(TerminalJobContent.self, forKey: .value))
         case .screenshot:
             self = .screenshot(try container.decode(ScreenshotContent.self, forKey: .value))
         case .shortcutResult:
@@ -1170,6 +1195,9 @@ public enum CommandData: Codable, Equatable, Sendable {
         case .processOutput(let value):
             try container.encode(Kind.processOutput, forKey: .kind)
             try container.encode(value, forKey: .value)
+        case .terminalJob(let value):
+            try container.encode(Kind.terminalJob, forKey: .kind)
+            try container.encode(value, forKey: .value)
         case .screenshot(let value):
             try container.encode(Kind.screenshot, forKey: .kind)
             try container.encode(value, forKey: .value)
@@ -1214,6 +1242,10 @@ public struct CommandRequest: Codable, Equatable, Sendable {
     public let type: CommandType
     public let payload: CommandPayload
     public let createdAt: Date
+    /// Version 2 signs the timestamp and canonical payload digest. Optional only so older wire
+    /// requests decode far enough to receive an explicit INVALID_SIGNATURE rejection.
+    public let signatureVersion: Int?
+    public let createdAtEpochMs: Int64?
     public let signature: String?
     public let nonce: String?
 
@@ -1222,6 +1254,8 @@ public struct CommandRequest: Codable, Equatable, Sendable {
         type: CommandType,
         payload: CommandPayload = .none,
         createdAt: Date = Date(),
+        signatureVersion: Int? = 2,
+        createdAtEpochMs: Int64? = nil,
         signature: String? = nil,
         nonce: String? = nil
     ) {
@@ -1229,6 +1263,8 @@ public struct CommandRequest: Codable, Equatable, Sendable {
         self.type = type
         self.payload = payload
         self.createdAt = createdAt
+        self.signatureVersion = signatureVersion
+        self.createdAtEpochMs = createdAtEpochMs ?? Int64((createdAt.timeIntervalSince1970 * 1_000).rounded(.down))
         self.signature = signature
         self.nonce = nonce
     }

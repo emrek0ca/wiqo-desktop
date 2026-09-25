@@ -132,13 +132,26 @@ final class IOSConnectionModel: ObservableObject {
             deviceID = id
             try? RovaKeychainStore.save(Data(id.uuidString.utf8), account: "ios-device-id")
         }
-        token = try? RovaKeychainStore.load(account: "ios-device-token").flatMap { String(data: $0, encoding: .utf8) }
+        if let value = UserDefaults.standard.string(forKey: "rova.ios.mac-device-id") {
+            pairedMacDeviceID = UUID(uuidString: value)
+        }
+        var perDeviceToken: String?
+        if let pairedMacDeviceID {
+            do { perDeviceToken = try RovaKeychainStore.loadDevicePairingToken(deviceID: pairedMacDeviceID.uuidString) }
+            catch { perDeviceToken = nil }
+        }
+        var legacyToken: String?
+        do {
+            if let data = try RovaKeychainStore.load(account: "ios-device-token") { legacyToken = String(data: data, encoding: .utf8) }
+        } catch { legacyToken = nil }
+        token = perDeviceToken ?? legacyToken ?? nil
+        if let pairedMacDeviceID, let token, perDeviceToken == nil {
+            try? RovaKeychainStore.saveDevicePairingToken(token, deviceID: pairedMacDeviceID.uuidString)
+            try? RovaKeychainStore.delete(account: "ios-device-token")
+        }
         certificateFingerprint = try? RovaKeychainStore.load(account: "ios-certificate-fingerprint").flatMap { String(data: $0, encoding: .utf8) }
         if let data = UserDefaults.standard.data(forKey: "rova.ios.endpoint"), let saved = try? JSONDecoder().decode(SavedEndpoint.self, from: data) {
             savedEndpoint = saved
-        }
-        if let value = UserDefaults.standard.string(forKey: "rova.ios.mac-device-id") {
-            pairedMacDeviceID = UUID(uuidString: value)
         }
         isPaired = token != nil && ((certificateFingerprint != nil && savedEndpoint != nil) || pairedMacDeviceID != nil)
         pathMonitor.pathUpdateHandler = { [weak self] path in
@@ -271,6 +284,7 @@ final class IOSConnectionModel: ObservableObject {
 
     func forgetPairing() {
         disconnect()
+        if let pairedMacDeviceID { try? RovaKeychainStore.deleteDevicePairingToken(deviceID: pairedMacDeviceID.uuidString) }
         try? RovaKeychainStore.delete(account: "ios-device-token")
         try? RovaKeychainStore.delete(account: "ios-certificate-fingerprint")
         token = nil
@@ -317,7 +331,8 @@ final class IOSConnectionModel: ObservableObject {
                     throw IOSConnectionError.disconnected
                 }
                 guard connectionGeneration == generation else { return }
-                try RovaKeychainStore.save(Data(claim.pairingToken.utf8), account: "ios-device-token")
+                try RovaKeychainStore.saveDevicePairingToken(claim.pairingToken, deviceID: deviceID.uuidString)
+                try? RovaKeychainStore.delete(account: "ios-device-token")
                 try RovaKeychainStore.save(Data("relay".utf8), account: "ios-certificate-fingerprint")
                 token = claim.pairingToken
                 pairedMacDeviceID = deviceID
@@ -347,8 +362,7 @@ final class IOSConnectionModel: ObservableObject {
         while Date() < deadline && !Task.isCancelled {
             let commandID = UUID()
             guard let nonce = try? RovaCrypto.randomToken() else { return false }
-            let signature = RovaValidation.signRequest(id: commandID, type: .ping, nonce: nonce, token: pairingToken)
-            let request = CommandRequest(id: commandID, type: .ping, payload: .none, signature: signature, nonce: nonce)
+            let request = RovaValidation.signedRequest(id: commandID, type: .ping, payload: .none, nonce: nonce, token: pairingToken)
             if let devices = try? await RovaBackendClient.fetchDevices(),
                devices.contains(where: { $0.id.caseInsensitiveCompare(deviceID.uuidString) == .orderedSame && $0.online }),
                let result = try? await RovaBackendClient.sendDeviceCommand(request, deviceId: deviceID.uuidString),
@@ -384,10 +398,10 @@ final class IOSConnectionModel: ObservableObject {
             // command still goes through - just a little slower than the direct path.
             return await sendViaBackendRelay(type: type, payload: payload, commandID: resolvedCommandID)
         }
-        let now = Date()
-        let nonce = try? RovaCrypto.randomToken()
-        let signature = token.map { RovaValidation.signRequest(id: resolvedCommandID, type: type, nonce: nonce ?? "", token: $0) }
-        let request = CommandRequest(id: resolvedCommandID, type: type, payload: payload, createdAt: now, signature: signature, nonce: nonce)
+        guard let pairingToken = token, let nonce = try? RovaCrypto.randomToken() else {
+            return failureResult(id: resolvedCommandID, error: RovaError(code: "PAIRING_KEY_UNAVAILABLE", message: "PC eşleşme anahtarı kullanılamıyor. Yeniden eşleşin."))
+        }
+        let request = RovaValidation.signedRequest(id: resolvedCommandID, type: type, payload: payload, nonce: nonce, token: pairingToken)
         if let validationError = RovaValidation.validate(request) {
             return failureResult(id: request.id, error: validationError)
         }
@@ -675,13 +689,20 @@ final class IOSConnectionModel: ObservableObject {
             pairingTimeoutTask?.cancel()
             pairingTimeoutTask = nil
             do {
-                try RovaKeychainStore.save(Data(response.token.utf8), account: "ios-device-token")
+                if let pairedID = pairedMacDeviceID ?? deviceInfo?.id {
+                    try RovaKeychainStore.saveDevicePairingToken(response.token, deviceID: pairedID.uuidString)
+                } else {
+                    // The following hello message supplies the Mac id and migrates this temporary
+                    // legacy slot immediately; the pairing token is never shared across devices.
+                    try RovaKeychainStore.save(Data(response.token.utf8), account: "ios-device-token")
+                }
                 try RovaKeychainStore.save(Data(response.certificateFingerprint.utf8), account: "ios-certificate-fingerprint")
             } catch {
                 fail("Token güvenle saklanamadı.")
                 return
             }
             token = response.token
+            if let pairedID = pairedMacDeviceID ?? deviceInfo?.id { persistMacDeviceID(pairedID) }
             certificateFingerprint = response.certificateFingerprint
             if case .pairing(let payload) = mode {
                 savedEndpoint = SavedEndpoint(host: payload.host, port: payload.port, fingerprint: payload.certificateFingerprint)
@@ -1057,9 +1078,10 @@ final class IOSConnectionModel: ObservableObject {
         guard let targetDeviceID = pairedMacDeviceID ?? deviceInfo?.id else {
             return mayHaveExecuted ? uncertainResult(id: commandID) : failureResult(id: commandID, error: RovaError(code: "DEVICE_UNKNOWN", message: "Hedef PC belirlenemedi. PC ile yeniden eşleşin."))
         }
-        let nonce = try? RovaCrypto.randomToken()
-        let signature = token.map { RovaValidation.signRequest(id: commandID, type: type, nonce: nonce ?? "", token: $0) }
-        let request = CommandRequest(id: commandID, type: type, payload: payload, signature: signature, nonce: nonce)
+        guard let pairingToken = token, let nonce = try? RovaCrypto.randomToken() else {
+            return failureResult(id: commandID, error: RovaError(code: "PAIRING_KEY_UNAVAILABLE", message: "PC eşleşme anahtarı kullanılamıyor. Yeniden eşleşin."))
+        }
+        let request = RovaValidation.signedRequest(id: commandID, type: type, payload: payload, nonce: nonce, token: pairingToken)
         if let validationError = RovaValidation.validate(request) {
             return failureResult(id: request.id, error: validationError)
         }
@@ -1100,6 +1122,10 @@ final class IOSConnectionModel: ObservableObject {
     private func persistMacDeviceID(_ id: UUID) {
         pairedMacDeviceID = id
         UserDefaults.standard.set(id.uuidString, forKey: "rova.ios.mac-device-id")
+        if let token {
+            try? RovaKeychainStore.saveDevicePairingToken(token, deviceID: id.uuidString)
+            try? RovaKeychainStore.delete(account: "ios-device-token")
+        }
     }
 
     private func startDiscovery() {

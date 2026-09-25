@@ -4,6 +4,22 @@ import Security
 public enum RovaKeychainStore {
     private static let service = "com.rova.local"
 
+    public static func saveDevicePairingToken(_ token: String, deviceID: String) throws {
+        guard UUID(uuidString: deviceID) != nil, !token.isEmpty else { throw RovaKeychainError.invalidPairingToken }
+        try save(Data(token.utf8), account: "ios-device-token:\(deviceID.lowercased())")
+    }
+
+    public static func loadDevicePairingToken(deviceID: String) throws -> String? {
+        guard UUID(uuidString: deviceID) != nil else { return nil }
+        return try load(account: "ios-device-token:\(deviceID.lowercased())")
+            .flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    public static func deleteDevicePairingToken(deviceID: String) throws {
+        guard UUID(uuidString: deviceID) != nil else { return }
+        try delete(account: "ios-device-token:\(deviceID.lowercased())")
+    }
+
     public static func save(_ data: Data, account: String) throws {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
@@ -57,4 +73,5 @@ public enum RovaKeychainStore {
 
 public enum RovaKeychainError: Error, Equatable {
     case status(OSStatus)
+    case invalidPairingToken
 }

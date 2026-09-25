@@ -95,10 +95,114 @@ extension MacSystem {
         }
     }
 
+    static func executeTerminalCommand(
+        _ command: String,
+        workingDirectory: String,
+        timeoutSeconds: Int,
+        processStarted: @escaping @Sendable (Int32) -> Void
+    ) -> (data: CommandData?, error: RovaError?) {
+        let payload = CodeExecutionPayload(language: "shell", code: command, timeoutSeconds: timeoutSeconds, allowNetwork: true, scope: "computer", shell: "zsh", workingDirectory: workingDirectory)
+        return executeComputerTerminal(payload, processStarted: processStarted)
+    }
+
+    static func terminateTerminalProcess(_ processIdentifier: Int32) {
+        guard processIdentifier > 0 else { return }
+        if kill(-processIdentifier, SIGTERM) != 0 { _ = kill(processIdentifier, SIGTERM) }
+        // The process group is scoped to this terminal process; kill the remainder immediately so
+        // a child cannot keep running after the user pressed Stop.
+        _ = kill(-processIdentifier, SIGKILL)
+        _ = kill(processIdentifier, SIGKILL)
+    }
+
+    static func applyTerminalPatch(filePath: String, patch: String, expectedPatchPath: String) -> (diff: String?, error: RovaError?) {
+        guard !patch.isEmpty, patch.utf8.count <= 120_000, !patch.contains("\0"),
+              let current = try? String(contentsOfFile: filePath, encoding: .utf8),
+              let result = applyUnifiedPatch(patch, to: current, expectedPath: expectedPatchPath),
+              !result.isEmpty, result != current else {
+            return (nil, RovaError(code: "TERMINAL_PATCH_REJECTED", message: "Yama mevcut dosyayla bağlam eşleşmedi ya da güvenli tek dosya biçiminde değil.", category: "validation"))
+        }
+        do {
+            try Data(result.utf8).write(to: URL(fileURLWithPath: filePath), options: [.atomic])
+            return (patch, nil)
+        } catch {
+            return (nil, localFileError(code: "TERMINAL_PATCH_WRITE_FAILED", fallback: "Yama dosyaya yazılamadı.", error: error))
+        }
+    }
+
+    private static func applyUnifiedPatch(_ patch: String, to current: String, expectedPath: String) -> String? {
+        let patchLines = patch.components(separatedBy: "\n")
+        guard patchLines.count >= 4,
+              patchLines[0].hasPrefix("--- "), patchLines[1].hasPrefix("+++ ") else { return nil }
+        func normalizedHeader(_ value: String, prefix: String) -> String? {
+            guard value.hasPrefix(prefix) else { return nil }
+            let raw = String(value.dropFirst(prefix.count)).split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
+            guard raw != "/dev/null", !raw.split(separator: "/").contains(".."), !raw.hasPrefix("/") || raw == expectedPath else { return nil }
+            let stripped = raw.hasPrefix("a/") || raw.hasPrefix("b/") ? String(raw.dropFirst(2)) : raw
+            let expected = expectedPath.hasPrefix("a/") || expectedPath.hasPrefix("b/") ? String(expectedPath.dropFirst(2)) : expectedPath
+            return stripped == expected ? stripped : nil
+        }
+        guard normalizedHeader(patchLines[0], prefix: "--- ") != nil,
+              normalizedHeader(patchLines[1], prefix: "+++ ") != nil else { return nil }
+
+        let hadTrailingNewline = current.hasSuffix("\n")
+        var original = current.components(separatedBy: "\n")
+        if hadTrailingNewline { original.removeLast() }
+        var output: [String] = []
+        var sourceIndex = 0
+        var index = 2
+        var sawHunk = false
+        let hunkRegex = try? NSRegularExpression(pattern: "^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@")
+        while index < patchLines.count {
+            if patchLines[index].isEmpty && index == patchLines.count - 1 { break }
+            guard let match = hunkRegex?.firstMatch(in: patchLines[index], range: NSRange(patchLines[index].startIndex..., in: patchLines[index]));
+                  let oldStartRange = Range(match.range(at: 1), in: patchLines[index]),
+                  let oldStart = Int(patchLines[index][oldStartRange]) else { return nil }
+            let oldCount: Int
+            if match.range(at: 2).location == NSNotFound {
+                oldCount = 1
+            } else if let oldCountRange = Range(match.range(at: 2), in: patchLines[index]), let parsedCount = Int(patchLines[index][oldCountRange]) {
+                oldCount = parsedCount
+            } else {
+                return nil
+            }
+            let oldCursor = oldCount == 0 && oldStart == 0 ? 0 : max(0, oldStart - 1)
+            guard oldCursor >= sourceIndex, oldCursor <= original.count else { return nil }
+            output.append(contentsOf: original[sourceIndex..<oldCursor])
+            sourceIndex = oldCursor
+            index += 1
+            var consumedOld = 0
+            var consumedNew = 0
+            sawHunk = true
+            while index < patchLines.count && !patchLines[index].hasPrefix("@@ ") {
+                let line = patchLines[index]
+                if line.hasPrefix("\\ No newline at end of file") { index += 1; continue }
+                guard let marker = line.first else { return nil }
+                let content = String(line.dropFirst())
+                switch marker {
+                case " ":
+                    guard sourceIndex < original.count, original[sourceIndex] == content else { return nil }
+                    output.append(content); sourceIndex += 1; consumedOld += 1; consumedNew += 1
+                case "-":
+                    guard sourceIndex < original.count, original[sourceIndex] == content else { return nil }
+                    sourceIndex += 1; consumedOld += 1
+                case "+":
+                    output.append(content); consumedNew += 1
+                default:
+                    return nil
+                }
+                index += 1
+            }
+            guard consumedOld == oldCount else { return nil }
+        }
+        guard sawHunk else { return nil }
+        output.append(contentsOf: original[sourceIndex...])
+        return output.joined(separator: "\n") + (hadTrailingNewline ? "\n" : "")
+    }
+
     /// Explicit terminal scope for a user-approved PC task. The historical sandbox path above
     /// remains the default; this branch is deliberately opt-in so old requests cannot silently
     /// gain access to the user's files or applications.
-    private static func executeComputerTerminal(_ payload: CodeExecutionPayload) -> (data: CommandData?, error: RovaError?) {
+    private static func executeComputerTerminal(_ payload: CodeExecutionPayload, processStarted: (@Sendable (Int32) -> Void)? = nil) -> (data: CommandData?, error: RovaError?) {
         let directoryPath = payload.workingDirectory ?? NSHomeDirectory()
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directoryPath, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -122,7 +226,8 @@ extension MacSystem {
                 arguments: ["-lc", payload.code, "wiqo-terminal"] + payload.arguments,
                 timeoutSeconds: payload.timeoutSeconds,
                 workingDirectory: URL(fileURLWithPath: directoryPath),
-                environment: environment
+                environment: environment,
+                processStarted: processStarted
             )
         case "python", "javascript":
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-terminal-\(UUID().uuidString)", isDirectory: true)
@@ -225,7 +330,8 @@ extension MacSystem {
         arguments: [String],
         timeoutSeconds: Int,
         workingDirectory: URL? = nil,
-        environment: [String: String]? = nil
+        environment: [String: String]? = nil,
+        processStarted: (@Sendable (Int32) -> Void)? = nil
     ) -> ProcessSnapshot {
         let started = Date()
         let process = Process()
@@ -245,6 +351,7 @@ extension MacSystem {
         do {
             try process.run()
             let ownsProcessGroup = setpgid(process.processIdentifier, process.processIdentifier) == 0
+            processStarted?(process.processIdentifier)
             _ = fcntl(stdoutPipe.fileHandleForReading.fileDescriptor, F_SETFL, O_NONBLOCK)
             _ = fcntl(stderrPipe.fileHandleForReading.fileDescriptor, F_SETFL, O_NONBLOCK)
             let deadline = Date().addingTimeInterval(TimeInterval(max(1, timeoutSeconds)))

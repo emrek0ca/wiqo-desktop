@@ -24,9 +24,16 @@ enum WiqoIntentError: Error, CustomLocalizedStringResourceConvertible {
 /// running, so this reads Keychain directly instead. Without a signature the Mac now rejects the
 /// relayed command outright (see MacBackendChannel.executeInteractiveCommand), matching the direct
 /// path's and the in-app relay fallback's trust requirement.
-private func pairedDeviceToken() -> String? {
-    guard let data = try? RovaKeychainStore.load(account: "ios-device-token") else { return nil }
-    return String(data: data, encoding: .utf8)
+private func pairedDeviceToken(deviceID: String) -> String? {
+    do { if let token = try RovaKeychainStore.loadDevicePairingToken(deviceID: deviceID) { return token } }
+    catch { return nil }
+    var legacyData: Data?
+    do { legacyData = try RovaKeychainStore.load(account: "ios-device-token") }
+    catch { return nil }
+    guard let legacyData, let token = String(data: legacyData, encoding: .utf8) else { return nil }
+    try? RovaKeychainStore.saveDevicePairingToken(token, deviceID: deviceID)
+    try? RovaKeychainStore.delete(account: "ios-device-token")
+    return token
 }
 
 private func performDeviceIntent(_ type: CommandType, payload: CommandPayload = .none, successMessage: String) async throws -> some IntentResult & ProvidesDialog {
@@ -36,9 +43,10 @@ private func performDeviceIntent(_ type: CommandType, payload: CommandPayload = 
     }
     do {
         let commandID = UUID()
-        let nonce = try? RovaCrypto.randomToken()
-        let signature = pairedDeviceToken().map { RovaValidation.signRequest(id: commandID, type: type, nonce: nonce ?? "", token: $0) }
-        let request = CommandRequest(id: commandID, type: type, payload: payload, signature: signature, nonce: nonce)
+        guard let token = pairedDeviceToken(deviceID: deviceID), let nonce = try? RovaCrypto.randomToken() else {
+            throw WiqoIntentError.deviceFailure("PC eşleşme anahtarı kullanılamıyor. Wiqo'da yeniden eşleşin.")
+        }
+        let request = RovaValidation.signedRequest(id: commandID, type: type, payload: payload, nonce: nonce, token: token)
         let result = try await RovaBackendClient.sendDeviceCommand(request, deviceId: deviceID)
         if let error = result.error { throw WiqoIntentError.deviceFailure(error.message) }
         guard result.status == .completed else { throw WiqoIntentError.deviceFailure("PC komutunun sonucu doğrulanamadı.") }

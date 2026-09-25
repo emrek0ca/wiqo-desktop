@@ -67,14 +67,18 @@ private struct WiqoActivityView: View {
         .task { await load() }
         .refreshable { await load() }
         .confirmationDialog(
-            selectedPendingTask?.ref?.type == "project" ? "Proje iptal edilsin mi?" : "PC işi iptal edilsin mi?",
+            selectedPendingTask?.ref?.type == "project" ? "Proje iptal edilsin mi?"
+                : selectedPendingTask?.ref?.type == "terminal_grant" ? "Terminal oturumu kapatılsın mı?"
+                : "PC işi iptal edilsin mi?",
             isPresented: Binding(
                 get: { selectedPendingTask != nil },
                 set: { if !$0 { selectedPendingTask = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button(selectedPendingTask?.ref?.type == "project" ? "Projeyi iptal et" : "PC işini iptal et", role: .destructive) {
+            Button(selectedPendingTask?.ref?.type == "project" ? "Projeyi iptal et"
+                : selectedPendingTask?.ref?.type == "terminal_grant" ? "Oturumu kapat"
+                : "PC işini iptal et", role: .destructive) {
                 guard let item = selectedPendingTask else { return }
                 selectedPendingTask = nil
                 Task { await cancelPendingTask(item) }
@@ -82,7 +86,9 @@ private struct WiqoActivityView: View {
         } message: {
             Text(selectedPendingTask?.ref?.type == "project"
                  ? "Wiqo projeyi durdurur; o ana kadar yapılan kısım teslim edilmez."
-                 : "PC'ye gönderilmiş bir adımın sonucu belirsiz kalabilir; Wiqo bunu Etkinlik'te gösterecek.")
+                 : selectedPendingTask?.ref?.type == "terminal_grant"
+                    ? "Oturum izni hemen kapatılır. PC çevrimdışıysa başlamış bir işin durduğu doğrulanamayabilir."
+                    : "PC'ye gönderilmiş bir adımın sonucu belirsiz kalabilir; Wiqo bunu Etkinlik'te gösterecek.")
         }
         .alert("İptal", isPresented: Binding(
             get: { cancelNotice != nil },
@@ -143,11 +149,43 @@ private struct WiqoActivityView: View {
     private func canCancel(_ item: RovaBackendClient.ActivityItem) -> Bool {
         (item.ref?.type == "pending_task" && ["waiting_for_pc", "running"].contains(item.state))
             || (item.ref?.type == "project" && item.state == "running")
+            || (item.ref?.type == "terminal_job" && ["waiting_for_pc", "running"].contains(item.state))
+            || (item.ref?.type == "terminal_grant" && item.state == "watching")
     }
 
     private func cancelPendingTask(_ item: RovaBackendClient.ActivityItem) async {
         if item.ref?.type == "project" {
             await cancelProject(item)
+            return
+        }
+        if let reference = item.ref, reference.type == "terminal_grant" {
+            cancellingTaskID = item.id
+            defer { cancellingTaskID = nil }
+            do {
+                let result = try await RovaBackendClient.revokeTerminalGrant(id: reference.id)
+                cancelNotice = result.unknownJobCount == 0
+                    ? "Terminal oturumu kapatıldı."
+                    : "Terminal oturumu kapatıldı; PC çevrimdışı olduğu için \(result.unknownJobCount) başlamış işin durduğu doğrulanamadı."
+            } catch {
+                cancelNotice = "Oturum kapatılamadı. Etkinlik'i yenileyip durumu tekrar kontrol et."
+            }
+            await load()
+            return
+        }
+        if let reference = item.ref, reference.type == "terminal_job" {
+            cancellingTaskID = item.id
+            defer { cancellingTaskID = nil }
+            do {
+                let result = try await RovaBackendClient.cancelTerminalJob(id: reference.id)
+                cancelNotice = result.state == "cancelled"
+                    ? "Terminal işi durduruldu."
+                    : result.state == "completed" || result.state == "failed"
+                        ? "Terminal işi zaten \(result.state == "completed" ? "tamamlandı" : "başarısız oldu")."
+                        : "İşin durduğu doğrulanamadı; sonucu belirsiz olarak Etkinlik'te gösteriliyor."
+            } catch {
+                cancelNotice = "Terminal işi iptal edilemedi veya sonucu belirsiz. Etkinlik'i yenileyip durumu kontrol et."
+            }
+            await load()
             return
         }
         guard let reference = item.ref, reference.type == "pending_task", let id = Int(reference.id), id > 0 else { return }

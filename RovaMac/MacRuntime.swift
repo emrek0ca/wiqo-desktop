@@ -550,6 +550,11 @@ final class MacRuntime: ObservableObject {
                 session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "AUTH_REQUIRED", message: "Önce cihaz doğrulaması gerekir."))))
                 return
             }
+            if request.signatureVersion != 2 {
+                authLogger.warning("Legacy command signature version rejected")
+                session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "SIGNATURE_VERSION_REQUIRED", message: "Güvenli komut imzası için Wiqo iPhone uygulamasını güncelleyin.", category: "permission"))))
+                return
+            }
             // Every command must carry a valid signature - a nil signature used to mean "skip
             // verification," which silently accepted anything on an already-authenticated session
             // instead of proving the caller still holds the pairing token per command. There is no
@@ -564,7 +569,7 @@ final class MacRuntime: ObservableObject {
             Task { [engine, errorLogger] in
                 let result = await engine.execute(request, runtimeStatus: currentStatus)
                 if result.status == .failed || result.status == .denied || result.status == .unknown {
-                    errorLogger.error("Capability \(request.type.rawValue, privacy: .public) \(result.status.rawValue, privacy: .public): \(result.message, privacy: .public)")
+                    errorLogger.error("Capability \(request.type.rawValue, privacy: .public) \(result.status.rawValue, privacy: .public), error_code=\(result.error?.code ?? "unknown", privacy: .public)")
                 }
                 session.send(WireEnvelope(requestID: envelope.requestID, message: .result(result)))
             }
