@@ -1521,7 +1521,8 @@ struct CopilotView: View {
                         id: activity.id,
                         phase: activity.phase,
                         label: activity.label,
-                        state: ThinkingTrace.Step.State(rawValue: activity.state) ?? .done
+                        state: ThinkingTrace.Step.State(rawValue: activity.state) ?? .done,
+                        persona: activity.persona
                     )
                 },
                 onUsage: { used, limit in
@@ -1898,7 +1899,8 @@ struct CopilotView: View {
                         id: activity.id,
                         phase: activity.phase,
                         label: activity.label,
-                        state: ThinkingTrace.Step.State(rawValue: activity.state) ?? .done
+                        state: ThinkingTrace.Step.State(rawValue: activity.state) ?? .done,
+                        persona: activity.persona
                     )
                 },
                 onUsage: { used, limit in

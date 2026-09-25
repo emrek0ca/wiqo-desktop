@@ -56,8 +56,11 @@ struct ThinkingTimelineView: View {
         let label = current?.label ?? trace.steps.last?.label ?? fallbackLabel
         let quiet = now.timeIntervalSince(trace.lastChangeAt) >= Self.quietThreshold
         let elapsed = now.timeIntervalSince(current?.startedAt ?? trace.startedAt)
-        return HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if trace.showsTimeline {
+        return HStack(alignment: .center, spacing: 8) {
+            if trace.showsTimeline, let persona = trace.persona {
+                // The sub-agent doing the work, moving in character while the turn runs.
+                WiqoAgentMascot(persona, size: 34, isWorking: true)
+            } else if trace.showsTimeline {
                 ThinkingPulse()
                     .frame(width: 16)
             }
@@ -99,6 +102,9 @@ struct ThinkingSummaryView: View {
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
                         .rotationEffect(.degrees(expanded ? 90 : 0))
+                    if let persona = trace.persona {
+                        WiqoAgentMascot(persona, size: 22)
+                    }
                     Text(trace.summary)
                         .font(.caption)
                 }

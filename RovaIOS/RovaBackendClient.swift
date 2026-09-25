@@ -234,6 +234,8 @@ enum RovaBackendClient {
         let phase: String
         let label: String
         let state: String
+        /// general / research / developer / execution: the sub-agent doing this line (mascot).
+        let persona: String?
     }
 
     struct ExecutionStepUpdate: Decodable, Equatable {

@@ -37,6 +37,8 @@ struct ThinkingTrace: Codable, Hashable, Sendable {
     private(set) var endedAt: Date?
     /// When the timeline last moved. Drives the "hâlâ çalışıyorum" hint when it stays quiet.
     private(set) var lastChangeAt: Date
+    /// The sub-agent at work (general / research / developer / execution) - drives the mascot.
+    private(set) var persona: String?
     private var localCount = 0
 
     init(startedAt: Date = Date()) {
@@ -69,7 +71,8 @@ struct ThinkingTrace: Codable, Hashable, Sendable {
     }
 
     /// A backend `activity` event. Opens, adopts or closes a line by id.
-    mutating func apply(id: String, phase: String, label: String, state: Step.State, at date: Date = Date()) {
+    mutating func apply(id: String, phase: String, label: String, state: Step.State, persona: String? = nil, at date: Date = Date()) {
+        if let persona, !isFinished { self.persona = persona }
         let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !id.isEmpty, !label.isEmpty else { return }
         if let index = steps.firstIndex(where: { $0.id == id }) {
