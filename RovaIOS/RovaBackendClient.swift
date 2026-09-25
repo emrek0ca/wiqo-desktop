@@ -33,6 +33,7 @@ enum RovaBackendError: Error, LocalizedError {
     case network(String)
     case invalidResponse
     case declined(String)
+    case copilotPayloadTooLarge
 
     var errorDescription: String? {
         switch self {
@@ -40,6 +41,7 @@ enum RovaBackendError: Error, LocalizedError {
         case .network(let message): return message
         case .invalidResponse: return "Sunucudan geçersiz bir yanıt alındı. Lütfen tekrar dene."
         case .declined(let reason): return reason
+        case .copilotPayloadTooLarge: return "Eklerin toplam boyutu çok büyük. Daha az dosya veya görsel ekleyip tekrar dene."
         }
     }
 }
@@ -51,6 +53,10 @@ enum RovaBackendError: Error, LocalizedError {
 /// the AI copilot feature.
 enum RovaBackendClient {
     private static let tokenAccount = "rova-backend-token"
+    /// Mirrors rova-backend's chat file-content contract and leaves room under express.json's 20 MB cap.
+    private static let maxFileContentsPayloadBytes = 6_000_000
+    private static let maxAttachmentContentsPayloadBytes = 19_000_000
+    private static let maxCopilotRequestBodyBytes = 19_500_000
     static let apnsBundleID = "com.wiqo.ios"
 
     #if DEBUG
@@ -248,6 +254,76 @@ enum RovaBackendClient {
         /// The reply is only a "doing it now" line; replace it with the verified outcome once the
         /// steps finish (see DeviceOutcomeNarrator).
         var replyIsProgress = false
+        /// Safe PC steps queued because the PC was offline; they run once it reconnects.
+        var deferredTask: DeferredTask? = nil
+        /// A website, long document, presentation or image set Wiqo now builds step by step in
+        /// the background (backend src/projects/); the chat shows its live card.
+        var projectTask: ProjectTask? = nil
+    }
+
+    /// The handle a chat reply carries for a background project.
+    struct ProjectTask: Codable, Hashable, Sendable {
+        let id: Int
+        let kind: String
+        let title: String
+        let status: String
+    }
+
+    /// Full state of a background project (`GET projects/:id`): the plan as a checklist, the live
+    /// progress line, the verification results and - once done - the delivered files.
+    struct ProjectDetail: Decodable, Equatable, Sendable {
+        struct Step: Decodable, Equatable, Hashable, Sendable {
+            let id: String
+            let title: String
+            let status: String
+            let detail: String?
+        }
+        struct Check: Decodable, Equatable, Hashable, Sendable {
+            let label: String
+            let passed: Bool
+            let detail: String?
+        }
+        /// One real event of the live feed: a plan decision, a file written, a check result, a fix.
+        struct Event: Decodable, Equatable, Hashable, Sendable {
+            let at: String
+            let kind: String
+            let text: String
+            let stepId: String?
+        }
+        let id: Int
+        let kind: String
+        let title: String
+        let status: String
+        let phase: String
+        let progress: String?
+        let steps: [Step]
+        let checks: [Check]
+        let summary: String?
+        let error: String?
+        let artifacts: [ArtifactDescriptor]
+        let artifactsExpired: Bool?
+        // Optional so a card keeps working against a backend that predates the live feed.
+        let events: [Event]?
+        let preview: ArtifactDescriptor?
+        let stepStartedAt: String?
+        let serverTime: String?
+        let updatedAt: String?
+
+        var isActive: Bool { status == "running" }
+    }
+
+    /// Work Wiqo will do the next time the PC comes online (backend automation/deferred.ts).
+    struct DeferredTask: Codable, Hashable, Sendable {
+        let id: Int
+        let summary: String
+        let status: String
+        let createdAt: String
+        let expiresAt: String
+    }
+
+    struct DeferredCancellationResponse: Decodable, Sendable {
+        let cancelled: Bool?
+        let outcomeUnknown: Bool?
     }
 
     /// Result of running code on the canvas (`/canvas/run`) - the same sandbox run_python uses,
@@ -293,6 +369,8 @@ enum RovaBackendClient {
         let artifacts: [ArtifactDescriptor]?
         let backendConfirmations: [BackendConfirmation]?
         let replyIsProgress: Bool?
+        let deferredTask: DeferredTask?
+        let projectTask: ProjectTask?
     }
 
     private struct CopilotErrorResponse: Decodable {
@@ -367,6 +445,8 @@ enum RovaBackendClient {
         deviceResults: [DeviceExecutionResult] = [],
         requestID: UUID = UUID(),
         attachments: [ChatAttachment] = [],
+        /// Content read on this phone (FileContentExtractor); the files themselves are never sent.
+        files: [FileContent] = [],
         // Awaited on the main actor in stream order - separate `Task { @MainActor }` hops per event
         // are not guaranteed to run in order, which would scramble streamed text.
         onStatus: @escaping @MainActor @Sendable (String) -> Void = { _ in },
@@ -434,9 +514,33 @@ enum RovaBackendClient {
             }
         ]
         var requestBody = body
+        let encoder = JSONEncoder()
+        var filePayloadBytes = files.isEmpty ? 0 : 2 // JSON array brackets
+        for (index, file) in files.enumerated() {
+            filePayloadBytes += try encoder.encode(file).count + (index == 0 ? 0 : 1)
+            guard filePayloadBytes <= Self.maxFileContentsPayloadBytes else {
+                throw RovaBackendError.copilotPayloadTooLarge
+            }
+        }
+        if !files.isEmpty {
+            let encoded = try encoder.encode(files)
+            guard encoded.count <= Self.maxFileContentsPayloadBytes,
+                  let object = try? JSONSerialization.jsonObject(with: encoded) else {
+                throw RovaBackendError.copilotPayloadTooLarge
+            }
+            requestBody["files"] = object
+        }
+        let imagePayloadBytes = attachments.reduce(0) { $0 + $1.dataBase64.utf8.count }
+        guard imagePayloadBytes <= 18_000_000,
+              filePayloadBytes + imagePayloadBytes <= Self.maxAttachmentContentsPayloadBytes else {
+            throw RovaBackendError.copilotPayloadTooLarge
+        }
         if let deviceID { requestBody["deviceId"] = deviceID.uuidString }
         if let turnCount { requestBody["turnCount"] = turnCount }
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [.fragmentsAllowed])
+        guard (request.httpBody?.count ?? 0) <= Self.maxCopilotRequestBodyBytes else {
+            throw RovaBackendError.copilotPayloadTooLarge
+        }
 
         let bytes: URLSession.AsyncBytes
         let response: URLResponse
@@ -466,6 +570,8 @@ enum RovaBackendClient {
             let artifacts: [ArtifactDescriptor]?
             let backendConfirmations: [BackendConfirmation]?
             let replyIsProgress: Bool?
+            let deferredTask: DeferredTask?
+            let projectTask: ProjectTask?
         }
         struct ConfirmationNeededEvent: Decodable {
             let steps: [CopilotStepResponse]
@@ -537,7 +643,9 @@ enum RovaBackendClient {
                         executionState: event.executionState,
                         artifacts: event.artifacts ?? [],
                         backendConfirmations: event.backendConfirmations ?? [],
-                        replyIsProgress: event.replyIsProgress ?? false
+                        replyIsProgress: event.replyIsProgress ?? false,
+                        deferredTask: event.deferredTask,
+                        projectTask: event.projectTask
                     )
                 case "error":
                     let event = try? decoder.decode(ErrorEvent.self, from: json)
@@ -555,15 +663,15 @@ enum RovaBackendClient {
         return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus)
     }
 
-    static func resolveBackendConfirmation(id: UUID, approved: Bool) async throws -> BackendConfirmationResponse {
-        try await authorizedPost(
-            "copilot/confirm",
-            body: [
-                "confirmationId": id.uuidString,
-                "approved": approved
-            ],
-            as: BackendConfirmationResponse.self
-        )
+    static func resolveBackendConfirmation(id: UUID, approved: Bool, terminalGrant: (grantId: String, signature: String)? = nil) async throws -> BackendConfirmationResponse {
+        var body: [String: Any] = [
+            "confirmationId": id.uuidString,
+            "approved": approved
+        ]
+        if let terminalGrant {
+            body["terminalGrant"] = ["grantId": terminalGrant.grantId, "signature": terminalGrant.signature]
+        }
+        return try await authorizedPost("copilot/confirm", body: body, as: BackendConfirmationResponse.self)
     }
 
     private static func makeConverseResult(
@@ -572,7 +680,9 @@ enum RovaBackendClient {
         executionState: String?,
         artifacts: [ArtifactDescriptor],
         backendConfirmations: [BackendConfirmation],
-        replyIsProgress: Bool = false
+        replyIsProgress: Bool = false,
+        deferredTask: DeferredTask? = nil,
+        projectTask: ProjectTask? = nil
     ) -> ConverseResult {
         let planned = steps.map { step in
             let localDestructive = RovaCommandAuthority.isDestructive(type: step.type, payload: step.payload)
@@ -592,7 +702,9 @@ enum RovaBackendClient {
             executionState: executionState,
             artifacts: artifacts,
             backendConfirmations: backendConfirmations,
-            replyIsProgress: replyIsProgress
+            replyIsProgress: replyIsProgress,
+            deferredTask: deferredTask,
+            projectTask: projectTask
         )
     }
 
@@ -616,7 +728,9 @@ enum RovaBackendClient {
                         executionState: response.executionState,
                         artifacts: response.artifacts ?? [],
                         backendConfirmations: response.backendConfirmations ?? [],
-                        replyIsProgress: response.replyIsProgress ?? false
+                        replyIsProgress: response.replyIsProgress ?? false,
+                        deferredTask: response.deferredTask,
+                        projectTask: response.projectTask
                     )
                 case "failed":
                     throw RovaBackendError.declined(nonEmptyMessage(state.error?.message, fallback: "İşlem tamamlanamadı."))
@@ -1348,6 +1462,23 @@ enum RovaBackendClient {
             body: ["resolution": resolution],
             as: AutomationActionResponse.self
         )
+    }
+
+    static func fetchProject(id: Int) async throws -> ProjectDetail {
+        try await authorizedGet("projects/\(id)", as: ProjectDetail.self)
+    }
+
+    static func cancelProject(id: Int) async throws -> ProjectDetail {
+        try await authorizedPost("projects/\(id)/cancel", body: [:], as: ProjectDetail.self)
+    }
+
+    static func retryProject(id: Int) async throws -> ProjectDetail {
+        try await authorizedPost("projects/\(id)/retry", body: [:], as: ProjectDetail.self)
+    }
+
+    static func cancelDeferredTask(id: Int) async throws -> DeferredCancellationResponse {
+        let data = try await authorizedMutate("devices/pending-tasks/\(id)", method: "DELETE")
+        return try JSONDecoder().decode(DeferredCancellationResponse.self, from: data)
     }
 
     static func cancelAutomation(id: Int) async throws {

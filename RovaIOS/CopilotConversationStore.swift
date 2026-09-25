@@ -18,13 +18,22 @@ struct CopilotStoredMessage: Codable, Hashable, Sendable {
     let attachmentThumbnails: [Data]?
     /// The reply's thinking timeline - same nil-on-missing-key compatibility as above.
     let thinking: ThinkingTrace?
+    /// Names of files the user attached (their content is kept by the backend, not here).
+    let fileNames: [String]?
+    /// A PC task queued from this reply; kept so it remains cancellable when the chat is reopened.
+    let deferredTask: RovaBackendClient.DeferredTask?
+    /// A background project started from this reply; kept so its card resumes when reopened.
+    let projectTask: RovaBackendClient.ProjectTask?
 
-    init(role: Role, text: String, artifacts: [RovaBackendClient.ArtifactDescriptor]? = nil, attachmentThumbnails: [Data]? = nil, thinking: ThinkingTrace? = nil) {
+    init(role: Role, text: String, artifacts: [RovaBackendClient.ArtifactDescriptor]? = nil, attachmentThumbnails: [Data]? = nil, thinking: ThinkingTrace? = nil, fileNames: [String]? = nil, deferredTask: RovaBackendClient.DeferredTask? = nil, projectTask: RovaBackendClient.ProjectTask? = nil) {
         self.role = role
         self.text = text
         self.artifacts = artifacts
         self.attachmentThumbnails = attachmentThumbnails
         self.thinking = thinking
+        self.fileNames = fileNames
+        self.deferredTask = deferredTask
+        self.projectTask = projectTask
     }
 }
 
@@ -204,7 +213,7 @@ enum CopilotConversationStore {
         // A chat that was opened but never used must not clutter the history list.
         guard !messages.isEmpty else { return }
         let boundedMessages = Array(messages.suffix(80)).map {
-            CopilotStoredMessage(role: $0.role, text: String($0.text.prefix(12_000)), artifacts: $0.artifacts, attachmentThumbnails: $0.attachmentThumbnails, thinking: $0.thinking)
+            CopilotStoredMessage(role: $0.role, text: String($0.text.prefix(12_000)), artifacts: $0.artifacts, attachmentThumbnails: $0.attachmentThumbnails, thinking: $0.thinking, fileNames: $0.fileNames, deferredTask: $0.deferredTask, projectTask: $0.projectTask)
         }
         if let data = try? JSONEncoder().encode(boundedMessages) {
             UserDefaults.standard.set(data, forKey: keys.messagesPrefix + id)

@@ -10,10 +10,14 @@ enum ArtifactInlineKind {
     case image
     case vectorChart
     case pdf
+    /// A self-contained page Wiqo built (project website or slide deck), previewed as a live app.
+    case html
     case none
 
     init(mimeType: String) {
-        if mimeType == "image/svg+xml" {
+        if mimeType.hasPrefix("text/html") {
+            self = .html
+        } else if mimeType == "image/svg+xml" {
             self = .vectorChart
         } else if mimeType.hasPrefix("image/") {
             self = .image
@@ -40,6 +44,7 @@ struct InlineArtifactPreview: View {
     // part of the app rather than a hand-off to iOS chrome, and it's the one artifact type common
     // enough (create_document's docx/pdf output) to be worth the dedicated viewer.
     @State private var showingFullScreenPDF = false
+    @State private var showingCanvas = false
 
     var body: some View {
         Group {
@@ -126,6 +131,18 @@ struct InlineArtifactPreview: View {
             } else {
                 ArtifactFileRow(artifact: artifact, isBusy: false, action: onOpenFullscreen)
             }
+        case .html:
+            if let data = try? Data(contentsOf: url), let html = String(data: data, encoding: .utf8), html.contains("<") {
+                VStack(alignment: .leading, spacing: 8) {
+                    WiqoAppPreviewCard(html: html) { showingCanvas = true }
+                    ArtifactFileRow(artifact: artifact, isBusy: false, action: onOpenFullscreen)
+                }
+                .sheet(isPresented: $showingCanvas) {
+                    CanvasView(language: "html", code: html, autoRun: true)
+                }
+            } else {
+                ArtifactFileRow(artifact: artifact, isBusy: false, action: onOpenFullscreen)
+            }
         case .none:
             ArtifactFileRow(artifact: artifact, isBusy: false, action: onOpenFullscreen)
         }
@@ -177,6 +194,9 @@ struct ArtifactFileRow: View {
         let name = artifact.filename.lowercased()
         if artifact.mimeType.hasPrefix("image/") { return "photo.fill" }
         if name.hasSuffix(".pdf") { return "doc.richtext.fill" }
+        if name.hasSuffix(".zip") { return "doc.zipper" }
+        if name.hasSuffix(".pptx") || name.hasSuffix(".key") { return "rectangle.on.rectangle.angled" }
+        if name.hasSuffix(".html") { return "globe" }
         if name.hasSuffix(".xlsx") || name.hasSuffix(".xls") || name.hasSuffix(".csv") { return "tablecells.fill" }
         if name.hasSuffix(".docx") || name.hasSuffix(".doc") { return "doc.text.fill" }
         return "doc.fill"
@@ -185,6 +205,8 @@ struct ArtifactFileRow: View {
     private var tint: Color {
         let name = artifact.filename.lowercased()
         if name.hasSuffix(".pdf") { return .red }
+        if name.hasSuffix(".pptx") { return .orange }
+        if name.hasSuffix(".html") || name.hasSuffix(".zip") { return .indigo }
         if name.hasSuffix(".xlsx") || name.hasSuffix(".xls") || name.hasSuffix(".csv") { return .green }
         if name.hasSuffix(".docx") || name.hasSuffix(".doc") { return .blue }
         if artifact.mimeType.hasPrefix("image/") { return .purple }

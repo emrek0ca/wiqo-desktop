@@ -311,6 +311,8 @@ final class MacBackendChannel: NSObject {
             "displayName": info.displayName,
             "platform": info.platform,
             "capabilities": info.capabilities,
+            // Optional protocol features; an older backend ignores the field.
+            "features": CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature] : [],
             "applicationTargets": info.applicationTargets.map { target in
                 [
                     "name": target.name,
@@ -431,6 +433,8 @@ final class MacBackendChannel: NSObject {
             break
         case .interactiveCommand(let payload):
             executeInteractiveCommand(payload, on: task)
+        case .terminalCommand(let payload):
+            executeTerminalCommand(payload, on: task)
         }
     }
 
@@ -451,6 +455,9 @@ final class MacBackendChannel: NSObject {
             decoder.dateDecodingStrategy = .iso8601
             guard let payload = try? decoder.decode(InteractiveCommandPayload.self, from: data) else { return nil }
             return .interactiveCommand(payload)
+        case "terminalCommand":
+            guard let payload = try? decoder.decode(TerminalCommandPayload.self, from: data) else { return nil }
+            return .terminalCommand(payload)
         default:
             return nil
         }
@@ -475,6 +482,69 @@ final class MacBackendChannel: NSObject {
         Task { @MainActor [weak self, engine, runtimeStatus] in
             let result = await engine.execute(payload.request, runtimeStatus: runtimeStatus())
             self?.sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)
+        }
+    }
+
+    /// One command of a terminal session the user approved on the phone. The backend only relays:
+    /// the grant must carry a valid signature made with this Mac's pairing token (which the backend
+    /// never has), must not be expired, the working folder must resolve inside the granted folder,
+    /// "read" grants run inspection commands only, and forbidden commands never run. Code execution
+    /// turned off in Wiqo's capability settings turns this off too.
+    private func executeTerminalCommand(_ payload: TerminalCommandPayload, on task: URLSessionWebSocketTask) {
+        let request = payload.request
+        let grant = request.grant
+        let deny: (String, String) -> Void = { [weak self] code, message in
+            let now = Date()
+            let error = RovaError(code: code, message: message, category: "permission")
+            let result = CommandResult(commandID: UUID(), status: .denied, message: message, startedAt: now, finishedAt: now, error: error)
+            self?.sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)
+        }
+        guard CapabilityStore.shared.isEnabled("device.code.execute") else {
+            deny("TERMINAL_DISABLED", "Kod çalıştırma Wiqo Mac ayarlarında kapalı.")
+            return
+        }
+        guard let token = pairedDeviceToken(),
+              RovaTerminalPolicy.verifyGrant(grantId: grant.id, rootDirectory: grant.rootDirectory, mode: grant.mode, expiresAt: grant.expiresAt, signature: grant.signature, token: token) else {
+            deny("TERMINAL_GRANT_INVALID", "Terminal oturum izni geçersiz ya da süresi dolmuş; telefondan yeniden onay gerekiyor.")
+            return
+        }
+        guard let root = RovaTerminalPolicy.resolveDirectory(grant.rootDirectory),
+              let directory = RovaTerminalPolicy.resolveDirectory(request.workingDirectory),
+              RovaTerminalPolicy.isWithin(directory, root: root) else {
+            deny("TERMINAL_OUTSIDE_GRANT", "Çalışma klasörü onaylanan klasörün dışında.")
+            return
+        }
+        let command = request.command
+        guard !command.isEmpty, command.count <= 4_000, !command.contains("\0") else {
+            deny("TERMINAL_COMMAND_INVALID", "Komut geçersiz.")
+            return
+        }
+        if RovaTerminalPolicy.isForbidden(command) {
+            deny("TERMINAL_COMMAND_FORBIDDEN", "Bu komut Wiqo terminal oturumlarında çalıştırılmaz.")
+            return
+        }
+        if grant.mode != "full" && !RovaTerminalPolicy.isReadOnly(command) {
+            deny("TERMINAL_READ_ONLY", "Bu oturum yalnızca okuma izni veriyor; değiştiren komut için yeni onay gerekiyor.")
+            return
+        }
+        let execution = CodeExecutionPayload(
+            language: "shell",
+            code: command,
+            timeoutSeconds: max(1, min(110, request.timeoutSeconds ?? 60)),
+            allowNetwork: true,
+            scope: "computer",
+            shell: "zsh",
+            workingDirectory: directory
+        )
+        let commandId = payload.commandId
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let started = Date()
+            let outcome = MacSystem.executeCode(execution)
+            let finished = Date()
+            let status: CommandStatus = outcome.error == nil ? .completed : (outcome.error?.category == "timeout" ? .unknown : .failed)
+            let message = outcome.error?.message ?? "Komut tamamlandı."
+            let result = CommandResult(commandID: UUID(), status: status, message: message, startedAt: started, finishedAt: finished, data: outcome.data, error: outcome.error)
+            await MainActor.run { self?.sendInteractiveCommandResult(commandId: commandId, result: result, on: task) }
         }
     }
 
@@ -678,6 +748,28 @@ private enum ParsedBackendMessage: Sendable {
     case automationRun(AutomationRunPayload)
     case automationComplete
     case interactiveCommand(InteractiveCommandPayload)
+    case terminalCommand(TerminalCommandPayload)
+}
+
+private struct TerminalGrantPayload: Decodable, Sendable {
+    let id: String
+    let rootDirectory: String
+    let mode: String
+    let expiresAt: Int
+    let signature: String
+}
+
+private struct TerminalCommandRequest: Decodable, Sendable {
+    let grant: TerminalGrantPayload
+    let command: String
+    let workingDirectory: String
+    let timeoutSeconds: Int?
+}
+
+private struct TerminalCommandPayload: Decodable, Sendable {
+    let type: String
+    let commandId: String
+    let request: TerminalCommandRequest
 }
 
 private struct AutomationRunPayload: Decodable, Sendable {

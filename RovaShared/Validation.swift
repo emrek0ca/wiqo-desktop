@@ -437,3 +437,129 @@ public enum RovaCommandAuthority {
         }
     }
 }
+
+/// Terminal sessions on the paired Mac (backend tools/terminalTools.ts mirrors the command rules).
+/// The phone signs a time-boxed grant - folder, mode, expiry - with the pairing token; the backend
+/// relays it but can neither create nor widen one. The Mac checks the signature, the expiry, that
+/// the working folder resolves inside the granted folder, and these command rules on every command.
+public enum RovaTerminalPolicy {
+    public static let feature = "terminal-session-v1"
+
+    public static func grantMessage(grantId: String, rootDirectory: String, mode: String, expiresAt: Int) -> String {
+        "wiqo-terminal-grant:v1:\(grantId.lowercased()):\(rootDirectory):\(mode):\(expiresAt)"
+    }
+
+    public static func signGrant(grantId: String, rootDirectory: String, mode: String, expiresAt: Int, token: String) -> String {
+        RovaCrypto.hmacSHA256Hex(key: token, message: grantMessage(grantId: grantId, rootDirectory: rootDirectory, mode: mode, expiresAt: expiresAt))
+    }
+
+    public static func verifyGrant(grantId: String, rootDirectory: String, mode: String, expiresAt: Int, signature: String, token: String, now: Date = Date()) -> Bool {
+        guard mode == "read" || mode == "full", expiresAt > Int(now.timeIntervalSince1970), expiresAt <= Int(now.timeIntervalSince1970) + 2 * 60 * 60 else { return false }
+        let expected = signGrant(grantId: grantId, rootDirectory: rootDirectory, mode: mode, expiresAt: expiresAt, token: token)
+        return RovaCrypto.constantTimeEquals(signature.lowercased(), expected)
+    }
+
+    private static let readOnlyPrograms: Set<String> = [
+        "ls", "pwd", "cat", "head", "tail", "wc", "grep", "egrep", "rg", "find", "file", "stat", "du", "df", "tree", "which", "whereis",
+        "type", "echo", "date", "uname", "sw_vers", "whoami", "ps", "sort", "uniq", "cut", "jq", "diff", "cmp", "basename", "dirname",
+        "realpath", "md5", "shasum", "lsof", "uptime", "hostname", "xcodebuild", "system_profiler"
+    ]
+    private static let versionOnlyPrograms: Set<String> = ["node", "npm", "npx", "python", "python3", "pip", "pip3", "brew", "java", "swift", "go", "cargo", "ruby", "git", "docker", "pnpm", "yarn"]
+    private static let gitReadSubcommands: Set<String> = ["status", "log", "diff", "show", "branch", "remote", "rev-parse", "ls-files", "blame", "describe", "tag", "shortlog", "config"]
+    private static let packageReadSubcommands: [String: Set<String>] = [
+        "npm": ["ls", "list", "outdated", "view"], "pnpm": ["ls", "list", "outdated"], "yarn": ["list", "outdated", "info"],
+        "pip": ["list", "show", "freeze"], "pip3": ["list", "show", "freeze"], "brew": ["list", "info", "outdated", "search"],
+        "docker": ["ps", "images", "version", "info"]
+    ]
+    private static let forbiddenPatterns: [String] = [
+        #"(^|[\s;&|(])sudo(\s|$)"#,
+        #"(^|[\s;&|(])su(\s|$)"#,
+        #"\brm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)+(/|~|\$HOME|\*)(\s|$|/\s|/\*)"#,
+        #"\b(mkfs|fdisk|diskutil\s+(erase|partition|zero)|dd\s+if=)"#,
+        #"\b(shutdown|reboot|halt|launchctl|csrutil|nvram|spctl|kextload)\b"#,
+        #"\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(sh|bash|zsh|python3?)\b"#,
+        #"\bchmod\s+-R\s+[0-7]{3,4}\s+(/|~)(\s|$)"#,
+        #"\bchown\s+-R\b[^;&|]*\s(/|~)(\s|$)"#,
+        #":\(\)\s*\{\s*:\|:&\s*\};:"#,
+        #"\bsecurity\s+(dump-keychain|find-generic-password|find-internet-password)"#,
+        #"\bosascript\b"#,
+        #"\bcrontab\s+-r\b"#
+    ]
+
+    private static func matches(_ pattern: String, _ text: String) -> Bool {
+        text.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    public static func isForbidden(_ command: String) -> Bool {
+        forbiddenPatterns.contains { matches($0, command) }
+    }
+
+    /// Conservative: anything that is not clearly an inspection needs a "full" grant.
+    public static func isReadOnly(_ command: String) -> Bool {
+        let withoutStderrMerge = command.replacingOccurrences(of: "2>&1", with: "")
+        if matches(#"[`<]|\$\(|>(?!&1|\s*/dev/null)|(^|[^&])&($|[^&])"#, withoutStderrMerge) { return false }
+        let segments = command
+            .replacingOccurrences(of: "||", with: "\n").replacingOccurrences(of: "&&", with: "\n")
+            .replacingOccurrences(of: ";", with: "\n").replacingOccurrences(of: "|", with: "\n")
+            .split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard !segments.isEmpty else { return false }
+        return segments.allSatisfy { segment in
+            let words = segment.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+            guard let first = words.first else { return false }
+            let program = (first as NSString).lastPathComponent
+            let rest = Array(words.dropFirst())
+            if program == "find" { return !rest.contains { $0.range(of: #"^-(delete|exec|execdir|ok|okdir|fprint)"#, options: .regularExpression) != nil } }
+            if program == "git" {
+                guard let sub = rest.first, gitReadSubcommands.contains(sub) else { return false }
+                if sub == "config" { return rest.contains("--get") || rest.contains("--list") || rest.contains("-l") }
+                if sub == "branch" { return !rest.contains { $0.range(of: #"^-[dDmM]"#, options: .regularExpression) != nil } }
+                if sub == "tag" { return !rest.contains { $0.range(of: #"^-[ad]"#, options: .regularExpression) != nil } }
+                return true
+            }
+            if let allowed = packageReadSubcommands[program], let sub = rest.first, allowed.contains(sub) { return true }
+            if versionOnlyPrograms.contains(program) { return rest.count == 1 && ["-v", "--version", "-V", "version"].contains(rest[0]) }
+            return readOnlyPrograms.contains(program)
+        }
+    }
+
+    /// "~/a" → the real, symlink-resolved folder; nil for relative paths or "..".
+    public static func resolveDirectory(_ path: String, home: String = NSHomeDirectory()) -> String? {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.split(separator: "/").contains("..") else { return nil }
+        let expanded: String
+        if trimmed == "~" { expanded = home }
+        else if trimmed.hasPrefix("~/") { expanded = home + String(trimmed.dropFirst(1)) }
+        else if trimmed.hasPrefix("/") { expanded = trimmed }
+        else { return nil }
+        return URL(fileURLWithPath: expanded).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    public static func isWithin(_ directory: String, root: String) -> Bool {
+        directory == root || directory.hasPrefix(root == "/" ? "/" : root + "/")
+    }
+
+    private static let secretPatterns: [String] = [
+        #"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"#,
+        #"\b(AKIA|ASIA)[0-9A-Z]{16}\b"#,
+        #"\bgh[pousr]_[A-Za-z0-9]{30,}\b"#,
+        #"\bsk-[A-Za-z0-9_-]{20,}\b"#,
+        #"\bxox[abprs]-[A-Za-z0-9-]{10,}\b"#,
+        #"\bAIza[0-9A-Za-z_-]{30,}\b"#,
+        #"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"#
+    ]
+
+    /// Masks credentials before command output leaves the Mac: known token formats, private keys,
+    /// and the value side of KEY=, TOKEN=, SECRET=, PASSWORD= style assignments.
+    public static func redactSecrets(_ text: String) -> String {
+        var result = text
+        for pattern in secretPatterns {
+            result = result.replacingOccurrences(of: pattern, with: "[gizli bilgi gizlendi]", options: .regularExpression)
+        }
+        result = result.replacingOccurrences(
+            of: #"(?im)^(\s*(?:export\s+)?[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTHORIZATION)[A-Z0-9_]*\s*[=:]\s*)\S.*$"#,
+            with: "$1[gizli bilgi gizlendi]",
+            options: .regularExpression
+        )
+        return result
+    }
+}

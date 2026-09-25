@@ -43,6 +43,9 @@ struct RootView: View {
 private struct WiqoActivityView: View {
     @State private var feed: RovaBackendClient.ActivityFeed?
     @State private var error: String?
+    @State private var selectedPendingTask: RovaBackendClient.ActivityItem?
+    @State private var cancellingTaskID: String?
+    @State private var cancelNotice: String?
 
     var body: some View {
         ScrollView {
@@ -63,6 +66,32 @@ private struct WiqoActivityView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
+        .confirmationDialog(
+            selectedPendingTask?.ref?.type == "project" ? "Proje iptal edilsin mi?" : "PC işi iptal edilsin mi?",
+            isPresented: Binding(
+                get: { selectedPendingTask != nil },
+                set: { if !$0 { selectedPendingTask = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(selectedPendingTask?.ref?.type == "project" ? "Projeyi iptal et" : "PC işini iptal et", role: .destructive) {
+                guard let item = selectedPendingTask else { return }
+                selectedPendingTask = nil
+                Task { await cancelPendingTask(item) }
+            }
+        } message: {
+            Text(selectedPendingTask?.ref?.type == "project"
+                 ? "Wiqo projeyi durdurur; o ana kadar yapılan kısım teslim edilmez."
+                 : "PC'ye gönderilmiş bir adımın sonucu belirsiz kalabilir; Wiqo bunu Etkinlik'te gösterecek.")
+        }
+        .alert("İptal", isPresented: Binding(
+            get: { cancelNotice != nil },
+            set: { if !$0 { cancelNotice = nil } }
+        )) {
+            Button("Tamam", role: .cancel) { cancelNotice = nil }
+        } message: {
+            Text(cancelNotice ?? "")
+        }
     }
 
     private func section(_ title: String, items: [RovaBackendClient.ActivityItem]) -> some View {
@@ -77,6 +106,17 @@ private struct WiqoActivityView: View {
                             Text(item.title).font(.body.weight(.medium))
                             if let detail = item.detail { Text(detail).font(.subheadline).foregroundStyle(.secondary) }
                             Text(label(for: item.state)).font(.caption).foregroundStyle(.secondary)
+                            if canCancel(item) {
+                                HStack {
+                                    Spacer()
+                                    Button(cancellingTaskID == item.id ? "İptal ediliyor…" : "İptal") {
+                                        selectedPendingTask = item
+                                    }
+                                    .font(.subheadline.weight(.semibold))
+                                    .disabled(cancellingTaskID == item.id)
+                                }
+                                .padding(.top, 4)
+                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(16)
@@ -98,6 +138,46 @@ private struct WiqoActivityView: View {
         case "failed": return "Başarısız"
         default: return "Sonuç belirsiz"
         }
+    }
+
+    private func canCancel(_ item: RovaBackendClient.ActivityItem) -> Bool {
+        (item.ref?.type == "pending_task" && ["waiting_for_pc", "running"].contains(item.state))
+            || (item.ref?.type == "project" && item.state == "running")
+    }
+
+    private func cancelPendingTask(_ item: RovaBackendClient.ActivityItem) async {
+        if item.ref?.type == "project" {
+            await cancelProject(item)
+            return
+        }
+        guard let reference = item.ref, reference.type == "pending_task", let id = Int(reference.id), id > 0 else { return }
+        cancellingTaskID = item.id
+        defer { cancellingTaskID = nil }
+        do {
+            let result = try await RovaBackendClient.cancelDeferredTask(id: id)
+            if result.cancelled == true && result.outcomeUnknown == false {
+                cancelNotice = "PC işi iptal edildi."
+            } else {
+                cancelNotice = "Wiqo işi kuyruktan aldı; PC'ye gönderilmiş bir adımın sonucu doğrulanamadı. Etkinlik'teki kontrol uyarısına bak."
+            }
+            await load()
+        } catch {
+            cancelNotice = "İptal isteğinin sonucu belirsiz. Etkinlik'i yenileyip PC işinin durumunu kontrol et."
+            await load()
+        }
+    }
+
+    private func cancelProject(_ item: RovaBackendClient.ActivityItem) async {
+        guard let reference = item.ref, let id = Int(reference.id), id > 0 else { return }
+        cancellingTaskID = item.id
+        defer { cancellingTaskID = nil }
+        do {
+            _ = try await RovaBackendClient.cancelProject(id: id)
+            cancelNotice = "Proje iptal edildi."
+        } catch {
+            cancelNotice = "Proje iptal edilemedi; bitmiş ya da zaten durmuş olabilir. Listeyi yeniledim."
+        }
+        await load()
     }
 
     private func load() async {

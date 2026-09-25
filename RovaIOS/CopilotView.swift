@@ -53,11 +53,18 @@ struct CopilotView: View {
     @State private var pendingAttachments: [RovaBackendClient.ChatAttachment] = []
     @State private var attachmentPreviews: [UIImage] = []
     @State private var isPreparingAttachment = false
+    /// Content of attached files, read on this phone; the files themselves are never uploaded.
+    @State private var pendingFiles: [FileContent] = []
+    @State private var showsPhotoPicker = false
+    @State private var showsFileImporter = false
+    @State private var showsDocumentScanner = false
     @FocusState private var isComposerFocused: Bool
     /// Mirrors the backend's own per-message cap (routes/copilot.ts's chatRequestSchema) - the
     /// picker and the strip both enforce it so the UI never lets the user build a request the
     /// backend would then reject.
     private let maxAttachments = 4
+    /// Mirrors the backend's `files` cap in routes/copilot.ts.
+    private let maxFiles = 5
     @State private var memoryCandidates: [RovaBackendClient.MemoryCandidate] = []
     @State private var screenshotObservationCount = 0
     @StateObject private var audioRecorder = WiqoSpeechRecorder()
@@ -105,6 +112,9 @@ struct CopilotView: View {
             }
             var bubble = ChatBubble(role: role, text: stored.text, artifacts: stored.artifacts ?? [], attachmentThumbnails: stored.attachmentThumbnails ?? [])
             bubble.thinking = stored.thinking
+            bubble.attachedFileNames = stored.fileNames ?? []
+            bubble.deferredTask = stored.deferredTask
+            bubble.projectTask = stored.projectTask
             return bubble
         }
         _bubbles = State(initialValue: loadedBubbles)
@@ -389,6 +399,37 @@ struct CopilotView: View {
             .id("thinkingStages")
     }
 
+    /// A background project reached its end: the reply becomes its verified summary and the
+    /// delivered files join the bubble, once per outcome (a failed project resumed with "Tekrar
+    /// dene" reports again). Later refreshes of the same finished state change nothing, so the
+    /// conversation shows one consistent, durable result.
+    private func applyProjectResult(_ detail: RovaBackendClient.ProjectDetail, to bubbleID: UUID) {
+        guard let current = bubbles.first(where: { $0.id == bubbleID }),
+              let task = current.projectTask, task.id == detail.id, !detail.isActive,
+              task.status == "running" || task.status != detail.status else { return }
+        setBubble(bubbleID) { bubble in
+            if let summary = detail.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
+                bubble.text = summary
+            }
+            let existing = Set(bubble.artifacts.map(\.id))
+            bubble.artifacts.append(contentsOf: detail.artifacts.filter { !existing.contains($0.id) })
+            bubble.projectTask = RovaBackendClient.ProjectTask(id: detail.id, kind: detail.kind, title: detail.title, status: detail.status)
+        }
+        persistConversation()
+    }
+
+    /// Keeps the reply's running narration in step with the project (only when something changed,
+    /// so polling does not re-render the conversation for nothing).
+    private func updateProjectNarrative(_ detail: RovaBackendClient.ProjectDetail, on bubbleID: UUID) {
+        guard let current = bubbles.first(where: { $0.id == bubbleID }) else { return }
+        let events = detail.events ?? []
+        guard current.projectNarrative != events || current.projectLiveLine != detail.progress else { return }
+        setBubble(bubbleID) { bubble in
+            bubble.projectNarrative = events
+            bubble.projectLiveLine = detail.progress
+        }
+    }
+
     /// Ends the turn's timeline and keeps it on the reply bubble, so the steps stay readable later.
     private func commitThinking(to bubbleID: UUID, failed: Bool = false) {
         thinking.finish(failed: failed)
@@ -400,6 +441,9 @@ struct CopilotView: View {
         VStack(alignment: bubble.role == .user ? .trailing : .leading, spacing: 6) {
             if !bubble.attachmentThumbnails.isEmpty {
                 AttachmentThumbnailStrip(thumbnails: bubble.attachmentThumbnails)
+            }
+            if !bubble.attachedFileNames.isEmpty {
+                AttachedFileNames(names: bubble.attachedFileNames)
             }
             if bubble.role == .assistant {
                 if let trace = bubble.thinking, trace.isFinished {
@@ -413,6 +457,22 @@ struct CopilotView: View {
                     artifacts: bubble.artifacts,
                     isStreaming: bubble.id == liveReplyBubbleID
                 )
+                if let task = bubble.deferredTask {
+                    DeferredTaskRow(task: task)
+                        .padding(.horizontal)
+                }
+                if let project = bubble.projectTask {
+                    if project.status == "running", !bubble.projectNarrative.isEmpty || bubble.projectLiveLine != nil {
+                        ProjectNarrativeView(events: bubble.projectNarrative, liveLine: bubble.projectLiveLine)
+                            .padding(.horizontal)
+                    }
+                    ProjectTaskCard(
+                        task: project,
+                        onFinished: { detail in applyProjectResult(detail, to: bubble.id) },
+                        onUpdate: { detail in updateProjectNarrative(detail, on: bubble.id) }
+                    )
+                    .padding(.horizontal)
+                }
             } else if bubble.role == .system {
                 systemErrorView(for: bubble)
             } else {
@@ -659,7 +719,8 @@ struct CopilotView: View {
 
     private func approvalFields(_ confirmation: RovaBackendClient.BackendConfirmation) -> [WiqoApprovalCard.Field] {
         confirmation.details.keys.sorted().compactMap { key in
-            guard let value = confirmation.details[key], !value.isEmpty else { return nil }
+            // wiqo* keys are machine fields (e.g. a terminal grant to sign), not for display.
+            guard !key.hasPrefix("wiqo"), let value = confirmation.details[key], !value.isEmpty else { return nil }
             return WiqoApprovalCard.Field(id: key, label: key.replacingOccurrences(of: "_", with: " ").capitalized, value: value)
         }
     }
@@ -1074,8 +1135,25 @@ struct CopilotView: View {
             bubble.backendConfirmations[index].resultDetail = nil
         }
 
+        // A terminal session card carries the grant fields; approving signs them on this phone.
+        var terminalGrant: (grantId: String, signature: String)?
+        let details = row.confirmation.details
+        if approved, let grantId = details["wiqoGrantId"] {
+            guard let root = details["wiqoGrantRoot"], let mode = details["wiqoGrantMode"],
+                  let expiresAt = details["wiqoGrantExpiresAt"].flatMap(Int.init),
+                  let signature = model.signTerminalGrant(grantId: grantId, rootDirectory: root, mode: mode, expiresAt: expiresAt, deviceId: details["wiqoGrantDeviceId"]) else {
+                setBubble(bubbleID) { bubble in
+                    guard let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) else { return }
+                    bubble.backendConfirmations[index].status = .failed
+                    bubble.backendConfirmations[index].resultText = "Terminal izni bu telefonda imzalanamadı. Bu telefonun o PC ile eşleştiğinden emin ol."
+                }
+                return
+            }
+            terminalGrant = (grantId, signature)
+        }
+
         do {
-            let response = try await RovaBackendClient.resolveBackendConfirmation(id: confirmationID, approved: approved)
+            let response = try await RovaBackendClient.resolveBackendConfirmation(id: confirmationID, approved: approved, terminalGrant: terminalGrant)
             guard response.confirmationId == confirmationID else { throw RovaBackendError.invalidResponse }
             let resultText = response.result?.text
             let resultArtifacts = response.result?.artifacts ?? []
@@ -1167,7 +1245,7 @@ struct CopilotView: View {
     /// against the screen edges, so content can scroll all the way to the bottom behind it.
     private var inputBar: some View {
         VStack(spacing: 0) {
-            if !attachmentPreviews.isEmpty || isPreparingAttachment {
+            if !attachmentPreviews.isEmpty || !pendingFiles.isEmpty || isPreparingAttachment {
                 attachmentStrip
             }
             HStack(alignment: .bottom, spacing: 8) {
@@ -1176,19 +1254,24 @@ struct CopilotView: View {
                 // run, so this "+" goes back to being a plain attach-a-photo trigger instead of a
                 // menu with an item that never had any code to act on yet.
                 let attachmentLimitReached = pendingAttachments.count >= maxAttachments
-                PhotosPicker(
-                    selection: $selectedPhotos,
-                    maxSelectionCount: max(1, maxAttachments - pendingAttachments.count),
-                    matching: .images,
-                    photoLibrary: .shared()
-                ) {
+                let fileLimitReached = pendingFiles.count >= maxFiles
+                Menu {
+                    Button { showsPhotoPicker = true } label: { Label("Fotoğraf", systemImage: "photo") }
+                        .disabled(attachmentLimitReached)
+                    Button { showsFileImporter = true } label: { Label("Dosya", systemImage: "doc") }
+                        .disabled(fileLimitReached)
+                    if DocumentScannerView.isSupported {
+                        Button { showsDocumentScanner = true } label: { Label("Belge tara", systemImage: "doc.viewfinder") }
+                            .disabled(fileLimitReached)
+                    }
+                } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(attachmentLimitReached ? Color(.tertiaryLabel) : .primary)
+                        .foregroundStyle(attachmentLimitReached && fileLimitReached ? Color(.tertiaryLabel) : .primary)
                         .frame(width: 34, height: 34)
                 }
-                .disabled(isSending || isPreparingAttachment || attachmentLimitReached)
-                .accessibilityLabel("Görsel ekle")
+                .disabled(isSending || isPreparingAttachment)
+                .accessibilityLabel("Ekle")
 
                 TextField(audioRecorder.isRecording ? "Dinliyorum…" : "Wiqo'ya anlat", text: $inputText, axis: .vertical)
                     .lineLimit(1...6)
@@ -1221,44 +1304,86 @@ struct CopilotView: View {
         .animation(.easeOut(duration: 0.15), value: canSend)
         .animation(.easeOut(duration: 0.18), value: isComposerFocused)
         .animation(.easeOut(duration: 0.18), value: attachmentPreviews.count)
+        .animation(.easeOut(duration: 0.18), value: pendingFiles.count)
+        .photosPicker(
+            isPresented: $showsPhotoPicker,
+            selection: $selectedPhotos,
+            maxSelectionCount: max(1, maxAttachments - pendingAttachments.count),
+            matching: .images,
+            photoLibrary: .shared()
+        )
+        .fileImporter(
+            isPresented: $showsFileImporter,
+            allowedContentTypes: FileContentExtractor.supportedTypes,
+            allowsMultipleSelection: true
+        ) { result in
+            guard case .success(let urls) = result else { return }
+            Task { await prepareFiles(urls) }
+        }
+        .fullScreenCover(isPresented: $showsDocumentScanner) {
+            DocumentScannerView(
+                onFinish: { pages, wasTruncated in
+                    showsDocumentScanner = false
+                    Task { await prepareScan(pages, wasTruncated: wasTruncated) }
+                },
+                onCancel: { showsDocumentScanner = false },
+                onError: {
+                    showsDocumentScanner = false
+                    bubbles.append(ChatBubble(role: .system, text: "Belge taranamadı. Kamera iznini kontrol edip yeniden dene."))
+                    persistConversation()
+                }
+            )
+            .ignoresSafeArea()
+        }
     }
 
     /// Horizontal strip of pending image attachments, each individually removable - up to
     /// `maxAttachments`, matching what the backend actually accepts in one request.
     private var attachmentStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(Array(attachmentPreviews.enumerated()), id: \.offset) { index, image in
-                    ZStack(alignment: .topTrailing) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 60, height: 60)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        Button {
-                            removeAttachment(at: index)
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(.white, .black.opacity(0.55))
-                                .font(.system(size: 18))
+        VStack(alignment: .leading, spacing: 4) {
+            if !pendingFiles.isEmpty {
+                Text("Dosyanın kendisi gönderilmez; telefonda çıkarılan içerik gönderilir.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(pendingFiles.enumerated()), id: \.offset) { index, file in
+                        PendingFileChip(file: file) { pendingFiles.remove(at: index) }
+                    }
+                    ForEach(Array(attachmentPreviews.enumerated()), id: \.offset) { index, image in
+                        ZStack(alignment: .topTrailing) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 60, height: 60)
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            Button {
+                                removeAttachment(at: index)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, .black.opacity(0.55))
+                                    .font(.system(size: 18))
+                            }
+                            .buttonStyle(.plain)
+                            .offset(x: 5, y: -5)
+                            .accessibilityLabel("Eki kaldır")
                         }
-                        .buttonStyle(.plain)
-                        .offset(x: 5, y: -5)
-                        .accessibilityLabel("Eki kaldır")
+                    }
+                    if isPreparingAttachment {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color(.tertiarySystemFill))
+                            .frame(width: 60, height: 60)
+                            .overlay(ProgressView().controlSize(.small))
                     }
                 }
-                if isPreparingAttachment {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color(.tertiarySystemFill))
-                        .frame(width: 60, height: 60)
-                        .overlay(ProgressView().controlSize(.small))
-                }
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
         }
-        .frame(height: 76)
+        .frame(height: pendingFiles.isEmpty ? 76 : 98)
     }
 
     @ViewBuilder
@@ -1295,7 +1420,7 @@ struct CopilotView: View {
     }
 
     private var canSend: Bool {
-        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingAttachments.isEmpty
+        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingAttachments.isEmpty || !pendingFiles.isEmpty
     }
 
     private var hasInFlightDeviceWork: Bool {
@@ -1309,14 +1434,19 @@ struct CopilotView: View {
     private func sendMessage(textOverride: String? = nil) async {
         let typedText = (textOverride ?? inputText).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isSending, confirmationBubbleID == nil, !hasInFlightDeviceWork,
-              !typedText.isEmpty || !pendingAttachments.isEmpty else { return }
-        let text = typedText.isEmpty ? (pendingAttachments.count > 1 ? "Bu görselleri analiz et." : "Bu görseli analiz et.") : typedText
+              !typedText.isEmpty || !pendingAttachments.isEmpty || !pendingFiles.isEmpty else { return }
+        let files = pendingFiles
+        let text = !typedText.isEmpty ? typedText
+            : !files.isEmpty ? (files.count > 1 ? "Bu dosyaları incele." : "Bu dosyayı incele.")
+            : (pendingAttachments.count > 1 ? "Bu görselleri analiz et." : "Bu görseli analiz et.")
         let attachments = pendingAttachments
+        let previews = attachmentPreviews
         let thumbnails = attachmentPreviews.compactMap(makeThumbnailData)
         inputText = ""
         clearAttachments()
         screenshotObservationCount = 0
-        bubbles.append(ChatBubble(role: .user, text: text, attachmentThumbnails: thumbnails))
+        let userBubble = ChatBubble(role: .user, text: text, attachmentThumbnails: thumbnails, attachedFileNames: files.map(\.name))
+        bubbles.append(userBubble)
         persistConversation()
         liveReplyBubbleID = nil
         liveReply.reset()
@@ -1338,6 +1468,7 @@ struct CopilotView: View {
             .filter { $0.role != .system && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .suffix(16)
             .map { RovaBackendClient.ChatTurn(role: $0.role == .user ? "user" : "assistant", content: $0.text) }
+        let turnCountBeforeRequest = turnCount
         turnCount += 1
         CopilotConversationStore.saveTurnCount(turnCount, for: conversationID)
         let requestID = UUID()
@@ -1360,6 +1491,7 @@ struct CopilotView: View {
                 deviceResults: recentDeviceResults,
                 requestID: requestID,
                 attachments: attachments,
+                files: files,
                 onStatus: { text in thinking.note(text) },
                 // Model-turn deltas are provisional. Reveal only the terminal reply below so a
                 // repair/planning turn can never replace text already shown to the user.
@@ -1402,6 +1534,8 @@ struct CopilotView: View {
                 bubble.steps = result.steps
                 bubble.executionState = result.executionState
                 bubble.replyIsProgress = result.replyIsProgress
+                bubble.deferredTask = result.deferredTask
+                bubble.projectTask = result.projectTask
                 bubble.artifacts = result.artifacts
                 bubble.backendConfirmations = mergedBackendConfirmations(
                     existing: bubble.backendConfirmations,
@@ -1428,6 +1562,22 @@ struct CopilotView: View {
                 recentDeviceResults.removeAll(keepingCapacity: true)
             }
             persistConversation()
+        } catch RovaBackendError.copilotPayloadTooLarge {
+            // This is rejected before any request reaches the backend, so restore the draft and
+            // remove its optimistic bubbles. The user can remove an attachment and safely retry.
+            liveReplyBubbleID = nil
+            liveReply.reset()
+            thinking.finish(failed: true)
+            bubbles.removeAll { $0.id == userBubble.id || $0.id == responseBubble.id }
+            inputText = typedText
+            pendingFiles = files
+            pendingAttachments = attachments
+            attachmentPreviews = previews
+            turnCount = turnCountBeforeRequest
+            CopilotConversationStore.saveTurnCount(turnCount, for: conversationID)
+            bubbles.append(ChatBubble(role: .system, text: RovaBackendError.copilotPayloadTooLarge.localizedDescription))
+            persistConversation()
+            CopilotConversationStore.flushPending()
         } catch RovaBackendError.notAuthenticated {
             // Sends the whole app back to the login screen (RootView switches on this),
             // there's no local sheet/screen of our own to dismiss here.
@@ -1811,6 +1961,8 @@ struct CopilotView: View {
             bubble.text = text
             bubble.executionState = result.executionState
             bubble.replyIsProgress = result.replyIsProgress
+            if let deferred = result.deferredTask { bubble.deferredTask = deferred }
+            if let project = result.projectTask { bubble.projectTask = project }
             bubble.backendConfirmations = mergedBackendConfirmations(
                 existing: bubble.backendConfirmations,
                 incoming: result.backendConfirmations,
@@ -2006,6 +2158,37 @@ struct CopilotView: View {
         }
     }
 
+    /// Reads picked files on device. A file that can't be read is reported and skipped; the rest
+    /// still attach.
+    private func prepareFiles(_ urls: [URL]) async {
+        isPreparingAttachment = true
+        defer { isPreparingAttachment = false }
+        for url in urls {
+            guard pendingFiles.count < maxFiles else {
+                bubbles.append(ChatBubble(role: .system, text: "Bir mesaja en fazla \(maxFiles) dosya eklenebilir."))
+                break
+            }
+            do {
+                pendingFiles.append(try await FileContentExtractor.extract(from: url))
+            } catch {
+                bubbles.append(ChatBubble(role: .system, text: "\(url.lastPathComponent): \(error.localizedDescription)"))
+            }
+        }
+    }
+
+    private func prepareScan(_ pages: [UIImage], wasTruncated: Bool) async {
+        guard !pages.isEmpty, pendingFiles.count < maxFiles else { return }
+        isPreparingAttachment = true
+        defer { isPreparingAttachment = false }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH.mm"
+        do {
+            pendingFiles.append(try await FileContentExtractor.extract(scannedPages: pages, name: "Tarama \(formatter.string(from: Date()))", wasTruncated: wasTruncated))
+        } catch {
+            bubbles.append(ChatBubble(role: .system, text: error.localizedDescription))
+        }
+    }
+
     private func removeAttachment(at index: Int) {
         guard attachmentPreviews.indices.contains(index) else { return }
         attachmentPreviews.remove(at: index)
@@ -2014,6 +2197,7 @@ struct CopilotView: View {
 
     private func clearAttachments() {
         selectedPhotos = []
+        pendingFiles = []
         pendingAttachments = []
         attachmentPreviews = []
     }
@@ -2194,7 +2378,10 @@ struct CopilotView: View {
                 text: bubble.text,
                 artifacts: bubble.artifacts.isEmpty ? nil : bubble.artifacts,
                 attachmentThumbnails: bubble.attachmentThumbnails.isEmpty ? nil : bubble.attachmentThumbnails,
-                thinking: bubble.thinking
+                thinking: bubble.thinking,
+                fileNames: bubble.attachedFileNames.isEmpty ? nil : bubble.attachedFileNames,
+                deferredTask: bubble.deferredTask,
+                projectTask: bubble.projectTask
             )
         }
         CopilotConversationStore.saveSoon(id: conversationID, messages: stored, turnCount: turnCount)

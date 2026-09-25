@@ -74,6 +74,8 @@
 		D2000000000000000000003D /* ReplyStreamSplitterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000003E /* ReplyStreamSplitterTests.swift */; };
 		D2000000000000000000003F /* ReplyStreamSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000003C /* ReplyStreamSplitter.swift */; };
 		D20000000000000000000040 /* ThinkingTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000041 /* ThinkingTrace.swift */; };
+		D20000000000000000000047 /* FileContentExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000048 /* FileContentExtractor.swift */; };
+		D20000000000000000000049 /* DocumentScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000004A /* DocumentScannerView.swift */; };
 		D20000000000000000000042 /* ThinkingTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000041 /* ThinkingTrace.swift */; };
 		D20000000000000000000043 /* ThinkingTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000044 /* ThinkingTimelineView.swift */; };
 		D20000000000000000000045 /* ThinkingTraceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000046 /* ThinkingTraceTests.swift */; };
@@ -194,6 +196,8 @@
 		D10000000000000000000002 /* OnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		D2000000000000000000003C /* ReplyStreamSplitter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReplyStreamSplitter.swift; sourceTree = "<group>"; };
 		D20000000000000000000041 /* ThinkingTrace.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThinkingTrace.swift; sourceTree = "<group>"; };
+		D20000000000000000000048 /* FileContentExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FileContentExtractor.swift; sourceTree = "<group>"; };
+		D2000000000000000000004A /* DocumentScannerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DocumentScannerView.swift; sourceTree = "<group>"; };
 		D20000000000000000000044 /* ThinkingTimelineView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThinkingTimelineView.swift; sourceTree = "<group>"; };
 		D20000000000000000000046 /* ThinkingTraceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingTraceTests.swift; sourceTree = "<group>"; };
 		D40000000000000000000002 /* DeviceOutcomeNarrator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceOutcomeNarrator.swift; sourceTree = "<group>"; };
@@ -349,6 +353,8 @@
 				D10000000000000000000002 /* OnboardingView.swift */,
 				D2000000000000000000003C /* ReplyStreamSplitter.swift */,
 				D20000000000000000000041 /* ThinkingTrace.swift */,
+				D20000000000000000000048 /* FileContentExtractor.swift */,
+				D2000000000000000000004A /* DocumentScannerView.swift */,
 				D20000000000000000000044 /* ThinkingTimelineView.swift */,
 				D40000000000000000000002 /* DeviceOutcomeNarrator.swift */,
 				D2000000000000000000003A /* CopilotConversationStore.swift */,
@@ -670,6 +676,8 @@
 				D10000000000000000000001 /* OnboardingView.swift in Sources */,
 				D2000000000000000000003B /* ReplyStreamSplitter.swift in Sources */,
 				D20000000000000000000040 /* ThinkingTrace.swift in Sources */,
+				D20000000000000000000047 /* FileContentExtractor.swift in Sources */,
+				D20000000000000000000049 /* DocumentScannerView.swift in Sources */,
 				D20000000000000000000043 /* ThinkingTimelineView.swift in Sources */,
 				D40000000000000000000001 /* DeviceOutcomeNarrator.swift in Sources */,
 				D20000000000000000000039 /* CopilotConversationStore.swift in Sources */,

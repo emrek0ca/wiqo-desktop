@@ -148,11 +148,15 @@ extension MacSystem {
             return (nil, RovaError(code: "UNSUPPORTED_LANGUAGE", message: "Yalnızca Python, JavaScript veya shell çalıştırılabilir.", category: "validation"))
         }
 
+        // Terminal output can contain credentials (env dumps, config files); they are masked here,
+        // before the result leaves this Mac on either the phone or the backend path.
+        let stdout = RovaTerminalPolicy.redactSecrets(String(decoding: snapshot.stdout, as: UTF8.self))
+        let stderr = RovaTerminalPolicy.redactSecrets(String(decoding: snapshot.stderr, as: UTF8.self))
         let output = ProcessOutputContent(
             language: payload.language,
             exitCode: snapshot.timedOut ? -1 : snapshot.exitCode,
-            stdout: String(decoding: snapshot.stdout, as: UTF8.self),
-            stderr: String(decoding: snapshot.stderr, as: UTF8.self),
+            stdout: stdout,
+            stderr: stderr,
             truncated: snapshot.truncated,
             durationMs: snapshot.durationMs
         )
@@ -160,7 +164,7 @@ extension MacSystem {
             return (.processOutput(output), RovaError(code: "CODE_TIMEOUT", message: "Terminal komutu zaman aşımına uğradı; sonucu doğrulanamadı.", category: "timeout"))
         }
         if snapshot.exitCode != 0 {
-            let detail = String(decoding: snapshot.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             let message = detail.isEmpty ? "Terminal komutu çıkış kodu \(snapshot.exitCode) ile sonlandı." : "Terminal komutu hata verdi: \(detail.prefix(300))"
             return (.processOutput(output), RovaError(code: "CODE_FAILED", message: message, category: "tool_failure"))
         }

@@ -71,6 +71,15 @@ final class IOSConnectionModel: ObservableObject {
     @Published private(set) var isUsingRelay = false
     var pairedDeviceIDForTransfer: UUID? { pairedMacDeviceID ?? deviceInfo?.id }
 
+    /// Signs a terminal session grant with this phone's pairing token (RovaTerminalPolicy). Only
+    /// the phone and the paired Mac hold the token, so only an approval made here can open a
+    /// session; nil when this phone is not paired with the Mac the grant names.
+    func signTerminalGrant(grantId: String, rootDirectory: String, mode: String, expiresAt: Int, deviceId: String?) -> String? {
+        guard let token, !token.isEmpty else { return nil }
+        if let deviceId, let paired = pairedDeviceIDForTransfer, paired.uuidString.lowercased() != deviceId.lowercased() { return nil }
+        return RovaTerminalPolicy.signGrant(grantId: grantId, rootDirectory: rootDirectory, mode: mode, expiresAt: expiresAt, token: token)
+    }
+
     /// Transport details stay internal; the UI gets one small, stable vocabulary.
     var userFacingConnectionLabel: String {
         guard isPaired else { return "PC kapalı" }

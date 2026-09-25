@@ -54,6 +54,8 @@ struct ChatBubble: Identifiable {
     /// deliberately tiny since these persist in local chat history (see CopilotStoredMessage)
     /// rather than the full upload-quality copy already sent to the backend.
     var attachmentThumbnails: [Data] = []
+    /// Names of files attached to this user message; shown as chips above it.
+    var attachedFileNames: [String] = []
     /// Populated when the Mac actually rejects/fails a step - the model's reply text is written
     /// optimistically before execution happens, so this is the only place a real failure (a
     /// permission denial, a full disk, anything) becomes visible instead of silently vanishing
@@ -72,4 +74,12 @@ struct ChatBubble: Identifiable {
     var replyIsProgress = false
     /// What Wiqo went through to produce this reply; nil for plain chat and older messages.
     var thinking: ThinkingTrace? = nil
+    /// PC work queued for when the PC comes online; shown under the reply with a cancel control.
+    var deferredTask: RovaBackendClient.DeferredTask? = nil
+    /// A background project this reply started; its live card sits under the reply.
+    var projectTask: RovaBackendClient.ProjectTask? = nil
+    /// What the running project has done so far, told in the reply itself (in memory only; the
+    /// verified summary replaces it when the project finishes).
+    var projectNarrative: [RovaBackendClient.ProjectDetail.Event] = []
+    var projectLiveLine: String? = nil
 }

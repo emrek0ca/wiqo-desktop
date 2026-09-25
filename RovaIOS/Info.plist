@@ -41,7 +41,7 @@
 		<string>_rova._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Wiqo, Mac’te gösterilen eşleşme QR kodunu taramak için kamerayı kullanır.</string>
+	<string>Wiqo, PC eşleşme QR kodunu ve belgelerini taramak için kamerayı kullanır. Taranan sayfalar telefonda okunur.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Wiqo, aynı ağdaki Mac’inizi bulup komut göndermek için yerel ağınızı kullanır.</string>
 	<key>NSMicrophoneUsageDescription</key>

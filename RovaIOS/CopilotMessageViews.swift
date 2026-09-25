@@ -87,3 +87,633 @@ struct CopyReplyButton: View {
         .accessibilityLabel(copied ? "Kopyalandı" : "Yanıtı kopyala")
     }
 }
+
+/// "PC açılınca yapılacak" under a reply whose PC steps were queued because the PC was offline.
+/// The work runs by itself when the PC reconnects and a notification reports the result; until
+/// then the user can cancel it here.
+struct DeferredTaskRow: View {
+    let task: RovaBackendClient.DeferredTask
+    @State private var state: RowState = .waiting
+
+    private enum RowState: Equatable {
+        case waiting
+        case cancelling
+        case cancelled(outcomeUnknown: Bool)
+        case failed(String)
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                if case .failed(let message) = state {
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(WiqoTheme.red)
+                }
+            }
+            Spacer(minLength: 8)
+            if state == .waiting || state == .cancelling || isFailed {
+                Button("İptal") { Task { await cancel() } }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                    .disabled(state == .cancelling)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: WiqoTheme.controlRadius, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var isFailed: Bool {
+        if case .failed = state { return true }
+        return false
+    }
+
+    private var title: String {
+        switch state {
+        case .cancelled(outcomeUnknown: false): "PC işi iptal edildi"
+        case .cancelled(outcomeUnknown: true): "Kuyruktan alındı; PC sonucu belirsiz. Etkinlik'i kontrol et."
+        default: task.status == "dispatched" ? "PC'de çalışıyor · bitince bildirim gelecek" : "PC açılınca yapılacak · bitince bildirim gelecek"
+        }
+    }
+
+    private var icon: String {
+        switch state {
+        case .cancelled(outcomeUnknown: true), .failed: "exclamationmark.circle"
+        case .cancelled(outcomeUnknown: false): "xmark.circle"
+        default: "clock.arrow.circlepath"
+        }
+    }
+
+    private func cancel() async {
+        state = .cancelling
+        do {
+            let result = try await RovaBackendClient.cancelDeferredTask(id: task.id)
+            state = .cancelled(outcomeUnknown: result.cancelled != true || result.outcomeUnknown != false)
+        } catch {
+            state = .failed("İptal edilemedi. Bağlantıyı kontrol edip yeniden dene.")
+        }
+    }
+}
+
+/// The live card of a background project (website, long document, presentation, image set). It
+/// shows the plan as a checklist, the step being worked on, what verification found, and lets the
+/// user cancel a running project or resume a failed one. The card polls the backend - the project
+/// keeps running there even when the app is closed - and reports the finished state once.
+struct ProjectTaskCard: View {
+    let task: RovaBackendClient.ProjectTask
+    let onFinished: @MainActor (RovaBackendClient.ProjectDetail) -> Void
+    /// Every fresh state while the project runs - the reply narrates it (ProjectNarrativeView).
+    var onUpdate: @MainActor (RovaBackendClient.ProjectDetail) -> Void = { _ in }
+
+    @State private var detail: RovaBackendClient.ProjectDetail?
+    @State private var connectionNote: String?
+    @State private var actionError: String?
+    @State private var isBusy = false
+    @State private var expanded = false
+    @State private var confirmingCancel = false
+    @State private var pollGeneration = 0
+    @State private var missing = false
+    /// Server clock minus this phone's clock at the last fetch, so the step timer is not skewed.
+    @State private var clockOffset: TimeInterval = 0
+    @State private var stepStartedAt: Date?
+    @State private var lastServerActivity: Date?
+    @State private var previewImage: UIImage?
+    @State private var previewID: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var status: String { detail?.status ?? task.status }
+    private var isRunning: Bool { status == "running" }
+    private var title: String { detail?.title ?? task.title }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            if isRunning, let previewImage {
+                Image(uiImage: previewImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 118)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: WiqoTheme.controlRadius, style: .continuous))
+                    .overlay(alignment: .bottomLeading) {
+                        Text("Önizleme")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(7)
+                    }
+                    .transition(.opacity)
+                    .accessibilityLabel("Projenin son önizlemesi")
+            }
+            if isRunning {
+                progressLine
+            }
+            if let detail, !detail.steps.isEmpty {
+                if isRunning || expanded {
+                    stepList(detail.steps)
+                    if !detail.checks.isEmpty { checkList(detail.checks) }
+                } else {
+                    Button {
+                        expanded = true
+                    } label: {
+                        Label(finishedCaption(detail), systemImage: "list.bullet.rectangle")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            if status == "failed", let error = detail?.error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(WiqoTheme.red)
+            }
+            if detail?.artifactsExpired == true {
+                Text("Dosyaların indirme süresi doldu; istersen yeniden oluşturabilirim.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if missing {
+                Text("Bu proje artık sunucuda yok (sohbet ya da hesap verisi silinmiş olabilir).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let note = connectionNote ?? actionError {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(actionError == nil ? .secondary : WiqoTheme.red)
+            }
+            actions
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wiqoCard()
+        .task(id: "\(task.id)-\(pollGeneration)") { await poll() }
+        .confirmationDialog("Proje iptal edilsin mi?", isPresented: $confirmingCancel, titleVisibility: .visible) {
+            Button("Projeyi iptal et", role: .destructive) { Task { await cancel() } }
+        } message: {
+            Text("Wiqo projeyi durdurur; yarım kalan iş teslim edilmez.")
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: kindSymbol)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(WiqoTheme.ink)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+                Text("\(kindLabel) · \(statusLabel)")
+                    .font(.caption)
+                    .foregroundStyle(statusColor)
+            }
+            Spacer(minLength: 0)
+            if isRunning || isBusy {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: statusSymbol)
+                    .foregroundStyle(statusColor)
+            }
+        }
+    }
+
+    private var progressLine: some View {
+        let steps = detail?.steps ?? []
+        let done = steps.filter { $0.status == "done" }.count
+        return VStack(alignment: .leading, spacing: 6) {
+            if !steps.isEmpty {
+                ProgressView(value: Double(done), total: Double(max(steps.count, 1)))
+                    .tint(WiqoTheme.ink)
+            }
+            if steps.isEmpty {
+                Text("Plan hazırlanıyor…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Under the running step: how long it has been running, and a reassurance when it runs long.
+    /// What is happening right now is told in the reply above the card (ProjectNarrativeView).
+    private func liveDetail(for step: RovaBackendClient.ProjectDetail.Step) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text("Bu adımda \(elapsedLabel(now: context.date))")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            if isStale {
+                Text("Bu adım uzun sürüyor; Wiqo hâlâ çalışıyor.")
+                    .font(.caption2)
+                    .foregroundStyle(WiqoTheme.orange)
+            }
+        }
+        .padding(.leading, 2)
+    }
+
+    private func elapsedLabel(now: Date) -> String {
+        guard let stepStartedAt else { return "" }
+        let seconds = max(0, Int(now.addingTimeInterval(clockOffset).timeIntervalSince(stepStartedAt)))
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    /// Nothing reached the server for over a minute: say so plainly instead of looking frozen.
+    private var isStale: Bool {
+        guard isRunning, let lastServerActivity else { return false }
+        return Date().addingTimeInterval(clockOffset).timeIntervalSince(lastServerActivity) > 60
+    }
+
+    private static func parseDate(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    }
+
+    private func absorbTimes(_ fresh: RovaBackendClient.ProjectDetail) {
+        if let server = Self.parseDate(fresh.serverTime) { clockOffset = server.timeIntervalSinceNow }
+        stepStartedAt = Self.parseDate(fresh.stepStartedAt)
+        lastServerActivity = Self.parseDate(fresh.updatedAt)
+    }
+
+    private func loadPreview(_ artifact: RovaBackendClient.ArtifactDescriptor?) async {
+        guard let artifact, artifact.id != previewID, artifact.mimeType.hasPrefix("image/") else { return }
+        guard let url = try? await RovaBackendClient.downloadArtifact(artifact),
+              let image = UIImage(contentsOfFile: url.path) else { return }
+        previewID = artifact.id
+        if reduceMotion { previewImage = image } else { withAnimation(.easeOut(duration: 0.25)) { previewImage = image } }
+    }
+
+    private func stepList(_ steps: [RovaBackendClient.ProjectDetail.Step]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(steps, id: \.id) { step in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    stepIcon(step.status)
+                        .frame(width: 16)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(step.title)
+                            .font(.caption.weight(step.status == "running" ? .semibold : .regular))
+                            .foregroundStyle(step.status == "pending" ? .secondary : .primary)
+                        if let detail = step.detail, !detail.isEmpty, step.status != "pending" {
+                            Text(detail)
+                                .font(.caption2)
+                                .foregroundStyle(step.status == "failed" ? WiqoTheme.red : .secondary)
+                                .lineLimit(3)
+                        }
+                        if step.status == "running" && isRunning {
+                            liveDetail(for: step)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func checkList(_ checks: [RovaBackendClient.ProjectDetail.Check]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Kontroller")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ForEach(Array(checks.enumerated()), id: \.offset) { _, check in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: check.passed ? "checkmark.seal.fill" : "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(check.passed ? WiqoTheme.green : WiqoTheme.orange)
+                        .frame(width: 16)
+                    Text(check.detail.map { "\(check.label) — \($0)" } ?? check.label)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(10)
+        .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: WiqoTheme.controlRadius, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func stepIcon(_ status: String) -> some View {
+        switch status {
+        case "done":
+            Image(systemName: "checkmark.circle.fill").font(.caption).foregroundStyle(WiqoTheme.green)
+        case "running":
+            ProgressView().controlSize(.mini)
+        case "failed":
+            Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(WiqoTheme.red)
+        case "skipped":
+            Image(systemName: "minus.circle").font(.caption).foregroundStyle(.secondary)
+        default:
+            Image(systemName: "circle").font(.caption).foregroundStyle(WiqoTheme.ink3)
+        }
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        if isRunning {
+            HStack {
+                Spacer()
+                Button("İptal") { confirmingCancel = true }
+                    .buttonStyle(.wiqoPill(.ghost))
+                    .disabled(isBusy)
+            }
+        } else if status == "failed" {
+            HStack {
+                Spacer()
+                Button {
+                    Task { await retry() }
+                } label: {
+                    Label("Tekrar dene", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.wiqoPill(.accent))
+                .disabled(isBusy)
+            }
+        }
+    }
+
+    private func finishedCaption(_ detail: RovaBackendClient.ProjectDetail) -> String {
+        let passed = detail.checks.filter(\.passed).count
+        let steps = detail.steps.filter { $0.status == "done" }.count
+        return detail.checks.isEmpty
+            ? "\(steps) adım · ayrıntıları göster"
+            : "\(steps) adım · \(passed)/\(detail.checks.count) kontrol geçti · ayrıntılar"
+    }
+
+    private var kindLabel: String {
+        switch detail?.kind ?? task.kind {
+        case "website": "Web projesi"
+        case "document": "Belge"
+        case "presentation": "Sunum"
+        case "images": "Görsel seti"
+        default: "Proje"
+        }
+    }
+
+    private var kindSymbol: String {
+        switch detail?.kind ?? task.kind {
+        case "website": "globe"
+        case "document": "doc.text"
+        case "presentation": "rectangle.on.rectangle"
+        case "images": "photo.on.rectangle"
+        default: "square.stack.3d.up"
+        }
+    }
+
+    private var statusLabel: String {
+        switch status {
+        case "running": "Adım adım hazırlanıyor"
+        case "done": "Hazır"
+        case "failed": "Tamamlanamadı"
+        case "cancelled": "İptal edildi"
+        default: "Durum bilinmiyor"
+        }
+    }
+
+    private var statusSymbol: String {
+        switch status {
+        case "done": "checkmark.circle.fill"
+        case "failed": "exclamationmark.triangle.fill"
+        case "cancelled": "xmark.circle"
+        default: "questionmark.circle"
+        }
+    }
+
+    private var statusColor: Color {
+        switch status {
+        case "done": WiqoTheme.green
+        case "failed": WiqoTheme.red
+        default: .secondary
+        }
+    }
+
+    /// Polls while the project runs (every 2 s at first, easing to 8 s; backing off on network
+    /// trouble). A finished project is fetched once for its checklist and then left alone.
+    private func poll() async {
+        let started = Date()
+        var failures = 0
+        while !Task.isCancelled {
+            do {
+                let fresh = try await RovaBackendClient.fetchProject(id: task.id)
+                detail = fresh
+                absorbTimes(fresh)
+                connectionNote = nil
+                failures = 0
+                if fresh.isActive {
+                    onUpdate(fresh)
+                    await loadPreview(fresh.preview)
+                }
+                if !fresh.isActive {
+                    onFinished(fresh)
+                    return
+                }
+            } catch RovaBackendError.notAuthenticated {
+                return
+            } catch RovaBackendError.network(let message) where message == "Proje bulunamadı." {
+                missing = true
+                return
+            } catch {
+                failures += 1
+                if failures >= 2 { connectionNote = "Bağlantı bekleniyor; proje sunucuda çalışmaya devam ediyor." }
+            }
+            let elapsed = Date().timeIntervalSince(started)
+            let seconds: Double = failures > 0 ? min(15, 2 * Double(failures + 1)) : (elapsed < 60 ? 2 : elapsed < 300 ? 4 : 8)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        }
+    }
+
+    private func cancel() async {
+        isBusy = true
+        actionError = nil
+        defer { isBusy = false }
+        do {
+            let result = try await RovaBackendClient.cancelProject(id: task.id)
+            detail = result
+            onFinished(result)
+        } catch {
+            actionError = "İptal edilemedi; proje bitmiş olabilir. Birazdan kart güncellenecek."
+            pollGeneration += 1
+        }
+    }
+
+    private func retry() async {
+        isBusy = true
+        actionError = nil
+        defer { isBusy = false }
+        do {
+            detail = try await RovaBackendClient.retryProject(id: task.id)
+            pollGeneration += 1
+        } catch {
+            actionError = "Yeniden başlatılamadı. Bağlantıyı kontrol edip tekrar dene."
+        }
+    }
+}
+
+/// The running project told in the reply itself, line by line: what Wiqo decided, wrote,
+/// checked and fixed, ending with what it is doing right now. Every line is a real event from the
+/// project engine; new lines settle in as they arrive.
+struct ProjectNarrativeView: View {
+    let events: [RovaBackendClient.ProjectDetail.Event]
+    let liveLine: String?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulse = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(events, id: \.self) { event in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: symbol(event.kind))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(tint(event.kind))
+                        .frame(width: 16)
+                    Text(sentence(for: event))
+                        .font(.subheadline)
+                        .foregroundStyle(.primary.opacity(0.88))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
+                .accessibilityElement(children: .combine)
+            }
+            if let liveLine, !liveLine.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 7, height: 7)
+                        .opacity(reduceMotion ? 1 : (pulse ? 0.35 : 1))
+                        .frame(width: 16)
+                    Text(liveLine)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.opacity)
+                }
+                .accessibilityLabel("Şu an: \(liveLine)")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: events.count)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
+        }
+    }
+
+    private func sentence(for event: RovaBackendClient.ProjectDetail.Event) -> String {
+        switch event.kind {
+        case "decision": return event.text
+        case "write": return "Yazıldı: \(event.text)"
+        case "check": return "Kontrol: \(event.text)"
+        case "issue": return "Sorun: \(event.text)"
+        case "fix": return "Düzeltildi: \(event.text.replacingOccurrences(of: "Düzeltildi: ", with: ""))"
+        default: return event.text
+        }
+    }
+
+    private func symbol(_ kind: String) -> String {
+        switch kind {
+        case "decision": "lightbulb"
+        case "write": "checkmark.circle"
+        case "check": "checkmark.seal"
+        case "issue": "exclamationmark.triangle"
+        case "fix": "wrench.and.screwdriver"
+        default: "info.circle"
+        }
+    }
+
+    private func tint(_ kind: String) -> Color {
+        switch kind {
+        case "write", "check": WiqoTheme.green
+        case "issue": WiqoTheme.orange
+        case "decision": Color.accentColor
+        default: .secondary
+        }
+    }
+}
+
+private func fileSymbol(for type: FileContent.Kind) -> String {
+    switch type {
+    case .pdf: "doc.richtext"
+    case .docx, .text: "doc.text"
+    case .xlsx, .csv: "tablecells"
+    case .pptx: "rectangle.on.rectangle"
+    case .image: "photo"
+    case .scan: "doc.viewfinder"
+    }
+}
+
+/// A file waiting in the composer: what was read from it on this phone, removable before sending.
+struct PendingFileChip: View {
+    let file: FileContent
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: fileSymbol(for: file.type))
+                .font(.system(size: 18))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(file.name)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: 150, alignment: .leading)
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .black.opacity(0.55))
+                    .font(.system(size: 18))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dosyayı kaldır")
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 60)
+        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var detail: String {
+        var parts: [String] = []
+        if let pages = file.pageCount, pages > 0 {
+            parts.append(file.type == .xlsx ? "\(pages) sayfa" : file.type == .pptx ? "\(pages) slayt" : "\(pages) sayfa")
+        }
+        if !file.tables.isEmpty { parts.append("\(file.tables.reduce(0) { $0 + $1.rows.count }) satır") }
+        if !file.text.isEmpty { parts.append("\(file.text.count.formatted()) karakter") }
+        if file.source == .ocr { parts.append("OCR") }
+        if file.truncated { parts.append("kısaltıldı") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// File names above a sent message (the content already went to Wiqo; the files stayed here).
+struct AttachedFileNames: View {
+    let names: [String]
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            ForEach(Array(names.enumerated()), id: \.offset) { _, name in
+                Label(name, systemImage: "doc")
+                    .font(.caption)
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color(.tertiarySystemFill), in: Capsule())
+            }
+        }
+    }
+}
