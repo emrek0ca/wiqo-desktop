@@ -24,8 +24,9 @@ struct CopilotStoredMessage: Codable, Hashable, Sendable {
     let deferredTask: RovaBackendClient.DeferredTask?
     /// A background project started from this reply; kept so its card resumes when reopened.
     let projectTask: RovaBackendClient.ProjectTask?
+    let agentTask: RovaBackendClient.AgentTaskRef?
 
-    init(role: Role, text: String, artifacts: [RovaBackendClient.ArtifactDescriptor]? = nil, attachmentThumbnails: [Data]? = nil, thinking: ThinkingTrace? = nil, fileNames: [String]? = nil, deferredTask: RovaBackendClient.DeferredTask? = nil, projectTask: RovaBackendClient.ProjectTask? = nil) {
+    init(role: Role, text: String, artifacts: [RovaBackendClient.ArtifactDescriptor]? = nil, attachmentThumbnails: [Data]? = nil, thinking: ThinkingTrace? = nil, fileNames: [String]? = nil, deferredTask: RovaBackendClient.DeferredTask? = nil, projectTask: RovaBackendClient.ProjectTask? = nil, agentTask: RovaBackendClient.AgentTaskRef? = nil) {
         self.role = role
         self.text = text
         self.artifacts = artifacts
@@ -34,6 +35,7 @@ struct CopilotStoredMessage: Codable, Hashable, Sendable {
         self.fileNames = fileNames
         self.deferredTask = deferredTask
         self.projectTask = projectTask
+        self.agentTask = agentTask
     }
 }
 
@@ -213,7 +215,7 @@ enum CopilotConversationStore {
         // A chat that was opened but never used must not clutter the history list.
         guard !messages.isEmpty else { return }
         let boundedMessages = Array(messages.suffix(80)).map {
-            CopilotStoredMessage(role: $0.role, text: String($0.text.prefix(12_000)), artifacts: $0.artifacts, attachmentThumbnails: $0.attachmentThumbnails, thinking: $0.thinking, fileNames: $0.fileNames, deferredTask: $0.deferredTask, projectTask: $0.projectTask)
+            CopilotStoredMessage(role: $0.role, text: String($0.text.prefix(12_000)), artifacts: $0.artifacts, attachmentThumbnails: $0.attachmentThumbnails, thinking: $0.thinking, fileNames: $0.fileNames, deferredTask: $0.deferredTask, projectTask: $0.projectTask, agentTask: $0.agentTask)
         }
         if let data = try? JSONEncoder().encode(boundedMessages) {
             UserDefaults.standard.set(data, forKey: keys.messagesPrefix + id)

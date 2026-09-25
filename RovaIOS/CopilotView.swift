@@ -115,6 +115,7 @@ struct CopilotView: View {
             bubble.attachedFileNames = stored.fileNames ?? []
             bubble.deferredTask = stored.deferredTask
             bubble.projectTask = stored.projectTask
+            bubble.agentTask = stored.agentTask
             return bubble
         }
         _bubbles = State(initialValue: loadedBubbles)
@@ -459,6 +460,10 @@ struct CopilotView: View {
                 )
                 if let task = bubble.deferredTask {
                     DeferredTaskRow(task: task)
+                        .padding(.horizontal)
+                }
+                if let agentTask = bubble.agentTask {
+                    AgentTaskCard(task: agentTask)
                         .padding(.horizontal)
                 }
                 if let project = bubble.projectTask {
@@ -1536,6 +1541,7 @@ struct CopilotView: View {
                 bubble.replyIsProgress = result.replyIsProgress
                 bubble.deferredTask = result.deferredTask
                 bubble.projectTask = result.projectTask
+                bubble.agentTask = result.agentTask
                 bubble.artifacts = result.artifacts
                 bubble.backendConfirmations = mergedBackendConfirmations(
                     existing: bubble.backendConfirmations,
@@ -1963,6 +1969,7 @@ struct CopilotView: View {
             bubble.replyIsProgress = result.replyIsProgress
             if let deferred = result.deferredTask { bubble.deferredTask = deferred }
             if let project = result.projectTask { bubble.projectTask = project }
+            if let agentTask = result.agentTask { bubble.agentTask = agentTask }
             bubble.backendConfirmations = mergedBackendConfirmations(
                 existing: bubble.backendConfirmations,
                 incoming: result.backendConfirmations,
@@ -2381,7 +2388,8 @@ struct CopilotView: View {
                 thinking: bubble.thinking,
                 fileNames: bubble.attachedFileNames.isEmpty ? nil : bubble.attachedFileNames,
                 deferredTask: bubble.deferredTask,
-                projectTask: bubble.projectTask
+                projectTask: bubble.projectTask,
+                agentTask: bubble.agentTask
             )
         }
         CopilotConversationStore.saveSoon(id: conversationID, messages: stored, turnCount: turnCount)

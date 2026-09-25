@@ -85,11 +85,37 @@ private let automationTemplates: [AutomationTemplate] = [
 struct AutomationTemplatesView: View {
     let onSelect: (String) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var skills: [RovaBackendClient.UserSkill] = []
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    if !skills.isEmpty {
+                        WiqoSettingsGroup(title: "Becerilerim") {
+                            ForEach(skills) { skill in
+                                Button {
+                                    onSelect(skill.prompt)
+                                } label: {
+                                    WiqoRow(
+                                        systemImage: "sparkles",
+                                        title: skill.name,
+                                        subtitle: skill.prompt,
+                                        showsDivider: skill.id != skills.last?.id
+                                    )
+                                }
+                                .buttonStyle(WiqoRowButtonStyle())
+                                .contextMenu {
+                                    Button("Sil", role: .destructive) {
+                                        Task {
+                                            try? await RovaBackendClient.deleteSkill(id: skill.id)
+                                            skills.removeAll { $0.id == skill.id }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     WiqoSettingsGroup {
                         ForEach(automationTemplates) { template in
                             Button {
@@ -113,6 +139,7 @@ struct AutomationTemplatesView: View {
                 .padding(RovaDesign.screenPadding)
             }
             .background(RovaDesign.canvas)
+            .task { skills = (try? await RovaBackendClient.fetchSkills()) ?? [] }
             .navigationTitle("Otomasyon Şablonları")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

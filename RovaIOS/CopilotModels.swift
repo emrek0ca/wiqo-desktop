@@ -78,6 +78,7 @@ struct ChatBubble: Identifiable {
     var deferredTask: RovaBackendClient.DeferredTask? = nil
     /// A background project this reply started; its live card sits under the reply.
     var projectTask: RovaBackendClient.ProjectTask? = nil
+    var agentTask: RovaBackendClient.AgentTaskRef? = nil
     /// What the running project has done so far, told in the reply itself (in memory only; the
     /// verified summary replaces it when the project finishes).
     var projectNarrative: [RovaBackendClient.ProjectDetail.Event] = []

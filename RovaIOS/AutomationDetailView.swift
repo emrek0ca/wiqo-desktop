@@ -11,12 +11,16 @@ struct AutomationDetailView: View {
     @State private var loadError: String?
     @State private var isTrying = false
     @State private var tryMessage: String?
+    @State private var skillSaved = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: RovaDesign.cardSpacing) {
                 RovaCard {
-                    Text(automation.prompt).font(.subheadline)
+                    HStack(spacing: 10) {
+                        WiqoAgentMascot("execution", size: 40, isWorking: runs.contains { $0.status == "pending" || $0.status == "running" })
+                        Text(automation.prompt).font(.subheadline)
+                    }
                     Label(automation.scheduleLabel ?? automation.cron, systemImage: "clock")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -49,6 +53,17 @@ struct AutomationDetailView: View {
                         .disabled(isTrying)
                         .padding(.top, 4)
                     }
+                    Button {
+                        Task {
+                            let name = String(automation.prompt.prefix(40))
+                            skillSaved = (try? await RovaBackendClient.saveSkill(name: name, prompt: automation.prompt)) != nil
+                        }
+                    } label: {
+                        Label(skillSaved ? "Beceri olarak kaydedildi" : "Beceri olarak kaydet", systemImage: skillSaved ? "checkmark" : "sparkles")
+                            .font(.caption.weight(.medium))
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(skillSaved)
                     if let tryMessage {
                         Text(tryMessage).font(.caption2).foregroundStyle(.secondary)
                     }
@@ -119,6 +134,7 @@ private struct RunCard: View {
     @State private var expanded = false
     @State private var journal: [RovaBackendClient.ExecutionJournalEntry] = []
     @State private var journalError: String?
+    @State private var isOpeningChat = false
 
     var body: some View {
         RovaCard {
@@ -156,6 +172,17 @@ private struct RunCard: View {
                 }
             }
             .buttonStyle(.plain)
+
+            if run.status == "done" || run.status == "failed" {
+                Button {
+                    Task { await continueInChat() }
+                } label: {
+                    Label(isOpeningChat ? "Açılıyor…" : "Sohbette devam et", systemImage: "bubble.left.and.text.bubble.right")
+                        .font(.caption.weight(.medium))
+                }
+                .buttonStyle(.borderless)
+                .disabled(isOpeningChat)
+            }
 
             if let delivery = run.completionDeliveryState {
                 Label(completionDeliveryLabel(delivery), systemImage: "arrow.up.circle")
@@ -222,6 +249,17 @@ private struct RunCard: View {
                 Text(journalError).font(.caption2).foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// Opens this run as a chat the user can keep talking in (ask more, fix, "tekrar çalıştır").
+    private func continueInChat() async {
+        isOpeningChat = true
+        defer { isOpeningChat = false }
+        guard let id = try? await RovaBackendClient.conversationFromRun(automationID: automationID, runID: run.id) else { return }
+        if let remote = try? await RovaBackendClient.fetchConversationMessages(id: id) {
+            _ = CopilotConversationStore.saveRemoteMessages(remote, for: id)
+        }
+        NotificationCenter.default.post(name: .wiqoOpenConversation, object: id)
     }
 
     private func loadJournal() async {
@@ -327,4 +365,9 @@ private struct RunCard: View {
         default: return "Bildirim durumu bilinmiyor."
         }
     }
+}
+
+extension Notification.Name {
+    /// Object: the conversation id to open in the main chat.
+    static let wiqoOpenConversation = Notification.Name("wiqo.open-conversation")
 }

@@ -113,9 +113,26 @@ private struct WiqoActivityView: View {
                 } else {
                     ForEach(items) { item in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(item.title).font(.body.weight(.medium))
+                            HStack(spacing: 10) {
+                                if let persona = item.persona {
+                                    WiqoAgentMascot(persona, size: 34, isWorking: item.state == "running")
+                                }
+                                Text(item.title).font(.body.weight(.medium))
+                            }
                             if let detail = item.detail { Text(detail).font(.subheadline).foregroundStyle(.secondary) }
                             Text(label(for: item.state)).font(.caption).foregroundStyle(.secondary)
+                            if item.state == "needs_approval", item.ref?.type == "confirmation",
+                               let reference = item.ref, let confirmationID = UUID(uuidString: reference.id) {
+                                HStack {
+                                    Spacer()
+                                    Button("Reddet") { Task { await resolveConfirmation(confirmationID, approved: false) } }
+                                        .buttonStyle(.bordered)
+                                    Button("Onayla") { Task { await resolveConfirmation(confirmationID, approved: true) } }
+                                        .buttonStyle(.borderedProminent)
+                                }
+                                .font(.subheadline.weight(.semibold))
+                                .padding(.top, 4)
+                            }
                             if canCancel(item) {
                                 HStack {
                                     Spacer()
@@ -148,6 +165,17 @@ private struct WiqoActivityView: View {
         case "failed": return "Başarısız"
         default: return "Sonuç belirsiz"
         }
+    }
+
+    /// Approving from Etkinlik: background agent tasks wait here when a step needs the user.
+    private func resolveConfirmation(_ id: UUID, approved: Bool) async {
+        do {
+            _ = try await RovaBackendClient.resolveBackendConfirmation(id: id, approved: approved)
+            cancelNotice = approved ? "Onaylandı; işlem çalıştırıldı." : "Reddedildi."
+        } catch {
+            cancelNotice = (error as? LocalizedError)?.errorDescription ?? "Onay iletilemedi."
+        }
+        await load()
     }
 
     private func canCancel(_ item: RovaBackendClient.ActivityItem) -> Bool {
@@ -433,6 +461,15 @@ struct WiqoHomeView: View {
                 model.connect()
                 Task { await subscriptionStore.refreshIfStale() }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .wiqoOpenConversation)) { note in
+            // "Sohbette devam et" from an automation run: close any sheet and open that chat.
+            guard let id = note.object as? String, !id.isEmpty else { return }
+            showSettings = false
+            showPCSettings = false
+            draftPrompt = nil
+            conversations = CopilotConversationStore.all()
+            conversationID = id
         }
         .sheet(isPresented: $showSettings) {
             // General account settings only - PC control lives in its own screen (below), reached

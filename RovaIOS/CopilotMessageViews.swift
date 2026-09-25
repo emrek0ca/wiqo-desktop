@@ -717,3 +717,279 @@ struct AttachedFileNames: View {
         }
     }
 }
+
+/// Live card for a background agent task (backend src/agent/tasks.ts): its plan steps as they run
+/// (in parallel where the plan allows), what it is waiting on - an approval it can grant right here,
+/// or a question answered by typing in this chat - and, when done, how it was verified and what it
+/// cost. The result itself arrives as a chat message; the card is the task's live state.
+struct AgentTaskCard: View {
+    let task: RovaBackendClient.AgentTaskRef
+
+    @State private var detail: RovaBackendClient.AgentTaskDetail?
+    @State private var isBusy = false
+    @State private var actionError: String?
+    @State private var confirmingCancel = false
+    @State private var pollGeneration = 0
+
+    private var status: String { detail?.status ?? "running" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                WiqoAgentMascot(detail?.persona ?? task.persona, size: 48, isWorking: status == "running" && detail?.waiting == nil)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(detail?.title ?? task.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                    Text("\(WiqoAgentMascot.Persona(detail?.persona ?? task.persona).label) · \(statusLabel)").font(.caption).foregroundStyle(statusColor)
+                }
+                Spacer(minLength: 0)
+            }
+            if let progress = detail?.progress, status == "running", detail?.waiting == nil {
+                Text(progress).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            if let steps = detail?.steps, !steps.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(steps, id: \.id) { step in
+                        HStack(spacing: 7) {
+                            Image(systemName: stepSymbol(step.status))
+                                .font(.caption)
+                                .foregroundStyle(stepColor(step.status))
+                                .frame(width: 14)
+                            Text(step.title).font(.caption).lineLimit(1)
+                            Spacer(minLength: 4)
+                            if let seconds = step.seconds {
+                                Text("\(seconds) sn").font(.caption2).foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                }
+            }
+            if let waiting = detail?.waiting {
+                waitingBox(waiting)
+            }
+            if status == "failed", let error = detail?.error {
+                Text(error).font(.caption).foregroundStyle(WiqoTheme.red)
+            }
+            if let detail, status != "running" {
+                Text(footer(detail)).font(.caption2).foregroundStyle(.secondary)
+            }
+            if let actionError {
+                Text(actionError).font(.caption).foregroundStyle(WiqoTheme.red)
+            }
+            if status == "running" {
+                Button("Durdur", role: .destructive) { confirmingCancel = true }
+                    .font(.caption.weight(.semibold))
+                    .disabled(isBusy)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wiqoCard()
+        .task(id: "\(task.id)-\(pollGeneration)") { await poll() }
+        .confirmationDialog("Görev durdurulsun mu?", isPresented: $confirmingCancel, titleVisibility: .visible) {
+            Button("Görevi durdur", role: .destructive) {
+                Task {
+                    isBusy = true
+                    defer { isBusy = false }
+                    do {
+                        try await RovaBackendClient.cancelAgentTask(id: task.id)
+                        pollGeneration += 1
+                    } catch {
+                        actionError = "Durdurulamadı; görev zaten bitmiş olabilir."
+                    }
+                }
+            }
+        } message: {
+            Text("Wiqo görevi o adımda bırakır; yarım sonuç teslim edilmez.")
+        }
+    }
+
+    @ViewBuilder
+    private func waitingBox(_ waiting: RovaBackendClient.AgentTaskDetail.Waiting) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if waiting.reason == "approval" {
+                Text("\(waiting.question ?? "Bir adım") için onayın gerekiyor.").font(.caption.weight(.medium))
+                if let id = waiting.confirmationId.flatMap(UUID.init(uuidString:)) {
+                    HStack {
+                        Button("Onayla") { Task { await resolve(id, approved: true) } }
+                            .buttonStyle(.borderedProminent)
+                        Button("Reddet") { Task { await resolve(id, approved: false) } }
+                            .buttonStyle(.bordered)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .disabled(isBusy)
+                }
+            } else {
+                Text("Görev bir soru soruyor:").font(.caption.weight(.medium))
+                Text(waiting.question ?? "").font(.caption)
+                Text("Cevabını bu sohbete yazman yeterli.").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WiqoTheme.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func resolve(_ id: UUID, approved: Bool) async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            _ = try await RovaBackendClient.resolveBackendConfirmation(id: id, approved: approved)
+            actionError = nil
+            pollGeneration += 1
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? "Onay iletilemedi."
+        }
+    }
+
+    private func poll() async {
+        while !Task.isCancelled {
+            if let fresh = try? await RovaBackendClient.fetchAgentTask(id: task.id) {
+                detail = fresh
+                if !fresh.isActive { return }
+            }
+            let delay: UInt64 = detail?.waiting == nil ? 4_000_000_000 : 10_000_000_000
+            try? await Task.sleep(nanoseconds: delay)
+        }
+    }
+
+    private func footer(_ detail: RovaBackendClient.AgentTaskDetail) -> String {
+        let tokens = detail.usage.inputTokens + detail.usage.outputTokens
+        let verification: String
+        if let check = detail.verification {
+            verification = check.checked
+                ? (check.unsupported.isEmpty ? "Doğrulandı" : "Doğrulandı · \(check.unsupported.count) dayanaksız iddia çıkarıldı")
+                : "Doğrulama yapılamadı"
+        } else {
+            verification = "Doğrulanmadı"
+        }
+        let revised = detail.revisions > 0 ? " · plan \(detail.revisions) kez güncellendi" : ""
+        return "\(verification)\(revised) · \(detail.usage.modelCalls) model çağrısı · \(tokens / 1000) bin token"
+    }
+
+    private var statusLabel: String {
+        if detail?.waiting?.reason == "approval" { return "onay bekliyor" }
+        if detail?.waiting?.reason == "answer" { return "cevabını bekliyor" }
+        switch status {
+        case "done": return "tamamlandı · sonuç sohbette"
+        case "failed": return "tamamlanamadı"
+        case "cancelled": return "durduruldu"
+        default: return "çalışıyor"
+        }
+    }
+
+    private var statusColor: Color {
+        if detail?.waiting != nil { return WiqoTheme.orange }
+        switch status {
+        case "done": return .green
+        case "failed": return WiqoTheme.red
+        default: return .secondary
+        }
+    }
+
+    private func stepSymbol(_ status: String) -> String {
+        switch status {
+        case "done": return "checkmark.circle.fill"
+        case "failed": return "xmark.circle"
+        case "running": return "arrow.triangle.2.circlepath"
+        default: return "circle"
+        }
+    }
+
+    private func stepColor(_ status: String) -> Color {
+        switch status {
+        case "done": return .green
+        case "failed": return WiqoTheme.red
+        case "running": return WiqoTheme.orange
+        default: return .secondary
+        }
+    }
+}
+
+
+/// Wiqo's four sub-agent mascots (Assets: WiqoAgent*). Still when idle; while the agent works each
+/// moves in character - General floats, Research looks around, Developer bobs to a typing beat,
+/// Execution runs in place. Motion is small, and off entirely under Reduce Motion.
+struct WiqoAgentMascot: View {
+    enum Persona: String {
+        case general, research, developer, execution
+
+        init(_ raw: String?) { self = Persona(rawValue: raw ?? "") ?? .general }
+
+        var imageName: String {
+            switch self {
+            case .general: return "WiqoAgentGeneral"
+            case .research: return "WiqoAgentResearch"
+            case .developer: return "WiqoAgentDeveloper"
+            case .execution: return "WiqoAgentExecution"
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .general: return "Genel ajan"
+            case .research: return "Araştırma ajanı"
+            case .developer: return "Geliştirici ajan"
+            case .execution: return "Yürütme ajanı"
+            }
+        }
+    }
+
+    let persona: Persona
+    var size: CGFloat = 44
+    var isWorking = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(_ persona: String?, size: CGFloat = 44, isWorking: Bool = false) {
+        self.persona = Persona(persona)
+        self.size = size
+        self.isWorking = isWorking
+    }
+
+    var body: some View {
+        Group {
+            if isWorking && !reduceMotion {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                    mascot.modifier(Motion(persona: persona, time: context.date.timeIntervalSinceReferenceDate, size: size))
+                }
+            } else {
+                mascot
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityElement()
+        .accessibilityLabel(persona.label + (isWorking ? ", çalışıyor" : ""))
+    }
+
+    private var mascot: some View {
+        Image(persona.imageName)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+    }
+
+    private struct Motion: ViewModifier {
+        let persona: Persona
+        let time: TimeInterval
+        let size: CGFloat
+
+        func body(content: Content) -> some View {
+            let unit = size / 44
+            switch persona {
+            case .general:
+                content.offset(y: sin(time * 2.2) * 2.5 * unit)
+            case .research:
+                content
+                    .rotationEffect(.degrees(sin(time * 1.6) * 7))
+                    .offset(y: sin(time * 3.2) * 1.5 * unit)
+            case .developer:
+                content
+                    .scaleEffect(1 + abs(sin(time * 5.0)) * 0.035)
+                    .offset(y: -abs(sin(time * 5.0)) * 1.5 * unit)
+            case .execution:
+                content
+                    .offset(x: sin(time * 9.0) * 1.6 * unit, y: -abs(sin(time * 9.0)) * 2.4 * unit)
+                    .rotationEffect(.degrees(-4))
+            }
+        }
+    }
+}

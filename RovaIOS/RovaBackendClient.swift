@@ -262,6 +262,58 @@ enum RovaBackendClient {
         /// A website, long document, presentation or image set Wiqo now builds step by step in
         /// the background (backend src/projects/); the chat shows its live card.
         var projectTask: ProjectTask? = nil
+        /// A background agent task this turn started or answered (backend src/agent/tasks.ts).
+        var agentTask: AgentTaskRef? = nil
+    }
+
+    /// The handle a chat reply carries for a background agent task; the card polls the detail.
+    struct AgentTaskRef: Codable, Hashable, Sendable {
+        let id: Int
+        let title: String
+        /// general / research / developer / execution - which mascot to show (WiqoAgentMascot).
+        let persona: String?
+    }
+
+    /// Live state of a background agent task (GET /agent-tasks/:id).
+    struct AgentTaskDetail: Decodable, Equatable, Sendable {
+        struct Step: Decodable, Equatable, Hashable, Sendable {
+            let id: String
+            let title: String
+            let status: String
+            let seconds: Int?
+        }
+        struct Waiting: Decodable, Equatable, Sendable {
+            let reason: String
+            let confirmationId: String?
+            let question: String?
+        }
+        struct Usage: Decodable, Equatable, Sendable {
+            let modelCalls: Int
+            let inputTokens: Int
+            let outputTokens: Int
+            let budget: Int
+        }
+        struct Verification: Decodable, Equatable, Sendable {
+            let checked: Bool
+            let unsupported: [String]
+        }
+        let id: Int
+        let title: String
+        let persona: String?
+        let status: String
+        let progress: String?
+        let steps: [Step]
+        let waiting: Waiting?
+        let usage: Usage
+        let verification: Verification?
+        let revisions: Int
+        let error: String?
+
+        var isActive: Bool { status == "running" }
+    }
+
+    static func fetchAgentTask(id: Int) async throws -> AgentTaskDetail {
+        try await authorizedGet("agent-tasks/\(id)", as: AgentTaskDetail.self)
     }
 
     /// The handle a chat reply carries for a background project.
@@ -374,6 +426,7 @@ enum RovaBackendClient {
         let replyIsProgress: Bool?
         let deferredTask: DeferredTask?
         let projectTask: ProjectTask?
+        let agentTask: AgentTaskRef?
     }
 
     private struct CopilotErrorResponse: Decodable {
@@ -581,6 +634,7 @@ enum RovaBackendClient {
             let replyIsProgress: Bool?
             let deferredTask: DeferredTask?
             let projectTask: ProjectTask?
+            let agentTask: AgentTaskRef?
         }
         struct ConfirmationNeededEvent: Decodable {
             let steps: [CopilotStepResponse]
@@ -654,7 +708,8 @@ enum RovaBackendClient {
                         backendConfirmations: event.backendConfirmations ?? [],
                         replyIsProgress: event.replyIsProgress ?? false,
                         deferredTask: event.deferredTask,
-                        projectTask: event.projectTask
+                        projectTask: event.projectTask,
+                        agentTask: event.agentTask
                     )
                 case "error":
                     let event = try? decoder.decode(ErrorEvent.self, from: json)
@@ -692,7 +747,8 @@ enum RovaBackendClient {
         backendConfirmations: [BackendConfirmation],
         replyIsProgress: Bool = false,
         deferredTask: DeferredTask? = nil,
-        projectTask: ProjectTask? = nil
+        projectTask: ProjectTask? = nil,
+        agentTask: AgentTaskRef? = nil
     ) -> ConverseResult {
         let planned = steps.map { step in
             let localDestructive = RovaCommandAuthority.isDestructive(type: step.type, payload: step.payload)
@@ -714,7 +770,8 @@ enum RovaBackendClient {
             backendConfirmations: backendConfirmations,
             replyIsProgress: replyIsProgress,
             deferredTask: deferredTask,
-            projectTask: projectTask
+            projectTask: projectTask,
+            agentTask: agentTask
         )
     }
 
@@ -740,7 +797,8 @@ enum RovaBackendClient {
                         backendConfirmations: response.backendConfirmations ?? [],
                         replyIsProgress: response.replyIsProgress ?? false,
                         deferredTask: response.deferredTask,
-                        projectTask: response.projectTask
+                        projectTask: response.projectTask,
+                        agentTask: response.agentTask
                     )
                 case "failed":
                     throw RovaBackendError.declined(nonEmptyMessage(state.error?.message, fallback: "İşlem tamamlanamadı."))
@@ -900,6 +958,8 @@ enum RovaBackendClient {
         let detail: String?
         let at: String
         let ref: Reference?
+        /// Sub-agent mascot for agent tasks and automations.
+        let persona: String?
     }
 
     struct ActivityFeed: Decodable {
@@ -1030,6 +1090,33 @@ enum RovaBackendClient {
     static func fetchConversations() async throws -> [RemoteConversationSummary] {
         struct Response: Decodable { let conversations: [RemoteConversationSummary] }
         return try await authorizedGet("conversations", as: Response.self).conversations
+    }
+
+    /// A saved request the user re-runs with one tap (backend: agent/skills.ts).
+    struct UserSkill: Decodable, Identifiable, Sendable {
+        let id: Int
+        let name: String
+        let prompt: String
+    }
+
+    static func fetchSkills() async throws -> [UserSkill] {
+        struct Response: Decodable { let skills: [UserSkill] }
+        return try await authorizedGet("skills", as: Response.self).skills
+    }
+
+    static func saveSkill(name: String, prompt: String) async throws {
+        struct Response: Decodable { let id: Int }
+        _ = try await authorizedPost("skills", body: ["name": name, "prompt": prompt], as: Response.self)
+    }
+
+    static func deleteSkill(id: Int) async throws {
+        _ = try await authorizedMutate("skills/\(id)", method: "DELETE")
+    }
+
+    /// Turns an automation run into a conversation ("run-<id>") and returns its id.
+    static func conversationFromRun(automationID: Int, runID: Int) async throws -> String {
+        struct Response: Decodable { let conversationId: String }
+        return try await authorizedPost("automations/\(automationID)/runs/\(runID)/conversation", body: [:], as: Response.self).conversationId
     }
 
     static func fetchConversationMessages(id: String) async throws -> [RemoteConversationMessage] {
