@@ -1131,6 +1131,18 @@ struct SettingsView: View {
 
     private var tasksAutomationsSection: some View {
         WiqoSettingsGroup(title: "Görevler ve otomasyonlar") {
+            NavigationLink {
+                AgentTasksView()
+            } label: {
+                WiqoRow(systemImage: "point.3.connected.trianglepath.dotted", title: "Arka plan görevleri", subtitle: "Çalışan ve biten uzun işler", showsDivider: true) { EmptyView() }
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+            NavigationLink {
+                NamedAgentsView()
+            } label: {
+                WiqoRow(systemImage: "person.2.circle", title: "Ajanlarım", subtitle: "Rol, rutin ve hafıza", showsDivider: true) { EmptyView() }
+            }
+            .buttonStyle(WiqoRowButtonStyle())
             if let taskAutomationError {
                 Text(taskAutomationError)
                     .font(.footnote)

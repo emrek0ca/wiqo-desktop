@@ -730,6 +730,9 @@ struct AgentTaskCard: View {
     @State private var actionError: String?
     @State private var confirmingCancel = false
     @State private var pollGeneration = 0
+    @State private var openStep: String?
+    @State private var steerText = ""
+    @State private var steerSent = false
 
     private var status: String { detail?.status ?? "running" }
 
@@ -746,19 +749,43 @@ struct AgentTaskCard: View {
             if let progress = detail?.progress, status == "running", detail?.waiting == nil {
                 Text(progress).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
+            if status == "running", let estimate = detail?.estimatedSeconds, estimate > 0 {
+                Text("Tahmini süre: ~\(max(1, Int((Double(estimate) / 60).rounded()))) dk · \(detail?.steps.count ?? 0) adım")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
             if let steps = detail?.steps, !steps.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     ForEach(steps, id: \.id) { step in
-                        HStack(spacing: 7) {
-                            Image(systemName: stepSymbol(step.status))
-                                .font(.caption)
-                                .foregroundStyle(stepColor(step.status))
-                                .frame(width: 14)
-                            Text(step.title).font(.caption).lineLimit(1)
-                            Spacer(minLength: 4)
-                            if let seconds = step.seconds {
-                                Text("\(seconds) sn").font(.caption2).foregroundStyle(.tertiary)
+                        Button {
+                            guard step.brief != nil else { return }
+                            withAnimation(.easeInOut(duration: 0.15)) { openStep = openStep == step.id ? nil : step.id }
+                        } label: {
+                            HStack(spacing: 7) {
+                                Image(systemName: stepSymbol(step.status))
+                                    .font(.caption)
+                                    .foregroundStyle(stepColor(step.status))
+                                    .frame(width: 14)
+                                Text(step.title).font(.caption).lineLimit(1).foregroundStyle(.primary)
+                                Spacer(minLength: 4)
+                                if let seconds = step.seconds {
+                                    Text("\(seconds) sn").font(.caption2).foregroundStyle(.tertiary)
+                                }
+                                if step.brief != nil {
+                                    Image(systemName: openStep == step.id ? "chevron.down" : "chevron.right")
+                                        .font(.caption2).foregroundStyle(.tertiary)
+                                }
                             }
+                        }
+                        .buttonStyle(.plain)
+                        if openStep == step.id, let brief = step.brief {
+                            // The evidence behind the answer: what this step found and where.
+                            Text(brief)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                                .padding(8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                     }
                 }
@@ -774,6 +801,19 @@ struct AgentTaskCard: View {
             }
             if let actionError {
                 Text(actionError).font(.caption).foregroundStyle(WiqoTheme.red)
+            }
+            if status == "running" && detail?.waiting == nil {
+                // Steer without cancelling: "şunu da ekle", "bunu atla".
+                HStack(spacing: 6) {
+                    TextField(steerSent ? "İletildi; başka bir şey ekle…" : "Yönlendir: şunu da ekle, bunu atla…", text: $steerText)
+                        .font(.caption)
+                        .textFieldStyle(.roundedBorder)
+                        .submitLabel(.send)
+                        .onSubmit { Task { await steer() } }
+                    Button("Gönder") { Task { await steer() } }
+                        .font(.caption.weight(.semibold))
+                        .disabled(steerText.trimmingCharacters(in: .whitespaces).isEmpty || isBusy)
+                }
             }
             if status == "running" {
                 Button("Durdur", role: .destructive) { confirmingCancel = true }
@@ -827,6 +867,21 @@ struct AgentTaskCard: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(WiqoTheme.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func steer() async {
+        let note = steerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !note.isEmpty else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await RovaBackendClient.steerAgentTask(id: task.id, note: note)
+            steerText = ""
+            steerSent = true
+            actionError = nil
+        } catch {
+            actionError = "Yönlendirme iletilemedi; görev bitmiş olabilir."
+        }
     }
 
     private func resolve(_ id: UUID, approved: Bool) async {
@@ -991,5 +1046,121 @@ struct WiqoAgentMascot: View {
                     .rotationEffect(.degrees(-4))
             }
         }
+    }
+}
+
+
+/// Görevler: every background agent task, newest first, with its mascot; opens the live card.
+struct AgentTasksView: View {
+    @State private var tasks: [RovaBackendClient.AgentTaskDetail] = []
+    @State private var loaded = false
+
+    var body: some View {
+        List {
+            if loaded && tasks.isEmpty {
+                Text("Henüz arka plan görevi yok. \"Kapsamlı araştır…\" gibi uzun bir iş verdiğinde burada görünür.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            ForEach(tasks, id: \.id) { task in
+                NavigationLink {
+                    ScrollView {
+                        AgentTaskCard(task: RovaBackendClient.AgentTaskRef(id: task.id, title: task.title, persona: task.persona))
+                            .padding()
+                    }
+                    .navigationTitle("Görev")
+                    .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    HStack(spacing: 10) {
+                        WiqoAgentMascot(task.persona, size: 36, isWorking: task.isActive && task.waiting == nil)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(task.title).font(.subheadline.weight(.medium)).lineLimit(2)
+                            Text(rowStatus(task)).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Görevler")
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private func load() async {
+        tasks = (try? await RovaBackendClient.fetchAgentTasks()) ?? tasks
+        loaded = true
+    }
+
+    private func rowStatus(_ task: RovaBackendClient.AgentTaskDetail) -> String {
+        if task.waiting?.reason == "approval" { return "Onayını bekliyor" }
+        if task.waiting?.reason == "answer" { return "Cevabını bekliyor" }
+        switch task.status {
+        case "done": return "Tamamlandı · \(task.steps.count) adım"
+        case "failed": return "Tamamlanamadı"
+        case "cancelled": return "Durduruldu"
+        default: return task.progress ?? "Çalışıyor"
+        }
+    }
+}
+
+/// Ajanlarım: named agents, their routine and exactly what they remember - forget or delete here.
+struct NamedAgentsView: View {
+    @State private var agents: [RovaBackendClient.NamedAgent] = []
+    @State private var loaded = false
+    @State private var notice: String?
+
+    var body: some View {
+        List {
+            if loaded && agents.isEmpty {
+                Text("Henüz ajan yok. Sohbette \"Mail asistanım adında bir ajan kur…\" diyebilirsin.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            ForEach(agents) { agent in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        WiqoAgentMascot(agent.persona, size: 40)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(agent.name).font(.subheadline.weight(.semibold))
+                            Text(agent.cron == nil ? "İş verdiğinde çalışır" : "Rutin çalışıyor").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Text(agent.role).font(.caption).foregroundStyle(.secondary)
+                    if !agent.memory.isEmpty {
+                        Text("Hafızası").font(.caption.weight(.semibold))
+                        Text(agent.memory).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                    HStack {
+                        Button("Hafızasını sil") {
+                            Task {
+                                try? await RovaBackendClient.forgetAgentMemory(id: agent.id)
+                                notice = "\(agent.name) hafızası silindi."
+                                await load()
+                            }
+                        }
+                        .font(.caption)
+                        Spacer()
+                        Button("Ajanı sil", role: .destructive) {
+                            Task {
+                                try? await RovaBackendClient.deleteAgent(id: agent.id)
+                                await load()
+                            }
+                        }
+                        .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .padding(.vertical, 4)
+            }
+            if let notice {
+                Text(notice).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Ajanlarım")
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private func load() async {
+        agents = (try? await RovaBackendClient.fetchAgents()) ?? agents
+        loaded = true
     }
 }

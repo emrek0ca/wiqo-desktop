@@ -283,6 +283,8 @@ enum RovaBackendClient {
             let title: String
             let status: String
             let seconds: Int?
+            /// What the step found (sources included) - the evidence behind the answer.
+            let brief: String?
         }
         struct Waiting: Decodable, Equatable, Sendable {
             let reason: String
@@ -310,8 +312,45 @@ enum RovaBackendClient {
         let verification: Verification?
         let revisions: Int
         let error: String?
+        let estimatedSeconds: Int?
+        let conversationId: String?
 
         var isActive: Bool { status == "running" }
+    }
+
+    static func fetchAgentTasks() async throws -> [AgentTaskDetail] {
+        struct Response: Decodable { let tasks: [AgentTaskDetail] }
+        return try await authorizedGet("agent-tasks", as: Response.self).tasks
+    }
+
+    static func steerAgentTask(id: Int, note: String) async throws {
+        _ = try await authorizedPost("agent-tasks/\(id)/steer", body: ["note": note], as: AgentTaskDetail.self)
+    }
+
+    /// A named standing agent (backend agent/agents.ts), with what it remembers.
+    struct NamedAgent: Decodable, Identifiable, Sendable {
+        let id: Int
+        let name: String
+        let role: String
+        let persona: String?
+        let cron: String?
+        let nextRunAt: String?
+        let lastRunAt: String?
+        let memory: String
+    }
+
+    static func fetchAgents() async throws -> [NamedAgent] {
+        struct Response: Decodable { let agents: [NamedAgent] }
+        return try await authorizedGet("agents", as: Response.self).agents
+    }
+
+    static func forgetAgentMemory(id: Int) async throws {
+        struct Response: Decodable { let ok: Bool }
+        _ = try await authorizedPost("agents/\(id)/forget", body: [:], as: Response.self)
+    }
+
+    static func deleteAgent(id: Int) async throws {
+        _ = try await authorizedMutate("agents/\(id)", method: "DELETE")
     }
 
     static func fetchAgentTask(id: Int) async throws -> AgentTaskDetail {
