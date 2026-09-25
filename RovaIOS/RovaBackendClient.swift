@@ -1301,9 +1301,13 @@ enum RovaBackendClient {
         let nextRunAt: String?
         let lifecycleStatus: String?
         let targetDeviceId: String?
+        /// "Her gün 14:35" - the backend's plain reading of the schedule.
+        let scheduleLabel: String?
+        /// "phone" when this phone delivers it itself, "server" when the backend pushes it.
+        let delivery: String?
 
         private enum CodingKeys: String, CodingKey {
-            case id, prompt, cron, isActive, lastRunAt, nextRunAt, lifecycleStatus, targetDeviceId
+            case id, prompt, cron, isActive, lastRunAt, nextRunAt, lifecycleStatus, targetDeviceId, scheduleLabel, delivery
         }
 
         init(from decoder: Decoder) throws {
@@ -1316,6 +1320,8 @@ enum RovaBackendClient {
             nextRunAt = try values.decodeIfPresent(String.self, forKey: .nextRunAt)
             lifecycleStatus = try values.decodeIfPresent(String.self, forKey: .lifecycleStatus)
             targetDeviceId = try values.decodeIfPresent(String.self, forKey: .targetDeviceId)
+            scheduleLabel = try values.decodeIfPresent(String.self, forKey: .scheduleLabel)
+            delivery = try values.decodeIfPresent(String.self, forKey: .delivery)
         }
     }
 
@@ -1500,6 +1506,11 @@ enum RovaBackendClient {
         try await authorizedGet("projects/\(id)", as: ProjectDetail.self)
     }
 
+    static func cancelAgentTask(id: Int) async throws {
+        struct Response: Decodable { let ok: Bool }
+        _ = try await authorizedPost("agent-tasks/\(id)/cancel", body: [:], as: Response.self)
+    }
+
     static func cancelProject(id: Int) async throws -> ProjectDetail {
         try await authorizedPost("projects/\(id)/cancel", body: [:], as: ProjectDetail.self)
     }
@@ -1533,9 +1544,22 @@ enum RovaBackendClient {
         let timezone: String
     }
 
-    static func fetchLocalNotifications() async throws -> [LocalNotification] {
-        struct Response: Decodable { let notifications: [LocalNotification] }
-        return try await authorizedGet("automations/local-notifications", as: Response.self).notifications
+    /// A single-moment reminder ("yarın 9'da", "10 dakika sonra").
+    struct LocalOnceNotification: Decodable, Sendable {
+        let automationId: Int
+        let title: String
+        let body: String
+        /// ISO 8601 instant.
+        let at: String
+    }
+
+    struct LocalNotificationPlan: Decodable, Sendable {
+        let notifications: [LocalNotification]
+        let once: [LocalOnceNotification]?
+    }
+
+    static func fetchLocalNotifications() async throws -> LocalNotificationPlan {
+        try await authorizedGet("automations/local-notifications", as: LocalNotificationPlan.self)
     }
 
     static func leaseLocalDelivery(_ automationIDs: [Int]) async throws -> [Int] {

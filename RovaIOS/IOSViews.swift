@@ -68,6 +68,7 @@ private struct WiqoActivityView: View {
         .refreshable { await load() }
         .confirmationDialog(
             selectedPendingTask?.ref?.type == "project" ? "Proje iptal edilsin mi?"
+                : selectedPendingTask?.ref?.type == "agent_task" ? "Arka plan görevi durdurulsun mu?"
                 : selectedPendingTask?.ref?.type == "terminal_grant" ? "Terminal oturumu kapatılsın mı?"
                 : "PC işi iptal edilsin mi?",
             isPresented: Binding(
@@ -77,6 +78,7 @@ private struct WiqoActivityView: View {
             titleVisibility: .visible
         ) {
             Button(selectedPendingTask?.ref?.type == "project" ? "Projeyi iptal et"
+                : selectedPendingTask?.ref?.type == "agent_task" ? "Görevi durdur"
                 : selectedPendingTask?.ref?.type == "terminal_grant" ? "Oturumu kapat"
                 : "PC işini iptal et", role: .destructive) {
                 guard let item = selectedPendingTask else { return }
@@ -86,6 +88,8 @@ private struct WiqoActivityView: View {
         } message: {
             Text(selectedPendingTask?.ref?.type == "project"
                  ? "Wiqo projeyi durdurur; o ana kadar yapılan kısım teslim edilmez."
+                 : selectedPendingTask?.ref?.type == "agent_task"
+                    ? "Wiqo görevi o adımda bırakır; yarım sonuç teslim edilmez."
                  : selectedPendingTask?.ref?.type == "terminal_grant"
                     ? "Oturum izni hemen kapatılır. PC çevrimdışıysa başlamış bir işin durduğu doğrulanamayabilir."
                     : "PC'ye gönderilmiş bir adımın sonucu belirsiz kalabilir; Wiqo bunu Etkinlik'te gösterecek.")
@@ -149,6 +153,7 @@ private struct WiqoActivityView: View {
     private func canCancel(_ item: RovaBackendClient.ActivityItem) -> Bool {
         (item.ref?.type == "pending_task" && ["waiting_for_pc", "running"].contains(item.state))
             || (item.ref?.type == "project" && item.state == "running")
+            || (item.ref?.type == "agent_task" && item.state == "running")
             || (item.ref?.type == "terminal_job" && ["waiting_for_pc", "running"].contains(item.state))
             || (item.ref?.type == "terminal_grant" && item.state == "watching")
     }
@@ -156,6 +161,18 @@ private struct WiqoActivityView: View {
     private func cancelPendingTask(_ item: RovaBackendClient.ActivityItem) async {
         if item.ref?.type == "project" {
             await cancelProject(item)
+            return
+        }
+        if let reference = item.ref, reference.type == "agent_task", let id = Int(reference.id) {
+            cancellingTaskID = item.id
+            defer { cancellingTaskID = nil }
+            do {
+                try await RovaBackendClient.cancelAgentTask(id: id)
+                cancelNotice = "Arka plan görevi durduruldu."
+            } catch {
+                cancelNotice = "Görev durdurulamadı; zaten bitmiş olabilir."
+            }
+            await load()
             return
         }
         if let reference = item.ref, reference.type == "terminal_grant" {

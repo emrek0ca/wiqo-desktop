@@ -9,15 +9,25 @@ struct AutomationDetailView: View {
     @State private var runs: [RovaBackendClient.AutomationRun] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var isTrying = false
+    @State private var tryMessage: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: RovaDesign.cardSpacing) {
                 RovaCard {
                     Text(automation.prompt).font(.subheadline)
-                    Label(automation.cron, systemImage: "clock")
+                    Label(automation.scheduleLabel ?? automation.cron, systemImage: "clock")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if let delivery = automation.delivery {
+                        Label(
+                            delivery == "phone" ? "Telefonun kendisi gösteriyor (internetsiz de gelir)" : "Wiqo sunucusu çalıştırıp bildiriyor",
+                            systemImage: delivery == "phone" ? "iphone" : "cloud"
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    }
                     if let lastRunAt = automation.lastRunAt {
                         Label("Son çalışma: \(lastRunAt)", systemImage: "arrow.clockwise")
                             .font(.caption2)
@@ -27,6 +37,20 @@ struct AutomationDetailView: View {
                         Label("Sıradaki: \(nextRunAt)", systemImage: "calendar")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
+                    }
+                    if automation.isActive {
+                        Button {
+                            Task { await tryNow() }
+                        } label: {
+                            Label(isTrying ? "Başlatılıyor…" : "Şimdi bir kez dene", systemImage: "play.circle")
+                                .font(.caption.weight(.medium))
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isTrying)
+                        .padding(.top, 4)
+                    }
+                    if let tryMessage {
+                        Text(tryMessage).font(.caption2).foregroundStyle(.secondary)
                     }
                 }
 
@@ -62,6 +86,19 @@ struct AutomationDetailView: View {
             }
         }
         .refreshable { await load() }
+    }
+
+    /// Runs the automation once now, so the result is seen without waiting for its time.
+    private func tryNow() async {
+        isTrying = true
+        defer { isTrying = false }
+        do {
+            _ = try await RovaBackendClient.runAutomationNow(id: automation.id)
+            tryMessage = "Başlattım; sonucu aşağıda ve bildirimde göreceksin."
+            await load(silent: true)
+        } catch {
+            tryMessage = (error as? LocalizedError)?.errorDescription ?? "Şu an başlatılamadı."
+        }
     }
 
     private func load(silent: Bool = false) async {

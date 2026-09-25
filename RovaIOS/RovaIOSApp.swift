@@ -61,12 +61,21 @@ final class WiqoLocalReminders {
         }
     }
 
+    private static func instant(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
+    }
+
     private func perform() async {
         let center = UNUserNotificationCenter.current()
         let status = await center.notificationSettings().authorizationStatus
         // Without permission nothing would show; the backend keeps ownership (no lease).
         guard status == .authorized || status == .provisional || status == .ephemeral else { return }
-        guard let items = try? await RovaBackendClient.fetchLocalNotifications() else { return }
+        guard let plan = try? await RovaBackendClient.fetchLocalNotifications() else { return }
+        let items = plan.notifications
         let ours = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(Self.identifierPrefix) }
         center.removePendingNotificationRequests(withIdentifiers: ours)
 
@@ -88,6 +97,7 @@ final class WiqoLocalReminders {
                 content.body = item.body
                 content.sound = .default
                 content.threadIdentifier = "rova-reminders"
+                content.categoryIdentifier = WiqoNotificationActions.reminderCategory
                 content.userInfo = ["automationId": item.automationId]
                 let identifier = "\(Self.identifierPrefix)\(item.automationId).\(weekday.map(String.init) ?? "daily")"
                 identifiers.append(identifier)
@@ -109,6 +119,27 @@ final class WiqoLocalReminders {
                 // Half a schedule plus the backend's push would double up; the backend keeps it.
                 center.removePendingNotificationRequests(withIdentifiers: identifiers)
             }
+        for item in plan.once ?? [] {
+            guard requestCount < Self.maxRequests, let at = Self.instant(item.at) else { continue }
+            let interval = at.timeIntervalSinceNow
+            guard interval > 5 else { continue }
+            let content = UNMutableNotificationContent()
+            content.title = item.title
+            content.body = item.body
+            content.sound = .default
+            content.threadIdentifier = "rova-reminders"
+            content.categoryIdentifier = WiqoNotificationActions.reminderCategory
+            content.userInfo = ["automationId": item.automationId]
+            let request = UNNotificationRequest(
+                identifier: "\(Self.identifierPrefix)\(item.automationId).once",
+                content: content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
+            )
+            if (try? await center.add(request)) != nil {
+                requestCount += 1
+                scheduled.append(item.automationId)
+            }
+        }
         }
         if !scheduled.isEmpty { _ = try? await RovaBackendClient.leaseLocalDelivery(scheduled) }
     }
@@ -168,6 +199,7 @@ final class RovaAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = notificationDelegate
+        WiqoNotificationActions.register()
         return true
     }
 
@@ -181,7 +213,65 @@ final class RovaAppDelegate: NSObject, UIApplicationDelegate {
 
 }
 
+/// Buttons on Wiqo's notifications: a reminder can be snoozed or stopped from the lock screen,
+/// a failed automation retried or stopped - without opening the app.
+enum WiqoNotificationActions {
+    static let reminderCategory = "WIQO_REMINDER"
+    static let failedCategory = "WIQO_AUTOMATION_FAILED"
+    static let snooze = "WIQO_SNOOZE"
+    static let stop = "WIQO_STOP"
+    static let retry = "WIQO_RETRY"
+    private static let snoozePrefix = "wiqo.snooze."
+
+    static func register() {
+        let snoozeAction = UNNotificationAction(identifier: snooze, title: "10 dk ertele", options: [])
+        let stopAction = UNNotificationAction(identifier: stop, title: "Durdur", options: [.destructive, .authenticationRequired])
+        let retryAction = UNNotificationAction(identifier: retry, title: "Tekrar dene", options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([
+            UNNotificationCategory(identifier: reminderCategory, actions: [snoozeAction, stopAction], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: failedCategory, actions: [retryAction, stopAction], intentIdentifiers: [], options: [])
+        ])
+    }
+
+    static func automationID(in userInfo: [AnyHashable: Any]) -> Int? {
+        if let id = userInfo["automationId"] as? Int { return id }
+        return (userInfo["rova"] as? [String: Any])?["automationId"] as? Int
+    }
+
+    /// Snoozing happens on the phone alone: the same notification again in ten minutes.
+    static func scheduleSnooze(of content: UNNotificationContent) async {
+        let copy = UNMutableNotificationContent()
+        copy.title = content.title
+        copy.body = content.body
+        copy.sound = .default
+        copy.threadIdentifier = content.threadIdentifier
+        copy.categoryIdentifier = reminderCategory
+        copy.userInfo = content.userInfo
+        let request = UNNotificationRequest(
+            identifier: snoozePrefix + UUID().uuidString,
+            content: copy,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 600, repeats: false)
+        )
+        try? await UNUserNotificationCenter.current().add(request)
+    }
+}
+
 final class RovaNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        let content = response.notification.request.content
+        let automationID = WiqoNotificationActions.automationID(in: content.userInfo)
+        switch response.actionIdentifier {
+        case WiqoNotificationActions.snooze:
+            await WiqoNotificationActions.scheduleSnooze(of: content)
+        case WiqoNotificationActions.stop:
+            if let automationID { _ = try? await RovaBackendClient.pauseAutomation(id: automationID) }
+        case WiqoNotificationActions.retry:
+            if let automationID { _ = try? await RovaBackendClient.runAutomationNow(id: automationID) }
+        default:
+            break
+        }
+    }
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
