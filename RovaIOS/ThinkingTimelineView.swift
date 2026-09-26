@@ -59,7 +59,7 @@ struct ThinkingTimelineView: View {
         return HStack(alignment: .center, spacing: 8) {
             if trace.showsTimeline, let persona = trace.persona {
                 // The sub-agent doing the work, moving in character while the turn runs.
-                WiqoAgentMascot(persona, size: 34, isWorking: true)
+                WiqoAgentMascot(persona, size: 44, isWorking: true)
             } else if trace.showsTimeline {
                 ThinkingPulse()
                     .frame(width: 16)
@@ -103,7 +103,7 @@ struct ThinkingSummaryView: View {
                         .font(.caption2.weight(.semibold))
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                     if let persona = trace.persona {
-                        WiqoAgentMascot(persona, size: 22)
+                        WiqoAgentMascot(persona, size: 29)
                     }
                     Text(trace.summary)
                         .font(.caption)

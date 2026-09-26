@@ -994,6 +994,8 @@ struct WiqoAgentMascot: View {
     var isWorking = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var displaySize: CGFloat { size * 1.3 }
+
     init(_ persona: String?, size: CGFloat = 44, isWorking: Bool = false) {
         self.persona = Persona(persona)
         self.size = size
@@ -1004,13 +1006,14 @@ struct WiqoAgentMascot: View {
         Group {
             if isWorking && !reduceMotion {
                 TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                    mascot.modifier(Motion(persona: persona, time: context.date.timeIntervalSinceReferenceDate, size: size))
+                    mascot.modifier(Motion(persona: persona, time: context.date.timeIntervalSinceReferenceDate, size: displaySize))
                 }
             } else {
                 mascot
             }
         }
-        .frame(width: size, height: size)
+        .padding(displaySize * 0.035)
+        .frame(width: displaySize, height: displaySize)
         .accessibilityElement()
         .accessibilityLabel(persona.label + (isWorking ? ", çalışıyor" : ""))
     }
