@@ -328,12 +328,9 @@ public sealed class ProtocolV2Client : IAsyncDisposable
         byte[] actual;
         try { actual = Convert.FromHexString(signature); }
         catch (FormatException) { return false; }
-        string canonicalPayload;
-        try { canonicalPayload = CanonicalJson.Serialize(payload); }
+        byte[] expected;
+        try { expected = CommandSignature(token, id, typeValue.GetString() ?? "", epochMs, nonce, payload); }
         catch (JsonException) { return false; }
-        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalPayload))).ToLowerInvariant();
-        var message = $"wiqo-command:v2:{id.ToString().ToLowerInvariant()}:{typeValue.GetString()}:{epochMs}:{nonce}:{digest}";
-        var expected = HMACSHA256.HashData(Encoding.UTF8.GetBytes(token), Encoding.UTF8.GetBytes(message));
         if (actual.Length != expected.Length || !CryptographicOperations.FixedTimeEquals(actual, expected)) return false;
         if (!consumeNonce) return true;
         var tokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
@@ -342,6 +339,14 @@ public sealed class ProtocolV2Client : IAsyncDisposable
         var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         foreach (var entry in usedCommandNonces.Where(entry => nowMs - entry.Value > 600_000).Take(256)) usedCommandNonces.TryRemove(entry.Key, out _);
         return usedCommandNonces.TryAdd(nonceKey, nowMs);
+    }
+
+    /// HMAC of a v2 CommandRequest, identical to RovaValidation.signRequest on the phone and Mac.
+    internal static byte[] CommandSignature(string token, Guid id, string type, long epochMs, string nonce, JsonElement payload)
+    {
+        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(CanonicalJson.Serialize(payload)))).ToLowerInvariant();
+        var message = $"wiqo-command:v2:{id.ToString().ToLowerInvariant()}:{type}:{epochMs}:{nonce}:{digest}";
+        return HMACSHA256.HashData(Encoding.UTF8.GetBytes(token), Encoding.UTF8.GetBytes(message));
     }
 
     private static bool ConstantTimeTextEquals(string left, string right)

@@ -6,4 +6,10 @@
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Sibling projects live in subfolders; they are not part of the core library. -->
+    <Compile Remove="Tests/**;App/**" />
+    <None Remove="Tests/**;App/**" />
+    <InternalsVisibleTo Include="RovaWindows.Tests" />
+  </ItemGroup>
 </Project>
