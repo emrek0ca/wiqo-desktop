@@ -548,6 +548,48 @@ public struct ProcessOutputContent: Codable, Equatable, Sendable {
     }
 }
 
+/// One command of a terminal plan (terminal-session-v2 run_plan), as the Mac ran it.
+public struct TerminalStepResult: Codable, Equatable, Sendable {
+    public let command: String
+    public let exitCode: Int32
+    public let stdout: String
+    public let stderr: String
+    public let durationMs: Int
+    public let truncated: Bool
+    /// Not run because an earlier step failed (stop-on-failure).
+    public let skipped: Bool
+
+    public init(command: String, exitCode: Int32, stdout: String, stderr: String, durationMs: Int, truncated: Bool, skipped: Bool) {
+        self.command = command
+        self.exitCode = exitCode
+        self.stdout = stdout
+        self.stderr = stderr
+        self.durationMs = durationMs
+        self.truncated = truncated
+        self.skipped = skipped
+    }
+}
+
+/// Structured result of a terminal-session-v2 action: a command plan, a file read/write, a
+/// search, or a multi-file edit. `workingDirectory` is the session folder after the action.
+public struct TerminalResultContent: Codable, Equatable, Sendable {
+    public let kind: String
+    public let workingDirectory: String?
+    public let steps: [TerminalStepResult]?
+    public let text: String?
+    public let files: [String]?
+    public let totalLines: Int?
+
+    public init(kind: String, workingDirectory: String? = nil, steps: [TerminalStepResult]? = nil, text: String? = nil, files: [String]? = nil, totalLines: Int? = nil) {
+        self.kind = kind
+        self.workingDirectory = workingDirectory
+        self.steps = steps
+        self.text = text
+        self.files = files
+        self.totalLines = totalLines
+    }
+}
+
 /// A bounded status snapshot for a companion-owned background terminal job. Raw output stays in
 /// the companion's short-lived in-memory job store and is fetched only when the user asks.
 public struct TerminalJobContent: Codable, Equatable, Sendable {
@@ -1087,6 +1129,7 @@ public enum CommandData: Codable, Equatable, Sendable {
     case fileData(FileDataContent)
     case processOutput(ProcessOutputContent)
     case terminalJob(TerminalJobContent)
+    case terminalResult(TerminalResultContent)
     case screenshot(ScreenshotContent)
     case shortcutResult(ShortcutExecutionContent)
     case uiElement(UIElementContent)
@@ -1095,7 +1138,7 @@ public enum CommandData: Codable, Equatable, Sendable {
     case runningApplications([RunningApplicationInfo])
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileTransfer, fileData, processOutput, terminalJob, screenshot, shortcutResult, uiElement, screenClick, applicationControl, runningApplications }
+    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileTransfer, fileData, processOutput, terminalJob, terminalResult, screenshot, shortcutResult, uiElement, screenClick, applicationControl, runningApplications }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1132,6 +1175,8 @@ public enum CommandData: Codable, Equatable, Sendable {
             self = .processOutput(try container.decode(ProcessOutputContent.self, forKey: .value))
         case .terminalJob:
             self = .terminalJob(try container.decode(TerminalJobContent.self, forKey: .value))
+        case .terminalResult:
+            self = .terminalResult(try container.decode(TerminalResultContent.self, forKey: .value))
         case .screenshot:
             self = .screenshot(try container.decode(ScreenshotContent.self, forKey: .value))
         case .shortcutResult:
@@ -1197,6 +1242,9 @@ public enum CommandData: Codable, Equatable, Sendable {
             try container.encode(value, forKey: .value)
         case .terminalJob(let value):
             try container.encode(Kind.terminalJob, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .terminalResult(let value):
+            try container.encode(Kind.terminalResult, forKey: .kind)
             try container.encode(value, forKey: .value)
         case .screenshot(let value):
             try container.encode(Kind.screenshot, forKey: .kind)

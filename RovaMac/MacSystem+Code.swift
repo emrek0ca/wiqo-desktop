@@ -139,7 +139,12 @@ extension MacSystem {
             guard raw != "/dev/null", !raw.split(separator: "/").contains(".."), !raw.hasPrefix("/") || raw == expectedPath else { return nil }
             let stripped = raw.hasPrefix("a/") || raw.hasPrefix("b/") ? String(raw.dropFirst(2)) : raw
             let expected = expectedPath.hasPrefix("a/") || expectedPath.hasPrefix("b/") ? String(expectedPath.dropFirst(2)) : expectedPath
-            return stripped == expected ? stripped : nil
+            // Which file is patched is decided by filePath (already resolved inside the grant);
+            // the header only has to name the same file: equal, or a path suffix of it
+            // ("a/src/x.ts" for "/Users/ada/app/src/x.ts" or "src/x.ts" for "x.ts" in src/).
+            if stripped == expected { return stripped }
+            if expected.hasSuffix("/" + stripped) || stripped.hasSuffix("/" + expected) { return stripped }
+            return nil
         }
         guard normalizedHeader(patchLines[0], prefix: "--- ") != nil,
               normalizedHeader(patchLines[1], prefix: "+++ ") != nil else { return nil }
@@ -206,7 +211,7 @@ extension MacSystem {
         let directoryPath = payload.workingDirectory ?? NSHomeDirectory()
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directoryPath, isDirectory: &isDirectory), isDirectory.boolValue else {
-            return (nil, RovaError(code: "INVALID_WORKING_DIRECTORY", message: "Çalışma klasörü bulunamadı.", category: "validation"))
+            return (nil, RovaError(code: "INVALID_WORKING_DIRECTORY", message: "Çalışma klasörü bulunamadı: \(directoryPath). Önce klasörü oluştur ya da var olan bir klasör ver.", category: "validation"))
         }
 
         let shell = (payload.shell ?? "default").lowercased()
@@ -282,7 +287,9 @@ extension MacSystem {
         var result = allowed.reduce(into: [String: String]()) { values, key in
             if let value = inherited[key] { values[key] = value }
         }
-        result["PATH"] = result["PATH"] ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        // The user's interactive PATH first: nvm/pyenv/asdf/conda add their tools in ~/.zshrc, which
+        // the `zsh -lc` below never reads - the usual cause of "command not found" for node/python.
+        result["PATH"] = interactivePath ?? result["PATH"] ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         result["PWD"] = workingDirectory
         return result
     }
@@ -397,5 +404,242 @@ extension MacSystem {
             }
             if bytesBefore >= maxProcessOutputBytes || bytesRead > maxProcessOutputBytes - bytesBefore { truncated = true }
         }
+    }
+}
+
+
+// MARK: - Terminal session v2 (plans, session folder, files, search, profile)
+
+extension MacSystem {
+    /// The user's interactive-shell PATH, resolved once (5 s cap) and reused for every terminal
+    /// command. Only PATH is taken from the interactive shell - never other variables or secrets.
+    static let interactivePath: String? = {
+        let snapshot = runProcess(
+            executable: "/bin/zsh",
+            arguments: ["-ilc", "printf '__WIQO_PATH__%s' \"$PATH\""],
+            timeoutSeconds: 5,
+            environment: ["HOME": NSHomeDirectory(), "USER": NSUserName(), "TERM": "dumb"]
+        )
+        guard !snapshot.timedOut else { return nil }
+        let text = String(decoding: snapshot.stdout, as: UTF8.self)
+        guard let range = text.range(of: "__WIQO_PATH__", options: .backwards) else { return nil }
+        let value = String(text[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }()
+
+    private static let cwdMarker = "__WIQO_PWD__"
+
+    /// Runs one terminal command and reports the folder the shell ended in, so a `cd` carries over
+    /// to the next command of the session. The marker line is removed from the output.
+    static func executeTerminalCommandTrackingDirectory(
+        _ command: String,
+        workingDirectory: String,
+        timeoutSeconds: Int,
+        processStarted: @escaping @Sendable (Int32) -> Void
+    ) -> (data: CommandData?, error: RovaError?, endDirectory: String?) {
+        let wrapped = "\(command)\n__wiqo_rc=$?; printf '\\n\(cwdMarker)%s\\n' \"$PWD\"; exit $__wiqo_rc"
+        let outcome = executeTerminalCommand(wrapped, workingDirectory: workingDirectory, timeoutSeconds: timeoutSeconds, processStarted: processStarted)
+        guard case let .processOutput(output)? = outcome.data else { return (outcome.data, outcome.error, nil) }
+        var endDirectory: String?
+        var stdout = output.stdout
+        if let range = stdout.range(of: "\n\(cwdMarker)", options: .backwards) ?? stdout.range(of: cwdMarker, options: .backwards) {
+            let tail = stdout[range.upperBound...]
+            endDirectory = tail.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map { String($0).trimmingCharacters(in: .whitespaces) }
+            stdout = String(stdout[..<range.lowerBound])
+        }
+        let cleaned = ProcessOutputContent(language: output.language, exitCode: output.exitCode, stdout: stdout, stderr: output.stderr, truncated: output.truncated, durationMs: output.durationMs)
+        return (.processOutput(cleaned), outcome.error, endDirectory)
+    }
+
+    /// Reads a UTF-8 text file (line range, numbered), masking credentials before it leaves the Mac.
+    static func readTerminalFile(_ path: String, startLine: Int?, endLine: Int?) -> (text: String?, totalLines: Int, error: RovaError?) {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attributes[.size] as? NSNumber, size.intValue <= 2_000_000 else {
+            return (nil, 0, RovaError(code: "TERMINAL_FILE_TOO_LARGE", message: "Dosya okunamadı ya da 2 MB'tan büyük.", category: "validation"))
+        }
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return (nil, 0, RovaError(code: "TERMINAL_FILE_NOT_TEXT", message: "Dosya UTF-8 metin değil.", category: "validation"))
+        }
+        let lines = content.components(separatedBy: "\n")
+        let first = max(1, startLine ?? 1)
+        let last = min(lines.count, max(first, endLine ?? (first + 399)))
+        guard first <= lines.count else { return ("", lines.count, nil) }
+        var text = ""
+        for index in (first - 1)..<last {
+            text += "\(index + 1)\t\(lines[index])\n"
+            if text.utf8.count > 60_000 { text += "[... 60 KB sınırı; daha dar satır aralığı iste ...]\n"; break }
+        }
+        return (RovaTerminalPolicy.redactSecrets(text), lines.count, nil)
+    }
+
+    /// Creates or replaces a text file atomically (path already resolved inside the grant).
+    /// A JSON file that parsed before the change must still parse after it (measured: models
+    /// dropped a comma in package.json and then gave up at the `npm` error). JSONC files such as
+    /// a commented tsconfig never parsed, so they are left alone.
+    private static func brokenJSON(path: String, before: String?, after: String, display: String) -> RovaError? {
+        guard path.lowercased().hasSuffix(".json"), let before,
+              (try? JSONSerialization.jsonObject(with: Data(before.utf8), options: [.fragmentsAllowed])) != nil else { return nil }
+        do {
+            _ = try JSONSerialization.jsonObject(with: Data(after.utf8), options: [.fragmentsAllowed])
+            return nil
+        } catch {
+            let reason = ((error as NSError).userInfo["NSDebugDescription"] as? String) ?? "geçersiz JSON"
+            return RovaError(code: "TERMINAL_EDIT_INVALID_JSON", message: "\(display): değişiklik sonrası JSON geçersiz olurdu (\(reason)); hiçbir dosya değiştirilmedi. Virgül ve parantezleri kontrol edip tekrar dene.", category: "validation")
+        }
+    }
+
+    static func writeTerminalFile(_ path: String, content: String) -> (created: Bool, error: RovaError?) {
+        guard content.utf8.count <= 400_000, !content.contains("\0") else {
+            return (false, RovaError(code: "TERMINAL_FILE_TOO_LARGE", message: "Yazılacak içerik 400 KB'tan büyük ya da ikili.", category: "validation"))
+        }
+        let existed = FileManager.default.fileExists(atPath: path)
+        if existed, let error = brokenJSON(path: path, before: try? String(contentsOfFile: path, encoding: .utf8), after: content, display: (path as NSString).lastPathComponent) {
+            return (false, error)
+        }
+        do {
+            try Data(content.utf8).write(to: URL(fileURLWithPath: path), options: [.atomic])
+            return (!existed, nil)
+        } catch {
+            return (false, localFileError(code: "TERMINAL_FILE_WRITE_FAILED", fallback: "Dosya yazılamadı.", error: error))
+        }
+    }
+
+    /// Validates every file edit first and writes only when all of them apply: never half a change.
+    static func applyTerminalEdits(_ edits: [(path: String, patch: String, display: String)]) -> (diff: String?, error: RovaError?) {
+        var updated: [(path: String, content: String)] = []
+        for edit in edits {
+            guard let current = try? String(contentsOfFile: edit.path, encoding: .utf8),
+                  let result = applyUnifiedPatch(edit.patch, to: current, expectedPath: edit.display),
+                  !result.isEmpty, result != current else {
+                return (nil, RovaError(code: "TERMINAL_PATCH_REJECTED", message: "\(edit.display): yama dosyanın güncel içeriğiyle eşleşmedi; hiçbir dosya değiştirilmedi.", category: "validation"))
+            }
+            if let error = brokenJSON(path: edit.path, before: current, after: result, display: edit.display) { return (nil, error) }
+            updated.append((edit.path, result))
+        }
+        for item in updated {
+            do {
+                try Data(item.content.utf8).write(to: URL(fileURLWithPath: item.path), options: [.atomic])
+            } catch {
+                return (nil, localFileError(code: "TERMINAL_PATCH_WRITE_FAILED", fallback: "Yama yazılamadı.", error: error))
+            }
+        }
+        return (edits.map(\.patch).joined(separator: "\n"), nil)
+    }
+
+    /// Exact find-and-replace edits (the form models get right far more often than unified diffs):
+    /// each `find` must occur exactly once unless `replaceAll`; every edit is checked first and
+    /// files are written only when all of them apply.
+    static func applyTerminalReplacements(_ edits: [(path: String, display: String, find: String, replace: String, replaceAll: Bool)]) -> (summary: String?, error: RovaError?) {
+        var contents: [String: String] = [:]
+        var originals: [String: String] = [:]
+        var order: [String] = []
+        var counts: [String: Int] = [:]
+        for edit in edits {
+            guard !edit.find.isEmpty else {
+                return (nil, RovaError(code: "TERMINAL_EDIT_INVALID", message: "\(edit.display): aranacak metin boş; hiçbir dosya değiştirilmedi.", category: "validation"))
+            }
+            if contents[edit.path] == nil {
+                guard let text = try? String(contentsOfFile: edit.path, encoding: .utf8) else {
+                    return (nil, RovaError(code: "TERMINAL_FILE_NOT_TEXT", message: "\(edit.display) okunamadı; hiçbir dosya değiştirilmedi.", category: "validation"))
+                }
+                contents[edit.path] = text
+                originals[edit.path] = text
+                order.append(edit.path)
+            }
+            let current = contents[edit.path]!
+            let occurrences = current.components(separatedBy: edit.find).count - 1
+            if occurrences == 0 {
+                return (nil, RovaError(code: "TERMINAL_EDIT_NOT_FOUND", message: "\(edit.display): aranan metin dosyada birebir bulunamadı (boşluk ve girinti dahil); dosyayı read_file ile okuyup tekrar dene. Hiçbir dosya değiştirilmedi.", category: "validation"))
+            }
+            if occurrences > 1 && !edit.replaceAll {
+                return (nil, RovaError(code: "TERMINAL_EDIT_AMBIGUOUS", message: "\(edit.display): aranan metin \(occurrences) kez geçiyor; daha uzun, tek geçen bir parça ver ya da replaceAll kullan. Hiçbir dosya değiştirilmedi.", category: "validation"))
+            }
+            contents[edit.path] = edit.replaceAll ? current.replacingOccurrences(of: edit.find, with: edit.replace) : current.replacingCharacters(in: current.range(of: edit.find)!, with: edit.replace)
+            counts[edit.display, default: 0] += edit.replaceAll ? occurrences : 1
+        }
+        for path in order {
+            if let error = brokenJSON(path: path, before: originals[path], after: contents[path]!, display: (path as NSString).lastPathComponent) { return (nil, error) }
+        }
+        for path in order {
+            do {
+                try Data(contents[path]!.utf8).write(to: URL(fileURLWithPath: path), options: [.atomic])
+            } catch {
+                return (nil, localFileError(code: "TERMINAL_FILE_WRITE_FAILED", fallback: "Dosya yazılamadı.", error: error))
+            }
+        }
+        return (counts.map { "\($0.key): \($0.value) değişiklik" }.sorted().joined(separator: "\n"), nil)
+    }
+
+    /// Searches file contents under `directory` without a shell (arguments are passed as-is, so
+    /// the pattern can never become a command): ripgrep when installed, grep otherwise.
+    static func searchTerminalFiles(pattern: String, directory: String, glob: String?) -> (text: String?, error: RovaError?) {
+        guard !pattern.isEmpty, pattern.count <= 200, !pattern.contains("\0") else {
+            return (nil, RovaError(code: "TERMINAL_SEARCH_INVALID", message: "Arama kalıbı boş ya da çok uzun.", category: "validation"))
+        }
+        let searchPath = interactivePath ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        let ripgrep = searchPath.split(separator: ":").map { "\($0)/rg" }.first { FileManager.default.isExecutableFile(atPath: $0) }
+        let environment = ["PATH": searchPath, "HOME": NSHomeDirectory(), "LANG": "en_US.UTF-8"]
+        let snapshot: ProcessSnapshot
+        if let ripgrep {
+            var arguments = ["--line-number", "--no-heading", "--color", "never", "--max-count", "20", "--max-columns", "300", "-g", "!.git", "-g", "!node_modules"]
+            if let glob, !glob.isEmpty, glob.count <= 100 { arguments += ["-g", glob] }
+            arguments += ["--", pattern, "."]
+            snapshot = runProcess(executable: ripgrep, arguments: arguments, timeoutSeconds: 20, workingDirectory: URL(fileURLWithPath: directory), environment: environment)
+        } else {
+            var arguments = ["-rnI", "--exclude-dir=.git", "--exclude-dir=node_modules", "-m", "20"]
+            if let glob, !glob.isEmpty, glob.count <= 100 { arguments.append("--include=\(glob)") }
+            arguments += ["-e", pattern, "."]
+            snapshot = runProcess(executable: "/usr/bin/grep", arguments: arguments, timeoutSeconds: 20, workingDirectory: URL(fileURLWithPath: directory), environment: environment)
+        }
+        if snapshot.timedOut {
+            return (nil, RovaError(code: "TERMINAL_SEARCH_TIMEOUT", message: "Arama 20 saniyede bitmedi; daha dar bir klasör veya kalıp dene.", category: "timeout"))
+        }
+        let lines = String(decoding: snapshot.stdout, as: UTF8.self).split(separator: "\n").prefix(200).joined(separator: "\n")
+        return (RovaTerminalPolicy.redactSecrets(lines.isEmpty ? "(eşleşme yok)" : lines), nil)
+    }
+
+    /// A short description of this Mac's developer environment for the model: OS, shell, which
+    /// toolchains exist (with versions) and the git projects in the usual folders (names only).
+    /// Computed off the main thread once per launch; sent only when terminal sessions are enabled.
+    static func terminalProfile() -> [String: Any] {
+        let tools: [(String, String)] = [
+            ("node", "--version"), ("npm", "--version"), ("pnpm", "--version"), ("yarn", "--version"), ("bun", "--version"),
+            ("python3", "--version"), ("pip3", "--version"), ("git", "--version"), ("brew", "--version"), ("docker", "--version"),
+            ("go", "version"), ("cargo", "--version"), ("swift", "--version"), ("xcodebuild", "-version"), ("java", "-version"), ("ruby", "--version"), ("rg", "--version")
+        ]
+        let script = tools.map { name, flag in
+            "if p=$(command -v \(name) 2>/dev/null); then v=$(\(name) \(flag) 2>&1 | head -1); printf '%s|%s|%s\\n' \"\(name)\" \"$p\" \"$v\"; fi"
+        }.joined(separator: "; ")
+        var environment = ["HOME": NSHomeDirectory(), "USER": NSUserName(), "TERM": "dumb"]
+        if let interactivePath { environment["PATH"] = interactivePath }
+        let snapshot = runProcess(executable: "/bin/zsh", arguments: ["-lc", script], timeoutSeconds: 12, environment: environment)
+        let home = NSHomeDirectory()
+        let toolLines = String(decoding: snapshot.stdout, as: UTF8.self).split(separator: "\n").compactMap { line -> String? in
+            let parts = line.split(separator: "|", maxSplits: 2).map(String.init)
+            guard parts.count == 3 else { return nil }
+            let version = parts[2].replacingOccurrences(of: "version", with: "").trimmingCharacters(in: .whitespaces).prefix(40)
+            return "\(parts[0]) \(version)"
+        }
+        var projects: [String] = []
+        for folder in ["Desktop", "Documents", "Developer", "Projects", "Code", "code", "src", "GitHub"] {
+            let base = URL(fileURLWithPath: home).appendingPathComponent(folder)
+            guard let children = try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { continue }
+            for child in children where FileManager.default.fileExists(atPath: child.appendingPathComponent(".git").path) {
+                projects.append("~/\(folder)/\(child.lastPathComponent)")
+                if projects.count >= 12 { break }
+            }
+            if projects.count >= 12 { break }
+        }
+        return [
+            "os": "macOS \(ProcessInfo.processInfo.operatingSystemVersion.majorVersion).\(ProcessInfo.processInfo.operatingSystemVersion.minorVersion)",
+            "arch": {
+                var info = utsname()
+                uname(&info)
+                return withUnsafeBytes(of: &info.machine) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+            }(),
+            "shell": "zsh",
+            "tools": Array(toolLines.prefix(20)),
+            "projects": projects
+        ]
     }
 }

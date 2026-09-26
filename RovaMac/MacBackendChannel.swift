@@ -103,6 +103,12 @@ final class MacBackendChannel: NSObject {
         }
     }
     private var terminalJobs: [String: TerminalJobRecord] = [:]
+    /// Where each terminal session's shell last ended (after `cd`), keyed by grant id; always
+    /// re-checked to be inside the grant before use.
+    private var terminalSessionDirectories: [String: String] = [:]
+    /// This Mac's developer-environment summary (MacSystem.terminalProfile), computed once.
+    private var terminalProfileJSON: Data?
+    private var terminalProfileRequested = false
     func accessTokenForFileTransfer() async -> String? {
         if let refresh = currentRefreshToken,
            let credentials = await refreshCredentials(refreshToken: refresh),
@@ -331,7 +337,8 @@ final class MacBackendChannel: NSObject {
             "platform": info.platform,
             "capabilities": info.capabilities,
             // Optional protocol features; an older backend ignores the field.
-            "features": CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature] : [],
+            "features": CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2] : [],
+            "terminalProfile": terminalProfileJSON.flatMap { try? JSONSerialization.jsonObject(with: $0) } ?? NSNull(),
             "applicationTargets": info.applicationTargets.map { target in
                 [
                     "name": target.name,
@@ -368,6 +375,7 @@ final class MacBackendChannel: NSObject {
                 self.publishConnectionState()
                 self.startHeartbeat(on: task)
                 self.sendAutomationReceipts(on: task)
+                self.requestTerminalProfile()
             }
         }
     }
@@ -540,11 +548,26 @@ final class MacBackendChannel: NSObject {
             deny("TERMINAL_GRANT_INVALID", "Terminal oturum izni geçersiz ya da süresi dolmuş; telefondan yeniden onay gerekiyor.")
             return
         }
-        guard let requestedDirectory = request.workingDirectory,
-              let root = RovaTerminalPolicy.resolveDirectory(grant.rootDirectory),
+        // No folder given: continue where this session's shell last was (after a `cd`).
+        let requestedDirectory = request.workingDirectory ?? terminalSessionDirectories[grant.id] ?? grant.rootDirectory
+        guard let root = RovaTerminalPolicy.resolveDirectory(grant.rootDirectory),
               let directory = RovaTerminalPolicy.resolveDirectory(requestedDirectory),
               RovaTerminalPolicy.isWithin(directory, root: root) else {
-            deny("TERMINAL_OUTSIDE_GRANT", "Çalışma klasörü onaylanan klasörün dışında.")
+            deny("TERMINAL_OUTSIDE_GRANT", "\(requestedDirectory) onaylanan klasörün (\(grant.rootDirectory)) dışında; o klasör için directory vererek yeni onay iste.")
+            return
+        }
+        // The folder the user approved on the card may not exist yet: create exactly that one. A
+        // subfolder the model names is never created implicitly (a typo would become a new folder).
+        if RovaTerminalPolicy.creatableDirectory(root, root: root, mode: grant.mode) {
+            do {
+                try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
+            } catch {
+                deny("TERMINAL_DIRECTORY_CREATE_FAILED", "\(grant.rootDirectory) klasörü yoktu ve oluşturulamadı.")
+                return
+            }
+        }
+        if ["read_file", "write_file", "search", "run_plan", "edit_file"].contains(action) || (action == "apply_patch" && !(request.edits ?? []).isEmpty) {
+            executeTerminalV2Action(action, request: request, grant: grant, directory: directory, root: root, commandId: payload.commandId, on: task, deny: deny)
             return
         }
         if action == "apply_patch" {
@@ -600,14 +623,162 @@ final class MacBackendChannel: NSObject {
         }
         let timeoutSeconds = max(1, min(110, request.timeoutSeconds ?? 60))
         let commandId = payload.commandId
+        let grantId = grant.id
         Task.detached(priority: .userInitiated) { [weak self] in
             let started = Date()
-            let outcome = MacSystem.executeTerminalCommand(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, processStarted: { _ in })
+            let tracked = MacSystem.executeTerminalCommandTrackingDirectory(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, processStarted: { _ in })
+            let outcome = (data: tracked.data, error: tracked.error)
+            if let end = tracked.endDirectory, let resolvedEnd = RovaTerminalPolicy.resolveDirectory(end), RovaTerminalPolicy.isWithin(resolvedEnd, root: root) {
+                await MainActor.run { [weak self] in self?.terminalSessionDirectories[grantId] = resolvedEnd }
+            }
             let finished = Date()
             let status: CommandStatus = outcome.error == nil ? .completed : (outcome.error?.category == "timeout" ? .unknown : .failed)
             let message = outcome.error?.message ?? "Komut tamamlandı."
             let result = CommandResult(commandID: UUID(), status: status, message: message, startedAt: started, finishedAt: finished, data: outcome.data, error: outcome.error)
             await MainActor.run { self?.sendInteractiveCommandResult(commandId: commandId, result: result, on: task) }
+        }
+    }
+
+    /// Computes the environment profile off the main thread once, then sends it; the next
+    /// registration carries it directly.
+    private func requestTerminalProfile() {
+        guard CapabilityStore.shared.isEnabled("device.code.execute") else { return }
+        if terminalProfileJSON != nil { sendTerminalProfile(); return }
+        guard !terminalProfileRequested else { return }
+        terminalProfileRequested = true
+        Task.detached(priority: .utility) { [weak self] in
+            let data = try? JSONSerialization.data(withJSONObject: MacSystem.terminalProfile())
+            await MainActor.run { [weak self] in
+                guard let self, let data else { return }
+                self.terminalProfileJSON = data
+                self.sendTerminalProfile()
+            }
+        }
+    }
+
+    private func sendTerminalProfile() {
+        guard let task, task.state == .running, registrationSent, let data = terminalProfileJSON,
+              let profile = try? JSONSerialization.jsonObject(with: data) else { return }
+        let value: [String: Any] = ["type": "terminalProfile", "profile": profile]
+        guard let encoded = try? JSONSerialization.data(withJSONObject: value), let text = String(data: encoded, encoding: .utf8) else { return }
+        task.send(.string(text)) { _ in }
+    }
+
+    /// terminal-session-v2 actions: a command plan, file read/write, search, multi-file edits.
+    /// The grant, the folder boundary and the command policy were already verified by the caller.
+    private func executeTerminalV2Action(_ action: String, request: TerminalCommandRequest, grant: TerminalGrantPayload, directory: String, root: String, commandId: String, on task: URLSessionWebSocketTask, deny: @escaping (String, String) -> Void) {
+        let started = Date()
+        // Sendable and main-actor bound: the search and plan branches call it from a detached task.
+        let finish: @MainActor @Sendable (CommandStatus, String, TerminalResultContent?, RovaError?) -> Void = { [weak self] status, message, content, error in
+            let result = CommandResult(commandID: UUID(), status: status, message: message, startedAt: started, finishedAt: Date(), data: content.map { .terminalResult($0) }, error: error)
+            self?.sendInteractiveCommandResult(commandId: commandId, result: result, on: task)
+        }
+        switch action {
+        case "read_file":
+            guard let raw = request.filePath, let path = RovaTerminalPolicy.resolveExistingFile(raw, workingDirectory: directory, root: root) else {
+                deny("TERMINAL_FILE_SCOPE", "\(request.filePath ?? "Dosya") bulunamadı ya da onaylı klasörün (\(grant.rootDirectory)) dışında. search ile doğru yolu bul.")
+                return
+            }
+            let read = MacSystem.readTerminalFile(path, startLine: request.startLine, endLine: request.endLine)
+            if let error = read.error { finish(.failed, error.message, nil, error); return }
+            finish(.completed, "Dosya okundu.", TerminalResultContent(kind: "read", workingDirectory: directory, text: read.text, files: [raw], totalLines: read.totalLines), nil)
+        case "write_file":
+            guard grant.mode == "full" else { deny("TERMINAL_READ_ONLY", "Dosya yazmak için tam izin gerekiyor."); return }
+            guard let raw = request.filePath, let content = request.content,
+                  let path = RovaTerminalPolicy.resolveWritableFile(raw, workingDirectory: directory, root: root) else {
+                deny("TERMINAL_FILE_SCOPE", "\(request.filePath ?? "Dosya") yazılamadı: onaylı klasörün (\(grant.rootDirectory)) içinde, var olan bir klasörde olmalı. Alt klasör gerekiyorsa önce run ile mkdir -p çalıştır.")
+                return
+            }
+            let written = MacSystem.writeTerminalFile(path, content: content)
+            if let error = written.error { finish(.failed, error.message, nil, error); return }
+            finish(.completed, written.created ? "Dosya oluşturuldu." : "Dosya güncellendi.", TerminalResultContent(kind: "write", workingDirectory: directory, text: written.created ? "created" : "updated", files: [raw]), nil)
+        case "search":
+            let pattern = request.pattern ?? ""
+            let glob = request.glob
+            Task.detached(priority: .userInitiated) {
+                let found = MacSystem.searchTerminalFiles(pattern: pattern, directory: directory, glob: glob)
+                await MainActor.run {
+                    if let error = found.error { finish(.failed, error.message, nil, error); return }
+                    finish(.completed, "Arama tamamlandı.", TerminalResultContent(kind: "search", workingDirectory: directory, text: found.text), nil)
+                }
+            }
+        case "apply_patch":
+            guard grant.mode == "full" else { deny("TERMINAL_READ_ONLY", "Yama için tam izin gerekiyor."); return }
+            let edits = request.edits ?? []
+            guard (1...10).contains(edits.count), edits.reduce(0, { $0 + $1.patch.utf8.count }) <= 300_000 else {
+                deny("TERMINAL_PATCH_SCOPE", "1-10 dosyalık, toplam 300 KB altında yama gerekiyor.")
+                return
+            }
+            var resolved: [(path: String, patch: String, display: String)] = []
+            for edit in edits {
+                guard let path = RovaTerminalPolicy.resolveExistingFile(edit.filePath, workingDirectory: directory, root: root) else {
+                    deny("TERMINAL_PATCH_SCOPE", "\(edit.filePath) onaylı klasörde bulunamadı; hiçbir dosya değiştirilmedi.")
+                    return
+                }
+                resolved.append((path, edit.patch, edit.filePath))
+            }
+            let applied = MacSystem.applyTerminalEdits(resolved)
+            if let error = applied.error { finish(.failed, error.message, nil, error); return }
+            finish(.completed, "Yama uygulandı.", TerminalResultContent(kind: "edits", workingDirectory: directory, text: applied.diff, files: edits.map(\.filePath)), nil)
+        case "edit_file":
+            guard grant.mode == "full" else { deny("TERMINAL_READ_ONLY", "Dosya düzenlemek için tam izin gerekiyor."); return }
+            let replacements = request.replacements ?? []
+            guard (1...20).contains(replacements.count), replacements.reduce(0, { $0 + $1.find.utf8.count + $1.replace.utf8.count }) <= 300_000 else {
+                deny("TERMINAL_EDIT_INVALID", "1-20 değişiklik, toplam 300 KB altında gerekiyor.")
+                return
+            }
+            var resolved: [(path: String, display: String, find: String, replace: String, replaceAll: Bool)] = []
+            for item in replacements {
+                guard let path = RovaTerminalPolicy.resolveExistingFile(item.filePath, workingDirectory: directory, root: root) else {
+                    deny("TERMINAL_FILE_SCOPE", "\(item.filePath) onaylı klasörde bulunamadı; hiçbir dosya değiştirilmedi.")
+                    return
+                }
+                resolved.append((path, item.filePath, item.find, item.replace, item.replaceAll == true))
+            }
+            let edited = MacSystem.applyTerminalReplacements(resolved)
+            if let error = edited.error { finish(.failed, error.message, nil, error); return }
+            finish(.completed, "Dosyalar düzenlendi.", TerminalResultContent(kind: "edits", workingDirectory: directory, text: edited.summary, files: Array(Set(replacements.map(\.filePath))).sorted()), nil)
+        case "run_plan":
+            let steps = request.steps ?? []
+            guard (1...8).contains(steps.count) else { deny("TERMINAL_PLAN_INVALID", "Plan 1-8 komut içermeli."); return }
+            for step in steps {
+                guard !step.command.isEmpty, step.command.count <= 4_000, !step.command.contains("\0") else { deny("TERMINAL_COMMAND_INVALID", "Plandaki bir komut geçersiz."); return }
+                if RovaTerminalPolicy.isForbidden(step.command) { deny("TERMINAL_COMMAND_FORBIDDEN", "Plandaki bir komut Wiqo terminal oturumlarında çalıştırılmaz: \(step.command.prefix(80))"); return }
+                if grant.mode != "full" && !RovaTerminalPolicy.isReadOnly(step.command) { deny("TERMINAL_READ_ONLY", "Bu oturum yalnızca okuma izni veriyor; plandaki değiştiren komut için yeni onay gerekiyor."); return }
+            }
+            let budget = max(5, min(110, request.timeoutSeconds ?? 110))
+            let grantId = grant.id
+            Task.detached(priority: .userInitiated) { [weak self] in
+                var current = directory
+                var results: [TerminalStepResult] = []
+                var failed = false
+                for step in steps {
+                    let remaining = budget - Int(Date().timeIntervalSince(started))
+                    if failed || remaining < 1 {
+                        results.append(TerminalStepResult(command: step.command, exitCode: -1, stdout: "", stderr: "", durationMs: 0, truncated: false, skipped: true))
+                        continue
+                    }
+                    let outcome = MacSystem.executeTerminalCommandTrackingDirectory(step.command, workingDirectory: current, timeoutSeconds: remaining, processStarted: { _ in })
+                    if let end = outcome.endDirectory, let resolvedEnd = RovaTerminalPolicy.resolveDirectory(end), RovaTerminalPolicy.isWithin(resolvedEnd, root: root) {
+                        current = resolvedEnd
+                    }
+                    if case let .processOutput(output)? = outcome.data {
+                        results.append(TerminalStepResult(command: step.command, exitCode: output.exitCode, stdout: output.stdout, stderr: output.stderr, durationMs: output.durationMs, truncated: output.truncated, skipped: false))
+                        if output.exitCode != 0 && step.continueOnError != true { failed = true }
+                    } else {
+                        results.append(TerminalStepResult(command: step.command, exitCode: -1, stdout: "", stderr: outcome.error?.message ?? "Komut çalıştırılamadı.", durationMs: 0, truncated: false, skipped: false))
+                        if step.continueOnError != true { failed = true }
+                    }
+                }
+                let endDirectory = current
+                let allOk = results.allSatisfy { $0.exitCode == 0 && !$0.skipped }
+                await MainActor.run { [weak self] in
+                    self?.terminalSessionDirectories[grantId] = endDirectory
+                    finish(allOk ? .completed : .failed, allOk ? "Plan tamamlandı." : "Plandaki bir komut hata verdi.", TerminalResultContent(kind: "plan", workingDirectory: endDirectory, steps: results), nil)
+                }
+            }
+        default:
+            deny("TERMINAL_ACTION_INVALID", "Terminal işlemi desteklenmiyor.")
         }
     }
 
@@ -645,17 +816,17 @@ final class MacBackendChannel: NSObject {
         guard terminalJobs[id] == nil else { return }
         let job = TerminalJobRecord(id: id, grantId: grantId, workingDirectory: directory)
         terminalJobs[id] = job
-        // A weak reference that is itself a `let` can be captured by the process-start callback,
-        // which runs on another thread; capturing the detached task's own `self` var cannot.
-        weak let owner = self
+        // Built here, on the main actor, as a Sendable callback: the process-start signal arrives on
+        // another thread and only hops back to the main actor to record the process id.
+        let processStarted: @Sendable (Int32) -> Void = { [weak self] processIdentifier in
+            Task { @MainActor [weak self] in
+                guard let self, let current = self.terminalJobs[id] else { return }
+                current.processIdentifier = processIdentifier
+                if current.cancelRequested { MacSystem.terminateTerminalProcess(processIdentifier) }
+            }
+        }
         Task.detached(priority: .userInitiated) { [weak self] in
-            let outcome = MacSystem.executeTerminalCommand(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, processStarted: { processIdentifier in
-                Task { @MainActor in
-                    guard let owner, let current = owner.terminalJobs[id] else { return }
-                    current.processIdentifier = processIdentifier
-                    if current.cancelRequested { MacSystem.terminateTerminalProcess(processIdentifier) }
-                }
-            })
+            let outcome = MacSystem.executeTerminalCommand(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, processStarted: processStarted)
             await MainActor.run { [weak self] in
                 guard let self, let current = self.terminalJobs[id] else { return }
                 if case let .processOutput(output)? = outcome.data { current.output = output }
@@ -929,6 +1100,32 @@ private struct TerminalCommandRequest: Decodable, Sendable {
     let jobId: String?
     let filePath: String?
     let patch: String?
+    // terminal-session-v2
+    let steps: [TerminalPlanStepRequest]?
+    let startLine: Int?
+    let endLine: Int?
+    let content: String?
+    let pattern: String?
+    let glob: String?
+    let edits: [TerminalEditRequest]?
+    let replacements: [TerminalReplacementRequest]?
+}
+
+private struct TerminalReplacementRequest: Decodable, Sendable {
+    let filePath: String
+    let find: String
+    let replace: String
+    let replaceAll: Bool?
+}
+
+private struct TerminalPlanStepRequest: Decodable, Sendable {
+    let command: String
+    let continueOnError: Bool?
+}
+
+private struct TerminalEditRequest: Decodable, Sendable {
+    let filePath: String
+    let patch: String
 }
 
 private struct TerminalCommandPayload: Decodable, Sendable {

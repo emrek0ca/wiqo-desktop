@@ -263,7 +263,8 @@ struct PairingQRView: View {
 struct MacSettingsView: View {
     @ObservedObject var runtime: MacRuntime
     @Environment(\.scenePhase) private var scenePhase
-    @State private var permissionRefresh = 0
+    /// Privacy permission states, computed off the main thread on appear/refresh - never in `body`.
+    @State private var privacyPermissions: [MacPermission] = []
 
     var body: some View {
         TabView {
@@ -281,7 +282,10 @@ struct MacSettingsView: View {
                 .tabItem { Label("Gelişmiş", systemImage: "gearshape.2") }
         }
         .padding(20)
-        .frame(minWidth: 620, minHeight: 450)
+        // A fixed size: the Settings window sizes itself to its content, and grouped Forms (scroll
+        // views) have no single ideal size - with only a minimum the two renegotiated forever
+        // (a SwiftUI layout loop at 100% CPU that froze the app when Settings opened).
+        .frame(width: 660, height: 500)
     }
 
     private var generalTab: some View {
@@ -322,7 +326,10 @@ struct MacSettingsView: View {
     private var permissionsTab: some View {
         Form {
             Section("Gizlilik izinleri") {
-                ForEach(permissionRows) { permission in
+                if privacyPermissions.isEmpty {
+                    ProgressView().controlSize(.small)
+                }
+                ForEach(privacyPermissions) { permission in
                     HStack(spacing: 10) {
                         Image(systemName: permission.granted ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundStyle(permission.granted ? .green : .red)
@@ -384,23 +391,25 @@ struct MacSettingsView: View {
             }
             Section {
                 Button("Durumu yenile") {
-                    permissionRefresh += 1
                     runtime.refreshPermissions()
+                    refreshPrivacyPermissions()
                 }
                 .disabled(runtime.isRefreshingPermissions)
             }
         }
         .formStyle(.grouped)
+        // No `.id(counter)` here: bumping a counter in onAppear that is also the view's identity
+        // recreated the view, which ran onAppear again - an endless rebuild at 100% CPU that froze
+        // the app the moment Settings opened. Results live in state; refreshing only updates them.
         .onAppear {
-            permissionRefresh += 1
             runtime.refreshPermissions()
+            refreshPrivacyPermissions()
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-            permissionRefresh += 1
             runtime.refreshPermissions()
+            refreshPrivacyPermissions()
         }
-        .id(permissionRefresh)
     }
 
     private var automationsTab: some View {
@@ -481,13 +490,20 @@ struct MacSettingsView: View {
         }
     }
 
-    private var permissionRows: [MacPermission] {
-        [
-            MacPermission(id: "accessibility", title: "Erişilebilirlik", detail: "Arayüz kontrolü ve ekran tıklaması için", granted: MacSystem.hasAccessibilityAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"),
-            MacPermission(id: "full-disk", title: "Tam Disk Erişimi", detail: "Belgeleri okuyup kaydetmek için", granted: MacSystem.hasFullDiskAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"),
-            MacPermission(id: "screen-recording", title: "Ekran Kaydı", detail: "Ekran gözlemi için", granted: MacSystem.hasScreenRecordingAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"),
-            MacPermission(id: "calendar", title: "Takvim", detail: "Takvim adımları için", granted: MacSystem.hasCalendarAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")
-        ]
+    /// Checks the four privacy permissions off the main thread (the disk check touches the file
+    /// system) and publishes them once; `body` only reads the stored result.
+    private func refreshPrivacyPermissions() {
+        Task { @MainActor in
+            let rows = await Task.detached(priority: .userInitiated) {
+                [
+                    MacPermission(id: "accessibility", title: "Erişilebilirlik", detail: "Arayüz kontrolü ve ekran tıklaması için", granted: MacSystem.hasAccessibilityAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"),
+                    MacPermission(id: "full-disk", title: "Tam Disk Erişimi", detail: "Belgeleri okuyup kaydetmek için", granted: MacSystem.hasFullDiskAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"),
+                    MacPermission(id: "screen-recording", title: "Ekran Kaydı", detail: "Ekran gözlemi için", granted: MacSystem.hasScreenRecordingAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"),
+                    MacPermission(id: "calendar", title: "Takvim", detail: "Takvim adımları için", granted: MacSystem.hasCalendarAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")
+                ]
+            }.value
+            privacyPermissions = rows
+        }
     }
 
     private func openSettings(_ rawURL: String) {
@@ -496,7 +512,7 @@ struct MacSettingsView: View {
     }
 }
 
-private struct MacPermission: Identifiable {
+private struct MacPermission: Identifiable, Sendable {
     let id: String
     let title: String
     let detail: String

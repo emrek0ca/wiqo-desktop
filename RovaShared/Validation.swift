@@ -551,6 +551,10 @@ public enum RovaCommandAuthority {
 /// the working folder resolves inside the granted folder, and these command rules on every command.
 public enum RovaTerminalPolicy {
     public static let feature = "terminal-session-v1"
+    /// Plans, session folder, file read/write/search, multi-file edits, longer grants.
+    public static let featureV2 = "terminal-session-v2"
+    /// Longest grant the phone may sign; the backend offers more than 30 minutes only to v2 Macs.
+    public static let maxGrantSeconds = 8 * 60 * 60
 
     public static func grantMessage(grantId: String, rootDirectory: String, mode: String, expiresAt: Int) -> String {
         "wiqo-terminal-grant:v1:\(grantId.lowercased()):\(rootDirectory):\(mode):\(expiresAt)"
@@ -561,7 +565,7 @@ public enum RovaTerminalPolicy {
     }
 
     public static func verifyGrant(grantId: String, rootDirectory: String, mode: String, expiresAt: Int, signature: String, token: String, now: Date = Date()) -> Bool {
-        guard mode == "read" || mode == "full", expiresAt > Int(now.timeIntervalSince1970), expiresAt <= Int(now.timeIntervalSince1970) + 2 * 60 * 60 else { return false }
+        guard mode == "read" || mode == "full", expiresAt > Int(now.timeIntervalSince1970), expiresAt <= Int(now.timeIntervalSince1970) + maxGrantSeconds else { return false }
         let expected = signGrant(grantId: grantId, rootDirectory: rootDirectory, mode: mode, expiresAt: expiresAt, token: token)
         return RovaCrypto.constantTimeEquals(signature.lowercased(), expected)
     }
@@ -569,7 +573,7 @@ public enum RovaTerminalPolicy {
     private static let readOnlyPrograms: Set<String> = [
         "ls", "pwd", "cat", "head", "tail", "wc", "grep", "egrep", "rg", "find", "file", "stat", "du", "df", "tree", "which", "whereis",
         "type", "echo", "date", "uname", "sw_vers", "whoami", "ps", "sort", "uniq", "cut", "jq", "diff", "cmp", "basename", "dirname",
-        "realpath", "md5", "shasum", "lsof", "uptime", "hostname", "xcodebuild", "system_profiler"
+        "realpath", "md5", "shasum", "lsof", "uptime", "hostname", "xcodebuild", "system_profiler", "cd", "mdls"
     ]
     private static let versionOnlyPrograms: Set<String> = ["node", "npm", "npx", "python", "python3", "pip", "pip3", "brew", "java", "swift", "go", "cargo", "ruby", "git", "docker", "pnpm", "yarn"]
     private static let gitReadSubcommands: Set<String> = ["status", "log", "diff", "show", "branch", "remote", "rev-parse", "ls-files", "blame", "describe", "tag", "shortlog", "config"]
@@ -619,6 +623,8 @@ public enum RovaTerminalPolicy {
             let program = (first as NSString).lastPathComponent
             let rest = Array(words.dropFirst())
             if program == "find" { return !rest.contains { $0.range(of: #"^-(delete|exec|execdir|ok|okdir|fprint)"#, options: .regularExpression) != nil } }
+            // Spotlight content search: read-only only when kept to the session folder.
+            if program == "mdfind" { return rest.contains("-onlyin") }
             if program == "git" {
                 guard let sub = rest.first, gitReadSubcommands.contains(sub) else { return false }
                 if sub == "config" { return rest.contains("--get") || rest.contains("--list") || rest.contains("-l") }
@@ -648,12 +654,26 @@ public enum RovaTerminalPolicy {
         directory == root || directory.hasPrefix(root == "/" ? "/" : root + "/")
     }
 
+    /// `~/x` is the user's home, `/x` is absolute, anything else is relative to the working folder.
+    static func absoluteFilePath(_ path: String, workingDirectory: String, home: String = NSHomeDirectory()) -> String {
+        if path.hasPrefix("~/") { return home + String(path.dropFirst(1)) }
+        return path.hasPrefix("/") ? path : URL(fileURLWithPath: workingDirectory).appendingPathComponent(path).path
+    }
+
+    /// A full-access session's approved folder that does not exist yet ("~/Desktop/deneme'de
+    /// dosya oluştur"): it may be created when it is strictly inside the home folder.
+    public static func creatableDirectory(_ directory: String, root: String, mode: String, home: String = NSHomeDirectory()) -> Bool {
+        let resolvedHome = URL(fileURLWithPath: home).standardizedFileURL.resolvingSymlinksInPath().path
+        return mode == "full" && isWithin(directory, root: root) && directory != resolvedHome
+            && isWithin(directory, root: resolvedHome) && !FileManager.default.fileExists(atPath: directory)
+    }
+
     /// Resolve an existing file and reject symlinks at each path component. Callers must already
     /// have verified the time-limited grant and directory boundary before applying a patch.
     public static func resolveExistingFile(_ path: String, workingDirectory: String, root: String) -> String? {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !trimmed.contains("\0"), !trimmed.split(separator: "/").contains("..") else { return nil }
-        let candidate = trimmed.hasPrefix("/") ? trimmed : URL(fileURLWithPath: workingDirectory).appendingPathComponent(trimmed).path
+        let candidate = absoluteFilePath(trimmed, workingDirectory: workingDirectory)
         let standardized = URL(fileURLWithPath: candidate).standardizedFileURL.path
         guard isWithin(standardized, root: root) else { return nil }
         let components = standardized.split(separator: "/").map(String.init)
@@ -668,6 +688,30 @@ public enum RovaTerminalPolicy {
         guard FileManager.default.fileExists(atPath: standardized, isDirectory: &isDirectory), !isDirectory.boolValue else { return nil }
         let resolved = URL(fileURLWithPath: standardized).resolvingSymlinksInPath().path
         return isWithin(resolved, root: root) ? resolved : nil
+    }
+
+    /// A file to create or overwrite inside the grant: its parent folder must exist inside `root`
+    /// with no symlink on the way, and an existing target must be a regular file, not a symlink.
+    public static func resolveWritableFile(_ path: String, workingDirectory: String, root: String) -> String? {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("\0"), !trimmed.hasSuffix("/"), !trimmed.split(separator: "/").contains("..") else { return nil }
+        let candidate = absoluteFilePath(trimmed, workingDirectory: workingDirectory)
+        let standardized = URL(fileURLWithPath: candidate).standardizedFileURL.path
+        guard isWithin(standardized, root: root), standardized != root else { return nil }
+        let parent = (standardized as NSString).deletingLastPathComponent
+        var current = ""
+        for component in parent.split(separator: "/").map(String.init) {
+            current += "/" + component
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: current, isDirectory: &isDirectory), isDirectory.boolValue,
+                  (try? URL(fileURLWithPath: current).resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else { return nil }
+        }
+        if FileManager.default.fileExists(atPath: standardized) {
+            let values = try? URL(fileURLWithPath: standardized).resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey])
+            guard values?.isSymbolicLink != true, values?.isRegularFile == true else { return nil }
+        }
+        let resolvedParent = URL(fileURLWithPath: parent).resolvingSymlinksInPath().path
+        return isWithin(resolvedParent, root: root) ? standardized : nil
     }
 
     private static let secretPatterns: [String] = [

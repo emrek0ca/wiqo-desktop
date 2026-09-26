@@ -19,14 +19,16 @@ final class ClipboardWatcher {
     func start() {
         guard monitorTask == nil else { return }
         monitorTask = Task { [weak self] in
-            var lastChangeCount = await Self.snapshot().changeCount
+            var lastChangeCount = NSPasteboard.general.changeCount
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
                 guard !Task.isCancelled else { return }
-
+                // changeCount is a cheap integer read; the pasteboard text (possibly large) is only
+                // read when it actually changed - not every tick, which kept the CPU busy for nothing.
+                let changeCount = NSPasteboard.general.changeCount
+                guard changeCount != lastChangeCount else { continue }
+                lastChangeCount = changeCount
                 let snapshot = await Self.snapshot()
-                guard snapshot.changeCount != lastChangeCount else { continue }
-                lastChangeCount = snapshot.changeCount
                 guard let self, let text = snapshot.text, !text.isEmpty else { continue }
                 self.record(text)
             }

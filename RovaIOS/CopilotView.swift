@@ -41,6 +41,8 @@ struct CopilotView: View {
     /// The thinking timeline of the turn in flight (see ThinkingTrace). It is copied onto the reply
     /// bubble when the turn ends, where it folds into a "4 adımda tamamlandı · 9 sn" row.
     @State private var thinking = ThinkingTrace()
+    /// Terminal grant cards the user switched to the long (8-hour) session.
+    @State private var longTerminalGrants: Set<UUID> = []
     @State private var conversationID = ""
     @State private var turnCount = 0
     /// Results are sent with the next stateless backend turn, so the model can distinguish a
@@ -696,6 +698,20 @@ struct CopilotView: View {
                     onApprove: { Task { await resolveBackendConfirmation(bubbleID: bubbleID, confirmationID: row.id, approved: true) } },
                     onDecline: { Task { await resolveBackendConfirmation(bubbleID: bubbleID, confirmationID: row.id, approved: false) } }
                 )
+                // A terminal session the Mac allows to last longer: trust this folder for 8 hours
+                // instead of 30 minutes. Revocable any time from Etkinlik.
+                if row.confirmation.details["wiqoGrantId"] != nil,
+                   let maxSeconds = row.confirmation.details["wiqoGrantMaxSeconds"].flatMap(Int.init), maxSeconds > 1_800 {
+                    Toggle(isOn: Binding(
+                        get: { longTerminalGrants.contains(row.id) },
+                        set: { on in if on { longTerminalGrants.insert(row.id) } else { longTerminalGrants.remove(row.id) } }
+                    )) {
+                        Text("Bu klasöre \(maxSeconds / 3_600) saat güven").font(.caption)
+                    }
+                    .toggleStyle(.switch)
+                    .disabled(row.status == .processing)
+                    .padding(.horizontal, 4)
+                }
             case .completed:
                 WiqoApprovalOutcome(kind: .done, message: nonEmpty(row.resultText) ?? "Yaptım.")
             case .cancelled:
@@ -1143,10 +1159,15 @@ struct CopilotView: View {
 
         // A terminal session card carries the grant fields; approving signs them on this phone.
         var terminalGrant: (grantId: String, signature: String)?
+        var terminalGrantExpiresAt: Int?
         let details = row.confirmation.details
         if approved, let grantId = details["wiqoGrantId"] {
+            let longSeconds = details["wiqoGrantMaxSeconds"].flatMap(Int.init).map { min($0, 8 * 60 * 60) }
+            if longTerminalGrants.contains(confirmationID), let longSeconds, longSeconds > 1_800 {
+                terminalGrantExpiresAt = Int(Date().timeIntervalSince1970) + longSeconds - 30
+            }
             guard let root = details["wiqoGrantRoot"], let mode = details["wiqoGrantMode"],
-                  let expiresAt = details["wiqoGrantExpiresAt"].flatMap(Int.init),
+                  let expiresAt = terminalGrantExpiresAt ?? details["wiqoGrantExpiresAt"].flatMap(Int.init),
                   let signature = model.signTerminalGrant(grantId: grantId, rootDirectory: root, mode: mode, expiresAt: expiresAt, deviceId: details["wiqoGrantDeviceId"]) else {
                 setBubble(bubbleID) { bubble in
                     guard let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) else { return }
@@ -1159,7 +1180,7 @@ struct CopilotView: View {
         }
 
         do {
-            let response = try await RovaBackendClient.resolveBackendConfirmation(id: confirmationID, approved: approved, terminalGrant: terminalGrant)
+            let response = try await RovaBackendClient.resolveBackendConfirmation(id: confirmationID, approved: approved, terminalGrant: terminalGrant, terminalGrantExpiresAt: terminalGrantExpiresAt)
             guard response.confirmationId == confirmationID else { throw RovaBackendError.invalidResponse }
             let resultText = response.result?.text
             let resultArtifacts = response.result?.artifacts ?? []

@@ -770,13 +770,16 @@ enum RovaBackendClient {
         return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus)
     }
 
-    static func resolveBackendConfirmation(id: UUID, approved: Bool, terminalGrant: (grantId: String, signature: String)? = nil) async throws -> BackendConfirmationResponse {
+    static func resolveBackendConfirmation(id: UUID, approved: Bool, terminalGrant: (grantId: String, signature: String)? = nil, terminalGrantExpiresAt: Int? = nil) async throws -> BackendConfirmationResponse {
         var body: [String: Any] = [
             "confirmationId": id.uuidString,
             "approved": approved
         ]
         if let terminalGrant {
-            body["terminalGrant"] = ["grantId": terminalGrant.grantId, "signature": terminalGrant.signature]
+            var grant: [String: Any] = ["grantId": terminalGrant.grantId, "signature": terminalGrant.signature]
+            // A longer session the user chose here; the signature covers exactly this expiry.
+            if let terminalGrantExpiresAt { grant["expiresAt"] = terminalGrantExpiresAt }
+            body["terminalGrant"] = grant
         }
         defer { reconcileLocalReminders() }
         return try await authorizedPost("copilot/confirm", body: body, as: BackendConfirmationResponse.self)
