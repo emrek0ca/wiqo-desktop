@@ -25,6 +25,8 @@ public sealed class DeviceSessionClient
         this.baseUri = baseUri ?? new Uri("https://api.wiqoai.com/");
     }
 
+    public Uri BaseUri => baseUri;
+
     public async Task<WindowsRelayPairingQr> CreateRelayPairingQrAsync(string deviceId, string displayName, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync(new Uri(baseUri, "device-pairing/sessions"), new
@@ -97,12 +99,22 @@ public sealed class DeviceSessionClient
 
     public static DeviceSessionCredentials? LoadStoredCredentials() => WindowsSecretStore.LoadCredentials();
 
+    /// Paired on this Windows account: a pairing token (signs terminal grants) and a device session.
+    public static bool HasStoredPairing => WindowsSecretStore.LoadPairingToken() is not null && WindowsSecretStore.LoadCredentials() is not null;
+
+    /// null only when the backend says the credentials are invalid (400/401/403) - the host then
+    /// asks for a new pairing. Network trouble and server errors throw, so a flaky connection is
+    /// retried instead of forcing the user to scan a QR code again.
     private async Task<DeviceSessionCredentials?> ReadAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode) return null;
-        return await response.Content.ReadFromJsonAsync<DeviceSessionCredentials>(cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden) return null;
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException($"Cihaz oturumu yenilenemedi ({(int)response.StatusCode}).", null, response.StatusCode);
+        var credentials = await response.Content.ReadFromJsonAsync<DeviceSessionCredentials>(cancellationToken).ConfigureAwait(false);
+        return credentials is { AccessToken.Length: > 0, RefreshToken.Length: > 0 } ? credentials : throw new HttpRequestException("Cihaz oturumu yanıtı eksik.");
     }
+
+    public static void ForgetPairing() => WindowsSecretStore.Clear();
 }
 
 internal sealed record RelayPairingPayloadWire(

@@ -59,10 +59,7 @@ internal static class RovaTerminalPolicy
     internal static string? ResolveDirectory(string value)
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length > 500 || value.Contains('\0') || value.StartsWith("\\\\", StringComparison.Ordinal)) return null;
-        var raw = value.Trim();
-        if (raw == "~") raw = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        else if (raw.StartsWith("~/", StringComparison.Ordinal) || raw.StartsWith("~\\", StringComparison.Ordinal))
-            raw = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), raw[2..]);
+        var raw = ExpandHome(value.Trim());
         if (raw.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries).Any(part => part == "..") || !Path.IsPathFullyQualified(raw)) return null;
         string full;
         try { full = Path.GetFullPath(raw); }
@@ -72,34 +69,71 @@ internal static class RovaTerminalPolicy
         return trimmed.Length > 0 ? trimmed : Path.GetPathRoot(full);
     }
 
+    /// The granted folder as a full path, whether or not it exists yet (for creating it).
+    internal static string? FullPath(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 500 || value.Contains('\0') || value.StartsWith("\\\\", StringComparison.Ordinal)) return null;
+        var raw = ExpandHome(value.Trim());
+        if (raw.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries).Any(part => part == "..") || !Path.IsPathFullyQualified(raw)) return null;
+        try { return Path.GetFullPath(raw).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar); }
+        catch { return null; }
+    }
+
+    /// A full-access grant whose folder does not exist yet ("~\\Desktop\\deneme'de dosya oluştur"):
+    /// it may be created, but only strictly inside the user profile (RovaTerminalPolicy.creatableDirectory).
+    internal static string? CreatableRoot(string rootDirectory, string mode)
+    {
+        if (mode != "full" || FullPath(rootDirectory) is not { } root || Directory.Exists(root) || File.Exists(root)) return null;
+        var profile = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)).TrimEnd(Path.DirectorySeparatorChar);
+        return !root.Equals(profile, StringComparison.OrdinalIgnoreCase) && IsWithin(root, profile) ? root : null;
+    }
+
+    /// "~\\x" or "~/x" under the profile, an absolute path as is, anything else under the working folder.
+    internal static string AbsoluteFilePath(string path, string workingDirectory)
+    {
+        var expanded = ExpandHome(path.Trim());
+        return Path.IsPathFullyQualified(expanded) ? expanded : Path.Combine(workingDirectory, expanded);
+    }
+
+    /// A file to create or overwrite inside the grant: its folder must exist inside the root with
+    /// no junction on the way, and an existing target must be a regular file.
+    internal static string? ResolveWritableFile(string path, string workingDirectory, string root)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.Length > 1000 || path.Contains('\0') || path.EndsWith('/') || path.EndsWith('\\') ||
+            path.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries).Any(part => part == "..")) return null;
+        try
+        {
+            var full = Path.GetFullPath(AbsoluteFilePath(path, workingDirectory));
+            var parent = Path.GetDirectoryName(full);
+            if (parent is null || !IsWithin(full, root) || full.TrimEnd('\\').Equals(root.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) ||
+                !Directory.Exists(parent) || HasReparseComponent(parent) || Directory.Exists(full)) return null;
+            if (File.Exists(full) && PathSafety.IsLink(full)) return null;
+            return full;
+        }
+        catch { return null; }
+    }
+
+    private static string ExpandHome(string raw)
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (raw == "~") return profile;
+        return raw.StartsWith("~/", StringComparison.Ordinal) || raw.StartsWith("~\\", StringComparison.Ordinal) ? Path.Combine(profile, raw[2..]) : raw;
+    }
+
     internal static string? ResolveExistingFile(string path, string workingDirectory, string root)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Length > 1000 || path.Contains('\0') || path.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries).Any(part => part == "..")) return null;
         try
         {
-            var full = Path.GetFullPath(Path.IsPathFullyQualified(path) ? path : Path.Combine(workingDirectory, path));
+            var full = Path.GetFullPath(AbsoluteFilePath(path, workingDirectory));
             if (!IsWithin(full, root) || !File.Exists(full) || (File.GetAttributes(full) & FileAttributes.Directory) != 0 || HasReparseComponent(full)) return null;
             return full;
         }
         catch { return null; }
     }
 
-    private static bool HasReparseComponent(string path)
-    {
-        try
-        {
-            var root = Path.GetPathRoot(path);
-            if (string.IsNullOrEmpty(root)) return true;
-            var current = root;
-            foreach (var part in path[root.Length..].Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
-            {
-                current = Path.Combine(current, part);
-                if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) return true;
-            }
-            return false;
-        }
-        catch { return true; }
-    }
+    /// Links (symlinks, junctions) on the way; OneDrive cloud placeholders are allowed (PathSafety).
+    internal static bool HasReparseComponent(string path) => PathSafety.HasLinkComponent(path);
 
     internal static bool IsWithin(string path, string root)
     {

@@ -29,10 +29,18 @@ jobs:
         run: node contracts/companion/generate-vectors.mjs --check
       - name: Restore
         run: dotnet restore RovaWindows/RovaWindows.sln
-      - name: Build
+      - name: Build (core, tray app, tests)
         run: dotnet build RovaWindows/RovaWindows.sln --configuration Release --no-restore
-      - name: Test (contract vectors + Mac parity)
+      - name: Test (contract, parity, terminal incl. PowerShell)
         run: dotnet test RovaWindows/RovaWindows.sln --configuration Release --no-build --no-restore
+      - name: Publish Wiqo.exe (x64, ARM64)
+        shell: bash
+        run: RovaWindows/scripts/publish.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wiqo-windows
+          path: RovaWindows/dist/*/Wiqo.exe
+          retention-days: 14
 
   # The Mac side of the same contract: RovaShared against vectors.json, and operations.json is
   # the current export of RovaShared's operation catalogue.

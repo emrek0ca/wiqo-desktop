@@ -39,6 +39,15 @@ internal static class WindowsSecretStore
         finally { CryptographicOperations.ZeroMemory(bytes); }
     }
 
+    /// Unpairing: both the pairing token and the device session are removed from this profile.
+    internal static void Clear()
+    {
+        foreach (var name in new[] { PairingFileName, CredentialsFileName })
+        {
+            try { File.Delete(Path.Combine(DirectoryPath, name)); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+    }
+
     private static void Save(string fileName, byte[] plaintext)
     {
         try

@@ -244,7 +244,13 @@ public enum RovaOperationManifest {
         switch operation {
         // No isolated code sandbox on Windows: code runs only through the signed terminal session.
         // Must match RovaWindows/WindowsCapabilityManifest.cs (checked by contracts/companion/check.sh).
-        case .ping, .getSystemStatus, .openURL, .listRunningApplications, .searchFiles, .sendFileToPhone:
+        case .ping, .getSystemStatus, .openURL, .listRunningApplications,
+             .openApplication, .openApplicationByName, .controlApplication, .quitApplication,
+             .lockMac, .sleepMac, .displaySleep, .setVolume, .toggleMute, .mediaControl,
+             .setClipboardText, .getClipboardText,
+             .saveTextFile, .listDesktopFiles, .readDesktopFile, .moveDesktopFile, .renameDesktopFile,
+             .listFiles, .searchFiles, .readFile, .sendFileToPhone, .writeFile, .moveFile, .copyFile, .deleteFile,
+             .saveArtifact, .captureScreen:
             return true
         default:
             return false

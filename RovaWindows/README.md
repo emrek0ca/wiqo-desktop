@@ -1,61 +1,65 @@
-# Wiqo Windows companion çekirdeği
+# Wiqo Windows
 
-`RovaWindows.sln`, .NET 8 tabanlı bir protokol/işlem kütüphanesidir. Bu depoda Windows
-UI/tray host'u yoktur. Host, `WindowsRuntime`, `DeviceSessionClient` ve `ProtocolV2Client`
-sınıflarını kullanır; henüz uygulanmamış bir yeteneği kayıt mesajında ilan etmez.
+Wiqo'nun Windows yardımcısı. Bildirim alanında çalışır; telefondan gelen imzalı istekleri bu bilgisayarda uygular. Mac yardımcısıyla aynı protokolü, aynı operasyon kataloğunu ve aynı güvenlik kurallarını kullanır.
 
-## Eşleme ve yeniden bağlanma
+## Yapı
 
-1. Host bir `WindowsRuntime` oluşturur; `runtime.DeviceId` kalıcı cihaz kimliğidir.
-2. `DeviceSessionClient.CreateRelayPairingQrAsync(runtime.DeviceId, runtime.DisplayName)`
-   çağrılır. Dönen `Value` QR olarak gösterilir. Eşleme süresi dolarsa yeni QR üretilir.
-3. iPhone QR'ı tarayıp PC eşlemesini onaylar. Host,
-   `PollRelayPairingAsync(session)` sonucunu makul aralıklarla ve iptal token'ıyla sorar;
-   `null` henüz eşleşmediğini veya sunucunun hız sınırı koyduğunu gösterir. Sonsuz/sık polling
-   yapılmaz.
-4. Dönen `DeviceSessionCredentials`, aynı kullanıcı oturumunun DPAPI korumalı alanına
-   kaydedilir. Host `ProtocolV2Client(runtime, sessions: sessionClient)` ile
-   `RunWithRefreshAsync(credentials, cancellationToken)` başlatır. Yeniden başlatmada
-   `LoadStoredCredentials()` kullanılır; geçersiz kimlik bilgisinde yeniden eşleme gösterilir.
-5. Eşleme token'ı da DPAPI ile kullanıcı profili altında saklanır. Bu token loga, UI hata
-   metnine veya telemetriye yazılmaz. Farklı Windows kullanıcısı için yeniden eşleme gerekir.
+| Klasör | Ne |
+|---|---|
+| `Core/` | Tel biçimi (tam saniyeli ISO tarih), paylaşılan katalog (`operations.json` gömülü), doğrulama, yetenek ayarları, sonuç defteri, bağlantı güvenliği |
+| `Operations/` | Uygulamalar, sistem (güç, ses, medya, pano, ekran görüntüsü), dosyalar ve arama |
+| `Native/` | Win32 ve Core Audio çağrıları |
+| `Terminal/` | Terminal oturumu v1 ve v2: `run_plan`, `read_file`, `write_file`, `edit_file`, `search`, yama, arka plan işleri, profil |
+| `ProtocolV2Client.cs` | Backend bağlantısı: kayıt, imzalı komutlar, yeniden bağlanma, makbuzlar, otomasyon adımları |
+| `App/` | WPF tepsi uygulaması (`Wiqo.exe`): eşleme QR'ı, ayarlar, açılışta başlatma, günlükler |
+| `Tests/` | Sözleşme vektörleri, Mac paritesi, doğrulama, terminal (PowerShell testleri yalnız Windows'ta) |
 
-`features: ["terminal-session-v1"]` yalnız eşleme token'ı mevcutsa gönderilir. Genel cihaz
-manifestosu sadece gerçekten uygulanan sistem durumu, URL açma, açık uygulama listesi ve host
-tarafından kullanıcı onayı sağlandığında dosya arama/okuma işlemlerini içerir. İzole kod sandbox'ı
-olmadığı için `device.code.execute` ilan edilmez. Terminal oturumu ayrı, telefondan imzalı ve
-zaman sınırlı bir protokoldür.
+## Mac ile parite
 
-## Terminal ve imza sınırı
+`contracts/companion/check.sh` iki tarafı birlikte kontrol eder:
+- aynı imza ve kanonik JSON vektörleri;
+- Windows manifestosunun, `RovaShared/OperationManifest.swift`'teki Windows listesiyle birebir aynı olması.
 
-Windows, `terminalCommand` mesajındaki telefon imzalı grant'i her çalıştırma, yama, izleme ve
-iptalde yeniden doğrular. Grant; tek cihazın eşleme token'ına, klasöre, `read/full` moduna ve
-son kullanma zamanına bağlıdır. Çalışma klasörü ve yama dosyası grant kökü içinde çözülür;
-reparse point/symlink geçişleri reddedilir. `read` modu yalnız izinli salt okuma komutlarını,
-`full` modu ise tehlikeli komutlar dışındaki PowerShell/cmd komutlarını çalıştırır. `run`,
-`start_job`, `get_job`, `cancel_job`, `apply_patch` desteklenir; arka plan işi bellekte izlenir,
-grant süresini aşmadan en çok 30 dakika çalışır,
-companion yeniden başlarsa sonuç `unknown` sayılır ve otomatik tekrar oynatılmaz. Çıktı
-gönderilmeden önce bilinen gizli bilgi biçimleri maskelenir.
+Şu an 47 operasyonun 31'i Windows'ta var. Yalnız Mac'te kalanlar Apple'a özgü: Takvim, Anımsatıcılar, Notlar, Mail, Mesajlar, Kısayollar. Bunlara ek olarak şunlar da henüz Windows'ta yok:
+- parlaklık;
+- pano geçmişi;
+- belge motoru;
+- arayüz tıklaması.
 
-Normal `interactiveCommand` için `CommandRequest` v2 zorunludur. İmza, istek kimliği/türü,
-epoch milisaniye zamanı, nonce ve RFC 8785 JSON payload SHA-256 özetini kapsar. Eski imza
-sürümü çalıştırılmadan reddedilir. Güncel iPhone ve backend sürümleri birlikte kullanılmalıdır.
+Windows'a özgü davranışlar:
+- **Silme:** Dosyalar Geri Dönüşüm Kutusu'na gider, kalıcı silinmez.
+- **OneDrive:** Buluttaki dosyalar (reparse point) normal dosya sayılır. Yalnız sembolik link ve junction reddedilir.
+- **Terminal:** Varsa PowerShell 7, yoksa Windows PowerShell 5.1 kullanılır. Çıktı UTF-8'dir. PATH her komutta registry'den taze okunur ve adı gizli bilgiye benzeyen ortam değişkenleri çıkarılır.
+- **Düzenleme:** `edit_file` CRLF dosyalarda LF ile yazılmış metni de bulur. `write_file` dosyanın satır sonlarını ve BOM'unu korur.
 
-Grant klasörü, shell için çalışma kökünü ve yama hedefini sınırlar; PowerShell/cmd için işletim
-sistemi düzeyinde dosya sandbox'ı sağlamaz. Bu nedenle `full` izni yalnız güvenilen komutlara ve
-dar kapsamlı klasöre verilmeli, uygulama host'u izin kapsamını kullanıcıya açıkça göstermelidir.
+## Derleme ve test
 
-## Windows'ta doğrulama
+macOS'ta da çalışır (`EnableWindowsTargeting`):
 
-Windows 10 22H2+/Windows 11, .NET 8 SDK bulunan makinede:
-
-```powershell
-dotnet build RovaWindows/RovaWindows.sln -c Release
+```bash
+dotnet test RovaWindows/Tests/RovaWindows.Tests.csproj -p:EnableWindowsTargeting=true
 ```
 
-Elle kontrol: QR eşleme ve yeniden bağlanma; v1 veya payload'ı değiştirilmiş v2 komutun reddi;
-`read` modunda yazmanın, grant dışı çalışma klasörünün, symlink/reparse point yolunun ve yasaklı
-komutların reddi; `full` modunda tek dosya yaması/diff; uzun işte izleme, iptal ve yeniden başlatma
-sonrası `unknown`; manifestoda uygulanmamış kod sandbox yeteneğinin yokluğu. Bu macOS ortamında
-Windows derlemesi yapılmadı.
+```bash
+RovaWindows/scripts/publish.sh
+```
+
+Çıktılar `RovaWindows/dist/win-x64/Wiqo.exe` ve `RovaWindows/dist/win-arm64/Wiqo.exe` dosyalarıdır. Tek dosyalıktır ve .NET kurulumu gerektirmez. CI (`.github/workflows/rova-windows.yml`) Windows'ta tüm testleri çalıştırır ve iki paketi indirilebilir olarak yükler.
+
+## Sanal makinede elle test
+
+1. `Wiqo.exe`'yi aç. Eşleme penceresi açılır. Telefondan QR'ı okut; pencere "Bağlandı" deyip kapanır. Tepsi simgesinde yeşil nokta görünür.
+2. Telefondan şunları sırayla dene:
+   - "Hesap makinesini aç";
+   - "sesi %30 yap";
+   - "masaüstündeki dosyaları listele";
+   - "ekran görüntüsü al";
+   - "masaüstünde deneme klasöründe notlar.txt oluştur, merhaba yaz, selam yap, göster".
+   Son istek terminal onay kartını açar.
+3. Ayarlar'dan bir grubu kapat ve aynı isteği tekrarla; reddedilmeli.
+4. Wi-Fi'ı kapatıp aç, ya da bilgisayarı uyutup uyandır. Birkaç saniye içinde yeniden bağlanmalı.
+5. Günlükler: `%LOCALAPPDATA%\Wiqo\logs`. Token, dosya yolu ya da içerik yazılmaz.
+
+## Durum
+
+Uygulama henüz kod imzalı değil; kurulumda SmartScreen uyarısı çıkar. Geniş dağıtım için bir kod imzalama sertifikası gerekir.
