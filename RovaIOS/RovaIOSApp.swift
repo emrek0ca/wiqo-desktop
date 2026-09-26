@@ -12,6 +12,7 @@ struct RovaIOSApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(model: model, authSession: authSession)
+                .font(.custom("InterVariable", size: 17, relativeTo: .body))
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active { WiqoLocalReminders.shared.reconcile() }
                 }

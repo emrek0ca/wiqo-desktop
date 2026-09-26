@@ -71,7 +71,7 @@ struct WiqoCodeBlock: View {
                 .foregroundStyle(WiqoTheme.ink3)
                 .accessibilityHidden(true)
             Text(title)
-                .font(.system(.caption, design: .monospaced))
+                .font(.custom("JetBrainsMono-Regular", size: 12, relativeTo: .caption))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
             Spacer(minLength: 8)
@@ -81,7 +81,7 @@ struct WiqoCodeBlock: View {
                     Text("+\(addedCount)").foregroundStyle(WiqoTheme.green)
                     Text("−\(removedCount)").foregroundStyle(WiqoTheme.red)
                 }
-                .font(.system(.caption, design: .monospaced).weight(.medium))
+                .font(.custom("JetBrainsMono-Medium", size: 12, relativeTo: .caption))
                 .monospacedDigit()
             } else {
                 if let onRun {
@@ -125,7 +125,7 @@ struct WiqoCodeBlock: View {
     private var content: some View {
         if mode == .listing, lines.count > Self.numberedLineLimit {
             Text(SyntaxHighlighter.highlight(raw))
-                .font(.system(.footnote, design: .monospaced))
+                .font(.custom("JetBrainsMono-Regular", size: 13, relativeTo: .footnote))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14)
@@ -144,13 +144,13 @@ struct WiqoCodeBlock: View {
     private func row(_ line: WiqoCodeLine) -> some View {
         HStack(alignment: .top, spacing: 0) {
             Text(line.number.map { String($0) } ?? "")
-                .font(.system(.caption2, design: .monospaced))
+                .font(.custom("JetBrainsMono-Regular", size: 11, relativeTo: .caption2))
                 .monospacedDigit()
                 .foregroundStyle(gutterColor(line.kind))
                 .frame(width: 34, alignment: .center)
                 .accessibilityHidden(true)
             Text(line.text.characters.isEmpty ? AttributedString(" ") : line.text)
-                .font(.system(.footnote, design: .monospaced))
+                .font(.custom("JetBrainsMono-Regular", size: 13, relativeTo: .footnote))
                 .lineSpacing(2)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)

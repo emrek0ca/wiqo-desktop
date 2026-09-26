@@ -15,3 +15,11 @@ xcuserdata/
 
 # Local verification artifacts
 .verification/
+RovaAndroid/app/google-services.json
+RovaAndroid/local.properties
+RovaAndroid/.gradle/
+RovaAndroid/**/build/
+
+# .NET (Windows companion)
+RovaWindows/**/bin/
+RovaWindows/**/obj/
