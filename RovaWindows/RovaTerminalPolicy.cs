@@ -9,6 +9,9 @@ namespace RovaWindows;
 /// time-limited grant; this adapter resolves paths and evaluates command policy on every message.
 internal static class RovaTerminalPolicy
 {
+    /// Same limit as RovaTerminalPolicy.maxGrantSeconds on the Mac (8 hours; the phone offers it).
+    internal const long MaxGrantSeconds = 8 * 60 * 60;
+
     private static readonly Regex[] Forbidden =
     [
         Rx(@"(^|[\s;&|()])(?:sudo|runas|Start-Process\s+.*-Verb\s+RunAs)(\s|$)"),
@@ -35,7 +38,7 @@ internal static class RovaTerminalPolicy
 
     private static Regex Rx(string pattern, RegexOptions extra = RegexOptions.None) => new(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | extra, TimeSpan.FromMilliseconds(100));
 
-    internal static bool VerifyGrant(JsonElement grant, string? pairingToken, out string root, out string mode)
+    internal static bool VerifyGrant(JsonElement grant, string? pairingToken, out string root, out string mode, DateTimeOffset? now = null)
     {
         root = String(grant, "rootDirectory");
         mode = String(grant, "mode");
@@ -43,8 +46,8 @@ internal static class RovaTerminalPolicy
         var signature = String(grant, "signature");
         if (string.IsNullOrWhiteSpace(pairingToken) || !Guid.TryParse(id, out _) || mode is not ("read" or "full") ||
             !grant.TryGetProperty("expiresAt", out var expiration) || !expiration.TryGetInt64(out var expiresAt)) return false;
-        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        if (expiresAt <= now || expiresAt > now + 2 * 60 * 60 || signature.Length != 64) return false;
+        var nowSeconds = (now ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds();
+        if (expiresAt <= nowSeconds || expiresAt > nowSeconds + MaxGrantSeconds || signature.Length != 64) return false;
         var message = $"wiqo-terminal-grant:v1:{id.ToLowerInvariant()}:{root}:{mode}:{expiresAt}";
         var expected = HMACSHA256.HashData(Encoding.UTF8.GetBytes(pairingToken), Encoding.UTF8.GetBytes(message));
         byte[] supplied;
