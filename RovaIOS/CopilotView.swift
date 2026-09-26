@@ -2126,7 +2126,7 @@ struct CopilotView: View {
             // card instead (see CodeExecutionCard) - this line stays short.
             return "Çıkış kodu \(output.exitCode), \(output.durationMs) ms"
         case .systemStatus(let status):
-            var parts = ["macOS \(status.macOSVersion)", formatUptime(status.uptimeSeconds)]
+            var parts = ["PC · \(status.macOSVersion)", formatUptime(status.uptimeSeconds)]
             if let battery = status.batteryPercentage { parts.append("pil %\(battery)\(status.isCharging == true ? " ⚡︎" : "")") }
             return parts.joined(separator: " • ")
         case .installedApplications(let apps):

@@ -1203,8 +1203,8 @@ private enum IOSConnectionError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .disconnected: return "Mac ile bağlantı kesildi."
-        case .failed: return "Mac ile bağlantı kurulamadı."
+        case .disconnected: return "PC bağlantısı kesildi."
+        case .failed: return "PC ile bağlantı kurulamadı."
         }
     }
 }

@@ -1,0 +1,21 @@
+{
+  "name": "wiqo-agents-story",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts WiqoAgentsStory /Users/emrekoca/Desktop/wiqo-agents-story.mp4 --props='{\"language\":\"en\"}' --codec h264 --crf 16 --pixel-format yuv420p --color-space bt709 --overwrite --concurrency=4",
+    "render:tr": "remotion render src/index.ts WiqoAgentsStory /Users/emrekoca/Desktop/wiqo-agents-story-tr.mp4 --props='{\"language\":\"tr\"}' --codec h264 --crf 16 --pixel-format yuv420p --color-space bt709 --overwrite --concurrency=4"
+  },
+  "dependencies": {
+    "@fontsource/roboto": "5.3.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.529"
+  },
+  "devDependencies": {
+    "@remotion/cli": "4.0.529",
+    "@types/react": "19.1.10",
+    "typescript": "5.9.2"
+  }
+}

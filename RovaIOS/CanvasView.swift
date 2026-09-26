@@ -215,7 +215,7 @@ struct CanvasView: View {
                 packagesSection
             }
             if opensNativeWindow {
-                notice("Bu kod bilgisayarda pencere açıyor. Telefonda göstermek için arayüzün web olarak (HTML) yazılması gerekir.", systemImage: "macwindow")
+                notice("Bu kod bilgisayarda pencere açıyor. Telefonda göstermek için arayüzün web olarak (HTML) yazılması gerekir.", systemImage: "desktopcomputer")
             }
         }
     }
@@ -364,7 +364,7 @@ struct CanvasView: View {
             }
 
             if opensNativeWindow, previewHTML == nil {
-                notice("Bu kod bilgisayarda pencere açıyor; telefonda gösterilemez. Arayüzün web olarak (HTML) yazılmasını iste.", systemImage: "macwindow")
+                notice("Bu kod bilgisayarda pencere açıyor; telefonda gösterilemez. Arayüzün web olarak (HTML) yazılmasını iste.", systemImage: "desktopcomputer")
             }
 
             if let artifactErrorMessage {

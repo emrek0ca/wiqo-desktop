@@ -1006,6 +1006,8 @@ enum RovaBackendClient {
         let ref: Reference?
         /// Sub-agent mascot for agent tasks and automations.
         let persona: String?
+        /// Safe, user-facing approval payload used when a notification opens Activity directly.
+        let confirmation: BackendConfirmation?
     }
 
     struct ActivityFeed: Decodable {

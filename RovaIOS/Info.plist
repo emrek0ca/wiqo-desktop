@@ -43,7 +43,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Wiqo, PC eşleşme QR kodunu ve belgelerini taramak için kamerayı kullanır. Taranan sayfalar telefonda okunur.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Wiqo, aynı ağdaki Mac’inizi bulup komut göndermek için yerel ağınızı kullanır.</string>
+	<string>Wiqo, aynı ağdaki PC’nizi bulup komut göndermek için yerel ağınızı kullanır.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

@@ -40,7 +40,7 @@ private let discoveryCategories: [DiscoveryCategory] = [
         DiscoveryExample(prompt: "Her sabah 9'da bana günün özetini çıkar", requiresDevice: false)
     ]),
     DiscoveryCategory(title: "PC kontrolü", icon: "laptopcomputer", examples: [
-        DiscoveryExample(prompt: "Mac'imi kilitle", requiresDevice: true),
+        DiscoveryExample(prompt: "PC'mi kilitle", requiresDevice: true),
         DiscoveryExample(prompt: "Sesi kıs", requiresDevice: true),
         DiscoveryExample(prompt: "Müziği duraklat", requiresDevice: true)
     ])
@@ -56,7 +56,7 @@ struct DiscoveryView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if !deviceReady {
-                        Text("PC gerektiren örnekler, bir Mac eşleştirip bağlandığında burada görünür.")
+                        Text("PC gerektiren örnekler, bir PC eşleştirip bağlandığında burada görünür.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 6)

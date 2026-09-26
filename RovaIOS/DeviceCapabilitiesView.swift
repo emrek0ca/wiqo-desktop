@@ -16,11 +16,11 @@ struct DeviceCapabilitiesView: View {
         NavigationStack {
             List {
                 if authorities.isEmpty {
-                    Text("Mac'e bağlanınca burada güncel yetenekler görünecek.")
+                    Text("PC'ye bağlanınca burada güncel yetenekler görünecek.")
                         .foregroundStyle(.secondary)
                 } else {
                     Section {
-                        Text("Bu liste, şu an bağlı olan Mac'in gerçekten bildirdiği durumdur - farklı bir Mac'e bağlandığında değişebilir.")
+                        Text("Bu liste, bağlı PC'nin bildirdiği yetenekleri gösterir. Başka bir PC'de farklı olabilir.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

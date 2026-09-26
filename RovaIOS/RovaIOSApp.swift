@@ -218,6 +218,7 @@ final class RovaAppDelegate: NSObject, UIApplicationDelegate {
 enum WiqoNotificationActions {
     static let reminderCategory = "WIQO_REMINDER"
     static let failedCategory = "WIQO_AUTOMATION_FAILED"
+    static let approvalCategory = "WIQO_APPROVAL"
     static let snooze = "WIQO_SNOOZE"
     static let stop = "WIQO_STOP"
     static let retry = "WIQO_RETRY"
@@ -229,7 +230,8 @@ enum WiqoNotificationActions {
         let retryAction = UNNotificationAction(identifier: retry, title: "Tekrar dene", options: [])
         UNUserNotificationCenter.current().setNotificationCategories([
             UNNotificationCategory(identifier: reminderCategory, actions: [snoozeAction, stopAction], intentIdentifiers: [], options: []),
-            UNNotificationCategory(identifier: failedCategory, actions: [retryAction, stopAction], intentIdentifiers: [], options: [])
+            UNNotificationCategory(identifier: failedCategory, actions: [retryAction, stopAction], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: approvalCategory, actions: [], intentIdentifiers: [], options: [])
         ])
     }
 
@@ -267,6 +269,22 @@ final class RovaNotificationDelegate: NSObject, UNUserNotificationCenterDelegate
             if let automationID { _ = try? await RovaBackendClient.pauseAutomation(id: automationID) }
         case WiqoNotificationActions.retry:
             if let automationID { _ = try? await RovaBackendClient.runAutomationNow(id: automationID) }
+        case UNNotificationDefaultActionIdentifier:
+            let rova = content.userInfo["rova"] as? [String: Any] ?? [:]
+            if let id = rova["confirmationId"] as? String, UUID(uuidString: id) != nil {
+                RovaApprovalNotificationRoute.open(id: id)
+            } else if let conversationID = rova["conversationId"] as? String, !conversationID.isEmpty {
+                NotificationCenter.default.post(name: .wiqoOpenConversation, object: conversationID)
+            } else if let automationID = WiqoNotificationActions.automationID(in: content.userInfo),
+                      let runID = rova["runId"] as? Int {
+                if let conversationID = try? await RovaBackendClient.conversationFromRun(automationID: automationID, runID: runID) {
+                    NotificationCenter.default.post(name: .wiqoOpenConversation, object: conversationID)
+                } else {
+                    RovaApprovalNotificationRoute.openActivity()
+                }
+            } else if rova["agentTaskId"] != nil || WiqoNotificationActions.automationID(in: content.userInfo) != nil {
+                RovaApprovalNotificationRoute.openActivity()
+            }
         default:
             break
         }
@@ -278,5 +296,35 @@ final class RovaNotificationDelegate: NSObject, UNUserNotificationCenterDelegate
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound, .badge])
+    }
+}
+
+/// Persists the tapped approval long enough for the authenticated chat root to mount after a cold
+/// launch. The notification itself never carries the requested command or other private text.
+enum RovaApprovalNotificationRoute {
+    static let notificationName = Notification.Name("wiqo.open-approval")
+    private static let storageKey = "rova.pending-approval-route"
+    private static let activityStorageKey = "rova.pending-activity-route"
+    static let activityNotificationName = Notification.Name("wiqo.open-activity")
+
+    static func open(id: String) {
+        UserDefaults.standard.set(id, forKey: storageKey)
+        NotificationCenter.default.post(name: notificationName, object: id)
+    }
+
+    static func consume() -> UUID? {
+        defer { UserDefaults.standard.removeObject(forKey: storageKey) }
+        guard let value = UserDefaults.standard.string(forKey: storageKey) else { return nil }
+        return UUID(uuidString: value)
+    }
+
+    static func openActivity() {
+        UserDefaults.standard.set(true, forKey: activityStorageKey)
+        NotificationCenter.default.post(name: activityNotificationName, object: nil)
+    }
+
+    static func consumeActivity() -> Bool {
+        defer { UserDefaults.standard.removeObject(forKey: activityStorageKey) }
+        return UserDefaults.standard.bool(forKey: activityStorageKey)
     }
 }

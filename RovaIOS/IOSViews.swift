@@ -41,31 +41,56 @@ struct RootView: View {
 }
 
 private struct WiqoActivityView: View {
+    @ObservedObject private var model: IOSConnectionModel
+    private let focusConfirmationID: UUID?
     @State private var feed: RovaBackendClient.ActivityFeed?
     @State private var error: String?
     @State private var selectedPendingTask: RovaBackendClient.ActivityItem?
     @State private var cancellingTaskID: String?
+    @State private var resolvingConfirmationID: UUID?
+    @State private var terminalGrantDurations: [UUID: Int] = [:]
     @State private var cancelNotice: String?
+    @Environment(\.dismiss) private var dismiss
+
+    init(model: IOSConnectionModel, focusConfirmationID: UUID? = nil) {
+        _model = ObservedObject(wrappedValue: model)
+        self.focusConfirmationID = focusConfirmationID
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let error { Text(error).font(.footnote).foregroundStyle(WiqoTheme.red) }
-                if let feed {
-                    section("İlgi bekleyen", items: feed.needsAttention)
-                    section("Yaklaşan", items: feed.upcoming)
-                    section("Son etkinlik", items: feed.recent)
-                } else if error == nil {
-                    ProgressView().frame(maxWidth: .infinity)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if let error { Text(error).font(.footnote).foregroundStyle(WiqoTheme.red) }
+                    if let feed {
+                        section("İlgi bekleyen", items: feed.needsAttention)
+                        section("Yaklaşan", items: feed.upcoming)
+                        section("Son etkinlik", items: feed.recent)
+                    } else if error == nil {
+                        ProgressView().frame(maxWidth: .infinity)
+                    }
                 }
+                .padding(RovaDesign.screenPadding)
             }
-            .padding(RovaDesign.screenPadding)
+            .background(RovaDesign.canvas)
+            .task {
+                await load()
+                scrollToFocusedConfirmation(proxy)
+            }
+            .refreshable {
+                await load()
+                scrollToFocusedConfirmation(proxy)
+            }
         }
-        .background(RovaDesign.canvas)
         .navigationTitle("Etkinlik")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
-        .refreshable { await load() }
+        .toolbar {
+            if focusConfirmationID != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Kapat") { dismiss() }
+                }
+            }
+        }
         .confirmationDialog(
             selectedPendingTask?.ref?.type == "project" ? "Proje iptal edilsin mi?"
                 : selectedPendingTask?.ref?.type == "agent_task" ? "Arka plan görevi durdurulsun mu?"
@@ -94,7 +119,7 @@ private struct WiqoActivityView: View {
                     ? "Oturum izni hemen kapatılır. PC çevrimdışıysa başlamış bir işin durduğu doğrulanamayabilir."
                     : "PC'ye gönderilmiş bir adımın sonucu belirsiz kalabilir; Wiqo bunu Etkinlik'te gösterecek.")
         }
-        .alert("İptal", isPresented: Binding(
+        .alert("Durum", isPresented: Binding(
             get: { cancelNotice != nil },
             set: { if !$0 { cancelNotice = nil } }
         )) {
@@ -122,13 +147,41 @@ private struct WiqoActivityView: View {
                             if let detail = item.detail { Text(detail).font(.subheadline).foregroundStyle(.secondary) }
                             Text(label(for: item.state)).font(.caption).foregroundStyle(.secondary)
                             if item.state == "needs_approval", item.ref?.type == "confirmation",
-                               let reference = item.ref, let confirmationID = UUID(uuidString: reference.id) {
+                               let confirmation = item.confirmation {
+                                ForEach(confirmation.details.keys.sorted().filter { !$0.hasPrefix("wiqo") }, id: \.self) { key in
+                                    if let value = confirmation.details[key], !value.isEmpty {
+                                        HStack(alignment: .top, spacing: 8) {
+                                            Text(key).foregroundStyle(.secondary)
+                                            Spacer(minLength: 8)
+                                            Text(value).multilineTextAlignment(.trailing)
+                                        }
+                                        .font(.caption)
+                                    }
+                                }
+                                if confirmation.details["wiqoGrantId"] != nil {
+                                    let duration = terminalGrantDurations[confirmation.id] ?? 0
+                                    Menu {
+                                        Button("Yalnızca bu görev") { terminalGrantDurations[confirmation.id] = 0 }
+                                        Button("Bu klasör için 30 dakika") { terminalGrantDurations[confirmation.id] = 1_800 }
+                                        if (confirmation.details["wiqoGrantMaxSeconds"].flatMap(Int.init) ?? 1_800) > 1_800 {
+                                            Button("Bu klasör için 8 saat") { terminalGrantDurations[confirmation.id] = 8 * 60 * 60 }
+                                        }
+                                    } label: {
+                                        Label("İzin: \(duration == 0 ? "bu görev" : duration > 1_800 ? "8 saat" : "30 dakika")", systemImage: "lock.shield")
+                                            .font(.caption.weight(.medium))
+                                    }
+                                    .padding(.top, 4)
+                                }
                                 HStack {
                                     Spacer()
-                                    Button("Reddet") { Task { await resolveConfirmation(confirmationID, approved: false) } }
+                                    Button("Reddet") { Task { await resolveConfirmation(confirmation, approved: false) } }
                                         .buttonStyle(.bordered)
-                                    Button("Onayla") { Task { await resolveConfirmation(confirmationID, approved: true) } }
+                                        .disabled(resolvingConfirmationID == confirmation.id)
+                                    Button(resolvingConfirmationID == confirmation.id ? "İletiliyor…" : "Onayla") {
+                                        Task { await resolveConfirmation(confirmation, approved: true) }
+                                    }
                                         .buttonStyle(.borderedProminent)
+                                        .disabled(resolvingConfirmationID == confirmation.id)
                                 }
                                 .font(.subheadline.weight(.semibold))
                                 .padding(.top, 4)
@@ -147,6 +200,12 @@ private struct WiqoActivityView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(16)
+                        .id(item.id)
+                        .overlay {
+                            if item.id == "confirmation:\(focusConfirmationID?.uuidString.lowercased() ?? "")" {
+                                RoundedRectangle(cornerRadius: 16).stroke(RovaDesign.ink.opacity(0.25), lineWidth: 1.5)
+                            }
+                        }
                     }
                 }
             }
@@ -167,10 +226,43 @@ private struct WiqoActivityView: View {
         }
     }
 
-    /// Approving from Etkinlik: background agent tasks wait here when a step needs the user.
-    private func resolveConfirmation(_ id: UUID, approved: Bool) async {
+    private func scrollToFocusedConfirmation(_ proxy: ScrollViewProxy) {
+        guard let focusConfirmationID else { return }
+        Task { @MainActor in
+            await Task.yield()
+            proxy.scrollTo("confirmation:\(focusConfirmationID.uuidString.lowercased())", anchor: .center)
+        }
+    }
+
+    private func resolveConfirmation(_ confirmation: RovaBackendClient.BackendConfirmation, approved: Bool) async {
+        guard resolvingConfirmationID == nil else { return }
+        resolvingConfirmationID = confirmation.id
+        defer {
+            resolvingConfirmationID = nil
+            terminalGrantDurations.removeValue(forKey: confirmation.id)
+        }
+        var terminalGrant: (grantId: String, signature: String)?
+        var terminalGrantExpiresAt: Int?
+        var terminalGrantScope = "task"
+        let details = confirmation.details
+        if approved, let grantId = details["wiqoGrantId"] {
+            let maximumSeconds = details["wiqoGrantMaxSeconds"].flatMap(Int.init).map { min($0, 8 * 60 * 60) }
+            let selectedDuration = terminalGrantDurations[confirmation.id] ?? 0
+            if selectedDuration > 0 {
+                terminalGrantScope = "session"
+                let duration = selectedDuration > 1_800 ? maximumSeconds ?? selectedDuration : selectedDuration
+                terminalGrantExpiresAt = Int(Date().timeIntervalSince1970) + duration - 30
+            }
+            guard let root = details["wiqoGrantRoot"], let mode = details["wiqoGrantMode"],
+                  let expiresAt = terminalGrantExpiresAt ?? details["wiqoGrantExpiresAt"].flatMap(Int.init),
+                  let signature = model.signTerminalGrant(grantId: grantId, rootDirectory: root, mode: mode, expiresAt: expiresAt, deviceId: details["wiqoGrantDeviceId"]) else {
+                cancelNotice = "Terminal izni bu telefonda imzalanamadı. PC eşleşmesini kontrol et."
+                return
+            }
+            terminalGrant = (grantId, signature)
+        }
         do {
-            _ = try await RovaBackendClient.resolveBackendConfirmation(id: id, approved: approved)
+            _ = try await RovaBackendClient.resolveBackendConfirmation(id: confirmation.id, approved: approved, terminalGrant: terminalGrant, terminalGrantExpiresAt: terminalGrantExpiresAt, terminalGrantScope: terminalGrantScope)
             cancelNotice = approved ? "Onaylandı; işlem çalıştırıldı." : "Reddedildi."
         } catch {
             cancelNotice = (error as? LocalizedError)?.errorDescription ?? "Onay iletilemedi."
@@ -400,6 +492,7 @@ struct WiqoHomeView: View {
     @State private var openFirstCommandAfterPairing = false
     @State private var didCheckWelcome = false
     @State private var draftPrompt: String?
+    @State private var pendingActivity: ActivitySheetRoute?
 
     var body: some View {
         NavigationStack {
@@ -471,10 +564,31 @@ struct WiqoHomeView: View {
             conversations = CopilotConversationStore.all()
             conversationID = id
         }
+        .onReceive(NotificationCenter.default.publisher(for: RovaApprovalNotificationRoute.notificationName)) { note in
+            let storedID = RovaApprovalNotificationRoute.consume()?.uuidString
+            let notificationID = storedID ?? (note.object as? String)
+            presentActivity(notificationID)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: RovaApprovalNotificationRoute.activityNotificationName)) { _ in
+            _ = RovaApprovalNotificationRoute.consumeActivity()
+            presentActivity(nil)
+        }
+        .onAppear {
+            if let approvalID = RovaApprovalNotificationRoute.consume()?.uuidString {
+                presentActivity(approvalID)
+            } else if RovaApprovalNotificationRoute.consumeActivity() {
+                presentActivity(nil)
+            }
+        }
         .sheet(isPresented: $showSettings) {
             // General account settings only - PC control lives in its own screen (below), reached
             // from the chat toolbar's connection icon instead of being buried in this list.
             SettingsView(model: model, authSession: authSession, profileStore: profileStore, subscriptionStore: subscriptionStore)
+        }
+        .sheet(item: $pendingActivity) { route in
+            NavigationStack {
+                WiqoActivityView(model: model, focusConfirmationID: route.focusConfirmationID)
+            }
         }
         .sheet(isPresented: $showPCSettings) {
             PCSettingsView(model: model, subscriptionStore: subscriptionStore)
@@ -590,6 +704,15 @@ struct WiqoHomeView: View {
 
     private func closeSidebar() {
         withAnimation(.snappy(duration: 0.22)) { showSidebar = false }
+    }
+
+    private func presentActivity(_ value: String?) {
+        showSettings = false
+        if let value, let confirmationID = UUID(uuidString: value) {
+            pendingActivity = ActivitySheetRoute(focusConfirmationID: confirmationID)
+        } else if value == nil {
+            pendingActivity = ActivitySheetRoute(focusConfirmationID: nil)
+        }
     }
 }
 
@@ -922,7 +1045,7 @@ private struct PairingCelebrationView: View {
                 .frame(width: 54, height: 54)
                 .padding(20)
                 .background(WiqoTheme.tint(WiqoTheme.green), in: Circle())
-            Text("Mac'in bağlandı!")
+            Text("PC'n bağlandı!")
                 .font(.title2.weight(.bold))
                 .wiqoRiseIn(delay: 0.2)
             Text("Şimdi yanındaki birine telefonundan söyle:")
@@ -955,6 +1078,11 @@ private struct PairingCelebrationView: View {
 /// account actions all live here (Claude-app style: one scrollable settings screen, no separate
 /// "Mac" tab/page). Every control below is unchanged from the previous Mac page; only the
 /// container and the account actions' visibility changed.
+private struct ActivitySheetRoute: Identifiable {
+    let id = UUID()
+    let focusConfirmationID: UUID?
+}
+
 /// Shared plain-row style for a tappable settings-style action (used by both the general and
 /// PC-specific settings screens).
 private func settingsRow(title: String, systemImage: String, isDestructive: Bool = false) -> some View {
@@ -1024,7 +1152,7 @@ struct SettingsView: View {
             .buttonStyle(WiqoRowButtonStyle())
 
             NavigationLink {
-                WiqoActivityView()
+                WiqoActivityView(model: model)
             } label: {
                 settingsNavigationRow(title: "Etkinlik", systemImage: "clock.arrow.circlepath", value: "Yapılanlar ve bekleyenler")
             }
@@ -1491,7 +1619,7 @@ struct PCSettingsView: View {
                             .font(.caption)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(device.displayName).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
-                            Text("\(device.platform) • \(device.capabilities.count) yetenek")
+                            Text("\(displayPlatformName(device.platform)) • \(device.capabilities.count) yetenek")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -1628,7 +1756,7 @@ struct PCSettingsView: View {
             if let status = model.systemStatus {
                 Divider()
                 HStack {
-                    Label(status.macOSVersion, systemImage: "apple.logo")
+                    Label("PC · \(status.macOSVersion)", systemImage: "desktopcomputer")
                     Spacer()
                     if let battery = status.batteryPercentage {
                         Label("\(battery)%\(status.isCharging == true ? " ⚡︎" : "")", systemImage: "battery.100")
@@ -1917,6 +2045,16 @@ struct PCSettingsView: View {
         async let fetchedTrustGrants = try? RovaBackendClient.fetchTrustGrants()
         backendDevices = (await fetchedDevices) ?? []
         trustGrants = (await fetchedTrustGrants) ?? []
+    }
+
+    private func displayPlatformName(_ platform: String) -> String {
+        let normalized = platform.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let isDesktopPlatform = normalized.contains("mac")
+            || normalized.contains("windows")
+            || normalized == "win32"
+            || normalized.contains("linux")
+            || normalized == "desktop"
+        return isDesktopPlatform ? "PC" : platform
     }
 
     private var statusText: String {

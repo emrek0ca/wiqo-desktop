@@ -14,17 +14,17 @@ struct WiqoWelcomeView: View {
                 .foregroundStyle(.tint)
                 .accessibilityHidden(true)
 
-            Text("Mac'ini bağla")
+            Text("PC'ni bağla")
                 .font(.title2.weight(.bold))
 
-            Text("Mac'inde Wiqo'yu aç, ekrandaki QR kodu tara ve ilk komutunu ver.")
+            Text("PC'nde Wiqo'yu aç, ekrandaki QR kodu tara ve ilk komutunu ver.")
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
 
             Spacer(minLength: 8)
 
-            WiqoActionButton(title: "Mac uygulamasını indir") {
+            WiqoActionButton(title: "PC uygulamasını indir") {
                 openURL(WiqoWebsite.downloadURL)
             }
 
