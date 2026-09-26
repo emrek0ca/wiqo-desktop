@@ -36,6 +36,7 @@ struct CopilotView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var bubbles: [ChatBubble] = []
     @State private var inputText = ""
+    @State private var isCreatingAgent = false
     @State private var isSending = false
     /// The thinking timeline of the turn in flight (see ThinkingTrace). It is copied onto the reply
     /// bubble when the turn ends, where it folds into a "4 adımda tamamlandı · 9 sn" row.
@@ -149,7 +150,7 @@ struct CopilotView: View {
                 inputText = draftPrompt
                 isComposerFocused = true
                 await loadSideCards()
-            } else if bubbles.isEmpty {
+            } else if bubbles.isEmpty || conversationID.hasPrefix("agent-") {
                 async let messages: Void = loadRemoteMessagesIfNeeded()
                 async let cards: Void = loadSideCards()
                 _ = await (messages, cards)
@@ -1250,6 +1251,26 @@ struct CopilotView: View {
     /// against the screen edges, so content can scroll all the way to the bottom behind it.
     private var inputBar: some View {
         VStack(spacing: 0) {
+            if isCreatingAgent {
+                HStack(spacing: 8) {
+                    Label("Ajan oluştur", systemImage: "person.crop.circle.badge.plus")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        isCreatingAgent = false
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Ajan oluştur modunu kapat")
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 6)
+            }
             if !attachmentPreviews.isEmpty || !pendingFiles.isEmpty || isPreparingAttachment {
                 attachmentStrip
             }
@@ -1269,6 +1290,14 @@ struct CopilotView: View {
                         Button { showsDocumentScanner = true } label: { Label("Belge tara", systemImage: "doc.viewfinder") }
                             .disabled(fileLimitReached)
                     }
+                    Divider()
+                    Button {
+                        isCreatingAgent = true
+                        isComposerFocused = true
+                    } label: {
+                        Label("Ajan oluştur", systemImage: "person.crop.circle.badge.plus")
+                    }
+                    .disabled(isSending || isPreparingAttachment)
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 18, weight: .semibold))
@@ -1278,7 +1307,7 @@ struct CopilotView: View {
                 .disabled(isSending || isPreparingAttachment)
                 .accessibilityLabel("Ekle")
 
-                TextField(audioRecorder.isRecording ? "Dinliyorum…" : "Wiqo'ya anlat", text: $inputText, axis: .vertical)
+                TextField(audioRecorder.isRecording ? "Dinliyorum…" : (isCreatingAgent ? "Ajanın ne yapsın?" : "Wiqo'ya anlat"), text: $inputText, axis: .vertical)
                     .lineLimit(1...6)
                     .padding(.vertical, 7)
                     .focused($isComposerFocused)
@@ -1310,6 +1339,7 @@ struct CopilotView: View {
         .animation(.easeOut(duration: 0.18), value: isComposerFocused)
         .animation(.easeOut(duration: 0.18), value: attachmentPreviews.count)
         .animation(.easeOut(duration: 0.18), value: pendingFiles.count)
+        .animation(.easeOut(duration: 0.18), value: isCreatingAgent)
         .photosPicker(
             isPresented: $showsPhotoPicker,
             selection: $selectedPhotos,
@@ -1425,7 +1455,8 @@ struct CopilotView: View {
     }
 
     private var canSend: Bool {
-        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingAttachments.isEmpty || !pendingFiles.isEmpty
+        let hasText = !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return isCreatingAgent ? hasText : hasText || !pendingAttachments.isEmpty || !pendingFiles.isEmpty
     }
 
     private var hasInFlightDeviceWork: Bool {
@@ -1437,9 +1468,13 @@ struct CopilotView: View {
     }
 
     private func sendMessage(textOverride: String? = nil) async {
+        let createAgent = isCreatingAgent
         let typedText = (textOverride ?? inputText).trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasInput = createAgent
+            ? !typedText.isEmpty
+            : !typedText.isEmpty || !pendingAttachments.isEmpty || !pendingFiles.isEmpty
         guard !isSending, confirmationBubbleID == nil, !hasInFlightDeviceWork,
-              !typedText.isEmpty || !pendingAttachments.isEmpty || !pendingFiles.isEmpty else { return }
+              hasInput else { return }
         let files = pendingFiles
         let text = !typedText.isEmpty ? typedText
             : !files.isEmpty ? (files.count > 1 ? "Bu dosyaları incele." : "Bu dosyayı incele.")
@@ -1448,6 +1483,7 @@ struct CopilotView: View {
         let previews = attachmentPreviews
         let thumbnails = attachmentPreviews.compactMap(makeThumbnailData)
         inputText = ""
+        isCreatingAgent = false
         clearAttachments()
         screenshotObservationCount = 0
         let userBubble = ChatBubble(role: .user, text: text, attachmentThumbnails: thumbnails, attachedFileNames: files.map(\.name))
@@ -1497,6 +1533,7 @@ struct CopilotView: View {
                 requestID: requestID,
                 attachments: attachments,
                 files: files,
+                createAgent: createAgent,
                 onStatus: { text in thinking.note(text) },
                 // Model-turn deltas are provisional. Reveal only the terminal reply below so a
                 // repair/planning turn can never replace text already shown to the user.
@@ -1580,6 +1617,7 @@ struct CopilotView: View {
             pendingFiles = files
             pendingAttachments = attachments
             attachmentPreviews = previews
+            isCreatingAgent = createAgent
             turnCount = turnCountBeforeRequest
             CopilotConversationStore.saveTurnCount(turnCount, for: conversationID)
             bubbles.append(ChatBubble(role: .system, text: RovaBackendError.copilotPayloadTooLarge.localizedDescription))
@@ -2239,10 +2277,8 @@ struct CopilotView: View {
         }
     }
 
-    /// Brings a conversation's messages back after a reinstall or a new device - only runs when
-    /// this device has no local copy AND the sidebar already knows this id is a real, previously
-    /// saved conversation (never for a brand-new chat's freshly minted id, which correctly has no
-    /// server-side messages yet and shouldn't cost a network round trip).
+    /// Loads remote history for an empty local conversation and refreshes named-agent chats when
+    /// opened, so a corrected background result cannot remain stuck in the device cache.
     private func loadRemoteMessagesIfNeeded() async {
         guard RovaBackendClient.isAuthenticated,
               let summary = CopilotConversationStore.all().first(where: { $0.id == conversationID }),

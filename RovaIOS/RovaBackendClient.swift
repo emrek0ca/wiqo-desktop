@@ -544,6 +544,7 @@ enum RovaBackendClient {
         attachments: [ChatAttachment] = [],
         /// Content read on this phone (FileContentExtractor); the files themselves are never sent.
         files: [FileContent] = [],
+        createAgent: Bool = false,
         // Awaited on the main actor in stream order - separate `Task { @MainActor }` hops per event
         // are not guaranteed to run in order, which would scramble streamed text.
         onStatus: @escaping @MainActor @Sendable (String) -> Void = { _ in },
@@ -611,6 +612,7 @@ enum RovaBackendClient {
             }
         ]
         var requestBody = body
+        if createAgent { requestBody["composerIntent"] = "create_agent" }
         let encoder = JSONEncoder()
         var filePayloadBytes = files.isEmpty ? 0 : 2 // JSON array brackets
         for (index, file) in files.enumerated() {
@@ -634,7 +636,7 @@ enum RovaBackendClient {
         }
         if let deviceID { requestBody["deviceId"] = deviceID.uuidString }
         if let turnCount { requestBody["turnCount"] = turnCount }
-        if deviceResults.isEmpty, files.isEmpty, attachments.isEmpty,
+        if !createAgent, deviceResults.isEmpty, files.isEmpty, attachments.isEmpty,
            let lastUser = messages.last(where: { $0.role == "user" })?.content,
            let hint = await WiqoOnDeviceRouter.hint(for: lastUser),
            let object = try? JSONSerialization.jsonObject(with: hint) {

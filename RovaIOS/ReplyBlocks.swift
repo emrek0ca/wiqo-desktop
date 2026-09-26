@@ -765,7 +765,7 @@ private struct TableBlockView: View {
 private struct RichMathTextView: View {
     let raw: String
     let artifacts: [RovaBackendClient.ArtifactDescriptor]
-    var fontSize: CGFloat = 17
+    var fontSize: CGFloat = 16
     @Environment(\.colorScheme) private var colorScheme
     @State private var height: CGFloat = 24
     /// Formula ID -> the artifact's own SVG markup (spliced directly into the page as inline
@@ -869,7 +869,7 @@ private struct RichMathWebView: UIViewRepresentable {
         let cacheKey = "\(colorScheme)|\(fontSize)|\(raw)|\(formulaSVGs.keys.sorted().joined(separator: ","))"
         guard context.coordinator.lastRendered != cacheKey else { return }
         context.coordinator.lastRendered = cacheKey
-        let textColor = colorScheme == .dark ? "#f2f2f7" : "#111318"
+        let textColor = colorScheme == .dark ? "#f2f2f7" : "#131314"
         let katexHead = needsLiveKaTeX ? """
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
         <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -905,11 +905,11 @@ private struct RichMathWebView: UIViewRepresentable {
         \(katexHead)
         <style>
           html,body{margin:0;padding:0;background:transparent;color:\(textColor);}
-          #content{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;font-size:\(fontSize)px;line-height:1.42;word-wrap:break-word;}
+          #content{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;font-size:\(fontSize)px;line-height:1.5;word-wrap:break-word;}
           #content p{margin:0.35em 0;}
           #content p:first-child{margin-top:0;}
           #content p:last-child{margin-bottom:0;}
-          #content code{font-family:ui-monospace,Menlo,monospace;font-size:15px;background:rgba(127,127,127,0.16);border-radius:4px;padding:1px 4px;}
+          #content code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.92em;background:rgba(127,127,127,0.16);border-radius:4px;padding:1px 4px;}
           #content a{color:#0a84ff;text-decoration:underline;}
           #content svg{display:block;max-width:100%;height:auto;margin:0.4em 0;}
           .katex-display{margin:0.5em 0;overflow-x:auto;overflow-y:hidden;}
