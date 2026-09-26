@@ -99,6 +99,9 @@ public sealed class DeviceSessionClient
 
     public static DeviceSessionCredentials? LoadStoredCredentials() => WindowsSecretStore.LoadCredentials();
 
+    /// Paired on this Windows account: a pairing token (signs terminal grants) and a device session.
+    public static bool HasStoredPairing => WindowsSecretStore.LoadPairingToken() is not null && WindowsSecretStore.LoadCredentials() is not null;
+
     /// null only when the backend says the credentials are invalid (400/401/403) - the host then
     /// asks for a new pairing. Network trouble and server errors throw, so a flaky connection is
     /// retried instead of forcing the user to scan a QR code again.

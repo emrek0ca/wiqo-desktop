@@ -1,0 +1,38 @@
+<Window x:Class="RovaWindows.App.PairingWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Wiqo - Telefonu bağla" Width="440" SizeToContent="Height"
+        Style="{StaticResource WiqoWindow}" Icon="Assets/wiqo.ico">
+    <StackPanel Margin="28,24,28,28">
+        <StackPanel Orientation="Horizontal">
+            <Image Source="Assets/wiqo-256.png" Width="40" Height="40" RenderOptions.BitmapScalingMode="HighQuality"/>
+            <TextBlock Text="Telefonunu bağla" Style="{StaticResource Title}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+        </StackPanel>
+        <TextBlock Style="{StaticResource Body}" Margin="0,14,0,0"
+                   Text="Wiqo bu bilgisayarda senin yerine uygulama açar, dosyalarla çalışır ve onayladığın klasörlerde komut çalıştırır. Her işlem telefonundan gelen imzalı bir istekle yapılır."/>
+
+        <Border Style="{StaticResource Card}" Margin="0,18,0,0" Padding="20">
+            <Grid>
+                <Image x:Name="QrImage" Width="240" Height="240" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                <TextBlock x:Name="QrPlaceholder" Text="Kod hazırlanıyor…" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Muted}"/>
+                <Border x:Name="SuccessOverlay" Background="#F2FFFFFF" Visibility="Collapsed">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Ellipse Width="56" Height="56" Fill="{StaticResource Ok}"/>
+                        <TextBlock Text="Bağlandı" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,12,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <StackPanel Margin="4,16,0,0">
+            <TextBlock Style="{StaticResource Body}" Text="1. Telefonunda Wiqo uygulamasını aç."/>
+            <TextBlock Style="{StaticResource Body}" Text="2. Bilgisayar bağlama ekranına git."/>
+            <TextBlock Style="{StaticResource Body}" Text="3. Bu kodu kamerayla okut ve onayla."/>
+        </StackPanel>
+
+        <Grid Margin="0,20,0,0">
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="{StaticResource Muted}"/>
+            <Button x:Name="RefreshButton" Content="Yeni kod" Style="{StaticResource Quiet}" HorizontalAlignment="Right" Click="OnRefresh"/>
+        </Grid>
+    </StackPanel>
+</Window>
