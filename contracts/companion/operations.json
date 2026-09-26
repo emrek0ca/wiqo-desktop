@@ -22,7 +22,8 @@
       "payloadKind" : "application",
       "requiresUserPresence" : false,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "application_state"
@@ -35,7 +36,8 @@
       "payloadKind" : "applicationQuery",
       "requiresUserPresence" : false,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "application_state"
@@ -48,7 +50,8 @@
       "payloadKind" : "applicationControl",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "application_state"
@@ -75,7 +78,8 @@
       "payloadKind" : "none",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "provider_acknowledgement"
@@ -88,7 +92,8 @@
       "payloadKind" : "none",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "provider_acknowledgement"
@@ -101,7 +106,8 @@
       "payloadKind" : "none",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "provider_acknowledgement"
@@ -127,7 +133,8 @@
       "payloadKind" : "volume",
       "requiresUserPresence" : false,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "system_state"
@@ -140,7 +147,8 @@
       "payloadKind" : "none",
       "requiresUserPresence" : false,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "system_state"
@@ -153,7 +161,8 @@
       "payloadKind" : "media",
       "requiresUserPresence" : false,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "system_state"
@@ -166,7 +175,8 @@
       "payloadKind" : "clipboardText",
       "requiresUserPresence" : false,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "clipboard_readback"
@@ -179,7 +189,8 @@
       "payloadKind" : "application",
       "requiresUserPresence" : false,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "application_state"
@@ -192,7 +203,8 @@
       "payloadKind" : "textFile",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "medium",
       "verificationRule" : "filesystem_state"
@@ -297,7 +309,8 @@
       "payloadKind" : "none",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "clipboard_snapshot"
@@ -349,7 +362,8 @@
       "payloadKind" : "none",
       "requiresUserPresence" : false,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "medium",
       "verificationRule" : "filesystem_snapshot"
@@ -362,7 +376,8 @@
       "payloadKind" : "fileName",
       "requiresUserPresence" : false,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "medium",
       "verificationRule" : "filesystem_snapshot"
@@ -375,7 +390,8 @@
       "payloadKind" : "fileMove",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "provider_acknowledgement"
@@ -388,7 +404,8 @@
       "payloadKind" : "fileMove",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "provider_acknowledgement"
@@ -401,7 +418,8 @@
       "payloadKind" : "artifactFile",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "long",
       "verificationRule" : "filesystem_state"
@@ -440,7 +458,8 @@
       "payloadKind" : "fileOperation",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "medium",
       "verificationRule" : "filesystem_snapshot"
@@ -467,7 +486,8 @@
       "payloadKind" : "fileOperation",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "medium",
       "verificationRule" : "filesystem_snapshot"
@@ -494,7 +514,8 @@
       "payloadKind" : "fileOperation",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "medium",
       "verificationRule" : "filesystem_state"
@@ -507,7 +528,8 @@
       "payloadKind" : "fileOperation",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "medium",
       "verificationRule" : "filesystem_state"
@@ -520,7 +542,8 @@
       "payloadKind" : "fileOperation",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "medium",
       "verificationRule" : "filesystem_state"
@@ -533,7 +556,8 @@
       "payloadKind" : "fileOperation",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "medium",
       "verificationRule" : "filesystem_state"
@@ -559,7 +583,8 @@
       "payloadKind" : "screenCapture",
       "requiresUserPresence" : true,
       "supportedPlatforms" : [
-        "macOS"
+        "macOS",
+        "windows"
       ],
       "timeoutClass" : "short",
       "verificationRule" : "screen_capture"
