@@ -41,8 +41,8 @@ struct CopilotView: View {
     /// The thinking timeline of the turn in flight (see ThinkingTrace). It is copied onto the reply
     /// bubble when the turn ends, where it folds into a "4 adımda tamamlandı · 9 sn" row.
     @State private var thinking = ThinkingTrace()
-    /// Terminal grant cards the user switched to the long (8-hour) session.
-    @State private var longTerminalGrants: Set<UUID> = []
+    /// Permission scope chosen on a terminal approval: one task by default, or a short folder session.
+    @State private var terminalGrantDurations: [UUID: Int] = [:]
     @State private var conversationID = ""
     @State private var turnCount = 0
     /// Results are sent with the next stateless backend turn, so the model can distinguish a
@@ -698,17 +698,23 @@ struct CopilotView: View {
                     onApprove: { Task { await resolveBackendConfirmation(bubbleID: bubbleID, confirmationID: row.id, approved: true) } },
                     onDecline: { Task { await resolveBackendConfirmation(bubbleID: bubbleID, confirmationID: row.id, approved: false) } }
                 )
-                // A terminal session the Mac allows to last longer: trust this folder for 8 hours
-                // instead of 30 minutes. Revocable any time from Etkinlik.
-                if row.confirmation.details["wiqoGrantId"] != nil,
-                   let maxSeconds = row.confirmation.details["wiqoGrantMaxSeconds"].flatMap(Int.init), maxSeconds > 1_800 {
-                    Toggle(isOn: Binding(
-                        get: { longTerminalGrants.contains(row.id) },
-                        set: { on in if on { longTerminalGrants.insert(row.id) } else { longTerminalGrants.remove(row.id) } }
-                    )) {
-                        Text("Bu klasöre \(maxSeconds / 3_600) saat güven").font(.caption)
+                if row.confirmation.details["wiqoGrantId"] != nil {
+                    let selectedDuration = terminalGrantDurations[row.id] ?? 0
+                    let maxSeconds = row.confirmation.details["wiqoGrantMaxSeconds"].flatMap(Int.init) ?? 1_800
+                    Menu {
+                        Button("Yalnızca bu görev") { terminalGrantDurations[row.id] = 0 }
+                        Button("Bu klasör için 30 dakika") { terminalGrantDurations[row.id] = 1_800 }
+                        if maxSeconds > 1_800 {
+                            Button("Bu klasör için 8 saat") { terminalGrantDurations[row.id] = 8 * 60 * 60 }
+                        }
+                    } label: {
+                        Label(
+                            "İzin: \(selectedDuration == 0 ? "bu görev" : selectedDuration > 1_800 ? "8 saat" : "30 dakika")",
+                            systemImage: "lock.shield"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
-                    .toggleStyle(.switch)
                     .disabled(row.status == .processing)
                     .padding(.horizontal, 4)
                 }
@@ -1160,27 +1166,39 @@ struct CopilotView: View {
         // A terminal session card carries the grant fields; approving signs them on this phone.
         var terminalGrant: (grantId: String, signature: String)?
         var terminalGrantExpiresAt: Int?
+        var terminalGrantScope = "task"
         let details = row.confirmation.details
         if approved, let grantId = details["wiqoGrantId"] {
-            let longSeconds = details["wiqoGrantMaxSeconds"].flatMap(Int.init).map { min($0, 8 * 60 * 60) }
-            if longTerminalGrants.contains(confirmationID), let longSeconds, longSeconds > 1_800 {
-                terminalGrantExpiresAt = Int(Date().timeIntervalSince1970) + longSeconds - 30
+            let maximumSeconds = details["wiqoGrantMaxSeconds"].flatMap(Int.init).map { min($0, 8 * 60 * 60) }
+            let selectedDuration = terminalGrantDurations[confirmationID] ?? 0
+            if selectedDuration > 0 {
+                terminalGrantScope = "session"
+                let duration: Int
+                if selectedDuration > 1_800 {
+                    duration = maximumSeconds ?? selectedDuration
+                } else {
+                    duration = selectedDuration
+                }
+                terminalGrantExpiresAt = Int(Date().timeIntervalSince1970) + duration - 30
             }
             guard let root = details["wiqoGrantRoot"], let mode = details["wiqoGrantMode"],
                   let expiresAt = terminalGrantExpiresAt ?? details["wiqoGrantExpiresAt"].flatMap(Int.init),
                   let signature = model.signTerminalGrant(grantId: grantId, rootDirectory: root, mode: mode, expiresAt: expiresAt, deviceId: details["wiqoGrantDeviceId"]) else {
                 setBubble(bubbleID) { bubble in
                     guard let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) else { return }
-                    bubble.backendConfirmations[index].status = .failed
-                    bubble.backendConfirmations[index].resultText = "Terminal izni bu telefonda imzalanamadı. Bu telefonun o PC ile eşleştiğinden emin ol."
+                    bubble.backendConfirmations[index].status = .pending
+                    bubble.backendConfirmations[index].resultText = nil
+                    bubble.backendConfirmations[index].resultDetail = "Terminal izni bu telefonda imzalanamadı. PC eşleşmesini kontrol ettikten sonra yeniden deneyebilirsin."
                 }
+                persistConversation()
                 return
             }
             terminalGrant = (grantId, signature)
         }
 
+        defer { terminalGrantDurations.removeValue(forKey: confirmationID) }
         do {
-            let response = try await RovaBackendClient.resolveBackendConfirmation(id: confirmationID, approved: approved, terminalGrant: terminalGrant, terminalGrantExpiresAt: terminalGrantExpiresAt)
+            let response = try await RovaBackendClient.resolveBackendConfirmation(id: confirmationID, approved: approved, terminalGrant: terminalGrant, terminalGrantExpiresAt: terminalGrantExpiresAt, terminalGrantScope: terminalGrantScope)
             guard response.confirmationId == confirmationID else { throw RovaBackendError.invalidResponse }
             let resultText = response.result?.text
             let resultArtifacts = response.result?.artifacts ?? []

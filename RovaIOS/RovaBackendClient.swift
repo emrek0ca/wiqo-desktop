@@ -770,14 +770,14 @@ enum RovaBackendClient {
         return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus)
     }
 
-    static func resolveBackendConfirmation(id: UUID, approved: Bool, terminalGrant: (grantId: String, signature: String)? = nil, terminalGrantExpiresAt: Int? = nil) async throws -> BackendConfirmationResponse {
+    static func resolveBackendConfirmation(id: UUID, approved: Bool, terminalGrant: (grantId: String, signature: String)? = nil, terminalGrantExpiresAt: Int? = nil, terminalGrantScope: String = "task") async throws -> BackendConfirmationResponse {
         var body: [String: Any] = [
             "confirmationId": id.uuidString,
             "approved": approved
         ]
         if let terminalGrant {
-            var grant: [String: Any] = ["grantId": terminalGrant.grantId, "signature": terminalGrant.signature]
-            // A longer session the user chose here; the signature covers exactly this expiry.
+            var grant: [String: Any] = ["grantId": terminalGrant.grantId, "signature": terminalGrant.signature, "scope": terminalGrantScope]
+            // A session expiry is signed by the paired phone; task/folder scope is enforced by the backend.
             if let terminalGrantExpiresAt { grant["expiresAt"] = terminalGrantExpiresAt }
             body["terminalGrant"] = grant
         }
