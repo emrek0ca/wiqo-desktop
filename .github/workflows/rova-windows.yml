@@ -4,23 +4,43 @@ on:
   push:
     paths:
       - "RovaWindows/**"
+      - "RovaShared/**"
+      - "contracts/companion/**"
       - ".github/workflows/rova-windows.yml"
   pull_request:
     paths:
       - "RovaWindows/**"
+      - "RovaShared/**"
+      - "contracts/companion/**"
       - ".github/workflows/rova-windows.yml"
 
 jobs:
-  build:
+  windows:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Contract vectors are current
+        run: node contracts/companion/generate-vectors.mjs --check
       - name: Restore
         run: dotnet restore RovaWindows/RovaWindows.sln
       - name: Build
         run: dotnet build RovaWindows/RovaWindows.sln --configuration Release --no-restore
-      - name: Test
+      - name: Test (contract vectors + Mac parity)
         run: dotnet test RovaWindows/RovaWindows.sln --configuration Release --no-build --no-restore
+
+  # The Mac side of the same contract: RovaShared against vectors.json, and operations.json is
+  # the current export of RovaShared's operation catalogue.
+  mac-contract:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift contract check
+        run: |
+          xcrun swiftc -O -o contract-swift RovaShared/*.swift contracts/companion/swift/main.swift
+          ./contract-swift contracts/companion/vectors.json contracts/companion/operations.json

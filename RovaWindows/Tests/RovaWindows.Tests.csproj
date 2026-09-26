@@ -14,5 +14,6 @@
   <ItemGroup>
     <ProjectReference Include="../RovaWindows.csproj" />
     <None Include="../../contracts/companion/vectors.json" Link="vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../contracts/companion/operations.json" Link="operations.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

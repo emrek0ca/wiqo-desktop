@@ -39,7 +39,23 @@ struct Vectors: Decodable {
     let commandSignatures: [Command]
 }
 
-let path = CommandLine.arguments.dropFirst().first ?? "contracts/companion/vectors.json"
+let arguments = Array(CommandLine.arguments.dropFirst())
+let path = arguments.first ?? "contracts/companion/vectors.json"
+
+// The operation catalogue (RovaShared/OperationManifest.swift) is the single source of which
+// operation runs where; operations.json carries it to the Windows tests and the parity report.
+if let operationsPath = arguments.dropFirst().first {
+    let object = try JSONSerialization.jsonObject(with: RovaOperationManifest.encodedManifest())
+    let text = String(decoding: try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]), as: UTF8.self) + "\n"
+    let current = try? String(contentsOfFile: operationsPath, encoding: .utf8)
+    if arguments.contains("--write") {
+        try text.write(toFile: operationsPath, atomically: true, encoding: .utf8)
+    } else if current != text {
+        print("✖ operations.json RovaShared manifestosuyla aynı değil: contracts/companion/check.sh --write")
+        exit(1)
+    }
+}
+
 let vectors = try JSONDecoder().decode(Vectors.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
 var failures = 0
 func expect(_ ok: Bool, _ label: String) {

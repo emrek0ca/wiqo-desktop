@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace RovaWindows;
@@ -8,8 +7,6 @@ namespace RovaWindows;
 /// Minimal RFC 8785 canonical JSON serializer for signed CommandRequest payloads.
 internal static class CanonicalJson
 {
-    private static readonly JsonSerializerOptions StringOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-
     internal static string Serialize(JsonElement value)
     {
         var builder = new StringBuilder();
@@ -28,7 +25,8 @@ internal static class CanonicalJson
                 {
                     if (!first) output.Append(',');
                     first = false;
-                    output.Append(JsonSerializer.Serialize(property.Name, StringOptions)).Append(':');
+                    WriteString(property.Name, output);
+                    output.Append(':');
                     Write(property.Value, output);
                 }
                 output.Append('}');
@@ -45,7 +43,7 @@ internal static class CanonicalJson
                 output.Append(']');
                 break;
             case JsonValueKind.String:
-                output.Append(JsonSerializer.Serialize(value.GetString(), StringOptions));
+                WriteString(value.GetString() ?? "", output);
                 break;
             case JsonValueKind.Number:
                 if (!value.TryGetDouble(out var number) || !double.IsFinite(number)) throw new JsonException("Non-finite signed number.");
@@ -56,6 +54,35 @@ internal static class CanonicalJson
             case JsonValueKind.Null: output.Append("null"); break;
             default: throw new JsonException("Unsupported canonical JSON value.");
         }
+    }
+
+    /// RFC 8785 strings (ECMAScript JSON.stringify): only quote, backslash and control characters are
+    /// escaped; every other character, emoji included, is written as is; a lone surrogate becomes
+    /// \uXXXX. The .NET encoders escape emoji and U+2028, which broke signatures (vectors.json).
+    private static void WriteString(string value, StringBuilder output)
+    {
+        output.Append('"');
+        for (var index = 0; index < value.Length; index++)
+        {
+            var character = value[index];
+            switch (character)
+            {
+                case '"': output.Append("\\\""); break;
+                case '\\': output.Append("\\\\"); break;
+                case '\b': output.Append("\\b"); break;
+                case '\f': output.Append("\\f"); break;
+                case '\n': output.Append("\\n"); break;
+                case '\r': output.Append("\\r"); break;
+                case '\t': output.Append("\\t"); break;
+                default:
+                    if (character < 0x20) output.Append("\\u").Append(((int)character).ToString("x4", CultureInfo.InvariantCulture));
+                    else if (char.IsHighSurrogate(character) && index + 1 < value.Length && char.IsLowSurrogate(value[index + 1])) output.Append(character).Append(value[++index]);
+                    else if (char.IsSurrogate(character)) output.Append("\\u").Append(((int)character).ToString("x4", CultureInfo.InvariantCulture));
+                    else output.Append(character);
+                    break;
+            }
+        }
+        output.Append('"');
     }
 
     private static string CanonicalNumber(double value)

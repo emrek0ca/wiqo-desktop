@@ -197,7 +197,8 @@ final class ProtocolTests: XCTestCase {
             RovaOperationManifest.advertisedCapabilities(for: .macOS).sorted()
         )
         XCTAssertFalse(RovaOperationManifest.supports(.runShortcut, on: .windows))
-        XCTAssertTrue(RovaOperationManifest.supports(.openApplicationByName, on: .windows))
+        XCTAssertFalse(RovaOperationManifest.supports(.executeCode, on: .windows))
+        XCTAssertTrue(RovaOperationManifest.supports(.openURL, on: .windows))
         let encoded = try RovaOperationManifest.encodedManifest()
         XCTAssertFalse(encoded.isEmpty)
     }
@@ -207,12 +208,10 @@ final class ProtocolTests: XCTestCase {
         let id = UUID()
         let now = Date()
         let nonce = "nonce-123"
-        let signature = RovaValidation.signRequest(id: id, type: .ping, nonce: nonce, token: token)
-
-        let signedRequest = CommandRequest(id: id, type: .ping, createdAt: now, signature: signature, nonce: nonce)
+        let signedRequest = RovaValidation.signedRequest(id: id, type: .ping, payload: .none, createdAt: now, nonce: nonce, token: token)
         XCTAssertTrue(RovaValidation.verifyRequestSignature(request: signedRequest, token: token))
 
-        let tamperedRequest = CommandRequest(id: id, type: .lockMac, createdAt: now, signature: signature, nonce: nonce)
+        let tamperedRequest = CommandRequest(id: id, type: .lockMac, payload: .none, createdAt: now, signatureVersion: 2, createdAtEpochMs: signedRequest.createdAtEpochMs, signature: signedRequest.signature, nonce: nonce)
         XCTAssertFalse(RovaValidation.verifyRequestSignature(request: tamperedRequest, token: token))
 
         let expiredDate = now.addingTimeInterval(-700)

@@ -242,7 +242,9 @@ public enum RovaOperationManifest {
     /// that the Windows companion cannot execute yet.
     private static func windowsSupported(_ operation: CommandType) -> Bool {
         switch operation {
-        case .ping, .getSystemStatus, .openURL, .listRunningApplications, .executeCode, .searchFiles, .sendFileToPhone:
+        // No isolated code sandbox on Windows: code runs only through the signed terminal session.
+        // Must match RovaWindows/WindowsCapabilityManifest.cs (checked by contracts/companion/check.sh).
+        case .ping, .getSystemStatus, .openURL, .listRunningApplications, .searchFiles, .sendFileToPhone:
             return true
         default:
             return false
