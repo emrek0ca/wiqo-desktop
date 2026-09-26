@@ -18,6 +18,9 @@ public partial class WiqoApp : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // The theme must be in place before any window resolves its StaticResource styles.
+        if (Resources["WiqoWindow"] is null)
+            Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("pack://application:,,,/Wiqo;component/Theme.xaml", UriKind.Absolute) });
         instance = new Mutex(true, InstanceName, out var first);
         showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, InstanceName + ".Show");
         if (!first)
