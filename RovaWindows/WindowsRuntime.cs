@@ -93,9 +93,15 @@ public sealed class WindowsRuntime : IAsyncDisposable
                 new WireError("DEVICE_BUSY", "Windows işlem kuyruğu dolu; lütfen biraz sonra tekrar deneyin.", "retryable"));
         }
         var readOnly = OperationCatalog.IsReadOnlyLane(operation);
+        var laneHeld = false;
+        Task<Outcome>? pending = null;
         try
         {
-            if (!readOnly) await sideEffectLane.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (!readOnly)
+            {
+                await sideEffectLane.WaitAsync(cancellationToken).ConfigureAwait(false);
+                laneHeld = true;
+            }
             try
             {
                 if (!readOnly) ledger.RecordRunning(commandId);
@@ -107,6 +113,9 @@ public sealed class WindowsRuntime : IAsyncDisposable
                 Outcome outcome;
                 if (finished != work)
                 {
+                    // A blocking call that ignored the deadline keeps the side-effect lane until it
+                    // really returns, so a late result can never race with the next write.
+                    pending = work;
                     outcome = Outcome.Fail("COMMAND_TIMEOUT", "Komut zaman aşımına uğradı; sonucu doğrulanamadığı için tekrar çalıştırılmadı.", "timeout");
                 }
                 else
@@ -120,7 +129,11 @@ public sealed class WindowsRuntime : IAsyncDisposable
             }
             finally
             {
-                if (!readOnly) sideEffectLane.Release();
+                if (laneHeld)
+                {
+                    if (pending is null) sideEffectLane.Release();
+                    else _ = pending.ContinueWith(_ => sideEffectLane.Release(), TaskScheduler.Default);
+                }
             }
         }
         finally

@@ -169,7 +169,7 @@ internal static class FileOperations
             From = target + "\0\0",
             Flags = NativeMethods.FofAllowUndo | NativeMethods.FofNoConfirmation | NativeMethods.FofSilent | NativeMethods.FofNoErrorUi
         };
-        var code = NativeMethods.SHFileOperation(ref operation);
+        var code = StaThread.Run(() => NativeMethods.SHFileOperation(ref operation));
         if (code != 0 || operation.AnyOperationsAborted || File.Exists(target) || Directory.Exists(target))
             return Outcome.Fail("FILE_DELETE_FAILED", "Dosya Geri Dönüşüm Kutusu'na taşınamadı; kullanımda olabilir.");
         return Outcome.Ok("Dosya Geri Dönüşüm Kutusu'na taşındı.");

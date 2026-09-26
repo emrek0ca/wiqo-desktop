@@ -28,6 +28,10 @@ public sealed class ProtocolV2Client : IAsyncDisposable
     private readonly SemaphoreSlim sendGate = new(1, 1);
     private readonly SemaphoreSlim refreshGate = new(1, 1);
     private readonly SemaphoreSlim transferGate = new(1, 1);
+    /// Commands run for the client's lifetime, not the socket's: a dropped connection must not cut a
+    /// running command short. The result goes out on the socket if it is still open, otherwise
+    /// the ledger reports it as a receipt on the next connection.
+    private readonly CancellationTokenSource lifetime = new();
     private readonly ConcurrentDictionary<string, string> completedSignatures = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> completedTerminalHashes = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, WindowsCommandResult> completedTerminal = new(StringComparer.Ordinal);
@@ -218,9 +222,10 @@ public sealed class ProtocolV2Client : IAsyncDisposable
             {
                 using (document)
                 {
-                    try { await DispatchAsync(current, document.RootElement, cancellationToken).ConfigureAwait(false); }
+                    try { await DispatchAsync(current, document.RootElement, lifetime.Token).ConfigureAwait(false); }
                     catch (OperationCanceledException) { }
                     catch (WebSocketException) { }
+                    catch (ObjectDisposedException) { }
                 }
             }, CancellationToken.None);
         }
@@ -395,6 +400,7 @@ public sealed class ProtocolV2Client : IAsyncDisposable
         }
     }, cancellationToken);
 
+    /// Best effort on a socket that may have closed meanwhile; what matters is in the ledger.
     private async Task SendAsync(ClientWebSocket current, object value, CancellationToken cancellationToken)
     {
         var bytes = Encoding.UTF8.GetBytes(WireJson.Serialize(value));
@@ -403,6 +409,7 @@ public sealed class ProtocolV2Client : IAsyncDisposable
         {
             if (current.State == WebSocketState.Open) await current.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken).ConfigureAwait(false);
         }
+        catch (Exception error) when (error is WebSocketException or ObjectDisposedException or IOException) { }
         finally { sendGate.Release(); }
     }
 
@@ -436,6 +443,7 @@ public sealed class ProtocolV2Client : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        lifetime.Cancel();
         connectionCancel?.Cancel();
         if (socket is { State: WebSocketState.Open } current)
         {
@@ -445,5 +453,6 @@ public sealed class ProtocolV2Client : IAsyncDisposable
         sendGate.Dispose();
         refreshGate.Dispose();
         transferGate.Dispose();
+        lifetime.Dispose();
     }
 }

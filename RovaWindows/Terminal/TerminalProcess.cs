@@ -17,7 +17,8 @@ internal static class TerminalProcess
     private const int OutputCap = 200_000;
     private const string DirectoryMarker = "__WIQO_PWD__";
     private static readonly Regex SecretName = new("(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    private static readonly Lazy<string?> PwshPath = new(() => FindOnPath("pwsh.exe"));
+    // WIQO_PWSH points at a specific PowerShell 7 (tests run the wrapper on macOS with it).
+    private static readonly Lazy<string?> PwshPath = new(() => System.Environment.GetEnvironmentVariable("WIQO_PWSH") is { Length: > 0 } custom ? custom : FindOnPath("pwsh.exe"));
 
     internal static string ShellDescription => PwshPath.Value is not null ? "PowerShell 7" : "Windows PowerShell 5.1";
 

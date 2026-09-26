@@ -2,13 +2,18 @@ using System.Runtime.InteropServices;
 
 namespace RovaWindows.Native;
 
-/// Unicode text on the Windows clipboard through the Win32 API (no UI thread needed). Another
-/// application can hold the clipboard for a moment, so opening retries briefly.
+/// Unicode text on the Windows clipboard through the Win32 API, on an STA thread with a
+/// message-only owner window. Another application can hold the clipboard for a moment, so
+/// opening retries briefly.
 internal static class WindowsClipboard
 {
-    internal static string? GetText()
+    internal static string? GetText() => StaThread.Run(ReadText);
+
+    internal static void SetText(string text) => StaThread.Run(() => { WriteText(text); return true; });
+
+    private static string? ReadText()
     {
-        using var session = Open();
+        using var session = Open(IntPtr.Zero);
         if (!NativeMethods.IsClipboardFormatAvailable(NativeMethods.CfUnicodeText)) return null;
         var handle = NativeMethods.GetClipboardData(NativeMethods.CfUnicodeText);
         if (handle == IntPtr.Zero) return null;
@@ -22,9 +27,17 @@ internal static class WindowsClipboard
         finally { NativeMethods.GlobalUnlock(handle); }
     }
 
-    internal static void SetText(string text)
+    private static void WriteText(string text)
     {
-        using var session = Open();
+        var owner = NativeMethods.CreateWindowEx(0, "STATIC", "Wiqo clipboard", 0, 0, 0, 0, 0, NativeMethods.HwndMessage, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        if (owner == IntPtr.Zero) throw new InvalidOperationException("Pano için pencere oluşturulamadı.");
+        try { WriteText(text, owner); }
+        finally { NativeMethods.DestroyWindow(owner); }
+    }
+
+    private static void WriteText(string text, IntPtr owner)
+    {
+        using var session = Open(owner);
         if (!NativeMethods.EmptyClipboard()) throw new InvalidOperationException("Pano temizlenemedi.");
         var bytes = (text.Length + 1) * 2;
         var memory = NativeMethods.GlobalAlloc(NativeMethods.GmemMoveable, (UIntPtr)bytes);
@@ -49,11 +62,11 @@ internal static class WindowsClipboard
 
     internal static uint SequenceNumber => NativeMethods.GetClipboardSequenceNumber();
 
-    private static Session Open()
+    private static Session Open(IntPtr owner)
     {
         for (var attempt = 0; attempt < 10; attempt++)
         {
-            if (NativeMethods.OpenClipboard(IntPtr.Zero)) return new Session();
+            if (NativeMethods.OpenClipboard(owner)) return new Session();
             Thread.Sleep(30);
         }
         throw new InvalidOperationException("Pano başka bir uygulama tarafından kullanılıyor; biraz sonra tekrar dene.");

@@ -132,6 +132,17 @@ internal static class NativeMethods
     [DllImport("kernel32.dll")]
     internal static extern UIntPtr GlobalSize(IntPtr memory);
 
+    // A message-only window: the clipboard needs an owner window, or SetClipboardData fails
+    // after EmptyClipboard (documented for OpenClipboard(NULL)).
+    internal static readonly IntPtr HwndMessage = new(-3);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    internal static extern IntPtr CreateWindowEx(int exStyle, string className, string windowName, int style, int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool DestroyWindow(IntPtr window);
+
     // Windows and processes
     [DllImport("user32.dll")]
     internal static extern IntPtr GetForegroundWindow();

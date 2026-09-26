@@ -132,35 +132,55 @@ public class TerminalFileTests
 
 public class TerminalProcessTests
 {
-    [WindowsFact]
+    [PowerShellFact]
     public async Task PowerShellRunsAndTracksTheFolder()
     {
         using var folder = new TempFolder();
         Directory.CreateDirectory(Path.Combine(folder.Path, "alt"));
         var outcome = await TerminalProcess.RunAsync("Set-Location alt; Write-Output 'merhaba ğüş'", "powershell", folder.Path, 30, CancellationToken.None);
         Assert.Equal(0, outcome.ExitCode);
-        Assert.Contains("merhaba ğüş", outcome.Stdout);
+        Assert.Equal("merhaba ğüş", outcome.Stdout.Trim());
         Assert.Equal(Path.Combine(folder.Path, "alt"), outcome.EndDirectory);
     }
 
-    [WindowsFact]
+    [PowerShellFact]
     public async Task FailuresReportANonZeroExitCode()
     {
         using var folder = new TempFolder();
-        Assert.NotEqual(0, (await TerminalProcess.RunAsync("cmd /c exit 3", "powershell", folder.Path, 30, CancellationToken.None)).ExitCode);
-        Assert.NotEqual(0, (await TerminalProcess.RunAsync("Get-Item does-not-exist -ErrorAction Stop", "powershell", folder.Path, 30, CancellationToken.None)).ExitCode);
-        Assert.Equal(3, (await TerminalProcess.RunAsync("exit /b 3", "cmd", folder.Path, 30, CancellationToken.None)).ExitCode);
+        var error = await TerminalProcess.RunAsync("Get-Item does-not-exist -ErrorAction Stop", "powershell", folder.Path, 30, CancellationToken.None);
+        Assert.NotEqual(0, error.ExitCode);
+        Assert.Contains("does-not-exist", error.Stderr + error.Stdout);
+        // Like bash's "false; echo after": the last command decides the exit code, stderr shows the error.
+        var nonTerminating = await TerminalProcess.RunAsync("Get-Item does-not-exist; Write-Output after", "powershell", folder.Path, 30, CancellationToken.None);
+        Assert.Contains("after", nonTerminating.Stdout);
+        Assert.Contains("does-not-exist", nonTerminating.Stderr);
+        var lastFails = await TerminalProcess.RunAsync("Write-Output before; Get-Item does-not-exist", "powershell", folder.Path, 30, CancellationToken.None);
+        Assert.NotEqual(0, lastFails.ExitCode);
+        var native = await TerminalProcess.RunAsync(OperatingSystem.IsWindows() ? "cmd /c exit 3" : "/bin/sh -c 'exit 3'", "powershell", folder.Path, 30, CancellationToken.None);
+        Assert.Equal(3, native.ExitCode);
+        var ok = await TerminalProcess.RunAsync(OperatingSystem.IsWindows() ? "cmd /c exit 0" : "/bin/sh -c 'exit 0'", "powershell", folder.Path, 30, CancellationToken.None);
+        Assert.Equal(0, ok.ExitCode);
     }
 
     [WindowsFact]
+    public async Task CmdKeepsItsExitCode()
+    {
+        using var folder = new TempFolder();
+        Assert.Equal(3, (await TerminalProcess.RunAsync("exit /b 3", "cmd", folder.Path, 30, CancellationToken.None)).ExitCode);
+        var cd = await TerminalProcess.RunAsync("mkdir alt & cd alt", "cmd", folder.Path, 30, CancellationToken.None);
+        Assert.Equal(Path.Combine(folder.Path, "alt"), cd.EndDirectory);
+    }
+
+    [PowerShellFact]
     public async Task ATimeoutKillsTheProcess()
     {
         using var folder = new TempFolder();
         var outcome = await TerminalProcess.RunAsync("Start-Sleep -Seconds 30", "powershell", folder.Path, 2, CancellationToken.None);
         Assert.True(outcome.TimedOut);
+        Assert.True(outcome.DurationMs < 15_000);
     }
 
-    [WindowsFact]
+    [PowerShellFact]
     public async Task APlanStopsAtTheFirstFailure()
     {
         using var folder = new TempFolder();
@@ -168,12 +188,28 @@ public class TerminalProcessTests
         var result = await terminal.ExecuteAsync(Guid.NewGuid().ToString(), Grants.Request(new
         {
             action = "run_plan", grant = Grants.Signed(folder.Path),
-            steps = new object[] { new { command = "New-Item -ItemType Directory deneme | Out-Null; Set-Location deneme" }, new { command = "cmd /c exit 1" }, new { command = "Write-Output never" } }
+            steps = new object[] { new { command = "New-Item -ItemType Directory deneme | Out-Null; Set-Location deneme" }, new { command = "Get-Item missing -ErrorAction Stop" }, new { command = "Write-Output never" } }
         }));
         var value = JsonSerializer.SerializeToElement(result.Data, WireJson.Options).GetProperty("value");
         Assert.Equal("failed", result.Status);
+        Assert.Equal(0, value.GetProperty("steps")[0].GetProperty("exitCode").GetInt32());
         Assert.True(value.GetProperty("steps")[2].GetProperty("skipped").GetBoolean());
-        Assert.EndsWith("deneme", value.GetProperty("workingDirectory").GetString());
+        Assert.Equal(Path.Combine(folder.Path, "deneme"), value.GetProperty("workingDirectory").GetString());
+    }
+
+    [PowerShellFact]
+    public async Task TheSessionFolderCarriesOverAndSecretsStayOut()
+    {
+        using var folder = new TempFolder();
+        Directory.CreateDirectory(Path.Combine(folder.Path, "src"));
+        Environment.SetEnvironmentVariable("WIQO_TEST_API_TOKEN", "super-secret");
+        await using var terminal = new WindowsTerminal(() => Grants.Token, () => true);
+        var grant = Grants.Signed(folder.Path);
+        await terminal.ExecuteAsync(Guid.NewGuid().ToString(), Grants.Request(new { action = "run", grant, command = "Set-Location src" }));
+        var where = await terminal.ExecuteAsync(Guid.NewGuid().ToString(), Grants.Request(new { action = "run", grant, command = "(Get-Location).Path; \"token=$env:WIQO_TEST_API_TOKEN\"" }));
+        var stdout = JsonSerializer.SerializeToElement(where.Data, WireJson.Options).GetProperty("value").GetProperty("stdout").GetString()!;
+        Assert.Contains(Path.Combine(folder.Path, "src"), stdout);
+        Assert.DoesNotContain("super-secret", stdout);
     }
 
     [WindowsFact]

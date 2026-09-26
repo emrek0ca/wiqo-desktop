@@ -15,6 +15,15 @@ public sealed class WindowsFactAttribute : FactAttribute
     }
 }
 
+/// Needs PowerShell: Windows, or any machine with WIQO_PWSH pointing at PowerShell 7.
+public sealed class PowerShellFactAttribute : FactAttribute
+{
+    public PowerShellFactAttribute()
+    {
+        if (!OperatingSystem.IsWindows() && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WIQO_PWSH"))) Skip = "PowerShell gerekli (Windows ya da WIQO_PWSH).";
+    }
+}
+
 internal sealed class TempFolder : IDisposable
 {
     public string Path { get; } = Create();

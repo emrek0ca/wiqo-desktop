@@ -57,6 +57,14 @@ public partial class PairingWindow : Window
             bool paired;
             try { paired = await host.PairAsync(session, cancel.Token); }
             catch (OperationCanceledException) { return; }
+            catch (Exception error)
+            {
+                Log.Error("Eşleme", error);
+                countdown.Stop();
+                StatusText.Text = "Eşleşme tamamlanamadı. Yeni kod oluşturup tekrar dene.";
+                RefreshButton.IsEnabled = true;
+                return;
+            }
             if (paired)
             {
                 Paired = true;
