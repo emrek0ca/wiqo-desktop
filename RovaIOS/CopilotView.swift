@@ -1109,7 +1109,8 @@ struct CopilotView: View {
 
         if let existingBubbleID {
             setBubble(existingBubbleID) { bubble in
-                if !steps.isEmpty { bubble.steps = steps }
+                let existingStepIDs = Set(bubble.steps.map(\.id))
+                bubble.steps.append(contentsOf: steps.filter { !existingStepIDs.contains($0.id) })
                 bubble.backendConfirmations = mergedBackendConfirmations(
                     existing: bubble.backendConfirmations,
                     incoming: backendConfirmations,
@@ -2171,6 +2172,29 @@ struct CopilotView: View {
                 incoming: result.backendConfirmations,
                 executionUpdates: bubble.executionUpdates
             )
+            let pendingStates: Set<String> = [
+                "pending_local_execution",
+                "awaiting_local_confirmation",
+                "awaiting_backend_confirmation",
+                "awaiting_weather_location"
+            ]
+            if let executionState = result.executionState, !pendingStates.contains(executionState) {
+                let representedIDs = Set(bubble.steps.map(\.id))
+                    .union(bubble.backendConfirmations.map(\.id))
+                    .union(bubble.backendConfirmations.compactMap { row in
+                        bubble.executionUpdates.values.first(where: { $0.confirmationId == row.id })?.id
+                    })
+                let transientStatuses: Set<String> = [
+                    LiveExecutionStatus.ready.rawValue,
+                    LiveExecutionStatus.awaitingConfirmation.rawValue,
+                    LiveExecutionStatus.dispatching.rawValue,
+                    LiveExecutionStatus.running.rawValue
+                ]
+                let orphanedUpdateIDs = bubble.executionUpdates.compactMap { id, update in
+                    !representedIDs.contains(id) && transientStatuses.contains(update.status) ? id : nil
+                }
+                for id in orphanedUpdateIDs { bubble.executionUpdates.removeValue(forKey: id) }
+            }
             bubble.needsConfirmation = false
         }
         if let streamBubbleID, streamBubbleID != bubbleID {
