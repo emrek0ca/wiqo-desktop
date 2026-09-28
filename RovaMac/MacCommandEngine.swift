@@ -332,7 +332,7 @@ actor MacCommandEngine {
             guard case .applicationQuery(let query) = request.payload else {
                 return (nil, "Geçersiz uygulama arama isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Uygulama adı geçersiz.", category: "tool_failure"))
             }
-            let outcome = await Task.detached(priority: .userInitiated) { MacSystem.openApplicationByName(query) }.value
+            let outcome = await MacSystem.openApplicationByName(query)
             return (outcome.data, outcome.error == nil ? "\(query) açıldı." : outcome.error!.message, outcome.error)
         case .controlApplication:
             guard case .applicationControl(let application) = request.payload else {
@@ -371,8 +371,8 @@ actor MacCommandEngine {
             guard case .url(let value) = request.payload else {
                 return (nil, "Geçersiz URL isteği.", RovaError(code: "INVALID_PAYLOAD", message: "URL payload’ı geçersiz."))
             }
-            let error = await Task.detached(priority: .userInitiated) { MacSystem.openURL(value) }.value
-            return (nil, error == nil ? "URL açıldı." : error!.message, error)
+            let outcome = await MacSystem.openURL(value)
+            return (nil, outcome.error?.message ?? (outcome.browser.map { "URL \($0) içinde açıldı." } ?? "URL açıldı."), outcome.error)
         case .lockMac:
             let error = await Task.detached(priority: .userInitiated) { MacSystem.lockMac() }.value
             return (nil, error == nil ? "Mac kilitlendi." : error!.message, error)

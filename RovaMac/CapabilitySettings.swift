@@ -106,11 +106,55 @@ final class CapabilityStore: ObservableObject {
     }
 }
 
+/// "Tam yetki": while on, the backend's PC agent may run multi-step tasks on this Mac without a
+/// per-command phone signature or confirmation. Only the person at this Mac can turn it on; it
+/// is off by default, shown in the menu bar while on, and one click turns it off again. The
+/// capability switches above still apply to every agent command.
+@MainActor
+final class AgentAccessStore: ObservableObject {
+    static let shared = AgentAccessStore()
+    /// Registration feature the backend looks for (rova-backend src/agent/pcAgent.ts).
+    static let feature = "agent.fullAccess"
+    private static let key = "wiqo.agentFullAccess"
+
+    @Published private(set) var isEnabled: Bool
+    /// The agent step running right now, for the menu bar.
+    @Published private(set) var currentStep: String?
+    @Published private(set) var completedSteps = 0
+
+    private init() {
+        isEnabled = UserDefaults.standard.bool(forKey: Self.key)
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        guard enabled != isEnabled else { return }
+        isEnabled = enabled
+        if !enabled { currentStep = nil }
+        UserDefaults.standard.set(enabled, forKey: Self.key)
+    }
+
+    func stepStarted(_ label: String) { currentStep = label }
+
+    func stepFinished() {
+        currentStep = nil
+        completedSteps += 1
+    }
+}
+
 struct CapabilitiesSettingsView: View {
     @ObservedObject private var store = CapabilityStore.shared
+    @ObservedObject private var agentAccess = AgentAccessStore.shared
 
     var body: some View {
         Form {
+            Section {
+                Toggle(isOn: Binding(get: { agentAccess.isEnabled }, set: { agentAccess.setEnabled($0) })) {
+                    Label("Tam yetki (onaysız PC ajanı)", systemImage: "bolt.shield")
+                }
+                Text("Açıkken Wiqo çok adımlı işleri bu Mac'te telefon onayı beklemeden, adım adım yürütür. Aşağıda kapattığın yetenekler yine kullanılamaz. Menü çubuğundan tek tıkla kapatabilirsin.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section {
                 Text("Kapatılan bir yetenek için Wiqo o aracı hiç görmez; en yakın telefon bağlantısından itibaren geçerli olur.")
                     .font(.caption)

@@ -26,13 +26,32 @@ public sealed class CapabilitySettings
     private readonly string path;
     private readonly object gate = new();
     private HashSet<string> disabled;
+    private bool agentFullAccess;
 
     public event Action? Changed;
 
     public CapabilitySettings(string? path = null)
     {
         this.path = path ?? Path.Combine(WindowsPaths.RoamingDirectory, "capabilities.json");
-        disabled = Load(this.path);
+        (disabled, agentFullAccess) = Load(this.path);
+    }
+
+    /// "Tam yetki" (RovaMac AgentAccessStore): while on, the backend's PC agent runs multi-step
+    /// tasks here without a per-command phone signature or confirmation. Off by default; the
+    /// capability groups above still apply to every agent command.
+    public bool AgentFullAccess
+    {
+        get { lock (gate) return agentFullAccess; }
+        set
+        {
+            lock (gate)
+            {
+                if (agentFullAccess == value) return;
+                agentFullAccess = value;
+                Save();
+            }
+            Changed?.Invoke();
+        }
     }
 
     public bool IsEnabled(string capability)
@@ -78,20 +97,22 @@ public sealed class CapabilitySettings
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var temporary = path + ".tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(new { disabled = disabled.Order(StringComparer.Ordinal).ToArray() }));
+            File.WriteAllText(temporary, JsonSerializer.Serialize(new { disabled = disabled.Order(StringComparer.Ordinal).ToArray(), agentFullAccess }));
             File.Move(temporary, path, true);
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }
 
-    private static HashSet<string> Load(string path)
+    private static (HashSet<string> Disabled, bool AgentFullAccess) Load(string path)
     {
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllText(path));
-            return document.RootElement.GetProperty("disabled").EnumerateArray().Select(item => item.GetString() ?? "").Where(item => item.Length > 0).ToHashSet(StringComparer.Ordinal);
+            var disabled = document.RootElement.GetProperty("disabled").EnumerateArray().Select(item => item.GetString() ?? "").Where(item => item.Length > 0).ToHashSet(StringComparer.Ordinal);
+            var fullAccess = document.RootElement.TryGetProperty("agentFullAccess", out var flag) && flag.ValueKind == JsonValueKind.True;
+            return (disabled, fullAccess);
         }
-        catch { return new HashSet<string>(StringComparer.Ordinal); }
+        catch { return (new HashSet<string>(StringComparer.Ordinal), false); }
     }
 }

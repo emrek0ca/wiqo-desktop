@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		F10000000000000000000001 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000014 /* Fonts */; };
+		F10000000000000000000002 /* KaTeX in Resources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000015 /* KaTeX */; };
 		0389568031C30301F5AA9324 /* AutomationDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 700F9BED6A26B2075241440C /* AutomationDetailView.swift */; };
 		1D26C79A99868523A4ECB1D0 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3316E23CDB65A96A8283CF08 /* AuthView.swift */; };
 		2113ACCAC0B15E6D73621D1B /* ReplyBlocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB41EC457885DC642E7B033 /* ReplyBlocks.swift */; };
@@ -244,6 +245,7 @@
 		D3000000000000000000006B /* MacRelayPairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelayPairingTests.swift; sourceTree = "<group>"; };
 		F028 /* project.pbxproj */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = project.pbxproj; sourceTree = "<group>"; };
 		F10000000000000000000014 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Fonts; sourceTree = "<group>"; };
+		F10000000000000000000015 /* KaTeX */ = {isa = PBXFileReference; lastKnownFileType = folder; path = KaTeX; sourceTree = "<group>"; };
 		F029 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = text; path = README.md; sourceTree = "<group>"; };
 		F030 /* DocumentEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentEngine.swift; sourceTree = "<group>"; };
 		F031 /* OperationManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperationManifest.swift; sourceTree = "<group>"; };
@@ -398,6 +400,7 @@
 				8E470424BA1B9926C7F1169F /* CanvasView.swift */,
 				D40ECA86D390584A080B280F /* Localizable.strings */,
 				F10000000000000000000014 /* Fonts */,
+				F10000000000000000000015 /* KaTeX */,
 			);
 			path = RovaIOS;
 			sourceTree = "<group>";
@@ -611,6 +614,7 @@
 				CC224180A9C29B5B70DB3EC0 /* Localizable.strings in Resources */,
 				D20000000000000000000028 /* PrivacyInfo.xcprivacy in Resources */,
 				F10000000000000000000001 /* Fonts in Resources */,
+				F10000000000000000000002 /* KaTeX in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

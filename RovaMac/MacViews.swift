@@ -4,6 +4,7 @@ import SwiftUI
 
 struct MacMenuView: View {
     @ObservedObject var runtime: MacRuntime
+    @ObservedObject private var agentAccess = AgentAccessStore.shared
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -20,6 +21,17 @@ struct MacMenuView: View {
                 failureActions
             } else if let detail = runtime.startupDetail, runtime.serviceState != .starting {
                 Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+            if agentAccess.isEnabled {
+                Divider()
+                Label(agentAccess.currentStep.map { "Ajan çalışıyor: \($0)" } ?? "Tam yetki açık", systemImage: "bolt.shield.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.orange)
+                Button {
+                    agentAccess.setEnabled(false)
+                } label: {
+                    Label("Durdur ve tam yetkiyi kapat", systemImage: "stop.circle")
+                }
             }
             Divider()
             Button {

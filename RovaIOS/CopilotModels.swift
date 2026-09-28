@@ -47,6 +47,7 @@ struct ChatBubble: Identifiable {
     var executedStepIDs: Set<UUID> = []
     var inFlightStepIDs: Set<UUID> = []
     var artifacts: [RovaBackendClient.ArtifactDescriptor] = []
+    var widgets: [RovaBackendClient.CopilotResultWidget] = []
     var executionState: String? = nil
     var backendConfirmations: [BackendConfirmationRow] = []
     var executionUpdates: [UUID: RovaBackendClient.ExecutionStepUpdate] = [:]

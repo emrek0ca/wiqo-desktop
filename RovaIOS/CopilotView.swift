@@ -80,6 +80,7 @@ struct CopilotView: View {
     /// stops following, reaching the bottom again resumes it. Nothing ever yanks the view down.
     @State private var followsLatest = true
     @State private var bottomVisible = true
+    @State private var lastAutoScrollUptime: TimeInterval = 0
     @State private var scrollToLatestRequest = 0
     @State private var previewURL: URL?
     @State private var openingArtifactID: String?
@@ -91,6 +92,7 @@ struct CopilotView: View {
     @State private var confirmationHandledExplicitly = false
     @State private var isGrantingTrust = false
     @State private var isConfirming = false
+    @State private var widgetDestination: CopilotWidgetDestination?
 
     /// Set only when this conversation should open with one prompt already sitting in the
     /// composer - e.g. picking an automation template. Pre-fills and focuses the composer so the
@@ -113,7 +115,7 @@ struct CopilotView: View {
             case .assistant: role = .assistant
             case .system: role = .system
             }
-            var bubble = ChatBubble(role: role, text: stored.text, artifacts: stored.artifacts ?? [], attachmentThumbnails: stored.attachmentThumbnails ?? [])
+            var bubble = ChatBubble(role: role, text: stored.text, artifacts: stored.artifacts ?? [], widgets: stored.widgets ?? [], attachmentThumbnails: stored.attachmentThumbnails ?? [])
             bubble.thinking = stored.thinking
             bubble.attachedFileNames = stored.fileNames ?? []
             bubble.deferredTask = stored.deferredTask
@@ -206,6 +208,23 @@ struct CopilotView: View {
             }
         )) {
             confirmationSheetContent
+        }
+        .sheet(item: $widgetDestination) { destination in
+            NavigationStack {
+                Group {
+                    switch destination {
+                    case .agents:
+                        NamedAgentsView()
+                    case .automation(let automation):
+                        AutomationDetailView(automation: automation)
+                    }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Kapat") { widgetDestination = nil }
+                    }
+                }
+            }
         }
         .onDisappear {
             persistConversation()
@@ -359,7 +378,6 @@ struct CopilotView: View {
                         .id(Self.bottomAnchorID)
                         .onAppear {
                             bottomVisible = true
-                            followsLatest = true
                         }
                         .onDisappear { bottomVisible = false }
                 }
@@ -369,11 +387,19 @@ struct CopilotView: View {
             .scrollDismissesKeyboard(.interactively)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 8)
-                    .onChanged { _ in followsLatest = false }
-                    .onEnded { _ in followsLatest = bottomVisible }
+                    .onChanged { _ in
+                        followsLatest = false
+                    }
+                    .onEnded { _ in
+                        followsLatest = bottomVisible
+                        if followsLatest {
+                            proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                        }
+                    }
             )
             .onChange(of: scrollToLatestRequest) { _, _ in
                 followsLatest = true
+                lastAutoScrollUptime = ProcessInfo.processInfo.systemUptime
                 withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom) }
             }
             .onChange(of: liveReply.displayed) { _, text in
@@ -382,17 +408,30 @@ struct CopilotView: View {
                     persistConversation()
                 }
                 guard followsLatest else { return }
-                proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                followLatestIfNeeded(using: proxy)
             }
             .onChange(of: thinking.steps.count) { _, _ in
                 guard followsLatest else { return }
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom) }
+                followLatestIfNeeded(using: proxy)
             }
             .onChange(of: bubbles.count) { _, _ in
                 guard followsLatest else { return }
+                followLatestIfNeeded(using: proxy)
+            }
+            .onChange(of: isSending) { _, sending in
+                guard !sending, followsLatest else { return }
                 proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
             }
         }
+    }
+
+    /// Streaming text arrives in small batches. A short, non-animated cadence keeps the newest
+    /// content in view without issuing a scroll command for every delta or task event.
+    private func followLatestIfNeeded(using proxy: ScrollViewProxy) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard followsLatest, now - lastAutoScrollUptime >= 0.12 else { return }
+        lastAutoScrollUptime = now
+        proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
     }
 
     /// A plain answer is one sentence about what is happening right now; a task grows into a
@@ -456,11 +495,20 @@ struct CopilotView: View {
                 }
                 // No bubble chrome for the assistant, matching ChatGPT/Gemini: clean, full-width,
                 // block-structured content rather than a colored speech bubble.
-                ReplyBlocksView(
-                    text: bubble.text,
-                    artifacts: bubble.artifacts,
-                    isStreaming: bubble.id == liveReplyBubbleID
-                )
+                if !bubble.widgets.contains(where: { $0.presentation == "widget_only" }) {
+                    ReplyBlocksView(
+                        text: bubble.text,
+                        artifacts: bubble.artifacts,
+                        isStreaming: bubble.id == liveReplyBubbleID
+                    )
+                }
+                ForEach(bubble.widgets.indices, id: \.self) { index in
+                    let widget = bubble.widgets[index]
+                    CopilotResultWidgetView(widget: widget) {
+                        openCreatedResource(widget)
+                    }
+                    .padding(.horizontal)
+                }
                 if let task = bubble.deferredTask {
                     DeferredTaskRow(task: task)
                         .padding(.horizontal)
@@ -1243,10 +1291,8 @@ struct CopilotView: View {
         }
     }
 
-    /// `awaitingSave` reflects the bubble's actual pending-confirmation state - previously this
-    /// caption was static and shown "Mac onayı bekleniyor" even when no save was ever queued
-    /// (e.g. the turn ran out of time before save_artifact was called), which read as a save
-    /// silently stuck rather than a save that was never attempted.
+    /// `awaitingSave` reflects the bubble's actual pending-confirmation state, so the pending
+    /// label only appears when a PC save is genuinely waiting for approval.
     /// A picture, chart, or PDF renders right in the conversation (see ArtifactPreview.swift);
     /// anything else (Word/Excel/CSV/etc.) keeps the tap-to-open file row - there's no useful
     /// inline form of a spreadsheet, so it isn't worth inventing one.
@@ -1263,10 +1309,12 @@ struct CopilotView: View {
                     }
                 }
             }
-            Text(awaitingSave ? "PC'ye kaydetmek için onayını bekliyor." : "Dosyayı açıp paylaşabilirsin. PC'ye kaydetmemi istersen söylemen yeterli.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
+            if awaitingSave {
+                Label("PC kaydı için onay bekleniyor", systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1574,10 +1622,16 @@ struct CopilotView: View {
                 files: files,
                 createAgent: createAgent,
                 onStatus: { text in thinking.note(text) },
-                // Model-turn deltas are provisional. Reveal only the terminal reply below so a
-                // repair/planning turn can never replace text already shown to the user.
-                onDelta: { _ in },
-                onReset: {},
+                // Only the current SSE generation is visible. A reset clears its provisional
+                // text; the terminal event below remains the authoritative reconciliation.
+                onDelta: { text in liveReply.append(text) },
+                onReset: {
+                    liveReply.reset()
+                    if let liveReplyBubbleID {
+                        setBubble(liveReplyBubbleID) { $0.text = "" }
+                        persistConversation()
+                    }
+                },
                 onConfirmationNeeded: { steps, backendConfirmations in
                     earlyConfirmationBubbleID = presentEarlyConfirmationIfNeeded(
                         steps: steps,
@@ -1601,14 +1655,19 @@ struct CopilotView: View {
                         persona: activity.persona
                     )
                 },
+                onLocationRequired: { requestID in
+                    await RovaBackendClient.requestAndContinueCopilotWeatherLocation(requestID: requestID)
+                },
                 onUsage: { used, limit in
                     subscriptionStore.applyMessageUsage(used: used, limit: limit)
                 }
             )
-            let replyText = result.reply.isEmpty ? "Bakıyorum…" : result.reply
+            let replyText = result.reply.isEmpty
+                ? (liveReply.currentText.isEmpty ? "Bakıyorum…" : liveReply.currentText)
+                : result.reply
             let replyBubbleID = earlyConfirmationBubbleID ?? responseBubble.id
             commitThinking(to: replyBubbleID)
-            await liveReply.finish(with: replyText)
+            liveReply.finish(with: replyText)
             setBubble(replyBubbleID) { bubble in
                 // Reconcile the terminal result into the in-flight bubble. Existing execution
                 // rows are kept so an early confirmation remains attached to this same reply.
@@ -1620,6 +1679,7 @@ struct CopilotView: View {
                 bubble.projectTask = result.projectTask
                 bubble.agentTask = result.agentTask
                 bubble.artifacts = result.artifacts
+                bubble.widgets = result.widgets
                 bubble.backendConfirmations = mergedBackendConfirmations(
                     existing: bubble.backendConfirmations,
                     incoming: result.backendConfirmations,
@@ -1955,8 +2015,12 @@ struct CopilotView: View {
                 deviceResults: localResults,
                 requestID: UUID(),
                 onStatus: { text in thinking.note(text) },
-                onDelta: { _ in },
-                onReset: {},
+                onDelta: { text in liveReply.append(text) },
+                onReset: {
+                    liveReply.reset()
+                    setBubble(bubbleID) { $0.text = "" }
+                    persistConversation()
+                },
                 onConfirmationNeeded: { steps, backendConfirmations in
                     earlyConfirmationBubbleID = presentEarlyConfirmationIfNeeded(
                         steps: steps,
@@ -1980,13 +2044,18 @@ struct CopilotView: View {
                         persona: activity.persona
                     )
                 },
+                onLocationRequired: { requestID in
+                    await RovaBackendClient.requestAndContinueCopilotWeatherLocation(requestID: requestID)
+                },
                 onUsage: { used, limit in
                     subscriptionStore.applyMessageUsage(used: used, limit: limit)
                 }
             )
-            let replyText = result.reply.isEmpty ? "Bakıyorum…" : result.reply
+            let replyText = result.reply.isEmpty
+                ? (liveReply.currentText.isEmpty ? "Bakıyorum…" : liveReply.currentText)
+                : result.reply
             commitThinking(to: bubbleID)
-            await liveReply.finish(with: replyText)
+            liveReply.finish(with: replyText)
             mergeContinuationResult(result, into: bubbleID, streamBubbleID: earlyConfirmationBubbleID, text: replyText)
             liveReplyBubbleID = nil
             liveReply.reset()
@@ -2043,6 +2112,14 @@ struct CopilotView: View {
             bubble.steps.append(contentsOf: result.steps.filter { !existingStepIDs.contains($0.id) })
             let existingArtifactIDs = Set(bubble.artifacts.map(\.id))
             bubble.artifacts.append(contentsOf: result.artifacts.filter { !existingArtifactIDs.contains($0.id) })
+            for widget in result.widgets {
+                if widget.type == .weather {
+                    bubble.widgets.removeAll { $0.type == .weather }
+                    bubble.widgets.append(widget)
+                } else if !bubble.widgets.contains(widget) {
+                    bubble.widgets.append(widget)
+                }
+            }
             bubble.text = text
             bubble.executionState = result.executionState
             bubble.replyIsProgress = result.replyIsProgress
@@ -2331,7 +2408,7 @@ struct CopilotView: View {
             case .assistant: role = .assistant
             case .system: role = .system
             }
-            return ChatBubble(role: role, text: item.text, artifacts: item.artifacts ?? [])
+            return ChatBubble(role: role, text: item.text, artifacts: item.artifacts ?? [], widgets: item.widgets ?? [])
         }
         turnCount = summary.turnCount
         CopilotConversationStore.saveTurnCount(summary.turnCount, for: conversationID)
@@ -2449,6 +2526,26 @@ struct CopilotView: View {
         }
     }
 
+    private func openCreatedResource(_ widget: RovaBackendClient.CopilotResultWidget) {
+        guard widget.type == .created_resource,
+              let resourceType = widget.resourceType,
+              let resourceID = widget.id else { return }
+
+        switch resourceType {
+        case .agent:
+            widgetDestination = .agents
+        case .automation:
+            widgetDestination = .automation(RovaBackendClient.RovaAutomation(
+                id: resourceID,
+                prompt: widget.detail ?? widget.title ?? "Otomasyon",
+                cron: widget.schedule ?? "",
+                isActive: widget.status == "active",
+                nextRunAt: widget.nextRunAt,
+                scheduleLabel: widget.scheduleLabel
+            ))
+        }
+    }
+
     private func persistConversation() {
         let stored = bubbles.map { bubble -> CopilotStoredMessage in
             let role: CopilotStoredMessage.Role
@@ -2461,6 +2558,7 @@ struct CopilotView: View {
                 role: role,
                 text: bubble.text,
                 artifacts: bubble.artifacts.isEmpty ? nil : bubble.artifacts,
+                widgets: bubble.widgets.isEmpty ? nil : bubble.widgets,
                 attachmentThumbnails: bubble.attachmentThumbnails.isEmpty ? nil : bubble.attachmentThumbnails,
                 thinking: bubble.thinking,
                 fileNames: bubble.attachedFileNames.isEmpty ? nil : bubble.attachedFileNames,
@@ -2478,5 +2576,586 @@ private extension JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         return encoder
+    }
+}
+
+private enum CopilotWidgetDestination: Identifiable {
+    case agents
+    case automation(RovaBackendClient.RovaAutomation)
+
+    var id: String {
+        switch self {
+        case .agents: return "agents"
+        case .automation(let automation): return "automation-\(automation.id)"
+        }
+    }
+}
+
+private struct CopilotResultWidgetView: View {
+    let widget: RovaBackendClient.CopilotResultWidget
+    let onTap: () -> Void
+    @State private var isExpanded = false
+
+    @ViewBuilder
+    var body: some View {
+        switch widget.type {
+        case .created_resource:
+            createdResourceCard
+        case .weather:
+            weatherCard
+        case .sources:
+            sourcesCard
+        }
+    }
+
+    private var sourcesCard: some View {
+        let sources = Array((widget.sources ?? []).prefix(8))
+
+        return VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 11) {
+                    Image(systemName: "text.book.closed")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 42, height: 42)
+                        .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Kaynaklar")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text("\(sources.count) kaynak")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Kaynaklar, \(sources.count) bağlantı")
+            .accessibilityValue(isExpanded ? "Ayrıntılar açık" : "Ayrıntılar kapalı")
+            .accessibilityHint("Kaynak bağlantılarını göstermek veya gizlemek için dokunun")
+
+            if isExpanded {
+                Divider().padding(.horizontal, 12)
+                VStack(spacing: 0) {
+                    ForEach(sources.indices, id: \.self) { index in
+                        let source = sources[index]
+                        if let url = safeSourceURL(source.url) {
+                            Link(destination: url) {
+                                sourceRow(source)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Kaynak bağlantısını açar")
+                        } else {
+                            sourceRow(source)
+                        }
+                        if index < sources.count - 1 {
+                            Divider().padding(.leading, 54)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(widgetCardBackground)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func sourceRow(_ source: RovaBackendClient.CopilotResultWidget.Source) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "link")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 42, height: 38)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(displaySourceText(source.title) ?? sourceHost(source.url) ?? "Web kaynağı")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                HStack(spacing: 5) {
+                    if let host = sourceHost(source.url) {
+                        Text(host)
+                    }
+                    if let published = displaySourceText(source.published) {
+                        if sourceHost(source.url) != nil { Text("·") }
+                        Text(published)
+                            .lineLimit(1)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if safeSourceURL(source.url) != nil {
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 3)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private func safeSourceURL(_ value: String) -> URL? {
+        guard let url = URL(string: value),
+              let scheme = url.scheme?.lowercased(), ["https", "http"].contains(scheme),
+              let host = url.host, !host.isEmpty, url.user == nil, url.password == nil else { return nil }
+        return url
+    }
+
+    private func sourceHost(_ value: String) -> String? {
+        guard let host = safeSourceURL(value)?.host else { return nil }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
+    private func displaySourceText(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var createdResourceCard: some View {
+        let isAgent = widget.resourceType == .agent
+        let title = isAgent
+            ? (widget.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Yeni ajan")
+            : "Otomasyon"
+        let summary = widget.detail.flatMap { $0.isEmpty ? nil : $0 }
+            ?? widget.scheduleLabel.flatMap { $0.isEmpty ? nil : $0 }
+        let detailTitle = isAgent ? "Görev" : "İstek"
+
+        return VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                HStack(alignment: .center, spacing: 12) {
+                    createdResourceMark(isAgent: isAgent)
+
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(spacing: 8) {
+                            Text(isAgent ? "AJAN" : "OTOMASYON")
+                                .font(.caption2.weight(.bold))
+                                .tracking(0.6)
+                                .foregroundStyle(.secondary)
+                            Spacer(minLength: 4)
+                            statusBadge
+                        }
+
+                        Text(title)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+
+                        if let summary {
+                            Text(summary)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                        }
+                    }
+                    Spacer(minLength: 2)
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                        .frame(width: 24, height: 44)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(isAgent ? "Ajan" : "Otomasyon"): \(title)\(summary.map { ". \($0)" } ?? "")")
+            .accessibilityValue(isExpanded ? "Ayrıntılar açık" : "Ayrıntılar kapalı")
+            .accessibilityHint("Ayrıntıları göstermek veya gizlemek için dokunun")
+
+            if isExpanded {
+                Divider().padding(.horizontal, 14)
+                VStack(alignment: .leading, spacing: 14) {
+                    if let detail = widget.detail, !detail.isEmpty {
+                        resourceDetailRow(detailTitle, value: detail)
+                    }
+                    if let schedule = widget.scheduleLabel, !schedule.isEmpty,
+                       let nextRunAt = widget.nextRunAt, !nextRunAt.isEmpty {
+                        HStack(alignment: .top, spacing: 10) {
+                            resourceInfoCard("Zamanlama", value: schedule, symbol: "clock")
+                            resourceInfoCard(
+                                "Sonraki çalışma",
+                                value: formattedDate(nextRunAt, timezone: widget.timezone),
+                                symbol: "calendar"
+                            )
+                        }
+                    } else if let schedule = widget.scheduleLabel, !schedule.isEmpty {
+                        resourceInfoCard("Zamanlama", value: schedule, symbol: "clock")
+                    } else if let nextRunAt = widget.nextRunAt, !nextRunAt.isEmpty {
+                        resourceInfoCard(
+                            "Sonraki çalışma",
+                            value: formattedDate(nextRunAt, timezone: widget.timezone),
+                            symbol: "calendar"
+                        )
+                    }
+                    Button(action: onTap) {
+                        Label(isAgent ? "Ajanlarımda aç" : "Otomasyon ayrıntısını aç", systemImage: "arrow.up.right.square")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 46)
+                            .contentShape(Rectangle())
+                            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(widgetCardBackground)
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func createdResourceMark(isAgent: Bool) -> some View {
+        if isAgent {
+            WiqoAgentMascot(widget.persona, size: 36)
+                .accessibilityHidden(true)
+                .frame(width: 48, height: 48)
+        } else {
+            Image(systemName: "clock.badge.checkmark")
+                .font(.system(size: 21, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 48, height: 48)
+                .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func resourceInfoCard(_ title: String, value: String, symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            Text(value)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
+        .padding(12)
+        .background(Color(uiColor: .tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var weatherCard: some View {
+        let current = widget.current
+        let days = Array((widget.days ?? []).prefix(3))
+        let hours = Array((widget.hourly ?? []).prefix(24))
+
+        return VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(widget.location ?? "Hava durumu")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        Text(current?.condition ?? "Güncel hava")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: weatherSymbol(current?.weatherCode))
+                        .symbolRenderingMode(.hierarchical)
+                        .font(.system(size: 30, weight: .regular))
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(temperature(current?.temperatureC))
+                            .font(.system(.largeTitle, design: .rounded, weight: .medium))
+                            .monospacedDigit()
+                            .lineLimit(1)
+                        Text("Hissedilen \(temperature(current?.feelsLikeC))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(widget.location ?? "Hava durumu"), \(current?.condition ?? "güncel hava"), \(temperature(current?.temperatureC))")
+            .accessibilityValue(isExpanded ? "Ayrıntılar açık" : "Ayrıntılar kapalı")
+            .accessibilityHint("Tahmini göstermek veya gizlemek için dokunun")
+
+            if isExpanded {
+                Divider().padding(.horizontal, 16)
+                VStack(alignment: .leading, spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
+                        weatherMetric("Hissedilen", value: temperature(current?.feelsLikeC), symbol: "thermometer.medium")
+                        weatherMetric("Nem", value: percent(current?.humidityPercent), symbol: "humidity")
+                        weatherMetric("Rüzgâr", value: wind(current?.windKmh), symbol: "wind")
+                    }
+
+                    if !hours.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Saatlik · 24 saat")
+                                .font(.subheadline.weight(.semibold))
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                LazyHStack(spacing: 8) {
+                                    ForEach(Array(hours.enumerated()), id: \.offset) { _, hour in
+                                        hourlyForecastCell(hour)
+                                    }
+                                }
+                                .padding(.vertical, 1)
+                            }
+                            .accessibilityLabel("Önümüzdeki 24 saatin saatlik hava tahmini")
+                        }
+                    }
+
+                    if !days.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("3 günlük tahmin")
+                                .font(.subheadline.weight(.semibold))
+                            HStack(alignment: .top, spacing: 8) {
+                                ForEach(Array(days.enumerated()), id: \.offset) { _, day in
+                                    dailyForecastCell(day)
+                                        .frame(maxWidth: .infinity)
+                                }
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 6) {
+                        Text(widget.source ?? "Hava durumu verisi")
+                        if let observedAt = current?.observedAt, let localTime = localTime(observedAt) {
+                            Text("·")
+                            Text("Güncellendi \(localTime)")
+                        }
+                        if let timezone = widget.timezone, !timezone.isEmpty {
+                            Text("·")
+                            Text(timezone)
+                                .lineLimit(1)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(widgetCardBackground)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func weatherMetric(_ title: String, value: String, symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: symbol)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Text(value)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Color(uiColor: .tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func hourlyForecastCell(_ hour: RovaBackendClient.CopilotResultWidget.WeatherHour) -> some View {
+        VStack(spacing: 7) {
+            Text(localTime(hour.time) ?? "—")
+                .font(.caption.weight(.medium).monospacedDigit())
+                .foregroundStyle(.secondary)
+            Image(systemName: weatherSymbol(hour.weatherCode))
+                .font(.body)
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
+            Text(temperature(hour.temperatureC))
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.primary)
+            if let rain = hour.rainChancePercent {
+                Label("\(Int(rain.rounded()))%", systemImage: "drop.fill")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.blue)
+                    .lineLimit(1)
+            } else {
+                Text(" ").font(.caption2)
+            }
+        }
+        .frame(width: 62)
+        .frame(minHeight: 92)
+        .padding(.vertical, 8)
+        .background(Color(uiColor: .tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func dailyForecastCell(_ day: RovaBackendClient.CopilotResultWidget.WeatherDay) -> some View {
+        VStack(spacing: 6) {
+            Text(weekday(day.date, timezone: widget.timezone))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Image(systemName: weatherSymbol(day.weatherCode))
+                .font(.body)
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
+            HStack(spacing: 5) {
+                Text(temperature(day.maxC)).foregroundStyle(.primary)
+                Text(temperature(day.minC)).foregroundStyle(.secondary)
+            }
+            .font(.caption.monospacedDigit())
+            if let rain = day.rainChancePercent {
+                Label("\(Int(rain.rounded()))%", systemImage: "drop.fill")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.blue)
+                    .lineLimit(1)
+            }
+            if let rainMm = day.rainMm, rainMm > 0 {
+                Text("\(rainAmount(rainMm)) mm")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 92)
+        .padding(8)
+        .background(Color(uiColor: .tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(weekday(day.date, timezone: widget.timezone)), \(day.condition), en yüksek \(temperature(day.maxC)), en düşük \(temperature(day.minC)), yağış olasılığı \(percent(day.rainChancePercent))")
+    }
+
+    private var statusBadge: some View {
+        let isActive = widget.status == "active"
+        return Text(isActive ? "Etkin" : (widget.status ?? "Durum bilinmiyor"))
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(isActive ? Color.green : Color.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background((isActive ? Color.green : Color.secondary).opacity(0.1), in: Capsule())
+            .fixedSize()
+    }
+
+    private var widgetCardBackground: some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(Color(uiColor: .secondarySystemGroupedBackground))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+            }
+    }
+
+    private func resourceDetailRow(_ title: String, value: String, symbol: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let symbol {
+                Label(title, systemImage: symbol)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func temperature(_ value: Double?) -> String {
+        value.map { "\(Int($0.rounded()))°" } ?? "—"
+    }
+
+    private func percent(_ value: Double?) -> String {
+        value.map { "\(Int($0.rounded()))%" } ?? "—"
+    }
+
+    private func wind(_ value: Double?) -> String {
+        value.map { "\(Int($0.rounded())) km/sa" } ?? "—"
+    }
+
+    private func rainAmount(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0...1)))
+    }
+
+    private func weekday(_ value: String, timezone: String?) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "tr_TR")
+        formatter.timeZone = timezone.flatMap { TimeZone(identifier: $0) } ?? .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        guard let date = formatter.date(from: String(value.prefix(10))) else { return String(value.prefix(3)) }
+        formatter.dateFormat = "EEE"
+        return formatter.string(from: date).capitalized
+    }
+
+    private func localTime(_ value: String) -> String? {
+        guard let separator = value.firstIndex(of: "T") else { return nil }
+        let time = value[value.index(after: separator)...].prefix(5)
+        return time.count == 5 ? String(time) : nil
+    }
+
+    private func formattedDate(_ value: String, timezone: String?) -> String {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var date = iso.date(from: value)
+        if date == nil {
+            iso.formatOptions = [.withInternetDateTime]
+            date = iso.date(from: value)
+        }
+        guard let date else { return value }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "tr_TR")
+        formatter.timeZone = timezone.flatMap { TimeZone(identifier: $0) } ?? .current
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func weatherSymbol(_ code: Int?) -> String {
+        guard let code else { return "cloud.fill" }
+        switch code {
+        case 0: return "sun.max.fill"
+        case 1, 2: return "cloud.sun.fill"
+        case 3: return "cloud.fill"
+        case 45, 48: return "cloud.fog.fill"
+        case 51...57: return "cloud.drizzle.fill"
+        case 61...67, 80...82: return "cloud.rain.fill"
+        case 71...77, 85...86: return "cloud.snow.fill"
+        case 95...99: return "cloud.bolt.rain.fill"
+        default: return "cloud.fill"
+        }
     }
 }

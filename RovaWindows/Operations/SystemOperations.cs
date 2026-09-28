@@ -7,6 +7,43 @@ namespace RovaWindows.Operations;
 /// shapes are the Mac's CommandData values (SystemStatus, PingData, ScreenshotContent, ...).
 internal static class SystemOperations
 {
+    /// Browsers a URL may be handed to directly (process name without .exe -> display name).
+    private static readonly Dictionary<string, string> Browsers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["chrome"] = "Google Chrome", ["msedge"] = "Microsoft Edge", ["firefox"] = "Firefox", ["brave"] = "Brave",
+        ["opera"] = "Opera", ["vivaldi"] = "Vivaldi", ["arc"] = "Arc", ["zen"] = "Zen"
+    };
+
+    /// Opens the address in the browser in front (the one the previous step just opened, say);
+    /// otherwise in the default browser - the RovaMac openURL behaviour.
+    internal static Outcome OpenUrl(string url)
+    {
+        var address = new Uri(url).AbsoluteUri;
+        try
+        {
+            var window = NativeMethods.GetForegroundWindow();
+            if (window != IntPtr.Zero && NativeMethods.GetWindowThreadProcessId(window, out var processId) != 0)
+            {
+                using var front = System.Diagnostics.Process.GetProcessById((int)processId);
+                if (Browsers.TryGetValue(front.ProcessName, out var name) && front.MainModule?.FileName is { Length: > 0 } executable)
+                {
+                    using var started = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(executable) { UseShellExecute = false, ArgumentList = { address } });
+                    return Outcome.Ok($"URL {name} içinde açıldı.");
+                }
+            }
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or ArgumentException) { }
+        try
+        {
+            using (System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(address) { UseShellExecute = true })) { }
+            return Outcome.Ok("URL varsayılan tarayıcıda açıldı.");
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return Outcome.Fail("URL_OPEN_FAILED", "Bu adresi açacak tarayıcı bulunamadı.");
+        }
+    }
+
     internal static Outcome Ping() => Outcome.WithData("ping", new { serverTime = DateTimeOffset.UtcNow }, "Pong.");
 
     internal static Outcome Status(string runtimeStatus)

@@ -2,13 +2,13 @@ import PDFKit
 import SwiftUI
 import WebKit
 
-/// Whether an artifact can render directly in the conversation - a picture, a generated chart, or
+/// Whether an artifact can render directly in the conversation - a picture, vector drawing, chart, or
 /// a document's first page - instead of only ever showing as a tap-to-open file row. Anything
 /// else (Word/Excel/CSV/etc.) keeps the file-card treatment; there's no useful "inline" form of a
 /// spreadsheet, and forcing one would just be complexity for its own sake.
 enum ArtifactInlineKind {
     case image
-    case vectorChart
+    case vector
     case pdf
     /// A self-contained page Wiqo built (project website or slide deck), previewed as a live app.
     case html
@@ -18,7 +18,7 @@ enum ArtifactInlineKind {
         if mimeType.hasPrefix("text/html") {
             self = .html
         } else if mimeType == "image/svg+xml" {
-            self = .vectorChart
+            self = .vector
         } else if mimeType.hasPrefix("image/") {
             self = .image
         } else if mimeType == "application/pdf" {
@@ -27,6 +27,20 @@ enum ArtifactInlineKind {
             self = .none
         }
     }
+}
+
+private func svgAspectRatio(from data: Data) -> CGFloat {
+    let source = String(decoding: data.prefix(8_192), as: UTF8.self)
+    let pattern = #"viewBox\s*=\s*["']\s*([-+]?(?:\d*\.?\d+)(?:[eE][-+]?\d+)?)\s*[, ]\s*([-+]?(?:\d*\.?\d+)(?:[eE][-+]?\d+)?)\s*[, ]\s*([-+]?(?:\d*\.?\d+)(?:[eE][-+]?\d+)?)\s*[, ]\s*([-+]?(?:\d*\.?\d+)(?:[eE][-+]?\d+)?)\s*["']"#
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+          let match = regex.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)),
+          let widthRange = Range(match.range(at: 3), in: source),
+          let heightRange = Range(match.range(at: 4), in: source),
+          let width = Double(String(source[widthRange])),
+          let height = Double(String(source[heightRange])),
+          width > 0, height > 0 else { return 12.0 / 7.0 }
+    let ratio = width / height
+    return (0.25...4.0).contains(ratio) ? CGFloat(ratio) : 12.0 / 7.0
 }
 
 /// A picture, chart, or PDF shown right in the chat - downloaded once the bubble appears rather
@@ -87,13 +101,12 @@ struct InlineArtifactPreview: View {
             } else {
                 ArtifactFileRow(artifact: artifact, isBusy: false, action: onOpenFullscreen)
             }
-        case .vectorChart:
+        case .vector:
             if let data = try? Data(contentsOf: url) {
-                // No outer "open fullscreen" button here on purpose: the chart itself is tappable
-                // (see createChartSvg's onclick handlers - tapping a bar/point/slice reveals its
-                // exact value), so a wrapping button would just compete with the SVG's own taps.
+                // Generated SVGs may have their own interactions (for example, chart values),
+                // so keep the vector surface free of a competing wrapping button.
                 SVGView(data: data)
-                    .aspectRatio(12.0 / 7.0, contentMode: .fit)
+                    .aspectRatio(svgAspectRatio(from: data), contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .background(Color(.secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -219,14 +232,17 @@ struct ArtifactFileRow: View {
     }
 }
 
-/// Renders raw SVG data (Wiqo's own chart artifacts, and only those - never third-party/remote
-/// content) with no chrome; WKWebView is the only SVG renderer available on iOS without pulling in
+/// Renders a downloaded SVG artifact with no chrome; WKWebView is the SVG renderer available on iOS without pulling in
 /// a dedicated vector-graphics library for one file type. Touch interaction is deliberately left
 /// on (unlike a plain static image) so createChartSvg's own tap-to-reveal-value handlers work -
 /// scrolling/bouncing/zooming stay off so it still behaves like part of the chat layout, not a
 /// pannable web page.
 private struct SVGView: UIViewRepresentable {
     let data: Data
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
     func makeUIView(context: Context) -> WKWebView {
         let webView = WKWebView()
@@ -238,7 +254,13 @@ private struct SVGView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        guard context.coordinator.lastData != data else { return }
+        context.coordinator.lastData = data
         webView.load(data, mimeType: "image/svg+xml", characterEncodingName: "utf-8", baseURL: URL(fileURLWithPath: "/"))
+    }
+
+    final class Coordinator {
+        var lastData: Data?
     }
 }
 

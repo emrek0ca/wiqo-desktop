@@ -56,10 +56,14 @@ public sealed class WindowsRuntime : IAsyncDisposable
     public void ConfigureFileUploader(Func<string, string, CancellationToken, Task<string?>> uploader) => fileUploader = uploader;
     public void ConfigureAccessToken(Func<CancellationToken, Task<string?>> provider) => accessToken = provider;
 
-    /// Terminal sessions need the pairing token (the phone signs grants with it) and the switch on.
-    public IReadOnlyList<string> Features => pairingToken is not null && settings.TerminalEnabled
-        ? [WindowsTerminal.FeatureV1, WindowsTerminal.FeatureV2]
-        : [];
+    public const string AgentFeature = "agent.fullAccess";
+
+    /// Terminal sessions need the pairing token (the phone signs grants with it) and the switch on;
+    /// the PC agent needs a paired device and full access on.
+    public IReadOnlyList<string> Features => pairingToken is null
+        ? []
+        : (settings.TerminalEnabled ? new[] { WindowsTerminal.FeatureV1, WindowsTerminal.FeatureV2 } : Array.Empty<string>())
+            .Concat(settings.AgentFullAccess ? new[] { AgentFeature } : Array.Empty<string>()).ToArray();
 
     public IReadOnlyList<string> Capabilities => WindowsCapabilityManifest.Capabilities
         .Where(settings.IsEnabled)
@@ -149,9 +153,7 @@ public sealed class WindowsRuntime : IAsyncDisposable
             case "ping": return SystemOperations.Ping();
             case "getSystemStatus": return SystemOperations.Status(RuntimeStatus);
             case "openURL":
-                var url = PayloadReader.String(payload, "url")!;
-                using (var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(new Uri(url).AbsoluteUri) { UseShellExecute = true })) { }
-                return Outcome.Ok("URL açıldı.");
+                return SystemOperations.OpenUrl(PayloadReader.String(payload, "url")!);
             case "listRunningApplications": return ApplicationOperations.ListRunning();
             case "openApplication": return await ApplicationOperations.OpenById(PayloadReader.String(payload, "application")!, cancellationToken).ConfigureAwait(false);
             case "openApplicationByName": return await ApplicationOperations.OpenByName(PayloadReader.String(payload, "applicationQuery")!, cancellationToken).ConfigureAwait(false);

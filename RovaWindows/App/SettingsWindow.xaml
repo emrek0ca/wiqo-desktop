@@ -36,6 +36,16 @@
                     <StackPanel x:Name="GroupList"/>
                 </Border>
 
+                <TextBlock Text="PC AJANI" Style="{StaticResource Section}"/>
+                <Border Style="{StaticResource Card}" Padding="16,12">
+                    <CheckBox x:Name="AgentSwitch" Style="{StaticResource Switch}" Checked="OnAgentChanged" Unchecked="OnAgentChanged">
+                        <StackPanel>
+                            <TextBlock Text="Tam yetki (onaysız PC ajanı)" FontWeight="SemiBold"/>
+                            <TextBlock Style="{StaticResource Body}" FontSize="12" TextWrapping="Wrap" Text="Açıkken Wiqo çok adımlı işleri bu bilgisayarda telefon onayı beklemeden, adım adım yürütür. Kapattığın yetenekler yine kullanılamaz. Bildirim alanı menüsünden tek tıkla kapatabilirsin."/>
+                        </StackPanel>
+                    </CheckBox>
+                </Border>
+
                 <TextBlock Text="TERMİNAL" Style="{StaticResource Section}"/>
                 <Border Style="{StaticResource Card}" Padding="16,12">
                     <CheckBox x:Name="TerminalSwitch" Style="{StaticResource Switch}" Checked="OnTerminalChanged" Unchecked="OnTerminalChanged">

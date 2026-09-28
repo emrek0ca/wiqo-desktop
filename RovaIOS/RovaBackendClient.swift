@@ -1,4 +1,5 @@
 import CryptoKit
+import CoreLocation
 import Foundation
 #if canImport(FoundationModels)
 import FoundationModels
@@ -46,6 +47,18 @@ enum RovaBackendError: Error, LocalizedError {
         case .declined(let reason): return reason
         case .copilotPayloadTooLarge: return "Eklerin toplam boyutu çok büyük. Daha az dosya veya görsel ekleyip tekrar dene."
         }
+    }
+}
+
+private actor CopilotLocationPromptLedger {
+    static let shared = CopilotLocationPromptLedger()
+    private var claimed: Set<String> = []
+
+    func claim(_ requestID: String) -> Bool {
+        guard !claimed.contains(requestID) else { return false }
+        claimed.insert(requestID)
+        if claimed.count > 256 { claimed.removeAll(keepingCapacity: true) }
+        return true
     }
 }
 
@@ -266,6 +279,66 @@ enum RovaBackendClient {
         var projectTask: ProjectTask? = nil
         /// A background agent task this turn started or answered (backend src/agent/tasks.ts).
         var agentTask: AgentTaskRef? = nil
+        var widgets: [CopilotResultWidget] = []
+    }
+
+    struct CopilotResultWidget: Codable, Hashable, Sendable {
+        enum Kind: String, Codable { case created_resource, weather, sources }
+        enum ResourceType: String, Codable { case agent, automation }
+
+        struct Source: Codable, Hashable, Sendable, Identifiable {
+            let title: String?
+            let url: String
+            let published: String?
+
+            var id: String { url }
+        }
+
+        struct WeatherCurrent: Codable, Hashable, Sendable {
+            let observedAt: String?
+            let temperatureC: Double?
+            let feelsLikeC: Double?
+            let humidityPercent: Double?
+            let windKmh: Double?
+            let condition: String
+            let weatherCode: Int?
+        }
+
+        struct WeatherHour: Codable, Hashable, Sendable {
+            let time: String
+            let temperatureC: Double?
+            let rainChancePercent: Double?
+            let weatherCode: Int?
+        }
+
+        struct WeatherDay: Codable, Hashable, Sendable {
+            let date: String
+            let condition: String
+            let weatherCode: Int?
+            let minC: Double?
+            let maxC: Double?
+            let rainChancePercent: Double?
+            let rainMm: Double?
+        }
+
+        let type: Kind
+        let resourceType: ResourceType?
+        let id: Int?
+        let title: String?
+        let detail: String?
+        let scheduleLabel: String?
+        let schedule: String?
+        let timezone: String?
+        let nextRunAt: String?
+        let status: String?
+        let persona: String?
+        let presentation: String?
+        let location: String?
+        let source: String?
+        let current: WeatherCurrent?
+        let hourly: [WeatherHour]?
+        let days: [WeatherDay]?
+        let sources: [Source]?
     }
 
     /// The handle a chat reply carries for a background agent task; the card polls the detail.
@@ -463,6 +536,8 @@ enum RovaBackendClient {
         let steps: [CopilotStepResponse]
         let executionState: String?
         let artifacts: [ArtifactDescriptor]?
+        let widgets: [CopilotResultWidget]?
+        let locationRequired: LocationRequiredInfo?
         let backendConfirmations: [BackendConfirmation]?
         let replyIsProgress: Bool?
         let deferredTask: DeferredTask?
@@ -481,6 +556,11 @@ enum RovaBackendClient {
         let status: String
         let response: CopilotServerResponse?
         let error: CopilotErrorResponse?
+    }
+
+    private struct LocationRequiredInfo: Decodable {
+        let requestId: String
+        let prompt: String
     }
 
     struct MemoryCandidate: Decodable, Identifiable {
@@ -553,9 +633,14 @@ enum RovaBackendClient {
         onConfirmationNeeded: @escaping @MainActor @Sendable ([PlannedCommand], [BackendConfirmation]) -> Void = { _, _ in },
         onStepUpdate: @escaping @MainActor @Sendable (ExecutionStepUpdate) -> Void = { _ in },
         onActivity: @escaping @MainActor @Sendable (ActivityUpdate) -> Void = { _ in },
+        onLocationRequired: @escaping @MainActor @Sendable (String) async -> Void = { _ in },
         /// Today's message count as the server has just counted it (used, limit).
         onUsage: @escaping @MainActor @Sendable (Int, Int) -> Void = { _, _ in }
     ) async throws -> ConverseResult {
+        let requestLocationOnce: @MainActor @Sendable (String) async -> Void = { locationRequestID in
+            guard await CopilotLocationPromptLedger.shared.claim(locationRequestID) else { return }
+            await onLocationRequired(locationRequestID)
+        }
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("copilot/chat"))
         request.httpMethod = "POST"
@@ -652,7 +737,7 @@ enum RovaBackendClient {
         do {
             (bytes, response) = try await URLSession.shared.bytes(for: request)
         } catch {
-            return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus)
+            return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus, onLocationRequired: requestLocationOnce)
         }
         guard let http = response as? HTTPURLResponse else { throw RovaBackendError.invalidResponse }
         if http.statusCode == 401 {
@@ -673,6 +758,7 @@ enum RovaBackendClient {
             let steps: [CopilotStepResponse]
             let executionState: String?
             let artifacts: [ArtifactDescriptor]?
+            let widgets: [CopilotResultWidget]?
             let backendConfirmations: [BackendConfirmation]?
             let replyIsProgress: Bool?
             let deferredTask: DeferredTask?
@@ -688,6 +774,10 @@ enum RovaBackendClient {
         }
         struct ActivityEvent: Decodable {
             let activity: ActivityUpdate
+        }
+        struct LocationRequiredEvent: Decodable {
+            let requestId: String
+            let prompt: String?
         }
         struct ErrorEvent: Decodable { let message: String; let code: String? }
         struct EventKind: Decodable { let type: String }
@@ -739,6 +829,11 @@ enum RovaBackendClient {
                     if let event = try? decoder.decode(ActivityEvent.self, from: json) {
                         await onActivity(event.activity)
                     }
+                case "location_required":
+                    if let event = try? decoder.decode(LocationRequiredEvent.self, from: json) {
+                        await onStatus(event.prompt ?? "Hava durumu için konum izni bekleniyor…")
+                        await requestLocationOnce(event.requestId)
+                    }
                 case "reset":
                     await onReset()
                 case "done":
@@ -748,6 +843,7 @@ enum RovaBackendClient {
                         steps: event.steps,
                         executionState: event.executionState,
                         artifacts: event.artifacts ?? [],
+                        widgets: event.widgets ?? [],
                         backendConfirmations: event.backendConfirmations ?? [],
                         replyIsProgress: event.replyIsProgress ?? false,
                         deferredTask: event.deferredTask,
@@ -765,9 +861,21 @@ enum RovaBackendClient {
         } catch let error as RovaBackendError {
             throw error
         } catch {
-            return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus)
+            return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus, onLocationRequired: requestLocationOnce)
         }
-        return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus)
+        return try await waitForCopilotRequest(requestID: requestID, onStatus: onStatus, onLocationRequired: requestLocationOnce)
+    }
+
+    static func continueCopilotWeatherLocation(requestID: String, city: String?) async throws {
+        struct Response: Decodable { let requestId: String; let status: String }
+        var body: [String: Any] = ["city": NSNull()]
+        if let city { body["city"] = city }
+        _ = try await authorizedPost("copilot/requests/\(requestID)/location", body: body, as: Response.self)
+    }
+
+    static func requestAndContinueCopilotWeatherLocation(requestID: String) async {
+        let city = await OneShotCityLocator.currentCity()
+        try? await continueCopilotWeatherLocation(requestID: requestID, city: city)
     }
 
     static func resolveBackendConfirmation(id: UUID, approved: Bool, terminalGrant: (grantId: String, signature: String)? = nil, terminalGrantExpiresAt: Int? = nil, terminalGrantScope: String = "task") async throws -> BackendConfirmationResponse {
@@ -790,6 +898,7 @@ enum RovaBackendClient {
         steps: [CopilotStepResponse],
         executionState: String?,
         artifacts: [ArtifactDescriptor],
+        widgets: [CopilotResultWidget] = [],
         backendConfirmations: [BackendConfirmation],
         replyIsProgress: Bool = false,
         deferredTask: DeferredTask? = nil,
@@ -817,17 +926,20 @@ enum RovaBackendClient {
             replyIsProgress: replyIsProgress,
             deferredTask: deferredTask,
             projectTask: projectTask,
-            agentTask: agentTask
+            agentTask: agentTask,
+            widgets: widgets
         )
     }
 
     private static func waitForCopilotRequest(
         requestID: UUID,
-        onStatus: @escaping @MainActor @Sendable (String) -> Void
+        onStatus: @escaping @MainActor @Sendable (String) -> Void,
+        onLocationRequired: @escaping @MainActor @Sendable (String) async -> Void
     ) async throws -> ConverseResult {
         await onStatus("Bağlantı koptu; Wiqo işlemin sonucunu koruyor…")
         let deadline = Date().addingTimeInterval(150)
         var missingCount = 0
+        var locationRequestHandled = false
         while Date() < deadline {
             if Task.isCancelled { throw CancellationError() }
             do {
@@ -840,6 +952,7 @@ enum RovaBackendClient {
                         steps: response.steps,
                         executionState: response.executionState,
                         artifacts: response.artifacts ?? [],
+                        widgets: response.widgets ?? [],
                         backendConfirmations: response.backendConfirmations ?? [],
                         replyIsProgress: response.replyIsProgress ?? false,
                         deferredTask: response.deferredTask,
@@ -848,6 +961,14 @@ enum RovaBackendClient {
                     )
                 case "failed":
                     throw RovaBackendError.declined(nonEmptyMessage(state.error?.message, fallback: "İşlem tamamlanamadı."))
+                case "awaiting_weather_location":
+                    if !locationRequestHandled, let required = state.response?.locationRequired {
+                        locationRequestHandled = true
+                        await onLocationRequired(required.requestId)
+                    } else {
+                        await onStatus("Hava durumu isteği devam ediyor…")
+                    }
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
                 default:
                     await onStatus("İşlem bağlantıdan bağımsız devam ediyor…")
                     try await Task.sleep(nanoseconds: 1_000_000_000)
@@ -1133,6 +1254,7 @@ enum RovaBackendClient {
         let content: String
         let createdAt: String
         let artifacts: [ArtifactDescriptor]
+        let widgets: [CopilotResultWidget]?
     }
 
     static func fetchConversations() async throws -> [RemoteConversationSummary] {
@@ -1443,6 +1565,30 @@ enum RovaBackendClient {
 
         private enum CodingKeys: String, CodingKey {
             case id, prompt, cron, isActive, lastRunAt, nextRunAt, lifecycleStatus, targetDeviceId, scheduleLabel, delivery
+        }
+
+        init(
+            id: Int,
+            prompt: String,
+            cron: String,
+            isActive: Bool,
+            lastRunAt: String? = nil,
+            nextRunAt: String? = nil,
+            lifecycleStatus: String? = nil,
+            targetDeviceId: String? = nil,
+            scheduleLabel: String? = nil,
+            delivery: String? = nil
+        ) {
+            self.id = id
+            self.prompt = prompt
+            self.cron = cron
+            self.isActive = isActive
+            self.lastRunAt = lastRunAt
+            self.nextRunAt = nextRunAt
+            self.lifecycleStatus = lifecycleStatus
+            self.targetDeviceId = targetDeviceId
+            self.scheduleLabel = scheduleLabel
+            self.delivery = delivery
         }
 
         init(from decoder: Decoder) throws {
@@ -2054,6 +2200,84 @@ extension RovaBackendClient.MemoryCandidate: Encodable {
     }
 }
 
+
+/// Requests one location fix and resolves it locally to a city name; raw coordinates never leave iOS.
+@MainActor
+private final class OneShotCityLocator: NSObject, @preconcurrency CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    private let geocoder = CLGeocoder()
+    private var continuation: CheckedContinuation<String?, Never>?
+    private var didRequestLocation = false
+
+    static func currentCity() async -> String? {
+        await OneShotCityLocator().locate()
+    }
+
+    private func locate() async -> String? {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            manager.delegate = self
+            manager.desiredAccuracy = kCLLocationAccuracyKilometer
+            guard CLLocationManager.locationServicesEnabled() else {
+                finish(nil)
+                return
+            }
+            switch manager.authorizationStatus {
+            case .authorizedAlways, .authorizedWhenInUse:
+                requestLocationOnce()
+            case .notDetermined:
+                manager.requestWhenInUseAuthorization()
+            default:
+                finish(nil)
+            }
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                self?.finish(nil)
+            }
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            requestLocationOnce()
+        case .denied, .restricted:
+            finish(nil)
+        default:
+            break
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last else { finish(nil); return }
+        geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, _ in
+            Task { @MainActor in
+                let city = placemarks?.first?.locality
+                    ?? placemarks?.first?.subAdministrativeArea
+                    ?? placemarks?.first?.subLocality
+                self?.finish(city?.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        finish(nil)
+    }
+
+    private func requestLocationOnce() {
+        guard !didRequestLocation else { return }
+        didRequestLocation = true
+        manager.requestLocation()
+    }
+
+    private func finish(_ city: String?) {
+        guard let continuation else { return }
+        self.continuation = nil
+        manager.stopUpdatingLocation()
+        let normalized = city?.trimmingCharacters(in: .whitespacesAndNewlines)
+        continuation.resume(returning: normalized?.isEmpty == false ? normalized : nil)
+    }
+}
 
 /// Edge routing: when Apple's on-device model is available, the phone guesses the request's route
 /// itself and sends it as `intentHint`, so the backend can skip its paid 20b router call. It is only

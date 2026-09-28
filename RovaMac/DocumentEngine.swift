@@ -19,9 +19,13 @@ enum DocumentEngine {
               let fileURL = safeDesktopURL(filename, desktop: desktop),
               isDirectDesktopEntry(fileURL, desktop: desktop),
               FileManager.default.fileExists(atPath: fileURL.path) else {
-            return (nil, makeError("DOCUMENT_NOT_FOUND", "Desktop'ta bu belge bulunamadı."))
+            return (nil, MacSystem.missingPathError("~/Desktop/\(filename)", message: "Masaüstünde \"\(filename)\" belgesi bulunamadı."))
         }
+        return extractText(from: fileURL, displayName: filename)
+    }
 
+    /// Text of a document at an already-validated location (Desktop or a resolved local path).
+    static func extractText(from fileURL: URL, displayName filename: String) -> (data: DocumentContent?, error: RovaError?) {
         do {
             let values = try fileURL.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey])
             guard values.isDirectory != true, values.isRegularFile == true else {
@@ -37,7 +41,7 @@ enum DocumentEngine {
             let text: String
             switch format {
             case .txt, .md, .csv, .html:
-                text = try String(contentsOf: fileURL, encoding: .utf8)
+                text = try MacSystem.readText(at: fileURL)
             case .doc, .docx:
                 text = try convertWordToText(fileURL)
             case .xlsx:
@@ -364,7 +368,7 @@ enum DocumentEngine {
         return ProcessOutput(status: process.terminationStatus, stdout: stdout.fileHandleForReading.readDataToEndOfFile(), stderr: stderr.fileHandleForReading.readDataToEndOfFile())
     }
 
-    private static func format(for extensionName: String) -> DocumentFormat? {
+    static func format(for extensionName: String) -> DocumentFormat? {
         switch extensionName.lowercased() {
         case "txt": return .txt
         case "md", "markdown": return .md

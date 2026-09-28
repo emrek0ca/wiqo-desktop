@@ -5,6 +5,7 @@ import SwiftUI
 struct RovaMacApp: App {
     @StateObject private var runtime: MacRuntime
     @StateObject private var launchCoordinator: MacLaunchCoordinator
+    @ObservedObject private var agentAccess = AgentAccessStore.shared
 
     init() {
         let runtime = MacRuntime()
@@ -18,8 +19,10 @@ struct RovaMacApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Wiqo", systemImage: "arrow.triangle.2.circlepath") {
+        MenuBarExtra {
             MacMenuView(runtime: runtime)
+        } label: {
+            Image(systemName: agentAccess.isEnabled ? "bolt.circle.fill" : "arrow.triangle.2.circlepath")
         }
         Window("Wiqo telefonu bağla", id: RovaWindowID.pairingQR) {
             PairingQRView(runtime: runtime)

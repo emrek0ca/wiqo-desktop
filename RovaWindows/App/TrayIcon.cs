@@ -11,6 +11,10 @@ internal sealed class TrayIcon : IDisposable
     private readonly NotifyIcon icon;
     private readonly ToolStripMenuItem status;
     private readonly ToolStripMenuItem autoStart;
+    private readonly ToolStripMenuItem agent;
+    private readonly CompanionHost host;
+    private ConnectionState lastState;
+    private string? agentStep;
     private readonly Icon baseIcon;
     private Icon? current;
 
@@ -18,7 +22,12 @@ internal sealed class TrayIcon : IDisposable
     {
         using (var stream = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/wiqo.ico"))!.Stream)
             baseIcon = new Icon(stream, SystemInformation.SmallIconSize);
+        this.host = host;
         status = new ToolStripMenuItem("Başlatılıyor…") { Enabled = false };
+        agent = new ToolStripMenuItem("Tam yetki (onaysız ajan)") { CheckOnClick = true, Checked = host.Runtime.Settings.AgentFullAccess };
+        agent.CheckedChanged += (_, _) => host.Runtime.Settings.AgentFullAccess = agent.Checked;
+        host.Runtime.Settings.Changed += () => System.Windows.Application.Current?.Dispatcher.BeginInvoke(() => Update(lastState));
+        host.Client.AgentStep += step => System.Windows.Application.Current?.Dispatcher.BeginInvoke(() => { agentStep = step; Update(lastState); });
         autoStart = new ToolStripMenuItem("Bilgisayar açılınca başlat") { CheckOnClick = true, Checked = AutoStart.IsEnabled };
         autoStart.CheckedChanged += (_, _) => AutoStart.Set(autoStart.Checked);
         var menu = new ContextMenuStrip();
@@ -28,12 +37,17 @@ internal sealed class TrayIcon : IDisposable
             new ToolStripSeparator(),
             new ToolStripMenuItem("Telefonu bağla…", null, (_, _) => showPairing()),
             new ToolStripMenuItem("Ayarlar…", null, (_, _) => showSettings()),
+            agent,
             autoStart,
             new ToolStripMenuItem("Günlükleri aç", null, (_, _) => OpenLogs()),
             new ToolStripSeparator(),
             new ToolStripMenuItem("Wiqo'dan çık", null, (_, _) => quit())
         });
-        menu.Opening += (_, _) => autoStart.Checked = AutoStart.IsEnabled;
+        menu.Opening += (_, _) =>
+        {
+            autoStart.Checked = AutoStart.IsEnabled;
+            agent.Checked = host.Runtime.Settings.AgentFullAccess;
+        };
         icon = new NotifyIcon { ContextMenuStrip = menu, Visible = true, Text = "Wiqo" };
         icon.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) showMain(); };
         Update(host.State);
@@ -48,8 +62,15 @@ internal sealed class TrayIcon : IDisposable
             ConnectionState.NeedsPairing => ("Telefon bağlı değil", Color.FromArgb(220, 38, 38)),
             _ => ("Bağlantı yok - yeniden deneniyor", Color.FromArgb(217, 119, 6))
         };
+        lastState = state;
+        if (host.Runtime.Settings.AgentFullAccess)
+        {
+            // Full access is visible at a glance: a violet dot and the step running now.
+            text = agentStep is null ? $"{text} · tam yetki açık" : $"Ajan çalışıyor: {agentStep}";
+            color = Color.FromArgb(124, 58, 237);
+        }
         status.Text = text;
-        icon.Text = $"Wiqo - {text}";
+        icon.Text = text.Length > 60 ? $"Wiqo - {text[..57]}…" : $"Wiqo - {text}";
         var next = WithDot(color);
         icon.Icon = next;
         current?.Dispose();

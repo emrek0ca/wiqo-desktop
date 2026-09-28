@@ -100,14 +100,14 @@ extension MacSystem {
     static func readDesktopFile(_ filename: String) -> (data: CommandData?, error: RovaError?) {
         guard let desktop = desktopURL(), let url = safeDesktopURL(filename),
               isDirectDesktopEntry(url, desktop: desktop), FileManager.default.fileExists(atPath: url.path) else {
-            return (nil, RovaError(code: "FILE_NOT_FOUND", message: "Masaüstünde bu dosya bulunamadı."))
+            return (nil, missingPathError("~/Desktop/\(filename)", message: "Masaüstünde \"\(filename)\" bulunamadı."))
         }
         do {
             let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey])
             guard values.isDirectory != true, values.isRegularFile == true, let size = values.fileSize, size <= 200_000 else {
                 return (nil, RovaError(code: "FILE_TOO_LARGE", message: "Yalnızca 200 KB veya daha küçük metin dosyaları okunabilir."))
             }
-            let content = try String(contentsOf: url, encoding: .utf8)
+            let content = try readText(at: url)
             return (.fileContent(DesktopFileContent(filename: filename, content: content)), nil)
         } catch {
             return (nil, RovaError(code: "FILE_READ_FAILED", message: "Dosya okunamadı."))
@@ -119,7 +119,7 @@ extension MacSystem {
               let source = safeDesktopURL(payload.source), let destination = safeDesktopURL(payload.destination),
               isDirectDesktopEntry(source, desktop: desktop), isDirectDesktopEntry(destination, desktop: desktop),
               FileManager.default.fileExists(atPath: source.path) else {
-            return RovaError(code: "FILE_NOT_FOUND", message: "Kaynak dosya masaüstünde bulunamadı.")
+            return missingPathError("~/Desktop/\(payload.source)", message: "Masaüstünde \"\(payload.source)\" bulunamadı.")
         }
         guard let values = try? source.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey]),
               values.isDirectory != true, values.isRegularFile == true else {
@@ -145,7 +145,7 @@ extension MacSystem {
 
     static func listFiles(_ payload: LocalFileOperationPayload) -> (data: CommandData?, error: RovaError?) {
         guard let directory = resolvedLocalURL(payload.path), FileManager.default.fileExists(atPath: directory.path) else {
-            return (nil, RovaError(code: "FILE_NOT_FOUND", message: "İstenen klasör bulunamadı.", category: "tool_failure"))
+            return (nil, missingPathError(payload.path, message: "\"\(payload.path)\" klasörü bulunamadı."))
         }
         guard isDirectory(directory) else {
             return (nil, RovaError(code: "NOT_A_DIRECTORY", message: "İstenen yol bir klasör değil.", category: "tool_failure"))
@@ -205,7 +205,7 @@ extension MacSystem {
 
     static func readFile(_ payload: LocalFileOperationPayload) -> (data: CommandData?, error: RovaError?) {
         guard let file = resolvedLocalURL(payload.path), FileManager.default.fileExists(atPath: file.path) else {
-            return (nil, RovaError(code: "FILE_NOT_FOUND", message: "İstenen dosya bulunamadı.", category: "tool_failure"))
+            return (nil, missingPathError(payload.path, message: "\"\(payload.path)\" bulunamadı."))
         }
         guard !isDirectory(file), isRegularFile(file) else {
             return (nil, RovaError(code: "FILE_NOT_REGULAR", message: "Yalnızca normal dosyalar okunabilir.", category: "tool_failure"))
@@ -215,9 +215,20 @@ extension MacSystem {
             guard let size = values.fileSize, size <= maxLocalReadBytes else {
                 return (nil, RovaError(code: "FILE_TOO_LARGE", message: "Bu dosya tek yanıt için çok büyük; daha küçük bir dosya veya sayfalı belge okuma kullan.", category: "tool_failure"))
             }
-            let bytes = try Data(contentsOf: file, options: [.mappedIfSafe])
             let mimeType = mimeType(for: file)
-            if let text = String(data: bytes, encoding: .utf8) {
+            // PDF/Word/Excel came back as base64, which the backend drops before the model sees
+            // it - "şu PDF'i oku" then answered from nothing. Extract the text instead.
+            if let format = DocumentEngine.format(for: file.pathExtension), ([.pdf, .doc, .docx, .xlsx] as [DocumentFormat]).contains(format) {
+                let extracted = DocumentEngine.extractText(from: file, displayName: file.lastPathComponent)
+                if let document = extracted.data {
+                    let limit = 200_000
+                    let text = document.text.count > limit ? String(document.text.prefix(limit)) : document.text
+                    return (.fileData(FileDataContent(path: file.path, mimeType: mimeType, text: text, truncated: document.text.count > limit)), nil)
+                }
+                return (nil, extracted.error)
+            }
+            let bytes = try Data(contentsOf: file, options: [.mappedIfSafe])
+            if let text = String(data: bytes, encoding: .utf8) ?? (isLikelyText(file) ? try? readText(at: file) : nil) {
                 return (.fileData(FileDataContent(path: file.path, mimeType: mimeType, text: text, truncated: false)), nil)
             }
             return (.fileData(FileDataContent(path: file.path, mimeType: mimeType, base64: bytes.base64EncodedString(), truncated: false)), nil)
@@ -293,7 +304,7 @@ extension MacSystem {
 
     static func deleteFile(_ payload: LocalFileOperationPayload) -> RovaError? {
         guard let target = resolvedLocalURL(payload.path), FileManager.default.fileExists(atPath: target.path) else {
-            return RovaError(code: "FILE_NOT_FOUND", message: "Silinecek dosya bulunamadı.", category: "tool_failure")
+            return missingPathError(payload.path, message: "Silinecek \"\(payload.path)\" bulunamadı.")
         }
         let normalized = target.standardizedFileURL.path
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
@@ -324,9 +335,76 @@ extension MacSystem {
         return FileSystemEntry(path: url.standardizedFileURL.path, name: url.lastPathComponent, byteCount: Int64(values.fileSize ?? 0), modifiedAt: values.contentModificationDate, isDirectory: values.isDirectory == true)
     }
 
+    /// The model writes the folder names the user sees on a Turkish Mac ("~/Masaüstü/rapor.pdf")
+    /// or guesses a home folder ("/Users/emre/Desktop"); on disk they are ~/Desktop and the real
+    /// home. Only the first folder under home is translated; everything else stays verbatim.
+    static func canonicalUserPath(_ rawPath: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+        var path = (rawPath.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).expandingTildeInPath
+        let components = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        if components.count >= 2, components[0] == "Users",
+           "/Users/\(components[1])" != home,
+           !FileManager.default.fileExists(atPath: "/Users/\(components[1])") {
+            path = ([home] + components.dropFirst(2)).joined(separator: "/")
+        }
+        guard path.hasPrefix(home + "/") else { return path }
+        var rest = String(path.dropFirst(home.count + 1)).split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard let first = rest.first else { return path }
+        let folders: [String: String] = [
+            "masaustu": "Desktop", "belgeler": "Documents", "dokumanlar": "Documents", "dokumanlarim": "Documents",
+            "indirilenler": "Downloads", "indirmeler": "Downloads", "resimler": "Pictures", "fotograflar": "Pictures",
+            "muzik": "Music", "filmler": "Movies", "videolar": "Movies"
+        ]
+        let key = ApplicationNameMatcher.normalize(first).replacingOccurrences(of: " ", with: "")
+        if let english = folders[key], !FileManager.default.fileExists(atPath: home + "/" + first) {
+            rest[0] = english
+        }
+        return ([home] + rest).joined(separator: "/")
+    }
+
+    /// "Not found" that helps the next attempt: the folder that was searched and the closest
+    /// names in it, so the model can retry with the real file name instead of giving up.
+    static func missingPathError(_ rawPath: String, message: String) -> RovaError {
+        let url = URL(fileURLWithPath: canonicalUserPath(rawPath))
+        let parent = url.deletingLastPathComponent()
+        let wanted = ApplicationNameMatcher.normalize(url.deletingPathExtension().lastPathComponent)
+        var detail = message
+        if let names = try? FileManager.default.contentsOfDirectory(atPath: parent.path) {
+            let suggestions = names
+                .filter { !$0.hasPrefix(".") }
+                .map { ($0, ApplicationNameMatcher.score(($0 as NSString).deletingPathExtension, query: wanted)) }
+                .filter { $0.1 >= 0.5 }
+                .sorted { $0.1 > $1.1 }
+                .prefix(3)
+                .map(\.0)
+            let folder = (parent.path as NSString).abbreviatingWithTildeInPath
+            detail += suggestions.isEmpty
+                ? " (\(folder) içinde bu adla bir öğe yok; önce klasörü listele.)"
+                : " \(folder) içindeki benzer adlar: \(suggestions.joined(separator: ", "))."
+        } else {
+            detail += " (\((parent.path as NSString).abbreviatingWithTildeInPath) klasörü de yok.)"
+        }
+        return RovaError(code: "FILE_NOT_FOUND", message: detail, category: "tool_failure")
+    }
+
+    private static func isLikelyText(_ url: URL) -> Bool {
+        ["txt", "md", "csv", "tsv", "log", "json", "xml", "html", "htm", "yml", "yaml", "ini", "srt", "swift", "py", "js", "ts"].contains(url.pathExtension.lowercased())
+    }
+
+    /// Reads text the way people save it on a Turkish Mac: UTF-8 first, then what the file
+    /// declares, then Windows-1254/Latin-1 so an old .txt does not fail as "okunamadı".
+    static func readText(at url: URL) throws -> String {
+        if let text = try? String(contentsOf: url, encoding: .utf8) { return text }
+        var detected = String.Encoding.utf8
+        if let text = try? String(contentsOf: url, usedEncoding: &detected) { return text }
+        let turkish = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.windowsLatin5.rawValue)))
+        if let text = try? String(contentsOf: url, encoding: turkish) { return text }
+        return try String(contentsOf: url, encoding: .isoLatin1)
+    }
+
     private static func resolvedLocalURL(_ rawPath: String, allowingMissingLastComponent: Bool = false) -> URL? {
         guard RovaValidation.isValidLocalPath(rawPath) else { return nil }
-        let expanded = (rawPath as NSString).expandingTildeInPath
+        let expanded = canonicalUserPath(rawPath)
         guard expanded.hasPrefix("/") else { return nil }
         let rawURL = URL(fileURLWithPath: expanded).standardizedFileURL
         if FileManager.default.fileExists(atPath: rawURL.path) {

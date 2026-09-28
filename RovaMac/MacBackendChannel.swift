@@ -337,7 +337,8 @@ final class MacBackendChannel: NSObject {
             "platform": info.platform,
             "capabilities": info.capabilities,
             // Optional protocol features; an older backend ignores the field.
-            "features": CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2] : [],
+            "features": (CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2] : [])
+                + (AgentAccessStore.shared.isEnabled ? [AgentAccessStore.feature] : []),
             "terminalProfile": terminalProfileJSON.flatMap { try? JSONSerialization.jsonObject(with: $0) } ?? NSNull(),
             "applicationTargets": info.applicationTargets.map { target in
                 [
@@ -462,6 +463,12 @@ final class MacBackendChannel: NSObject {
             executeInteractiveCommand(payload, on: task)
         case .terminalCommand(let payload):
             executeTerminalCommand(payload, on: task)
+        case .agentCommand(let payload):
+            executeAgentCommand(payload, on: task)
+        case .invalidAgentCommand(let commandId):
+            let now = Date()
+            let error = RovaError(code: "INVALID_PAYLOAD", message: "PC ajan komutunu çözemedi; Wiqo Mac uygulamasını güncelleyin.", category: "validation")
+            sendInteractiveCommandResult(commandId: commandId, result: CommandResult(commandID: UUID(), status: .failed, message: error.message, startedAt: now, finishedAt: now, error: error), on: task)
         }
     }
 
@@ -485,6 +492,13 @@ final class MacBackendChannel: NSObject {
         case "terminalCommand":
             guard let payload = try? decoder.decode(TerminalCommandPayload.self, from: data) else { return nil }
             return .terminalCommand(payload)
+        case "agentCommand":
+            decoder.dateDecodingStrategy = .iso8601
+            guard let payload = try? decoder.decode(InteractiveCommandPayload.self, from: data) else {
+                // Answer instead of dropping it, so the agent does not wait out its timeout.
+                return (envelope["commandId"] as? String).map { .invalidAgentCommand(commandId: $0) }
+            }
+            return .agentCommand(payload)
         default:
             return nil
         }
@@ -498,6 +512,34 @@ final class MacBackendChannel: NSObject {
     /// that holds this Mac's pairing token," so skipping this check here would have let anyone
     /// signed in to the account (or the backend itself, if it were ever compromised) run commands
     /// this Mac never actually paired to accept unsigned.
+    /// A step from the backend's PC agent (rova-backend src/agent/pcAgent.ts). It carries no phone
+    /// signature: it runs only while the owner has full access on at this Mac, and only for
+    /// capabilities left enabled in Settings. Timestamp, payload validation, dedupe and every
+    /// operation's own checks still apply inside MacCommandEngine.
+    private func executeAgentCommand(_ payload: InteractiveCommandPayload, on task: URLSessionWebSocketTask) {
+        let request = payload.request
+        let deny = { [weak self] (code: String, message: String) in
+            let now = Date()
+            let error = RovaError(code: code, message: message, category: "permission")
+            self?.sendInteractiveCommandResult(commandId: payload.commandId, result: CommandResult(commandID: request.id, status: .denied, message: message, startedAt: now, finishedAt: now, error: error), on: task)
+        }
+        guard AgentAccessStore.shared.isEnabled else {
+            deny("FULL_ACCESS_DISABLED", "Bu PC'de tam yetki kapalı; Wiqo Mac ayarlarından açılmadan ajan komut çalıştıramaz.")
+            return
+        }
+        let capability = RovaCommandAuthority.capability(for: request.type, payload: request.payload)
+        guard CapabilityStore.shared.isEnabled(capability) else {
+            deny("CAPABILITY_DISABLED", "Bu yetenek PC'deki Wiqo ayarlarında kapalı.")
+            return
+        }
+        AgentAccessStore.shared.stepStarted(request.type.rawValue)
+        Task { @MainActor [weak self, engine, runtimeStatus] in
+            let result = await engine.execute(request, runtimeStatus: runtimeStatus())
+            AgentAccessStore.shared.stepFinished()
+            self?.sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)
+        }
+    }
+
     private func executeInteractiveCommand(_ payload: InteractiveCommandPayload, on task: URLSessionWebSocketTask) {
         if payload.request.signatureVersion != 2 {
             let now = Date()
@@ -1081,6 +1123,8 @@ private enum ParsedBackendMessage: Sendable {
     case automationComplete
     case interactiveCommand(InteractiveCommandPayload)
     case terminalCommand(TerminalCommandPayload)
+    case agentCommand(InteractiveCommandPayload)
+    case invalidAgentCommand(commandId: String)
 }
 
 private struct TerminalGrantPayload: Decodable, Sendable {

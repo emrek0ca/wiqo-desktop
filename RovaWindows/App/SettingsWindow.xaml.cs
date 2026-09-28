@@ -32,6 +32,7 @@ public partial class SettingsWindow : Window
         loading = true;
         foreach (var group in CapabilitySettings.Groups) GroupList.Children.Add(GroupSwitch(group));
         TerminalSwitch.IsChecked = host.Runtime.Settings.TerminalEnabled;
+        AgentSwitch.IsChecked = host.Runtime.Settings.AgentFullAccess;
         AutoStartSwitch.IsChecked = AutoStart.IsEnabled;
         loading = false;
         DeviceText.Text = host.Runtime.DisplayName;
@@ -68,6 +69,11 @@ public partial class SettingsWindow : Window
     private void OnTerminalChanged(object sender, RoutedEventArgs e)
     {
         if (!loading) host.Runtime.Settings.TerminalEnabled = TerminalSwitch.IsChecked == true;
+    }
+
+    private void OnAgentChanged(object sender, RoutedEventArgs e)
+    {
+        if (!loading) host.Runtime.Settings.AgentFullAccess = AgentSwitch.IsChecked == true;
     }
 
     private void OnAutoStartChanged(object sender, RoutedEventArgs e)

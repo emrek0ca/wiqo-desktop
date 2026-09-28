@@ -45,6 +45,8 @@ public sealed class ProtocolV2Client : IAsyncDisposable
 
     public event Action<ConnectionState>? StateChanged;
     public event Action<string>? Activity;
+    /// The PC agent step running now (null when it finished), for the tray.
+    public event Action<string?>? AgentStep;
 
     public ConnectionState State => state;
 
@@ -238,6 +240,7 @@ public sealed class ProtocolV2Client : IAsyncDisposable
         {
             "interactiveCommand" => HandleInteractiveAsync(current, envelope, cancellationToken),
             "terminalCommand" => HandleTerminalAsync(current, envelope, cancellationToken),
+            "agentCommand" => HandleAgentAsync(current, envelope, cancellationToken),
             "automationStep" => HandleAutomationStepAsync(current, envelope, cancellationToken),
             _ => Task.CompletedTask
         };
@@ -266,6 +269,35 @@ public sealed class ProtocolV2Client : IAsyncDisposable
         completedSignatures[requestId] = incomingSignature;
         Activity?.Invoke($"Komut: {operation}");
         var result = await runtime.ExecuteAsync(requestId, operation, payload, cancellationToken).ConfigureAwait(false);
+        TrimCaches();
+        await SendResultAsync(current, commandId, result, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// A step from the backend's PC agent (rova-backend src/agent/pcAgent.ts). No phone signature:
+    /// it runs only while the owner has "Tam yetki" on here. ExecuteAsync still validates the
+    /// payload, dedupes by id and refuses capabilities turned off in Settings.
+    private async Task HandleAgentAsync(ClientWebSocket current, JsonElement envelope, CancellationToken cancellationToken)
+    {
+        if (!TryCommandId(envelope, out var commandId)) return;
+        var now = DateTimeOffset.UtcNow;
+        if (!envelope.TryGetProperty("request", out var request) || request.ValueKind != JsonValueKind.Object)
+        {
+            await SendResultAsync(current, commandId, new WindowsCommandResult(commandId, "failed", "Ajan komutu çözülemedi.", now, now, null,
+                new WireError("INVALID_PAYLOAD", "Ajan komutu çözülemedi.", "validation")), cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        var operation = request.TryGetProperty("type", out var rawOperation) && rawOperation.ValueKind == JsonValueKind.String ? rawOperation.GetString() ?? "" : "";
+        var requestId = request.TryGetProperty("id", out var rawId) && rawId.ValueKind == JsonValueKind.String ? rawId.GetString() ?? commandId : commandId;
+        if (!runtime.Settings.AgentFullAccess)
+        {
+            await SendResultAsync(current, commandId, new WindowsCommandResult(requestId, "denied", "Bu bilgisayarda tam yetki kapalı.", now, now, null,
+                new WireError("FULL_ACCESS_DISABLED", "Bu bilgisayarda tam yetki kapalı; Wiqo ayarlarından açılmadan ajan komut çalıştıramaz.", "permission")), cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        Activity?.Invoke($"Ajan: {operation}");
+        AgentStep?.Invoke(operation);
+        var result = await runtime.ExecuteAsync(requestId, operation, request.TryGetProperty("payload", out var payload) ? payload : default, cancellationToken).ConfigureAwait(false);
+        AgentStep?.Invoke(null);
         TrimCaches();
         await SendResultAsync(current, commandId, result, cancellationToken).ConfigureAwait(false);
     }

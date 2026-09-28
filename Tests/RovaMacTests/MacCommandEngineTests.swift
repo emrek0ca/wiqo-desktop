@@ -123,3 +123,69 @@ final class MacCommandEngineTests: XCTestCase {
         XCTAssertEqual(settingsCapabilities, toggleableCapabilities)
     }
 }
+
+final class ApplicationResolutionTests: XCTestCase {
+    func testNormalizationDropsGrammarAndFiller() {
+        XCTAssertEqual(ApplicationNameMatcher.normalize("Safari'yi"), "safari")
+        XCTAssertEqual(ApplicationNameMatcher.normalize("Chrome’u"), "chrome")
+        XCTAssertEqual(ApplicationNameMatcher.normalize("Safari uygulamasını"), "safari")
+        XCTAssertEqual(ApplicationNameMatcher.normalize("SAFARİ"), "safari")
+        XCTAssertEqual(ApplicationNameMatcher.normalize("Notes.app"), "notes")
+        XCTAssertEqual(ApplicationNameMatcher.normalize("Sistem Ayarları"), "sistem ayarlari")
+        XCTAssertEqual(ApplicationNameMatcher.normalize("  VS-Code "), "vs code")
+    }
+
+    func testExactBeatsLongerNames() {
+        let query = ApplicationNameMatcher.normalize("Mail")
+        XCTAssertEqual(ApplicationNameMatcher.score("Mail", query: query), 1.0)
+        XCTAssertLessThan(ApplicationNameMatcher.score("Mailplane", query: query), 1.0)
+    }
+
+    /// The live failure: Safari is a hidden symlink into the cryptex on current macOS.
+    func testResolvesSystemAppsOnThisMac() {
+        let expectations: [(String, String)] = [
+            ("Safari", "com.apple.Safari"),
+            ("Safari'yi", "com.apple.Safari"),
+            ("safari uygulamasını", "com.apple.Safari"),
+            ("Terminal", "com.apple.Terminal"),
+            ("Notes", "com.apple.Notes"),
+            ("Notlar", "com.apple.Notes"),
+            ("Takvim", "com.apple.iCal"),
+            ("Calendar", "com.apple.iCal"),
+            ("Sistem Ayarları", "com.apple.systempreferences"),
+            ("Activity Monitor", "com.apple.ActivityMonitor"),
+            ("Hesap Makinesi", "com.apple.calculator"),
+            ("Finder", "com.apple.finder")
+        ]
+        for (target, bundle) in expectations {
+            guard case .resolved(let application) = MacSystem.resolveApplication(target: target, bundleIdentifier: nil).outcome else {
+                XCTFail("\(target) çözümlenemedi")
+                continue
+            }
+            XCTAssertEqual(application.bundleIdentifier, bundle, target)
+            XCTAssertNotNil(application.path, target)
+        }
+    }
+
+    func testInventedBundleFallsBackToName() {
+        guard case .resolved(let application) = MacSystem.resolveApplication(target: "Safari", bundleIdentifier: "com.invented.safari").outcome else {
+            return XCTFail("Safari çözümlenemedi")
+        }
+        XCTAssertEqual(application.bundleIdentifier, "com.apple.Safari")
+    }
+
+    func testUnknownAppIsNotFound() {
+        guard case .notFound = MacSystem.resolveApplication(target: "Qzxv Wplk", bundleIdentifier: nil).outcome else {
+            return XCTFail("uydurma uygulama çözümlenmemeli")
+        }
+    }
+
+    func testCatalogCarriesSafariAndAliasesWithinBackendLimit() {
+        let catalog = MacSystem.applicationTargets()
+        XCTAssertLessThanOrEqual(catalog.count, 200)
+        XCTAssertTrue(catalog.contains { $0.bundleIdentifier == "com.apple.Safari" })
+        let names = Set(catalog.map { ApplicationNameMatcher.normalize($0.name) })
+        XCTAssertTrue(names.contains("notes") && names.contains("notlar"))
+        XCTAssertEqual(names.count, catalog.count, "katalogda aynı ad iki kez olmamalı")
+    }
+}

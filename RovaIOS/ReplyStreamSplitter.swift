@@ -4,10 +4,28 @@ import Foundation
 /// the text is settled, so the parser can keep the earlier part instead of re-reading the whole
 /// reply on every update (which made long answers stutter).
 ///
-/// It only ever cuts at a blank line that is safe: never inside a code fence or a `$$` block, and
-/// never next to a list item, quote line, table row or indented line, because cutting there would
+/// It only ever cuts at a blank line that is safe: never inside a code fence or an open math
+/// delimiter, and never next to a list item, quote line, table row or indented line, because cutting there would
 /// turn one block into two and change how the reply looks.
 enum ReplyStreamSplitter {
+    private struct OpenMath {
+        let start: String.Index
+        let contentStart: String.Index
+        let closing: String
+    }
+
+    /// Code spans/fences are matched as opaque tokens first; math delimiters inside code are text.
+    private static let mathOrCodeTokenPattern = try! NSRegularExpression(
+        pattern: #"(?:```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`+[^`\n]*`+)|(?<!\\)\$\$|(?<!\\)\$(?!\$)|(?<!\\)\\\(|(?<!\\)\\\)|(?<!\\)\\\[|(?<!\\)\\\]|(?<!\\)\\begin\{(?:equation\*?|align\*?|alignat\*?|gather\*?|multline\*?|CD)\}|(?<!\\)\\end\{(?:equation\*?|align\*?|alignat\*?|gather\*?|multline\*?|CD)\}"#
+    )
+
+    /// Hides only the unfinished math expression at the end of a live reply. Prose before it stays
+    /// visible, and once its closing delimiter arrives the original text is returned unchanged.
+    static func streamingVisibleText(_ text: String) -> String {
+        guard let open = unclosedMathStart(in: text) else { return text }
+        return String(text[..<open.start])
+    }
+
     /// UTF-8 offset, just after a blank line, up to which `text` is settled. Never less than `known`
     /// (the offset settled by an earlier call on a text this one extends).
     static func settledOffset(in text: String, after known: Int) -> Int {
@@ -80,7 +98,7 @@ enum ReplyStreamSplitter {
 
     // MARK: - Balance
 
-    /// True when every code fence and every `$$` opened between the two offsets is also closed.
+    /// True when every code fence and supported math delimiter opened between the offsets is closed.
     private static func hasBalancedFencesAndMath(_ bytes: [UInt8], from: Int, to: Int) -> Bool {
         var fences = 0
         var lineStart = from
@@ -100,16 +118,53 @@ enum ReplyStreamSplitter {
             index += 1
         }
 
-        var displayMath = 0
-        index = from
-        while index + 1 < to {
-            if bytes[index] == 36, bytes[index + 1] == 36 {
-                displayMath += 1
-                index += 2
-            } else {
-                index += 1
+        let segment = String(decoding: bytes[from..<to], as: UTF8.self)
+        return fences % 2 == 0 && unclosedMathStart(in: segment) == nil
+    }
+
+    private static func unclosedMathStart(in text: String) -> OpenMath? {
+        let fullRange = NSRange(text.startIndex..., in: text)
+        var openMath: OpenMath?
+
+        for match in mathOrCodeTokenPattern.matches(in: text, range: fullRange) {
+            guard let tokenRange = Range(match.range, in: text) else { continue }
+            let token = String(text[tokenRange])
+
+            // The first alternative in the regex matches code spans and fences as one token.
+            if token.hasPrefix("`") || token.hasPrefix("~~~") { continue }
+
+            if let current = openMath {
+                if token == current.closing { openMath = nil }
+                continue
             }
+
+            let closing: String
+            if token == "$$" { closing = "$$" }
+            else if token == "$" { closing = "$" }
+            else if token == "\\(" { closing = "\\)" }
+            else if token == "\\[" { closing = "\\]" }
+            else if token.hasPrefix("\\begin{") {
+                let environment = token.dropFirst("\\begin{".count).dropLast()
+                closing = "\\end{\(environment)}"
+            } else {
+                continue
+            }
+
+            openMath = OpenMath(start: tokenRange.lowerBound, contentStart: tokenRange.upperBound, closing: closing)
         }
-        return fences % 2 == 0 && displayMath % 2 == 0
+
+        guard let openMath else { return nil }
+        if openMath.closing == "$", !looksLikePartialInlineMath(after: openMath.contentStart, in: text) { return nil }
+        return openMath
+    }
+
+    /// `$50` is ordinary text; an unfinished `$x` or `$x + y` remains hidden until it closes.
+    private static func looksLikePartialInlineMath(after start: String.Index, in text: String) -> Bool {
+        guard start < text.endIndex else { return false }
+        let first = text[start]
+        guard !first.isWhitespace else { return false }
+        if first.isLetter { return true }
+        let line = text[start...].prefix(while: { $0 != "\n" })
+        return line.contains(where: { "\\^_=+-/*".contains($0) })
     }
 }

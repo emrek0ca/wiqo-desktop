@@ -1,4 +1,5 @@
 import Combine
+import AppKit
 import Foundation
 import Network
 import OSLog
@@ -78,6 +79,9 @@ final class MacRuntime: ObservableObject {
     private var token: String?
     private var startTask: Task<Void, Never>?
     private var deviceInfoRefreshTask: Task<Void, Never>?
+    private var applicationChangeRefreshTask: Task<Void, Never>?
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var agentAccessObserver: AnyCancellable?
     private var shortcutInstallRefreshTask: Task<Void, Never>?
     private var pairingRenewalTask: Task<Void, Never>?
     private var pathMonitor: NWPathMonitor?
@@ -180,6 +184,10 @@ final class MacRuntime: ObservableObject {
         startTask = nil
         deviceInfoRefreshTask?.cancel()
         deviceInfoRefreshTask = nil
+        applicationChangeRefreshTask?.cancel()
+        applicationChangeRefreshTask = nil
+        workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        workspaceObservers = []
         closeAllSessions()
         ClipboardWatcher.shared.stop()
         backendChannel.stopConnection()
@@ -417,11 +425,48 @@ final class MacRuntime: ObservableObject {
             errorLogger.error("Device scan did not finish in time; keeping the previous snapshot")
             return
         }
+        let changed = snapshot.availableApplications != cachedAvailableApplications
+            || snapshot.applicationTargets != cachedApplicationTargets
+            || snapshot.capabilities != cachedCapabilities
+            || snapshot.authorities != cachedAuthorities
         cachedAvailableApplications = snapshot.availableApplications
         cachedApplicationTargets = snapshot.applicationTargets
         cachedCapabilities = snapshot.capabilities
         cachedAuthorities = snapshot.authorities
-        broadcastDeviceInfo()
+        // Re-registering every 30 s with an identical catalog was pure noise on the socket.
+        if changed { broadcastDeviceInfo() }
+    }
+
+    /// An app that was just installed, opened or quit reaches the planner within ~2 s instead of
+    /// waiting for the next 30 s scan - otherwise "az önce kurduğum X'i aç" failed as unknown.
+    private func observeApplicationChanges() {
+        if agentAccessObserver == nil {
+            // The backend learns about full access from the registration's feature list.
+            agentAccessObserver = AgentAccessStore.shared.$isEnabled.dropFirst().removeDuplicates().sink { [weak self] _ in
+                Task { @MainActor in self?.broadcastDeviceInfo() }
+            }
+        }
+        guard workspaceObservers.isEmpty else { return }
+        let center = NSWorkspace.shared.notificationCenter
+        let names: [Notification.Name] = [
+            NSWorkspace.didLaunchApplicationNotification,
+            NSWorkspace.didTerminateApplicationNotification
+        ]
+        workspaceObservers = names.map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.scheduleApplicationCatalogRefresh() }
+            }
+        }
+    }
+
+    private func scheduleApplicationCatalogRefresh() {
+        applicationChangeRefreshTask?.cancel()
+        applicationChangeRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self, !Task.isCancelled else { return }
+            MacSystem.invalidateInstalledApplications()
+            await self.refreshDeviceInfo()
+        }
     }
 
     /// Pushes the just-scanned catalog to whoever already has a snapshot from before the scan
@@ -439,6 +484,7 @@ final class MacRuntime: ObservableObject {
     }
 
     private func startDeviceInfoRefresh() {
+        observeApplicationChanges()
         deviceInfoRefreshTask?.cancel()
         deviceInfoRefreshTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {

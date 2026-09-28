@@ -62,18 +62,19 @@ enum ReplyBlockParser {
     private static var settledStreamText = ""
 
     static func parseStreaming(_ text: String) -> [ReplyBlock] {
-        guard text.utf8.count > streamingSplitThreshold else {
+        let visibleText = ReplyStreamSplitter.streamingVisibleText(text)
+        guard visibleText.utf8.count > streamingSplitThreshold else {
             settledStreamText = ""
-            return parseUncached(text)
+            return parseUncached(visibleText)
         }
-        if !settledStreamText.isEmpty, !text.hasPrefix(settledStreamText) { settledStreamText = "" }
+        if !settledStreamText.isEmpty, !visibleText.hasPrefix(settledStreamText) { settledStreamText = "" }
         let known = settledStreamText.utf8.count
-        let cut = ReplyStreamSplitter.settledOffset(in: text, after: known)
+        let cut = ReplyStreamSplitter.settledOffset(in: visibleText, after: known)
         if cut > known {
-            settledStreamText = String(decoding: Array(text.utf8.prefix(cut)), as: UTF8.self)
+            settledStreamText = String(decoding: Array(visibleText.utf8.prefix(cut)), as: UTF8.self)
         }
-        guard !settledStreamText.isEmpty else { return parseUncached(text) }
-        let tail = String(decoding: Array(text.utf8.dropFirst(settledStreamText.utf8.count)), as: UTF8.self)
+        guard !settledStreamText.isEmpty else { return parseUncached(visibleText) }
+        let tail = String(decoding: Array(visibleText.utf8.dropFirst(settledStreamText.utf8.count)), as: UTF8.self)
         return parse(settledStreamText) + parseUncached(tail)
     }
 
@@ -89,7 +90,8 @@ enum ReplyBlockParser {
             let joined = paragraphLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
             paragraphLines.removeAll()
             guard !joined.isEmpty else { return }
-            blocks.append(containsMath(joined) ? .richText(joined) : .paragraph(inline(joined)))
+            let renderable = renderableMathText(joined)
+            blocks.append(containsMath(renderable) ? .richText(renderable) : .paragraph(inline(joined)))
         }
 
         while index < lines.count {
@@ -241,7 +243,8 @@ enum ReplyBlockParser {
     }
 
     private static func inlineContent(_ raw: String) -> ReplyBlock.InlineContent {
-        containsMath(raw) ? .math(raw) : .markdown(inline(raw))
+        let renderable = renderableMathText(raw)
+        return containsMath(renderable) ? .math(renderable) : .markdown(inline(raw))
     }
 
     private static let displayMathEnvironments = [
@@ -274,6 +277,47 @@ enum ReplyBlockParser {
     private static let mathPattern = try! NSRegularExpression(
         pattern: #"\$\$[\s\S]+?\$\$|(?<!\\)\$(?!\$)(?:\\.|[^$\n])+?(?<!\\)\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\\begin\{(equation\*?|align\*?|alignat\*?|gather\*?|multline\*?|CD)\}[\s\S]+?\\end\{\1\}|\[\[formula:[^\]]+\]\]"#
     )
+    private static let inlineCodePattern = try! NSRegularExpression(pattern: #"`+[^`\n]*`+"#)
+    /// Some model answers omit `$...$` around a valid TeX command (for example `\sqrt{25}`).
+    /// Recognize common atomic commands and wrap them before Markdown/WebKit rendering; leave
+    /// already-delimited math and inline code untouched.
+    private static let bareLatexCommandPattern = try! NSRegularExpression(
+        pattern: #"(?:\\(?:sqrt|frac|dfrac|tfrac|binom)\b(?:\[[^\]\n]*\])?\{(?:[^{}\n]|\{[^{}\n]*\})*\}(?:\{(?:[^{}\n]|\{[^{}\n]*\})*\})?|\\(?:overline|underline|mathrm|mathbf|mathbb|mathcal|text)\b\{(?:[^{}\n]|\{[^{}\n]*\})*\}|\\(?:alpha|beta|gamma|delta|epsilon|theta|lambda|mu|pi|rho|sigma|phi|omega|Delta|Theta|Lambda|Pi|Sigma|Phi|Omega|times|cdot|pm|mp|leq|geq|neq|approx|infty|partial|nabla|sum|prod|int|oint|forall|exists|in|notin|subset|subseteq|cup|cap)\b)"#
+    )
+
+    private static func renderableMathText(_ text: String) -> String {
+        let fullRange = NSRange(text.startIndex..., in: text)
+        let protectedRanges = (mathPattern.matches(in: text, range: fullRange)
+            + inlineCodePattern.matches(in: text, range: fullRange))
+            .sorted { $0.range.location < $1.range.location }
+        let source = text as NSString
+        var result = ""
+        var cursor = 0
+        for match in protectedRanges where match.range.location >= cursor {
+            let plainRange = NSRange(location: cursor, length: match.range.location - cursor)
+            result += wrapBareLatexCommands(in: source.substring(with: plainRange))
+            result += source.substring(with: match.range)
+            cursor = NSMaxRange(match.range)
+        }
+        result += wrapBareLatexCommands(in: source.substring(from: cursor))
+        return result
+    }
+
+    private static func wrapBareLatexCommands(in text: String) -> String {
+        let range = NSRange(text.startIndex..., in: text)
+        let matches = bareLatexCommandPattern.matches(in: text, range: range)
+        guard !matches.isEmpty else { return text }
+        let source = text as NSString
+        var result = ""
+        var cursor = 0
+        for match in matches {
+            result += source.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            result += "$\(source.substring(with: match.range))$"
+            cursor = NSMaxRange(match.range)
+        }
+        result += source.substring(from: cursor)
+        return result
+    }
 
     static func containsMath(_ text: String) -> Bool {
         let range = NSRange(text.startIndex..., in: text)
@@ -325,6 +369,7 @@ struct ReplyBlocksView: View {
     /// True while the reply is still arriving: the newest words resolve softly into place, and
     /// finished apps are not previewed until the code block is complete.
     var isStreaming = false
+    @ScaledMetric(relativeTo: .body) private var scaledBodyFontSize: CGFloat = 17
 
     var body: some View {
         let blocks = isStreaming ? ReplyBlockParser.parseStreaming(text) : ReplyBlockParser.parse(text)
@@ -363,6 +408,8 @@ struct ReplyBlocksView: View {
                             .foregroundStyle(.secondary)
                             .frame(minWidth: item.marker == "•" ? 10 : 22, alignment: .trailing)
                         inlineContentView(item.text, fadesTail: fadesTail && position == items.count - 1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .layoutPriority(1)
                     }
                     .padding(.leading, CGFloat(item.indent) * 18)
                 }
@@ -382,7 +429,7 @@ struct ReplyBlocksView: View {
         case .table(let headers, let rows):
             TableBlockView(headers: headers, rows: rows, artifacts: artifacts)
         case .richText(let raw):
-            RichMathTextView(raw: raw, artifacts: artifacts)
+            RichMathTextView(raw: raw, artifacts: artifacts, fontSize: scaledBodyFontSize)
         }
     }
 
@@ -401,7 +448,11 @@ struct ReplyBlocksView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         case .math(let raw):
-            RichMathTextView(raw: raw, artifacts: artifacts, fontSize: fontSize)
+            RichMathTextView(
+                raw: raw,
+                artifacts: artifacts,
+                fontSize: fontSize * scaledBodyFontSize / 17
+            )
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -760,7 +811,7 @@ private struct TableBlockView: View {
 ///
 /// A `[[formula:ID]]` marker is resolved by downloading that artifact - the same authenticated
 /// path any other artifact already uses - and inlined as a `data:` image, so the heavy formula
-/// itself never touches the CDN-dependent client-side KaTeX path at all; formulas without an
+/// itself never touches the bundled client-side KaTeX path at all; formulas without an
 /// artifact are rendered from their original delimiters by auto-render.
 private struct RichMathTextView: View {
     let raw: String
@@ -834,10 +885,20 @@ private struct RichMathWebView: UIViewRepresentable {
     let fontSize: CGFloat
     @Binding var height: CGFloat
 
-    /// Whether anything in this block still needs the live, CDN-loaded KaTeX renderer - false for
+    private static let bundledKaTeXCSS = bundledText(named: "katex.bundle.min", extension: "css")
+    private static let bundledKaTeXJavaScript = bundledText(named: "katex.bundle.min", extension: "js")
+
+    private static func bundledText(named name: String, extension fileExtension: String) -> String? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: fileExtension, subdirectory: "KaTeX") else {
+            return nil
+        }
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+
+    /// Whether anything in this block still needs the bundled KaTeX renderer - false for
     /// the now-common case where the backend already pre-rendered every `$$...$$` to SVG and
     /// nothing but plain text and `[[formula:ID]]` markers remains. Skipping KaTeX entirely in
-    /// that case is a real speed win on mobile: no external script fetch, no font wait, no
+    /// that case is a real speed win on mobile: no script evaluation, no font wait, no
     /// auto-render scan - just local HTML and already-downloaded SVGs.
     private var needsLiveKaTeX: Bool {
         let withoutRenderedFormulas = raw.replacingOccurrences(
@@ -870,14 +931,17 @@ private struct RichMathWebView: UIViewRepresentable {
         guard context.coordinator.lastRendered != cacheKey else { return }
         context.coordinator.lastRendered = cacheKey
         let textColor = colorScheme == .dark ? "#f2f2f7" : "#131314"
-        let katexHead = needsLiveKaTeX ? """
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
-        """ : ""
+        let katexHead: String
+        if needsLiveKaTeX, let css = Self.bundledKaTeXCSS, let javaScript = Self.bundledKaTeXJavaScript {
+            katexHead = "<style>\(css)</style><script>\(javaScript)</script>"
+        } else {
+            katexHead = ""
+        }
         let katexRender = needsLiveKaTeX ? """
-          try {
-            renderMathInElement(document.getElementById('content'), {
+          var content = document.getElementById('content');
+          if (typeof window.katex === 'object' && typeof window.renderMathInElement === 'function') {
+            try {
+              renderMathInElement(content, {
               delimiters: [
                 {left: "$$", right: "$$", display: true},
                 {left: "\\\\(", right: "\\\\)", display: false},
@@ -895,34 +959,41 @@ private struct RichMathWebView: UIViewRepresentable {
                 {left: "\\\\[", right: "\\\\]", display: true},
                 {left: "$", right: "$", display: false}
               ],
-              throwOnError: false
-            });
-          } catch (e) {}
+                throwOnError: false,
+                errorCallback: function(message, error) { console.error('KaTeX formula error:', message, error); }
+              });
+            } catch (error) {
+              content.classList.add('math-render-failed');
+              console.error('KaTeX rendering failed:', error);
+            }
+          } else {
+            content.classList.add('math-render-failed');
+            console.error('Bundled KaTeX assets are unavailable.');
+          }
         """ : ""
         let html = """
         <!doctype html><html><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         \(katexHead)
         <style>
-          html,body{margin:0;padding:0;background:transparent;color:\(textColor);}
-          #content{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;font-size:\(fontSize)px;line-height:1.5;word-wrap:break-word;}
-          #content p{margin:0.35em 0;}
-          #content p:first-child{margin-top:0;}
-          #content p:last-child{margin-bottom:0;}
+          html,body{width:100%;min-width:0;margin:0;padding:0;background:transparent;color:\(textColor);overflow-x:hidden;}
+          #content{display:flex;flex-direction:column;align-items:stretch;gap:.48em;width:100%;min-width:0;max-width:100%;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;font-size:\(fontSize)px;line-height:1.5;overflow-wrap:anywhere;word-break:normal;}
+          #content p{min-width:0;margin:0;}
           #content code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.92em;background:rgba(127,127,127,0.16);border-radius:4px;padding:1px 4px;}
           #content a{color:#0a84ff;text-decoration:underline;}
-          #content svg{display:block;max-width:100%;height:auto;margin:0.4em 0;}
-          .katex-display{margin:0.5em 0;overflow-x:auto;overflow-y:hidden;}
+          #content svg{display:block;max-width:100%;height:auto;margin:0.2em 0;}
+          #content p .katex{display:inline-block;max-width:100%;overflow-x:auto;overflow-y:hidden;vertical-align:middle;}
+          #content .katex-display{display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;margin:.25em 0;padding:.15em 0;text-align:left;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+          #content .katex-display>.katex{display:inline-block;width:max-content;min-width:100%;max-width:none;text-align:left;overflow:visible;}
+          #content.math-render-failed{border-left:2px solid rgba(127,127,127,.32);padding-left:.65em;}
           .katex-error{color:#e5484d;}
         </style>
         </head><body>
         <div id="content">\(markdownToHTML(raw))</div>
         <script>
           \(katexRender)
-          // Report height once fonts are actually ready (KaTeX's web fonts can shift layout after
-          // the load event, which is what used to clip fraction denominators) and again on any
-          // later size change (ResizeObserver), instead of a single guessed delay - both robust to
-          // however long the network happens to take.
+          // Report height once KaTeX's local fonts are ready and on later size changes, so tall
+          // fractions and display formulas do not clip or leave stale whitespace.
           function reportHeight() {
             var h = document.getElementById('content').scrollHeight;
             window.webkit.messageHandlers.heightReporter.postMessage(h);
@@ -1001,66 +1072,49 @@ private struct RichMathWebView: UIViewRepresentable {
     }
 }
 
-/// Paces how the reply appears on screen. Groq delivers a whole answer in a fraction of a second,
-/// which would otherwise land as one jump; this reveals it at a steady reading rhythm that speeds
-/// up when a lot of text is still queued, so it never falls far behind the network.
+/// Publishes ordered SSE text in small batches so SwiftUI renders the real response as it arrives
+/// without adding a typewriter delay or rebuilding the message for every tiny network fragment.
 @MainActor
 final class LiveReplyText: ObservableObject {
     @Published private(set) var displayed = ""
-    private var target = ""
-    private var revealTask: Task<Void, Never>?
+    private var pending = ""
+    private var publishTask: Task<Void, Never>?
+
+    var currentText: String { displayed + pending }
 
     func append(_ delta: String) {
-        target += delta
-        startRevealing()
+        guard !delta.isEmpty else { return }
+        pending += delta
+        guard publishTask == nil else { return }
+        publishTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 24_000_000)
+            guard !Task.isCancelled else { return }
+            self?.publishPending()
+        }
     }
 
     func reset() {
-        revealTask?.cancel()
-        revealTask = nil
-        target = ""
+        publishTask?.cancel()
+        publishTask = nil
+        pending = ""
         displayed = ""
     }
 
-    /// Reveals the authoritative final reply and returns once it is fully on screen. The server's
-    /// final text is sanitized and may carry appended notes, so it replaces what streamed.
-    func finish(with finalText: String) async {
-        // Re-loading the KaTeX WebView for every typed character repeatedly resets formula layout
-        // and remote font loading. Math/formula replies are short enough to reveal atomically.
-        if ReplyBlockParser.containsMath(finalText) {
-            revealTask?.cancel()
-            revealTask = nil
-            target = finalText
-            displayed = finalText
-            return
-        }
-        let shown = displayed.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !shown.isEmpty, !finalText.hasPrefix(shown) {
-            revealTask?.cancel()
-            revealTask = nil
-            target = finalText
-            displayed = finalText
-            return
-        }
-        target = finalText
-        displayed = String(finalText.prefix(shown.count))
-        startRevealing()
-        while displayed.count < target.count, !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 20_000_000)
-        }
+    /// The terminal SSE reply is authoritative. It incorporates any server-side cleanup and
+    /// reconciles once, without appending streamed text a second time or animating after `done`.
+    func finish(with finalText: String) {
+        publishTask?.cancel()
+        publishTask = nil
+        let streamed = displayed + pending
+        pending = ""
+        let final = streamed == finalText ? streamed : finalText
+        if displayed != final { displayed = final }
     }
 
-    private func startRevealing() {
-        guard revealTask == nil else { return }
-        revealTask = Task { [weak self] in
-            while let self, !Task.isCancelled {
-                let remaining = self.target.count - self.displayed.count
-                if remaining <= 0 { break }
-                let step = max(5, remaining / 10)
-                self.displayed = String(self.target.prefix(self.displayed.count + step))
-                try? await Task.sleep(nanoseconds: 33_000_000)
-            }
-            self?.revealTask = nil
-        }
+    private func publishPending() {
+        guard !pending.isEmpty else { publishTask = nil; return }
+        displayed += pending
+        pending = ""
+        publishTask = nil
     }
 }

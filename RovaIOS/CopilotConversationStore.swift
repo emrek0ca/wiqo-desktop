@@ -12,6 +12,7 @@ struct CopilotStoredMessage: Codable, Hashable, Sendable {
     /// Optional (not defaulted) so decoding an entry saved before this field existed - already on
     /// disk for every account - succeeds with nil rather than failing the whole conversation load.
     let artifacts: [RovaBackendClient.ArtifactDescriptor]?
+    let widgets: [RovaBackendClient.CopilotResultWidget]?
     /// Small JPEG thumbnails (see ChatBubble.attachmentThumbnails) - same nil-on-missing-key
     /// backward compatibility as `artifacts` above. Defaulted so call sites that never have
     /// thumbnails (server-fetched history) don't need to pass it explicitly.
@@ -26,10 +27,11 @@ struct CopilotStoredMessage: Codable, Hashable, Sendable {
     let projectTask: RovaBackendClient.ProjectTask?
     let agentTask: RovaBackendClient.AgentTaskRef?
 
-    init(role: Role, text: String, artifacts: [RovaBackendClient.ArtifactDescriptor]? = nil, attachmentThumbnails: [Data]? = nil, thinking: ThinkingTrace? = nil, fileNames: [String]? = nil, deferredTask: RovaBackendClient.DeferredTask? = nil, projectTask: RovaBackendClient.ProjectTask? = nil, agentTask: RovaBackendClient.AgentTaskRef? = nil) {
+    init(role: Role, text: String, artifacts: [RovaBackendClient.ArtifactDescriptor]? = nil, widgets: [RovaBackendClient.CopilotResultWidget]? = nil, attachmentThumbnails: [Data]? = nil, thinking: ThinkingTrace? = nil, fileNames: [String]? = nil, deferredTask: RovaBackendClient.DeferredTask? = nil, projectTask: RovaBackendClient.ProjectTask? = nil, agentTask: RovaBackendClient.AgentTaskRef? = nil) {
         self.role = role
         self.text = text
         self.artifacts = artifacts
+        self.widgets = widgets
         self.attachmentThumbnails = attachmentThumbnails
         self.thinking = thinking
         self.fileNames = fileNames
@@ -215,7 +217,7 @@ enum CopilotConversationStore {
         // A chat that was opened but never used must not clutter the history list.
         guard !messages.isEmpty else { return }
         let boundedMessages = Array(messages.suffix(80)).map {
-            CopilotStoredMessage(role: $0.role, text: String($0.text.prefix(12_000)), artifacts: $0.artifacts, attachmentThumbnails: $0.attachmentThumbnails, thinking: $0.thinking, fileNames: $0.fileNames, deferredTask: $0.deferredTask, projectTask: $0.projectTask, agentTask: $0.agentTask)
+            CopilotStoredMessage(role: $0.role, text: String($0.text.prefix(12_000)), artifacts: $0.artifacts, widgets: $0.widgets, attachmentThumbnails: $0.attachmentThumbnails, thinking: $0.thinking, fileNames: $0.fileNames, deferredTask: $0.deferredTask, projectTask: $0.projectTask, agentTask: $0.agentTask)
         }
         if let data = try? JSONEncoder().encode(boundedMessages) {
             UserDefaults.standard.set(data, forKey: keys.messagesPrefix + id)
@@ -281,7 +283,7 @@ enum CopilotConversationStore {
     static func saveRemoteMessages(_ remote: [RovaBackendClient.RemoteConversationMessage], for id: String) -> [CopilotStoredMessage] {
         let stored = remote.compactMap { item -> CopilotStoredMessage? in
             guard let role = CopilotStoredMessage.Role(rawValue: item.role) else { return nil }
-            return CopilotStoredMessage(role: role, text: item.content, artifacts: item.artifacts)
+            return CopilotStoredMessage(role: role, text: item.content, artifacts: item.artifacts, widgets: item.widgets)
         }
         guard !id.isEmpty, let data = try? JSONEncoder().encode(stored) else { return stored }
         UserDefaults.standard.set(data, forKey: keys.messagesPrefix + id)

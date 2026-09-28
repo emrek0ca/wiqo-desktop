@@ -32,6 +32,31 @@ final class ReplyStreamSplitterTests: XCTestCase {
         XCTAssertEqual(settledText("Şu formül:\n\n$$\na = b\n\nc = d"), "Şu formül:\n\n")
     }
 
+    func testDoesNotCutInsideInlineMathOrBracketMath() {
+        XCTAssertEqual(settledText("Giriş.\n\n$x +\n\ny$\n\nSonuç"), "Giriş.\n\n$x +\n\ny$\n\n")
+        XCTAssertEqual(settledText("Giriş.\n\n\\[x =\n\ny\\]\n\nSonuç"), "Giriş.\n\n\\[x =\n\ny\\]\n\n")
+    }
+
+    func testHidesOnlyTheUnclosedFormulaDuringStreaming() {
+        XCTAssertEqual(ReplyStreamSplitter.streamingVisibleText("Sonuç: $x + y"), "Sonuç: ")
+        XCTAssertEqual(ReplyStreamSplitter.streamingVisibleText("Sonuç: \\(x + y"), "Sonuç: ")
+        XCTAssertEqual(ReplyStreamSplitter.streamingVisibleText("Sonuç: \\[x + y"), "Sonuç: ")
+        XCTAssertEqual(ReplyStreamSplitter.streamingVisibleText("Sonuç: $$\\frac{a}{b}"), "Sonuç: ")
+        XCTAssertEqual(ReplyStreamSplitter.streamingVisibleText("Sonuç: \\begin{align}x = y"), "Sonuç: ")
+    }
+
+    func testShowsFormulaAfterItsClosingDelimiterAndKeepsCurrencyVisible() {
+        let complete = "Sonuç: $x + y$"
+        XCTAssertEqual(ReplyStreamSplitter.streamingVisibleText(complete), complete)
+        XCTAssertEqual(ReplyStreamSplitter.streamingVisibleText("Fiyat $50"), "Fiyat $50")
+    }
+
+    func testDoesNotTreatCodeAsAnOpenFormula() {
+        let fenced = "```text\n$x + y\n```"
+        XCTAssertEqual(ReplyStreamSplitter.streamingVisibleText(fenced), fenced)
+        XCTAssertEqual(ReplyStreamSplitter.streamingVisibleText("Değer `x $ y` tamam"), "Değer `x $ y` tamam")
+    }
+
     func testNeverCutsWhenNothingFollowsYet() {
         XCTAssertEqual(settledText("Bitti.\n\n"), "")
     }
