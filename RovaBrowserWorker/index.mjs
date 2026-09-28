@@ -54,13 +54,32 @@ const SAFE_ERRORS = {
   BROWSER_FORM_BLOCKED: "Bu form güvenlik nedeniyle gönderilemez.",
   BROWSER_FIELD_BLOCKED: "Güvenlik nedeniyle bu hassas veya kişisel alanı Wiqo dolduramaz.",
   BROWSER_PERMISSION_REQUIRED: "Bu tarayıcı görevi için kullanıcı izni gerekiyor.",
-  BROWSER_SUBMIT_REQUIRED: "Bu form Enter ile gönderilemez; ayrı submit işlemi ve onay gerekir.",
+  BROWSER_SUBMIT_REQUIRED: "Bu form Enter ile güvenle gönderilemez; güvenli bir arama alanı veya form hedefi gerekli.",
   BROWSER_HUMAN_REQUIRED: "Sayfa insan doğrulaması (CAPTCHA) istiyor. Tarayıcı penceresinde bu adımı senin tamamlaman gerekiyor; ardından devam edebilirim.",
   BROWSER_FAILED: "Tarayıcı işlemi tamamlanamadı."
 };
 
 function failure(code, extra = {}) {
   return { ok: false, error: { code, message: SAFE_ERRORS[code] ?? SAFE_ERRORS.BROWSER_FAILED, ...extra } };
+}
+
+// Keep the task grant and page identity attached to rejected actions. The companion can then
+// resume the same isolated browser task without asking for the same permission again.
+function taskFailure(task, action, code, extra = {}) {
+  let url = "";
+  try { url = cleanURL(task?.page?.url?.() ?? ""); } catch { /* page may have closed */ }
+  return {
+    ...failure(code, extra),
+    result: task ? {
+      taskId: task.id,
+      action,
+      url,
+      pageVersion: task.pageVersion,
+      contentShared: task.contentShared,
+      interactionApproved: task.interactionApproved,
+      verified: false
+    } : undefined
+  };
 }
 
 function npmCliPath() {
@@ -478,12 +497,15 @@ async function assertSafeClick(locator, allowSubmit) {
     const label = [element.innerText, element.getAttribute("aria-label"), element.getAttribute("title"), element.value].filter(Boolean).join(" ").toLowerCase();
     return {
       type, href, label,
-      isSubmit: type === "submit" || (tag === "button" && (!type || type === "submit")),
+      // A type-less button is only an implicit submit when it belongs to a form. Wikipedia and
+      // many modern sites use standalone buttons for accordions/tabs; treating every button as a
+      // submit made harmless navigation fail with BROWSER_TARGET_UNSAFE.
+      isSubmit: type === "submit" || (tag === "button" && Boolean(element.form) && (!type || type === "submit")),
       linkScheme: href.includes(":") ? href.split(":")[0].toLowerCase() : ""
     };
   });
   if (details.isSubmit && !allowSubmit) throw Object.assign(new Error(), { code: "BROWSER_TARGET_UNSAFE" });
-  if (details.type === "file") throw Object.assign(new Error(), { code: "BROWSER_TARGET_UNSAFE" });
+  if (details.type === "file" || details.type === "reset") throw Object.assign(new Error(), { code: "BROWSER_TARGET_UNSAFE" });
   if (details.linkScheme && !["http", "https"].includes(details.linkScheme)) throw Object.assign(new Error(), { code: "BROWSER_TARGET_UNSAFE" });
   if (/pay|payment|checkout|purchase|buy now|place order|delete|sil|send|g[oö]nder|message|mesaj|e-?mail|e-posta|recipient|phone|telephone|contact|transfer|havale|login|sign.?in|log.?in|giri[sş]|oturum|upload|dosya|attach|ekle/.test(details.label)) {
     throw Object.assign(new Error(), { code: "BROWSER_TARGET_UNSAFE" });
@@ -613,8 +635,8 @@ async function pageState(task, action, message, extra = {}) {
 async function observe(task, message) {
   const page = await snapshot(task, 2_800);
   // An observe command is delivered to the worker only after the mobile approval gate. That one
-  // approval grants non-destructive browser interaction for this ephemeral task; submit remains
-  // separately gated by the backend and mobile client.
+  // approval grants the full safe interaction surface for this ephemeral task; sensitive and
+  // destructive forms are still rejected by the worker's independent safety checks.
   task.interactionApproved = true;
   return { ...(await pageState(task, "observe", { ...message, contentAccessGranted: false })), ...page, pageVersion: task.pageVersion, contentShared: true, verified: page.text.length > 0 || page.targets.length > 0 };
 }
@@ -679,22 +701,30 @@ async function execute(message) {
     await task.page.goto(message.url, { waitUntil: "domcontentloaded", timeout: COMMAND_TIMEOUT_MS });
     await settle(task);
     await handleInterstitials(task);
-    return { ok: true, result: await pageState(task, action, message) };
+    // The navigate command itself is delivered only after the task-scoped approval. Persist that
+    // grant in the worker so every later read and interaction uses the same decision.
+    task.interactionApproved = true;
+    // The single task approval also authorizes the initial public page snapshot. Returning it with
+    // navigate gives the model fresh target refs immediately and removes a redundant observe turn.
+    return { ok: true, result: await pageState(task, action, { ...message, contentAccessGranted: true }) };
   }
   const task = await getTask(taskId);
   if (message.interactionAccessGranted === true) task.interactionApproved = true;
   if (action === "observe") return { ok: true, result: await observe(task, message) };
+  if (["read", "back", "scroll", "click", "fill", "select", "press", "submit"].includes(action) && !task.interactionApproved) {
+    return taskFailure(task, action, "BROWSER_PERMISSION_REQUIRED");
+  }
   if (action === "read") return { ok: true, result: await readPage(task, message) };
   if (action === "back") {
     const beforeURL = task.page.url();
     task.targetRefs.clear();
     const response = await task.page.goBack({ waitUntil: "domcontentloaded", timeout: COMMAND_TIMEOUT_MS });
-    if (!response && task.page.url() === beforeURL) return failure("BROWSER_NO_HISTORY");
+    if (!response && task.page.url() === beforeURL) return taskFailure(task, action, "BROWSER_NO_HISTORY");
     await settle(task);
     return { ok: true, result: await pageState(task, action, message) };
   }
   if (action === "scroll") {
-    if (message.direction !== "up" && message.direction !== "down") return failure("BROWSER_ACTION_INVALID");
+    if (message.direction !== "up" && message.direction !== "down") return taskFailure(task, action, "BROWSER_ACTION_INVALID");
     const amount = Number.isSafeInteger(message.scrollAmount) && message.scrollAmount >= 1 && message.scrollAmount <= 3 ? message.scrollAmount : 1;
     task.targetRefs.clear();
     await task.page.evaluate(({ direction, amount }) => window.scrollBy({ top: (direction === "down" ? 1 : -1) * amount * Math.max(500, window.innerHeight * 0.8), behavior: "instant" }), { direction: message.direction, amount });
@@ -702,8 +732,7 @@ async function execute(message) {
     return { ok: true, result: await pageState(task, action, message) };
   }
   if (action === "press") {
-    if (!task.interactionApproved) return failure("BROWSER_PERMISSION_REQUIRED");
-    if (!KEYS.has(message.key)) return failure("BROWSER_ACTION_INVALID");
+    if (!KEYS.has(message.key)) return taskFailure(task, action, "BROWSER_ACTION_INVALID");
     if (message.key === "Enter") await assertEnterSafe(task.page.locator(":focus"));
     await task.page.keyboard.press(message.key);
     await settle(task);
@@ -711,21 +740,20 @@ async function execute(message) {
     task.targetRefs.clear();
     return { ok: true, result: await pageState(task, action, message) };
   }
-  if (["click", "fill", "select"].includes(action) && !task.interactionApproved) return failure("BROWSER_PERMISSION_REQUIRED");
   const locator = await locatorFor(task, message);
   await uniqueVisible(task, locator, message);
   let navigated = false;
   if (action === "fill") {
-    if (typeof message.value !== "string" || message.value.length > 2_000) return failure("BROWSER_ACTION_INVALID");
-    if (await sensitiveElement(locator)) return failure("BROWSER_FIELD_BLOCKED");
+    if (typeof message.value !== "string" || message.value.length > 2_000) return taskFailure(task, action, "BROWSER_ACTION_INVALID");
+    if (await sensitiveElement(locator)) return taskFailure(task, action, "BROWSER_FIELD_BLOCKED");
     const type = await locator.evaluate((element) => element.getAttribute("type")?.toLowerCase() ?? "");
-    if (["hidden", "file", "password", "button", "submit", "reset"].includes(type)) return failure("BROWSER_FIELD_BLOCKED");
+    if (["hidden", "file", "password", "button", "submit", "reset"].includes(type)) return taskFailure(task, action, "BROWSER_FIELD_BLOCKED");
     await locator.fill(message.value, { timeout: COMMAND_TIMEOUT_MS });
     const filledValue = await locator.evaluate((element) => {
       if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return element.value;
       return element.textContent ?? "";
     });
-    if (filledValue !== message.value) return failure("BROWSER_FAILED");
+    if (filledValue !== message.value) return taskFailure(task, action, "BROWSER_FAILED");
     if (message.submit === true) {
       // Search boxes: type and press Enter in one step, only for GET forms.
       await assertEnterSafe(locator);
@@ -735,14 +763,14 @@ async function execute(message) {
       navigated = true;
     }
   } else if (action === "select") {
-    if (typeof message.value !== "string" || !message.value || message.value.length > 2_000) return failure("BROWSER_ACTION_INVALID");
-    if (await sensitiveElement(locator)) return failure("BROWSER_FIELD_BLOCKED");
+    if (typeof message.value !== "string" || !message.value || message.value.length > 2_000) return taskFailure(task, action, "BROWSER_ACTION_INVALID");
+    if (await sensitiveElement(locator)) return taskFailure(task, action, "BROWSER_FIELD_BLOCKED");
     const selected = await locator.selectOption({ label: message.value }, { timeout: COMMAND_TIMEOUT_MS });
-    if (selected.length !== 1) return failure("BROWSER_TARGET_NOT_FOUND");
+    if (selected.length !== 1) return taskFailure(task, action, "BROWSER_TARGET_NOT_FOUND");
   } else {
     const details = await assertSafeClick(locator, action === "submit");
     if (action === "submit") {
-      if (!details.isSubmit) return failure("BROWSER_TARGET_UNSAFE");
+      if (!details.isSubmit) return taskFailure(task, action, "BROWSER_TARGET_UNSAFE");
       await safeFormDetails(locator);
     }
     const pagesBefore = new Set(task.context.pages());
@@ -753,7 +781,7 @@ async function execute(message) {
       await openedPage.waitForLoadState("domcontentloaded", { timeout: 3_000 }).catch(() => {});
       if (!cleanURL(openedPage.url())) {
         await openedPage.close().catch(() => {});
-        return failure("BROWSER_NETWORK_BLOCKED");
+        return taskFailure(task, action, "BROWSER_NETWORK_BLOCKED");
       }
       task.page = openedPage;
     }
@@ -837,19 +865,6 @@ input.on("close", () => {
   shuttingDown = true;
   void closeAll();
 });
-
-const cleanup = setInterval(() => {
-  const now = Date.now();
-  if (!tasks.size) {
-    if (!emptySince) emptySince = now;
-    if (now - emptySince > 10_000) {
-      shuttingDown = true;
-      void closeAll().finally(() => process.exit(0));
-      clearInterval(cleanup);
-    }
-  } else emptySince = 0;
-}, 5_000);
-cleanup.unref();
 
 const parentPID = process.ppid;
 const parentWatch = setInterval(() => {

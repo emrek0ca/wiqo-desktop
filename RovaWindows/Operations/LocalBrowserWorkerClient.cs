@@ -69,23 +69,15 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
         try
         {
             var envelope = await SendAsync(request, cancellationToken).ConfigureAwait(false);
-            if (!envelope.Ok || envelope.Result?.TaskId is not { Length: > 0 } taskId)
+            if (envelope.Result?.TaskId is not { Length: > 0 } taskId)
                 return FromError(envelope.Error);
-            return Outcome.WithData("computerBrowser", new
+            var data = BrowserData(envelope.Result, taskId);
+            if (!envelope.Ok || envelope.Error is not null)
             {
-                taskId,
-                action = envelope.Result.Action,
-                url = envelope.Result.Url,
-                title = envelope.Result.Title,
-                text = envelope.Result.Text,
-                targets = envelope.Result.Targets,
-                pageVersion = envelope.Result.PageVersion,
-                contentShared = envelope.Result.ContentShared,
-                interactionApproved = envelope.Result.InteractionApproved,
-                truncated = envelope.Result.Truncated,
-                verified = envelope.Result.Verified,
-                nextOffset = envelope.Result.NextOffset
-            }, "Tarayıcı işlemi tamamlandı ve sonucu doğrulandı.");
+                var error = envelope.Error ?? new BrowserError("BROWSER_FAILED", "Tarayıcı işlemi tamamlanamadı.");
+                return new Outcome(error.Message, new { kind = "computerBrowser", value = data }, new WireError(error.Code, error.Message, ErrorCategory(error.Code)));
+            }
+            return Outcome.WithData("computerBrowser", data, "Tarayıcı işlemi tamamlandı ve sonucu doğrulandı.");
         }
         catch (OperationCanceledException)
         {
@@ -246,6 +238,28 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
             : "tool_failure";
         return Outcome.Fail(code, message, category);
     }
+
+    private static object BrowserData(BrowserResult result, string taskId) => new
+    {
+        taskId,
+        action = result.Action,
+        url = result.Url,
+        title = result.Title,
+        text = result.Text,
+        targets = result.Targets,
+        pageVersion = result.PageVersion,
+        contentShared = result.ContentShared,
+        interactionApproved = result.InteractionApproved,
+        truncated = result.Truncated,
+        verified = result.Verified,
+        nextOffset = result.NextOffset
+    };
+
+    private static string ErrorCategory(string code) => code.Contains("TIMEOUT", StringComparison.Ordinal)
+        ? "timeout"
+        : code.Contains("BLOCKED", StringComparison.Ordinal) || code.Contains("UNSAFE", StringComparison.Ordinal)
+            ? "permission"
+            : "tool_failure";
 
     public async ValueTask DisposeAsync()
     {

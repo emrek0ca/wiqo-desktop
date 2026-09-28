@@ -95,15 +95,17 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
         )
         do {
             let envelope = try await send(request)
-            guard envelope.ok, let result = envelope.result, let taskId = result.taskId else {
-                if let error = envelope.error { throw WorkerFailure.rejected(error.code, error.message) }
-                throw WorkerFailure.invalidResponse
+            if let result = envelope.result, let taskId = result.taskId {
+                let content = BrowserContent(taskId: taskId, action: result.action, url: result.url, title: result.title, text: result.text, targets: result.targets, pageVersion: result.pageVersion, contentShared: result.contentShared, interactionApproved: result.interactionApproved, truncated: result.truncated, verified: result.verified, nextOffset: result.nextOffset)
+                if let error = envelope.error {
+                    let category = error.code.contains("TIMEOUT") ? "timeout" : (error.code.contains("BLOCKED") || error.code.contains("UNSAFE") ? "permission" : "tool_failure")
+                    return (content, error.message, RovaError(code: error.code, message: error.message, category: category))
+                }
+                guard envelope.ok else { throw WorkerFailure.invalidResponse }
+                return (content, "Tarayıcı işlemi tamamlandı ve sonucu doğrulandı.", nil)
             }
-            return (
-                BrowserContent(taskId: taskId, action: result.action, url: result.url, title: result.title, text: result.text, targets: result.targets, pageVersion: result.pageVersion, contentShared: result.contentShared, interactionApproved: result.interactionApproved, truncated: result.truncated, verified: result.verified, nextOffset: result.nextOffset),
-                "Tarayıcı işlemi tamamlandı ve sonucu doğrulandı.",
-                nil
-            )
+            if let error = envelope.error { throw WorkerFailure.rejected(error.code, error.message) }
+            throw WorkerFailure.invalidResponse
         } catch {
             let (code, message, category) = safeError(error)
             return (nil, message, RovaError(code: code, message: message, category: category))
