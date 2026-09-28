@@ -9,12 +9,8 @@ import { createInterface } from "node:readline";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const MAX_TASKS = 3;
+const MAX_TASKS = 8;
 const MAX_TEXT = 4_000;
-// Keep a failed/recoverable task available long enough for the user to retry from the phone.
-// The context is still ephemeral and is closed by explicit success/cancel or these hard limits.
-const IDLE_MS = 10 * 60_000;
-const MAX_TASK_MS = 30 * 60_000;
 const COMMAND_TIMEOUT_MS = 30_000;
 const RUNTIME_SETUP_TIMEOUT_MS = 105_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -332,13 +328,15 @@ async function ensureBrowser() {
       proxy: { server: "socks5://127.0.0.1:" + port, bypass: "" },
       args: ["--proxy-bypass-list=<-loopback>", "--disable-quic", "--disable-webrtc", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"]
     });
-    browser.on("disconnected", () => { browser = undefined; });
+    browser.on("disconnected", () => {
+      browser = undefined;
+      tasks.clear();
+      emptySince = Date.now();
+    });
   } catch {
     throw Object.assign(new Error(), { code: "BROWSER_BROWSER_MISSING" });
   }
 }
-
-function touch(task) { task.lastUsed = Date.now(); }
 
 async function closeTask(taskId) {
   const task = tasks.get(taskId);
@@ -350,10 +348,6 @@ async function closeTask(taskId) {
 
 async function getTask(taskId, create = false) {
   let task = tasks.get(taskId);
-  if (task && Date.now() - task.createdAt > MAX_TASK_MS) {
-    await closeTask(taskId);
-    task = undefined;
-  }
   if (!task && create) {
     if (tasks.size >= MAX_TASKS) throw Object.assign(new Error(), { code: "BROWSER_TASK_LIMIT" });
     await ensureBrowser();
@@ -377,8 +371,6 @@ async function getTask(taskId, create = false) {
       id: taskId,
       context,
       page,
-      createdAt: Date.now(),
-      lastUsed: Date.now(),
       pageVersion: 0,
       contentShared: false,
       interactionApproved: false,
@@ -388,6 +380,13 @@ async function getTask(taskId, create = false) {
     };
     tasks.set(taskId, task);
     emptySince = 0;
+    const removeClosedTask = () => {
+      if (tasks.get(taskId)?.context === context && context.pages().length === 0) {
+        void closeTask(taskId);
+      }
+    };
+    page.on("close", removeClosedTask);
+    context.on("page", (openedPage) => openedPage.on("close", removeClosedTask));
     context.on("close", () => {
       if (tasks.get(taskId)?.context === context) {
         tasks.delete(taskId);
@@ -396,7 +395,6 @@ async function getTask(taskId, create = false) {
     });
   }
   if (!task) throw Object.assign(new Error(), { code: "BROWSER_NO_PAGE" });
-  touch(task);
   return task;
 }
 
@@ -681,7 +679,6 @@ async function execute(message) {
     await task.page.goto(message.url, { waitUntil: "domcontentloaded", timeout: COMMAND_TIMEOUT_MS });
     await settle(task);
     await handleInterstitials(task);
-    touch(task);
     return { ok: true, result: await pageState(task, action, message) };
   }
   const task = await getTask(taskId);
@@ -694,7 +691,6 @@ async function execute(message) {
     const response = await task.page.goBack({ waitUntil: "domcontentloaded", timeout: COMMAND_TIMEOUT_MS });
     if (!response && task.page.url() === beforeURL) return failure("BROWSER_NO_HISTORY");
     await settle(task);
-    touch(task);
     return { ok: true, result: await pageState(task, action, message) };
   }
   if (action === "scroll") {
@@ -703,7 +699,6 @@ async function execute(message) {
     task.targetRefs.clear();
     await task.page.evaluate(({ direction, amount }) => window.scrollBy({ top: (direction === "down" ? 1 : -1) * amount * Math.max(500, window.innerHeight * 0.8), behavior: "instant" }), { direction: message.direction, amount });
     await task.page.waitForTimeout(150);
-    touch(task);
     return { ok: true, result: await pageState(task, action, message) };
   }
   if (action === "press") {
@@ -714,7 +709,6 @@ async function execute(message) {
     await settle(task);
     await handleInterstitials(task);
     task.targetRefs.clear();
-    touch(task);
     return { ok: true, result: await pageState(task, action, message) };
   }
   if (["click", "fill", "select"].includes(action) && !task.interactionApproved) return failure("BROWSER_PERMISSION_REQUIRED");
@@ -770,7 +764,6 @@ async function execute(message) {
   if (["click", "fill", "select", "press"].includes(action)) task.interactionApproved = true;
   // Filling a field keeps the rest of the observed form valid unless the step also submitted it.
   if (navigated) task.targetRefs.clear();
-  touch(task);
   // With content access the result carries a fresh snapshot (and fresh refs) of the page.
   return { ok: true, result: await pageState(task, action, message) };
 }
@@ -810,7 +803,8 @@ input.on("line", (line) => {
   if (message.action === "cancel") {
     const running = requests.get(message.cancelRequestId);
     if (running) {
-      void closeTask(running.taskId);
+      // Cancelling an in-flight command must not destroy the user's visible browser session.
+      // Its bounded Playwright timeout ends the operation; only closeTask explicitly closes it.
       write({ id: message.id, ok: true, result: { cancelled: true } });
     } else write({ id: message.id, ok: true, result: { cancelled: false } });
     return;
@@ -846,9 +840,6 @@ input.on("close", () => {
 
 const cleanup = setInterval(() => {
   const now = Date.now();
-  for (const [taskId, task] of tasks) {
-    if (now - task.createdAt > MAX_TASK_MS || now - task.lastUsed > IDLE_MS) void closeTask(taskId);
-  }
   if (!tasks.size) {
     if (!emptySince) emptySince = now;
     if (now - emptySince > 10_000) {

@@ -1708,7 +1708,6 @@ struct CopilotView: View {
                     recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
                 )
             } else {
-                await closeBrowserTasksIfComplete(executionState: result.executionState)
                 recentDeviceResults.removeAll(keepingCapacity: true)
             }
             persistConversation()
@@ -1732,7 +1731,6 @@ struct CopilotView: View {
         } catch RovaBackendError.notAuthenticated {
             // Sends the whole app back to the login screen (RootView switches on this),
             // there's no local sheet/screen of our own to dismiss here.
-            await closeActiveBrowserTasks()
             liveReplyBubbleID = nil
             thinking.finish(failed: true)
             setBubble(responseBubble.id) { bubble in
@@ -1858,9 +1856,6 @@ struct CopilotView: View {
                 recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
             )
         } else {
-            await closeBrowserTasksIfComplete(
-                executionState: bubbles.first(where: { $0.id == bubbleID })?.executionState
-            )
             recentDeviceResults.removeAll(keepingCapacity: true)
         }
         persistConversation()
@@ -2099,7 +2094,6 @@ struct CopilotView: View {
                     recoveryAttemptsRemaining: nextRecoveryBudget
                 )
             } else {
-                await closeBrowserTasksIfComplete(executionState: result.executionState)
                 recentDeviceResults.removeAll(keepingCapacity: true)
             }
             persistConversation()
@@ -2121,24 +2115,6 @@ struct CopilotView: View {
         if recentDeviceResults.contains(where: { $0.status != .completed || $0.error != nil }) { return true }
         guard let bubble = bubbles.first(where: { $0.id == bubbleID }) else { return false }
         return bubble.steps.contains(where: needsLocalResultFollowUp)
-    }
-
-    private func closeBrowserTasksIfComplete(executionState: String?) async {
-        guard executionState == "complete_backend" else { return }
-        await closeActiveBrowserTasks()
-    }
-
-    private func closeActiveBrowserTasks() async {
-        let taskIDs = activeBrowserTaskIDs
-        guard !taskIDs.isEmpty else { return }
-        activeBrowserTaskIDs.removeAll()
-        for taskID in taskIDs {
-            _ = await model.send(
-                .endBrowserTask,
-                payload: .browserTask(BrowserTaskPayload(taskId: taskID)),
-                commandID: UUID()
-            )
-        }
     }
 
     private func mergeContinuationResult(
@@ -2584,9 +2560,6 @@ struct CopilotView: View {
     }
 
     private func cancelConfirmation(for bubbleID: UUID) {
-        // A safe-prefix navigation may already have opened this task's browser before the next
-        // operation asks for approval. Close that ephemeral context when the user cancels.
-        Task { await closeActiveBrowserTasks() }
         setBubble(bubbleID) { bubble in
             bubble.needsConfirmation = false
             if let step = bubble.steps.first(where: { step in
