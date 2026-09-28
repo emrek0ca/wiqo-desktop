@@ -301,6 +301,49 @@ public enum RovaValidation {
                   click.expectedTarget.map({ isSafeText($0, maxLength: 240) }) ?? false else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Ekran tıklaması koordinat veya hedef doğrulamasından geçmedi.")
             }
+        case .computerBrowser:
+            guard case .computerBrowser(let browser) = request.payload,
+                  UUID(uuidString: browser.taskId) != nil,
+                  ["navigate", "observe", "click", "fill", "scroll", "submit"].contains(browser.action) else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Tarayıcı görevi veya eylemi geçersiz.", category: "validation")
+            }
+            let noTarget = browser.targetBy == nil && browser.target == nil && browser.role == nil
+            let noValue = browser.value == nil
+            let noDirection = browser.direction == nil
+            switch browser.action {
+            case "navigate":
+                guard let url = browser.url, isAllowedBrowserURL(url), noTarget, noValue, noDirection else {
+                    return RovaError(code: "BROWSER_URL_BLOCKED", message: "Yalnızca herkese açık http/https adresleri açılabilir.", category: "permission")
+                }
+            case "observe":
+                guard browser.url == nil, noTarget, noValue, noDirection else {
+                    return RovaError(code: "INVALID_PAYLOAD", message: "Sayfa gözlemi ek parametre kabul etmiyor.", category: "validation")
+                }
+            case "scroll":
+                guard browser.url == nil, noTarget, noValue,
+                      browser.direction == "up" || browser.direction == "down" else {
+                    return RovaError(code: "INVALID_PAYLOAD", message: "Kaydırma yönü geçersiz.", category: "validation")
+                }
+            case "click", "fill", "submit":
+                guard browser.url == nil,
+                      ["role", "label", "placeholder"].contains(browser.targetBy ?? ""),
+                      let target = browser.target, isSafeText(target, maxLength: 240),
+                      browser.value.map({ $0.count <= 2_000 && !$0.contains("\0") }) ?? true,
+                      browser.action != "fill" || browser.value != nil,
+                      browser.action == "fill" || noValue,
+                      browser.targetBy != "role" || ["button", "link", "textbox", "searchbox", "checkbox", "radio", "combobox", "option", "tab", "menuitem", "heading"].contains(browser.role ?? ""),
+                      browser.targetBy == "role" || browser.role == nil,
+                      browser.action != "submit" || (browser.targetBy == "role" && browser.role == "button"),
+                      noDirection else {
+                    return RovaError(code: "INVALID_PAYLOAD", message: "Erişilebilir tarayıcı hedefi veya değeri geçersiz.", category: "validation")
+                }
+            default:
+                return RovaError(code: "INVALID_PAYLOAD", message: "Tarayıcı eylemi desteklenmiyor.", category: "validation")
+            }
+        case .endBrowserTask:
+            guard case .browserTask(let task) = request.payload, UUID(uuidString: task.taskId) != nil else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Tarayıcı görevi geçersiz.", category: "validation")
+            }
         }
         return nil
     }
@@ -438,6 +481,16 @@ public enum RovaValidation {
         return true
     }
 
+    private static func isAllowedBrowserURL(_ rawValue: String) -> Bool {
+        guard isAllowedURL(rawValue), let components = URLComponents(string: rawValue),
+              let scheme = components.scheme?.lowercased(), let host = components.host?.lowercased(),
+              components.port == nil || components.port == (scheme == "https" ? 443 : 80),
+              host.contains("."), !host.contains(":"),
+              host != "localhost", !host.hasSuffix(".localhost"), !host.hasSuffix(".local"), !host.hasSuffix(".internal"),
+              host.range(of: "^[0-9.]+$", options: .regularExpression) == nil else { return false }
+        return true
+    }
+
     public static func isAllowedArtifactURL(_ rawValue: String) -> Bool {
         guard isAllowedURL(rawValue), let host = URLComponents(string: rawValue)?.host?.lowercased() else { return false }
         return host == "84-247-172-213.sslip.io"
@@ -486,6 +539,7 @@ public enum RovaCommandAuthority {
         case .controlUIElement: return "device.ui.control"
         case .clickScreen: return "device.screen.click"
         case .listRunningApplications: return "device.app.list"
+        case .computerBrowser, .endBrowserTask: return "device.browser.control"
         }
     }
 
@@ -511,6 +565,9 @@ public enum RovaCommandAuthority {
         case .controlUIElement:
             guard case .uiElement(let element) = payload else { return true }
             return RovaValidation.uiElementRequiresUserPresence(element)
+        case .computerBrowser:
+            guard case .computerBrowser(let browser) = payload else { return true }
+            return browser.action == "submit"
         default:
             return false
         }
@@ -524,6 +581,9 @@ public enum RovaCommandAuthority {
              .executeCode, .captureScreen, .controlUIElement, .clickScreen,
              .controlApplication, .getClipboardText, .getClipboardHistory:
             return true
+        case .computerBrowser:
+            guard case .computerBrowser(let browser) = payload else { return true }
+            return ["observe", "click", "fill", "submit"].contains(browser.action)
         default:
             return false
         }
@@ -535,7 +595,7 @@ public enum RovaCommandAuthority {
     public static func permitsUnattended(type: CommandType, payload: CommandPayload) -> Bool {
         if requiresUserPresence(type: type, payload: payload) { return false }
         switch type {
-        case .readDocument, .listFiles, .searchFiles, .readFile, .sendFileToPhone, .captureScreen, .controlUIElement, .clickScreen:
+        case .readDocument, .listFiles, .searchFiles, .readFile, .sendFileToPhone, .captureScreen, .controlUIElement, .clickScreen, .computerBrowser, .endBrowserTask:
             return false
         case .controlApplication, .quitApplication, .runShortcut:
             return false

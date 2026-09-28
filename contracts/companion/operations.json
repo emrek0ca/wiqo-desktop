@@ -641,7 +641,35 @@
       ],
       "timeoutClass" : "short",
       "verificationRule" : "application_state"
+    },
+    {
+      "authority" : "device.browser.control",
+      "capability" : "device.browser.control",
+      "isDestructive" : false,
+      "operation" : "computerBrowser",
+      "payloadKind" : "computerBrowser",
+      "requiresUserPresence" : true,
+      "supportedPlatforms" : [
+        "macOS",
+        "windows"
+      ],
+      "timeoutClass" : "long",
+      "verificationRule" : "browser_state"
+    },
+    {
+      "authority" : "device.browser.control",
+      "capability" : "device.browser.control",
+      "isDestructive" : false,
+      "operation" : "endBrowserTask",
+      "payloadKind" : "browserTask",
+      "requiresUserPresence" : false,
+      "supportedPlatforms" : [
+        "macOS",
+        "windows"
+      ],
+      "timeoutClass" : "medium",
+      "verificationRule" : "browser_state"
     }
   ],
-  "version" : 1
+  "version" : 2
 }

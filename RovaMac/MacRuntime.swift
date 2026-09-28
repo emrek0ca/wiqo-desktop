@@ -180,6 +180,7 @@ final class MacRuntime: ObservableObject {
     }
 
     func stop() {
+        Task { await engine.shutdownBrowserWorker() }
         startTask?.cancel()
         startTask = nil
         deviceInfoRefreshTask?.cancel()

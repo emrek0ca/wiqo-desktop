@@ -48,6 +48,9 @@ struct CopilotView: View {
     /// Results are sent with the next stateless backend turn, so the model can distinguish a
     /// command that was merely queued from one the paired Mac actually completed.
     @State private var recentDeviceResults: [RovaBackendClient.DeviceExecutionResult] = []
+    /// Browser task ids stay local to this foreground turn and are explicitly closed when its
+    /// result has been reconciled. The companion also enforces an idle TTL if the phone vanishes.
+    @State private var activeBrowserTaskIDs: Set<String> = []
     /// One task-level recovery budget. Safe multi-step continuations may still use their normal
     /// round budget, but a failed local device step gets at most one alternative attempt.
     @State private var localRecoveryAttemptsRemaining = 1
@@ -876,6 +879,7 @@ struct CopilotView: View {
         case .setClipboardText, .getClipboardText, .getClipboardHistory: return "doc.on.clipboard"
         case .setVolume, .toggleMute, .mediaControl: return "speaker.wave.2.fill"
         case .captureScreen, .clickScreen, .controlUIElement: return "rectangle.inset.filled.and.person.filled"
+        case .computerBrowser, .endBrowserTask: return "safari.fill"
         case .getSystemStatus, .ping: return "desktopcomputer"
         default: return "bolt.fill"
         }
@@ -1702,6 +1706,7 @@ struct CopilotView: View {
                     recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
                 )
             } else {
+                await closeActiveBrowserTasks()
                 recentDeviceResults.removeAll(keepingCapacity: true)
             }
             persistConversation()
@@ -1725,6 +1730,7 @@ struct CopilotView: View {
         } catch RovaBackendError.notAuthenticated {
             // Sends the whole app back to the login screen (RootView switches on this),
             // there's no local sheet/screen of our own to dismiss here.
+            await closeActiveBrowserTasks()
             liveReplyBubbleID = nil
             thinking.finish(failed: true)
             setBubble(responseBubble.id) { bubble in
@@ -1735,6 +1741,7 @@ struct CopilotView: View {
             CopilotConversationStore.flushPending()
             authSession.signOut()
         } catch {
+            await closeActiveBrowserTasks()
             liveReplyBubbleID = nil
             commitThinking(to: earlyConfirmationBubbleID ?? responseBubble.id, failed: true)
             let presentation = errorPresentation(error)
@@ -1847,6 +1854,7 @@ struct CopilotView: View {
                 recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
             )
         } else {
+            await closeActiveBrowserTasks()
             recentDeviceResults.removeAll(keepingCapacity: true)
         }
         persistConversation()
@@ -1918,6 +1926,14 @@ struct CopilotView: View {
             )
             recentDeviceResults.append(deviceResult)
             recentDeviceResults = Array(recentDeviceResults.suffix(12))
+            switch result.data {
+            case .computerBrowser(let browser):
+                activeBrowserTaskIDs.insert(browser.taskId)
+            case .browserTask(let browser) where browser.closed == true:
+                activeBrowserTaskIDs.remove(browser.taskId)
+            default:
+                break
+            }
             setBubble(bubbleID) { bubble in
                 bubble.inFlightStepIDs.remove(step.id)
                 bubble.executedStepIDs.insert(step.id)
@@ -1978,11 +1994,18 @@ struct CopilotView: View {
         remainingRounds: Int = 3,
         recoveryAttemptsRemaining: Int
     ) async {
-        guard remainingRounds > 0 else { return }
-        guard !recentDeviceResults.isEmpty else { return }
+        guard remainingRounds > 0 else {
+            await closeActiveBrowserTasks()
+            return
+        }
+        guard !recentDeviceResults.isEmpty else {
+            await closeActiveBrowserTasks()
+            return
+        }
         let localResults = Array(recentDeviceResults.suffix(12))
         let hasFailure = localResults.contains { $0.status != .completed || $0.error != nil }
         guard !hasFailure || recoveryAttemptsRemaining > 0 else {
+            await closeActiveBrowserTasks()
             recentDeviceResults.removeAll(keepingCapacity: true)
             return
         }
@@ -2073,10 +2096,12 @@ struct CopilotView: View {
                     recoveryAttemptsRemaining: nextRecoveryBudget
                 )
             } else {
+                await closeActiveBrowserTasks()
                 recentDeviceResults.removeAll(keepingCapacity: true)
             }
             persistConversation()
         } catch {
+            await closeActiveBrowserTasks()
             liveReplyBubbleID = nil
             liveReply.reset()
             commitThinking(to: bubbleID, failed: true)
@@ -2092,6 +2117,19 @@ struct CopilotView: View {
         if recentDeviceResults.contains(where: { $0.status != .completed || $0.error != nil }) { return true }
         guard let bubble = bubbles.first(where: { $0.id == bubbleID }) else { return false }
         return bubble.steps.contains(where: needsLocalResultFollowUp)
+    }
+
+    private func closeActiveBrowserTasks() async {
+        let taskIDs = activeBrowserTaskIDs
+        guard !taskIDs.isEmpty else { return }
+        activeBrowserTaskIDs.removeAll()
+        for taskID in taskIDs {
+            _ = await model.send(
+                .endBrowserTask,
+                payload: .browserTask(BrowserTaskPayload(taskId: taskID)),
+                commandID: UUID()
+            )
+        }
     }
 
     private func mergeContinuationResult(
@@ -2460,7 +2498,7 @@ struct CopilotView: View {
         // ended the turn on "Masaüstüne bakıyorum" with the listing never shown to the model.
         case .readDocument, .readDesktopFile, .readFile, .sendFileToPhone, .searchFiles, .listFiles, .listDesktopFiles, .captureScreen,
              .runShortcut, .controlUIElement, .clickScreen, .listRunningApplications, .getSystemStatus,
-             .listCalendarEvents, .listReminders, .getClipboardText, .getClipboardHistory:
+             .listCalendarEvents, .listReminders, .getClipboardText, .getClipboardHistory, .computerBrowser:
             return true
         default:
             return false
@@ -2514,6 +2552,9 @@ struct CopilotView: View {
     }
 
     private func cancelConfirmation(for bubbleID: UUID) {
+        // A safe-prefix navigation may already have opened this task's browser before the next
+        // operation asks for approval. Close that ephemeral context when the user cancels.
+        Task { await closeActiveBrowserTasks() }
         setBubble(bubbleID) { bubble in
             bubble.needsConfirmation = false
             if let step = bubble.steps.first(where: { step in

@@ -7,7 +7,7 @@ namespace RovaWindows;
 /// mail reach the user through the cloud connectors instead.
 public static class WindowsCapabilityManifest
 {
-    public const int Version = 2;
+    public const int Version = 3;
 
     public static readonly IReadOnlySet<string> Operations = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -17,7 +17,7 @@ public static class WindowsCapabilityManifest
         "setClipboardText", "getClipboardText",
         "saveTextFile", "listDesktopFiles", "readDesktopFile", "moveDesktopFile", "renameDesktopFile",
         "listFiles", "searchFiles", "readFile", "sendFileToPhone", "writeFile", "moveFile", "copyFile", "deleteFile",
-        "saveArtifact", "captureScreen"
+        "saveArtifact", "captureScreen", "computerBrowser", "endBrowserTask"
     };
 
     public static string CapabilityFor(string operation) =>
@@ -46,6 +46,7 @@ public static class WindowsCapabilityManifest
         ["device.files.copy"] = ("Dosya kopyalama", "confirmation"),
         ["device.files.delete"] = ("Dosya silme (Geri Dönüşüm Kutusu)", "confirmation"),
         ["artifact.save"] = ("Dosya kaydetme", "confirmation"),
-        ["device.screen.capture"] = ("Ekran gözlemi", "confirmation")
+        ["device.screen.capture"] = ("Ekran gözlemi", "confirmation"),
+        ["device.browser.control"] = ("Geçici tarayıcı", "confirmation")
     };
 }

@@ -19,7 +19,7 @@ public sealed class CapabilitySettings
         new("documents", "Belgeler", ["document.read", "document.edit", "artifact.save"]),
         new("screen", "Ekran", ["device.screen.capture", "device.screen.click", "device.ui.control"]),
         new("clipboard", "Pano", ["device.clipboard"]),
-        new("web", "Bağlantılar", ["device.url.open"])
+        new("web", "Bağlantılar", ["device.url.open", "device.browser.control"])
     }.Select(group => group with { Capabilities = group.Capabilities.Where(WindowsCapabilityManifest.Capabilities.Contains).ToArray() })
      .Where(group => group.Capabilities.Count > 0).ToArray();
 

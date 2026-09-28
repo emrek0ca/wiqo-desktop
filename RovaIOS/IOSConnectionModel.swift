@@ -1057,6 +1057,8 @@ final class IOSConnectionModel: ObservableObject {
         case .controlUIElement: return "Arayüz kontrolü"
         case .clickScreen: return "Ekrana tıkla"
         case .listRunningApplications: return "Açık uygulamalar"
+        case .computerBrowser: return "Tarayıcıda gezin"
+        case .endBrowserTask: return "Tarayıcı oturumunu kapat"
         }
     }
 

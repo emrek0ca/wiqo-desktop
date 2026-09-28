@@ -54,8 +54,8 @@ enum RovaCapabilityCatalog {
         CapabilityGroup(id: "messaging", title: "Mesajlaşma", icon: "message", capabilities: [
             "device.messaging.send"
         ]),
-        CapabilityGroup(id: "web", title: "URL ve Shortcut", icon: "link", capabilities: [
-            "device.url.open", "device.shortcut.run"
+        CapabilityGroup(id: "web", title: "Web ve Bağlantılar", icon: "link", capabilities: [
+            "device.url.open", "device.shortcut.run", "device.browser.control"
         ])
     ]
 

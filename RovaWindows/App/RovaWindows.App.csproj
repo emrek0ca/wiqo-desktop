@@ -33,4 +33,10 @@
     <Resource Include="Assets\wiqo.ico" />
     <Resource Include="Assets\wiqo-256.png" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="../../RovaBrowserWorker/**"
+             Link="BrowserWorker/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

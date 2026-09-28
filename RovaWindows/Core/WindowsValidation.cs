@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Net;
 
 namespace RovaWindows;
 
@@ -83,6 +84,12 @@ public static class WindowsValidation
             case "captureScreen":
                 var capture = PayloadReader.Object<ScreenCapturePayload>(payload, "screenCapture");
                 return capture is not null && capture.MaxWidth is >= 400 and <= 2_400 ? null : Invalid("Ekran görüntüsü ayarları geçersiz.");
+            case "computerBrowser":
+                var browser = PayloadReader.Object<ComputerBrowserPayload>(payload, "computerBrowser");
+                return browser is not null && IsValidBrowserPayload(browser) ? null : Invalid("Tarayıcı işlemi geçersiz.", "validation");
+            case "endBrowserTask":
+                var browserTask = PayloadReader.Object<BrowserTaskPayload>(payload, "browserTask");
+                return browserTask is not null && Guid.TryParse(browserTask.TaskId, out _) ? null : Invalid("Tarayıcı görevi geçersiz.", "validation");
             default:
                 return Invalid("Bu işlem Windows'ta desteklenmiyor.");
         }
@@ -112,6 +119,42 @@ public static class WindowsValidation
     {
         if (raw is null || raw.Length > 2_048 || raw.Any(character => char.IsControl(character) || (char.IsWhiteSpace(character) && character != ' '))) return false;
         return Uri.TryCreate(raw, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" && uri.Host.Length > 0 && uri.UserInfo.Length == 0;
+    }
+
+    private static bool IsValidBrowserPayload(ComputerBrowserPayload value)
+    {
+        if (!Guid.TryParse(value.TaskId, out _)) return false;
+        var hasTarget = (value.TargetBy is "role" or "label" or "placeholder")
+            && IsSafeText(value.Target, 200)
+            && (value.TargetBy != "role" || value.Role is "button" or "link" or "textbox" or "searchbox" or "checkbox" or "radio" or "combobox" or "option" or "tab" or "menuitem" or "heading")
+            && (value.TargetBy == "role" || value.Role is null);
+        var noTarget = value.TargetBy is null && value.Target is null && value.Role is null;
+        var noValue = value.Value is null;
+        var noDirection = value.Direction is null;
+        var noUrl = value.Url is null;
+
+        return value.Action switch
+        {
+            "navigate" => IsPublicBrowserUrl(value.Url) && noTarget && noValue && noDirection,
+            "observe" => noUrl && noTarget && noValue && noDirection,
+            "scroll" => noUrl && noTarget && noValue && (value.Direction is "up" or "down"),
+            "click" or "submit" => noUrl && hasTarget && noValue && noDirection,
+            "fill" => noUrl && hasTarget && value.Value is { Length: > 0 and <= 2_000 } fillValue && !fillValue.Contains('\0') && noDirection,
+            _ => false
+        };
+    }
+
+    private static bool IsPublicBrowserUrl(string? raw)
+    {
+        if (!IsAllowedUrl(raw) || !Uri.TryCreate(raw, UriKind.Absolute, out var uri)) return false;
+        if (uri.Port != (uri.Scheme == "https" ? 443 : 80)) return false;
+        var host = uri.IdnHost.TrimEnd('.').ToLowerInvariant();
+        if (IPAddress.TryParse(host, out _) || !host.Contains('.') || host.Contains('%')) return false;
+        return host != "localhost" && !host.EndsWith(".localhost", StringComparison.Ordinal)
+            && !host.EndsWith(".local", StringComparison.Ordinal)
+            && !host.EndsWith(".internal", StringComparison.Ordinal)
+            && !host.EndsWith(".test", StringComparison.Ordinal)
+            && !host.EndsWith(".invalid", StringComparison.Ordinal);
     }
 
     /// Artifacts come only from the Wiqo backend (the canonical host, plus the legacy one).

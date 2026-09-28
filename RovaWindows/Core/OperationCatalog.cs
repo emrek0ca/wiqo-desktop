@@ -17,7 +17,8 @@ public static class OperationCatalog
     private static readonly HashSet<string> NeverUnattended = new(StringComparer.Ordinal)
     {
         "readDocument", "listFiles", "searchFiles", "readFile", "sendFileToPhone", "captureScreen",
-        "controlUIElement", "clickScreen", "controlApplication", "quitApplication", "runShortcut"
+        "controlUIElement", "clickScreen", "controlApplication", "quitApplication", "runShortcut",
+        "computerBrowser", "endBrowserTask"
     };
 
     public static bool PermitsUnattended(string operation) =>
@@ -28,6 +29,9 @@ public static class OperationCatalog
     {
         "sendFileToPhone" => TimeSpan.FromSeconds(120),
         "readDocument" or "editDocument" or "saveArtifact" or "executeCode" or "runShortcut" or "searchFiles" => TimeSpan.FromSeconds(60),
+        // First use may install the pinned Playwright runtime and Chromium into LocalAppData.
+        "computerBrowser" => TimeSpan.FromSeconds(120),
+        "endBrowserTask" => TimeSpan.FromSeconds(5),
         "listDesktopFiles" or "readDesktopFile" or "listFiles" or "readFile" or "writeFile" or "moveFile" or "copyFile" or "deleteFile" or "saveTextFile" => TimeSpan.FromSeconds(20),
         _ => TimeSpan.FromSeconds(10)
     };

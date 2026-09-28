@@ -145,6 +145,7 @@ private actor MacOperationRace {
 actor MacCommandEngine {
     private let ledger: CommandLedger
     private let executionGate = MacExecutionGate()
+    private let browserWorker = LocalBrowserWorkerClient()
     private var completed: [UUID: CommandResult]
     private var inFlight: [UUID: Task<CommandResult, Never>] = [:]
     private var fileTransferToken: (@Sendable () async -> String?)?
@@ -160,6 +161,10 @@ actor MacCommandEngine {
 
     func persistedResults() -> [CommandResult] {
         completed.values.sorted { $0.finishedAt > $1.finishedAt }
+    }
+
+    func shutdownBrowserWorker() {
+        browserWorker.shutdown()
     }
 
     func execute(_ request: CommandRequest, runtimeStatus: String) async -> CommandResult {
@@ -306,6 +311,11 @@ actor MacCommandEngine {
         switch type {
         case .sendFileToPhone:
             return 120_000_000_000
+        case .computerBrowser:
+            // First use may install the pinned Playwright runtime and Chromium into Application Support.
+            return 120_000_000_000
+        case .endBrowserTask:
+            return 5_000_000_000
         case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles:
             return 60_000_000_000
         case .listCalendarEvents, .createCalendarEvent, .listReminders, .createReminder,
@@ -633,6 +643,18 @@ actor MacCommandEngine {
             }
             let outcome = await Task.detached(priority: .userInitiated) { MacSystem.clickScreen(payload) }.value
             return (outcome.data, outcome.error == nil ? "Ekran tıklaması gönderildi; sonucu yeniden gözlemlemek gerekiyor." : outcome.error!.message, outcome.error)
+        case .computerBrowser:
+            guard case .computerBrowser(let payload) = request.payload else {
+                return (nil, "Geçersiz tarayıcı isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Tarayıcı işlemi geçersiz.", category: "validation"))
+            }
+            let outcome = await browserWorker.perform(payload)
+            return (outcome.0.map(CommandData.computerBrowser), outcome.1, outcome.2)
+        case .endBrowserTask:
+            guard case .browserTask(let payload) = request.payload else {
+                return (nil, "Geçersiz tarayıcı kapatma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Tarayıcı görevi geçersiz.", category: "validation"))
+            }
+            let outcome = await browserWorker.close(taskId: payload.taskId)
+            return (outcome.0.map(CommandData.browserTask), outcome.1, outcome.2)
         case .listRunningApplications:
             let outcome = await Task.detached(priority: .utility) {
                 MacSystem.listRunningApplications()

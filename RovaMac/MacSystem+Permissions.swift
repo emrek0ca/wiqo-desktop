@@ -80,6 +80,7 @@ extension MacSystem {
             authority("device.app.control", "Uygulama açma ve odaklama", .confirmation),
             authority("device.app.quit", "Uygulama kapatma", .confirmation),
             authority("device.url.open", "Bağlantı açma", .automatic),
+            authority("device.browser.control", "Göreve özel tarayıcı", .confirmation),
             authority("device.audio", "Ses kontrolü", .automatic),
             authority("device.display", "Ekran kontrolü", .automatic),
             authority("device.media", "Medya kontrolü", .automatic),

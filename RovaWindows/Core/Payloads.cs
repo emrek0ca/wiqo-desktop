@@ -10,6 +10,16 @@ public sealed record FileSearchPayload(string Query = "", string? Cursor = null)
 public sealed record ArtifactFilePayload(string ArtifactId = "", string Filename = "", string MimeType = "", string DownloadUrl = "", bool Overwrite = false, long? ByteCount = null, string? Sha256 = null);
 public sealed record ScreenCapturePayload(uint? DisplayId = null, int MaxWidth = 1600);
 public sealed record ApplicationControlPayload(string Action = "", string Target = "", string? BundleIdentifier = null, bool Force = false);
+public sealed record ComputerBrowserPayload(
+    string TaskId = "",
+    string Action = "",
+    string? Url = null,
+    string? TargetBy = null,
+    string? Target = null,
+    string? Role = null,
+    string? Value = null,
+    string? Direction = null);
+public sealed record BrowserTaskPayload(string TaskId = "");
 
 public static class PayloadReader
 {

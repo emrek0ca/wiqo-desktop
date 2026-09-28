@@ -95,6 +95,8 @@
 		D30000000000000000000024 /* MacSystem+Personal.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000084 /* MacSystem+Personal.swift */; };
 		D30000000000000000000025 /* MacSystem+UIControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000085 /* MacSystem+UIControl.swift */; };
 		D30000000000000000000026 /* MacSystem+Code.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000086 /* MacSystem+Code.swift */; };
+		E50000000000000000000001 /* LocalBrowserWorkerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50000000000000000000002 /* LocalBrowserWorkerClient.swift */; };
+		E50000000000000000000003 /* RovaBrowserWorker in Resources */ = {isa = PBXBuildFile; fileRef = E50000000000000000000004 /* RovaBrowserWorker */; };
 		D30000000000000000000005 /* MacNetworkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000069 /* MacNetworkTests.swift */; };
 		D30000000000000000000006 /* MacTimeoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000006A /* MacTimeoutTests.swift */; };
 		D30000000000000000000007 /* MacRelayPairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000006B /* MacRelayPairingTests.swift */; };
@@ -240,6 +242,8 @@
 		D30000000000000000000084 /* MacSystem+Personal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Personal.swift"; sourceTree = "<group>"; };
 		D30000000000000000000085 /* MacSystem+UIControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+UIControl.swift"; sourceTree = "<group>"; };
 		D30000000000000000000086 /* MacSystem+Code.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Code.swift"; sourceTree = "<group>"; };
+		E50000000000000000000002 /* LocalBrowserWorkerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBrowserWorkerClient.swift; sourceTree = "<group>"; };
+		E50000000000000000000004 /* RovaBrowserWorker */ = {isa = PBXFileReference; lastKnownFileType = folder; path = RovaBrowserWorker; sourceTree = "<group>"; };
 		D30000000000000000000069 /* MacNetworkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNetworkTests.swift; sourceTree = "<group>"; };
 		D3000000000000000000006A /* MacTimeoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTimeoutTests.swift; sourceTree = "<group>"; };
 		D3000000000000000000006B /* MacRelayPairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelayPairingTests.swift; sourceTree = "<group>"; };
@@ -292,6 +296,7 @@
 				G003 /* RovaIOS */,
 				G004 /* Tests */,
 				G005 /* Products */,
+				E50000000000000000000004 /* RovaBrowserWorker */,
 				F028 /* project.pbxproj */,
 				F029 /* README.md */,
 			);
@@ -320,6 +325,7 @@
 				F009 /* MacSystem.swift */,
 				F010 /* CommandLedger.swift */,
 				F011 /* MacCommandEngine.swift */,
+				E50000000000000000000002 /* LocalBrowserWorkerClient.swift */,
 				F012 /* MacServer.swift */,
 				F013 /* MacRuntime.swift */,
 				F014 /* MacViews.swift */,
@@ -602,6 +608,7 @@
 				C108 /* WiqoBluetoothOn.shortcut in Resources */,
 				C109 /* WiqoBluetoothOff.shortcut in Resources */,
 				68E520CA7B6A6DA7B8CE3AE2 /* Assets.xcassets in Resources */,
+				E50000000000000000000003 /* RovaBrowserWorker in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -668,6 +675,7 @@
 				D30000000000000000000022 /* MacSystem+Device.swift in Sources */,
 				D30000000000000000000023 /* MacSystem+Files.swift in Sources */,
 				D30000000000000000000024 /* MacSystem+Personal.swift in Sources */,
+				E50000000000000000000001 /* LocalBrowserWorkerClient.swift in Sources */,
 				D30000000000000000000025 /* MacSystem+UIControl.swift in Sources */,
 				D30000000000000000000026 /* MacSystem+Code.swift in Sources */,
 			);

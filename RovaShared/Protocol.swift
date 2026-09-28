@@ -57,6 +57,8 @@ public enum CommandType: String, Codable, CaseIterable, Sendable {
     case controlUIElement
     case clickScreen
     case listRunningApplications
+    case computerBrowser
+    case endBrowserTask
 }
 
 public enum MediaAction: String, Codable, CaseIterable, Sendable {
@@ -177,6 +179,33 @@ public struct ScreenClickPayload: Codable, Equatable, Sendable {
         self.screenshotHeight = screenshotHeight
         self.expectedTarget = expectedTarget
     }
+}
+
+public struct ComputerBrowserPayload: Codable, Equatable, Sendable {
+    public let taskId: String
+    public let action: String
+    public let url: String?
+    public let targetBy: String?
+    public let target: String?
+    public let role: String?
+    public let value: String?
+    public let direction: String?
+
+    public init(taskId: String, action: String, url: String? = nil, targetBy: String? = nil, target: String? = nil, role: String? = nil, value: String? = nil, direction: String? = nil) {
+        self.taskId = taskId
+        self.action = action
+        self.url = url
+        self.targetBy = targetBy
+        self.target = target
+        self.role = role
+        self.value = value
+        self.direction = direction
+    }
+}
+
+public struct BrowserTaskPayload: Codable, Equatable, Sendable {
+    public let taskId: String
+    public init(taskId: String) { self.taskId = taskId }
 }
 
 public struct MessagePayload: Codable, Equatable, Sendable {
@@ -680,6 +709,28 @@ public struct ScreenClickContent: Codable, Equatable, Sendable {
     }
 }
 
+public struct BrowserContent: Codable, Equatable, Sendable {
+    public let taskId: String
+    public let action: String?
+    public let url: String?
+    public let title: String?
+    public let text: String?
+    public let truncated: Bool?
+    public let verified: Bool?
+    public let closed: Bool?
+
+    public init(taskId: String, action: String? = nil, url: String? = nil, title: String? = nil, text: String? = nil, truncated: Bool? = nil, verified: Bool? = nil, closed: Bool? = nil) {
+        self.taskId = taskId
+        self.action = action
+        self.url = url
+        self.title = title
+        self.text = text
+        self.truncated = truncated
+        self.verified = verified
+        self.closed = closed
+    }
+}
+
 public struct ApplicationControlContent: Codable, Equatable, Sendable {
     public let action: ApplicationControlAction
     public let resolvedName: String
@@ -735,13 +786,15 @@ public enum CommandPayload: Codable, Equatable, Sendable {
     case shortcut(ShortcutPayload)
     case uiElement(UIElementPayload)
     case screenClick(ScreenClickPayload)
+    case computerBrowser(ComputerBrowserPayload)
+    case browserTask(BrowserTaskPayload)
     case reminder(ReminderPayload)
     case completeReminder(CompleteReminderPayload)
     case note(NotePayload)
     case email(EmailPayload)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, fileSearch, codeExecution, screenCapture, shortcut, uiElement, screenClick, reminder, completeReminder, note, email }
+    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, fileSearch, codeExecution, screenCapture, shortcut, uiElement, screenClick, computerBrowser, browserTask, reminder, completeReminder, note, email }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -793,6 +846,10 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             self = .uiElement(try container.decode(UIElementPayload.self, forKey: .value))
         case .screenClick:
             self = .screenClick(try container.decode(ScreenClickPayload.self, forKey: .value))
+        case .computerBrowser:
+            self = .computerBrowser(try container.decode(ComputerBrowserPayload.self, forKey: .value))
+        case .browserTask:
+            self = .browserTask(try container.decode(BrowserTaskPayload.self, forKey: .value))
         case .reminder:
             self = .reminder(try container.decode(ReminderPayload.self, forKey: .value))
         case .completeReminder:
@@ -874,6 +931,12 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             try container.encode(payload, forKey: .value)
         case .screenClick(let payload):
             try container.encode(Kind.screenClick, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .computerBrowser(let payload):
+            try container.encode(Kind.computerBrowser, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .browserTask(let payload):
+            try container.encode(Kind.browserTask, forKey: .kind)
             try container.encode(payload, forKey: .value)
         case .reminder(let payload):
             try container.encode(Kind.reminder, forKey: .kind)
@@ -1134,11 +1197,13 @@ public enum CommandData: Codable, Equatable, Sendable {
     case shortcutResult(ShortcutExecutionContent)
     case uiElement(UIElementContent)
     case screenClick(ScreenClickContent)
+    case computerBrowser(BrowserContent)
+    case browserTask(BrowserContent)
     case applicationControl(ApplicationControlContent)
     case runningApplications([RunningApplicationInfo])
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileTransfer, fileData, processOutput, terminalJob, terminalResult, screenshot, shortcutResult, uiElement, screenClick, applicationControl, runningApplications }
+    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileTransfer, fileData, processOutput, terminalJob, terminalResult, screenshot, shortcutResult, uiElement, screenClick, computerBrowser, browserTask, applicationControl, runningApplications }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1185,6 +1250,10 @@ public enum CommandData: Codable, Equatable, Sendable {
             self = .uiElement(try container.decode(UIElementContent.self, forKey: .value))
         case .screenClick:
             self = .screenClick(try container.decode(ScreenClickContent.self, forKey: .value))
+        case .computerBrowser:
+            self = .computerBrowser(try container.decode(BrowserContent.self, forKey: .value))
+        case .browserTask:
+            self = .browserTask(try container.decode(BrowserContent.self, forKey: .value))
         case .applicationControl:
             self = .applicationControl(try container.decode(ApplicationControlContent.self, forKey: .value))
         case .runningApplications:
@@ -1257,6 +1326,12 @@ public enum CommandData: Codable, Equatable, Sendable {
             try container.encode(value, forKey: .value)
         case .screenClick(let value):
             try container.encode(Kind.screenClick, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .computerBrowser(let value):
+            try container.encode(Kind.computerBrowser, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .browserTask(let value):
+            try container.encode(Kind.browserTask, forKey: .kind)
             try container.encode(value, forKey: .value)
         case .applicationControl(let value):
             try container.encode(Kind.applicationControl, forKey: .kind)

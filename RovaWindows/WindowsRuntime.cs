@@ -27,6 +27,7 @@ public sealed class WindowsRuntime : IAsyncDisposable
     private readonly SemaphoreSlim sideEffectLane = new(1, 1);
     private readonly CancellationTokenSource lifetime = new();
     private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(60) };
+    private readonly LocalBrowserWorkerClient browserWorker = new();
     private readonly int queueCapacity;
     private int queued;
     private string? pairingToken;
@@ -191,6 +192,10 @@ public sealed class WindowsRuntime : IAsyncDisposable
             case "saveArtifact":
                 if (accessToken is null) return Outcome.Fail("BACKEND_AUTH_REQUIRED", "Artifact indirmek için Wiqo oturumu gerekli.");
                 return await FileOperations.SaveArtifact(PayloadReader.Object<ArtifactFilePayload>(payload, "artifactFile")!, accessToken, http, cancellationToken).ConfigureAwait(false);
+            case "computerBrowser":
+                return await browserWorker.ExecuteAsync(PayloadReader.Object<ComputerBrowserPayload>(payload, "computerBrowser")!, cancellationToken).ConfigureAwait(false);
+            case "endBrowserTask":
+                return await browserWorker.CloseAsync(PayloadReader.Object<BrowserTaskPayload>(payload, "browserTask")!.TaskId, cancellationToken).ConfigureAwait(false);
             default:
                 return Outcome.Fail("UNSUPPORTED_OPERATION", "Bu işlem Windows'ta desteklenmiyor.");
         }
@@ -228,6 +233,7 @@ public sealed class WindowsRuntime : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         lifetime.Cancel();
+        await browserWorker.DisposeAsync().ConfigureAwait(false);
         await Terminal.DisposeAsync().ConfigureAwait(false);
         http.Dispose();
         sideEffectLane.Dispose();
