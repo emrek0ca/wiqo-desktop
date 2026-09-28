@@ -194,8 +194,16 @@ public struct ComputerBrowserPayload: Codable, Equatable, Sendable {
     public let scrollAmount: Int?
     /// Set by the backend only after an approved observe result from this ephemeral task.
     public let contentAccessGranted: Bool?
+    /// Set by the backend only after this task's one-time browser access approval was verified.
+    public let interactionAccessGranted: Bool?
+    /// fill: press Enter afterwards (GET/search forms only; the worker enforces it).
+    public let submit: Bool?
+    /// press: one of Enter, Escape, Tab, ArrowDown, ArrowUp.
+    public let key: String?
+    /// read: character offset of the next content chunk.
+    public let offset: Int?
 
-    public init(taskId: String, action: String, url: String? = nil, targetRef: String? = nil, targetBy: String? = nil, target: String? = nil, role: String? = nil, value: String? = nil, direction: String? = nil, scrollAmount: Int? = nil, contentAccessGranted: Bool? = nil) {
+    public init(taskId: String, action: String, url: String? = nil, targetRef: String? = nil, targetBy: String? = nil, target: String? = nil, role: String? = nil, value: String? = nil, direction: String? = nil, scrollAmount: Int? = nil, contentAccessGranted: Bool? = nil, interactionAccessGranted: Bool? = nil, submit: Bool? = nil, key: String? = nil, offset: Int? = nil) {
         self.taskId = taskId
         self.action = action
         self.url = url
@@ -207,6 +215,10 @@ public struct ComputerBrowserPayload: Codable, Equatable, Sendable {
         self.direction = direction
         self.scrollAmount = scrollAmount
         self.contentAccessGranted = contentAccessGranted
+        self.interactionAccessGranted = interactionAccessGranted
+        self.submit = submit
+        self.key = key
+        self.offset = offset
     }
 }
 
@@ -720,11 +732,16 @@ public struct BrowserTarget: Codable, Equatable, Sendable {
     public let ref: String
     public let role: String
     public let name: String
+    /// Current value of a field or selected option, when there is one.
+    public let value: String?
+    public let checked: Bool?
 
-    public init(ref: String, role: String, name: String) {
+    public init(ref: String, role: String, name: String, value: String? = nil, checked: Bool? = nil) {
         self.ref = ref
         self.role = role
         self.name = name
+        self.value = value
+        self.checked = checked
     }
 }
 
@@ -741,8 +758,10 @@ public struct BrowserContent: Codable, Equatable, Sendable {
     public let truncated: Bool?
     public let verified: Bool?
     public let closed: Bool?
+    /// read: where the next chunk starts; nil at the end of the content.
+    public let nextOffset: Int?
 
-    public init(taskId: String, action: String? = nil, url: String? = nil, title: String? = nil, text: String? = nil, targets: [BrowserTarget]? = nil, pageVersion: Int? = nil, contentShared: Bool? = nil, interactionApproved: Bool? = nil, truncated: Bool? = nil, verified: Bool? = nil, closed: Bool? = nil) {
+    public init(taskId: String, action: String? = nil, url: String? = nil, title: String? = nil, text: String? = nil, targets: [BrowserTarget]? = nil, pageVersion: Int? = nil, contentShared: Bool? = nil, interactionApproved: Bool? = nil, truncated: Bool? = nil, verified: Bool? = nil, closed: Bool? = nil, nextOffset: Int? = nil) {
         self.taskId = taskId
         self.action = action
         self.url = url
@@ -755,6 +774,7 @@ public struct BrowserContent: Codable, Equatable, Sendable {
         self.truncated = truncated
         self.verified = verified
         self.closed = closed
+        self.nextOffset = nextOffset
     }
 }
 

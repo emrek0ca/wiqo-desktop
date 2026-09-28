@@ -15,6 +15,11 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
         var value: String? = nil
         var direction: String? = nil
         var scrollAmount: Int? = nil
+        var contentAccessGranted: Bool? = nil
+        var interactionAccessGranted: Bool? = nil
+        var submit: Bool? = nil
+        var key: String? = nil
+        var offset: Int? = nil
         var cancelRequestId: String? = nil
     }
 
@@ -31,6 +36,7 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
         let truncated: Bool?
         let verified: Bool?
         let closed: Bool?
+        let nextOffset: Int?
     }
 
     private struct WorkerError: Decodable {
@@ -80,7 +86,12 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
             role: payload.role,
             value: payload.value,
             direction: payload.direction,
-            scrollAmount: payload.scrollAmount
+            scrollAmount: payload.scrollAmount,
+            contentAccessGranted: payload.contentAccessGranted,
+            interactionAccessGranted: payload.interactionAccessGranted,
+            submit: payload.submit,
+            key: payload.key,
+            offset: payload.offset
         )
         do {
             let envelope = try await send(request)
@@ -89,7 +100,7 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
                 throw WorkerFailure.invalidResponse
             }
             return (
-                BrowserContent(taskId: taskId, action: result.action, url: result.url, title: result.title, text: result.text, targets: result.targets, pageVersion: result.pageVersion, contentShared: result.contentShared, interactionApproved: result.interactionApproved, truncated: result.truncated, verified: result.verified),
+                BrowserContent(taskId: taskId, action: result.action, url: result.url, title: result.title, text: result.text, targets: result.targets, pageVersion: result.pageVersion, contentShared: result.contentShared, interactionApproved: result.interactionApproved, truncated: result.truncated, verified: result.verified, nextOffset: result.nextOffset),
                 "Tarayıcı işlemi tamamlandı ve sonucu doğrulandı.",
                 nil
             )

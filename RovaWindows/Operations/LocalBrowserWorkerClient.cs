@@ -26,9 +26,14 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
         string? Value = null,
         string? Direction = null,
         int? ScrollAmount = null,
+        bool? ContentAccessGranted = null,
+        bool? InteractionAccessGranted = null,
+        bool? Submit = null,
+        string? Key = null,
+        int? Offset = null,
         string? CancelRequestId = null);
 
-    private sealed record BrowserTarget(string Ref, string Role, string Name);
+    private sealed record BrowserTarget(string Ref, string Role, string Name, string? Value = null, bool? Checked = null);
 
     private sealed record BrowserResult(
         string? TaskId,
@@ -42,7 +47,8 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
         bool? InteractionApproved,
         bool? Truncated,
         bool? Verified,
-        bool? Closed);
+        bool? Closed,
+        int? NextOffset = null);
 
     private sealed record BrowserError(string Code, string Message);
     private sealed record BrowserEnvelope(string Id, bool Ok, BrowserResult? Result, BrowserError? Error);
@@ -58,7 +64,8 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
     {
         var request = new BrowserRequest(
             Guid.NewGuid().ToString(), payload.Action, payload.TaskId, payload.Url,
-            payload.TargetRef, payload.TargetBy, payload.Target, payload.Role, payload.Value, payload.Direction, payload.ScrollAmount);
+            payload.TargetRef, payload.TargetBy, payload.Target, payload.Role, payload.Value, payload.Direction, payload.ScrollAmount,
+            payload.ContentAccessGranted, payload.InteractionAccessGranted, payload.Submit, payload.Key, payload.Offset);
         try
         {
             var envelope = await SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -76,7 +83,8 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
                 contentShared = envelope.Result.ContentShared,
                 interactionApproved = envelope.Result.InteractionApproved,
                 truncated = envelope.Result.Truncated,
-                verified = envelope.Result.Verified
+                verified = envelope.Result.Verified,
+                nextOffset = envelope.Result.NextOffset
             }, "Tarayıcı işlemi tamamlandı ve sonucu doğrulandı.");
         }
         catch (OperationCanceledException)

@@ -304,7 +304,10 @@ public enum RovaValidation {
         case .computerBrowser:
             guard case .computerBrowser(let browser) = request.payload,
                   UUID(uuidString: browser.taskId) != nil,
-                  ["navigate", "observe", "click", "fill", "select", "scroll", "back", "submit"].contains(browser.action) else {
+                  ["navigate", "observe", "read", "click", "fill", "select", "press", "scroll", "back", "submit"].contains(browser.action),
+                  browser.submit == nil || browser.action == "fill",
+                  browser.key == nil || browser.action == "press",
+                  browser.offset == nil || (browser.action == "read" && (0...2_000_000).contains(browser.offset!)) else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Tarayıcı görevi veya eylemi geçersiz.", category: "validation")
             }
             let validRef = browser.targetRef.map {
@@ -314,7 +317,9 @@ public enum RovaValidation {
                 && browser.target.map({ isSafeText($0, maxLength: 240) }) == true
                 && (browser.targetBy != "role" || ["button", "link", "textbox", "searchbox", "checkbox", "radio", "combobox", "option", "tab", "menuitem", "heading"].contains(browser.role ?? ""))
                 && (browser.targetBy == "role" || browser.role == nil)
-            let hasTarget = validRef != legacyTarget
+            // targetRef is the current protocol. Ignore redundant legacy locator metadata when a
+            // valid ref is present so mixed-version clients cannot reject an otherwise safe target.
+            let hasTarget = validRef || (!validRef && legacyTarget)
             let noTarget = browser.targetRef == nil && browser.targetBy == nil && browser.target == nil && browser.role == nil
             let noValue = browser.value == nil
             let noDirection = browser.direction == nil
@@ -323,6 +328,15 @@ public enum RovaValidation {
             case "navigate":
                 guard let url = browser.url, isAllowedBrowserURL(url), noTarget, noValue, noDirection, noScrollAmount else {
                     return RovaError(code: "BROWSER_URL_BLOCKED", message: "Yalnızca herkese açık http/https adresleri açılabilir.", category: "permission")
+                }
+            case "read":
+                guard browser.url == nil, noTarget, noValue, noDirection, noScrollAmount else {
+                    return RovaError(code: "INVALID_PAYLOAD", message: "Sayfa okuma ek parametre kabul etmiyor.", category: "validation")
+                }
+            case "press":
+                guard browser.url == nil, noTarget, noValue, noDirection, noScrollAmount,
+                      ["Enter", "Escape", "Tab", "ArrowDown", "ArrowUp"].contains(browser.key ?? "") else {
+                    return RovaError(code: "INVALID_PAYLOAD", message: "Tuş desteklenmiyor.", category: "validation")
                 }
             case "observe", "back":
                 guard browser.url == nil, noTarget, noValue, noDirection, noScrollAmount else {
@@ -590,8 +604,12 @@ public enum RovaCommandAuthority {
             return true
         case .computerBrowser:
             guard case .computerBrowser(let browser) = payload else { return true }
-            if browser.action == "observe" { return browser.contentAccessGranted != true }
-            return ["click", "fill", "select", "submit"].contains(browser.action)
+            if ["observe", "read"].contains(browser.action) { return browser.contentAccessGranted != true }
+            if browser.action == "submit" { return true }
+            if ["click", "fill", "select", "press"].contains(browser.action) {
+                return browser.interactionAccessGranted != true
+            }
+            return false
         default:
             return false
         }

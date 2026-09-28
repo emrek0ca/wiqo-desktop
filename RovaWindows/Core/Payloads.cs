@@ -21,7 +21,11 @@ public sealed record ComputerBrowserPayload(
     string? Value = null,
     string? Direction = null,
     int? ScrollAmount = null,
-    bool? ContentAccessGranted = null);
+    bool? ContentAccessGranted = null,
+    bool? InteractionAccessGranted = null,
+    bool? Submit = null,
+    string? Key = null,
+    int? Offset = null);
 public sealed record BrowserTaskPayload(string TaskId = "");
 
 public static class PayloadReader

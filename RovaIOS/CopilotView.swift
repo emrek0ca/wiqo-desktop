@@ -1708,7 +1708,7 @@ struct CopilotView: View {
                     recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
                 )
             } else {
-                await closeActiveBrowserTasks()
+                await closeBrowserTasksIfComplete(executionState: result.executionState)
                 recentDeviceResults.removeAll(keepingCapacity: true)
             }
             persistConversation()
@@ -1743,7 +1743,8 @@ struct CopilotView: View {
             CopilotConversationStore.flushPending()
             authSession.signOut()
         } catch {
-            await closeActiveBrowserTasks()
+            // A recoverable network/model error must not destroy the visible task browser. The
+            // worker's bounded idle timeout cleans it up if the user does not retry.
             liveReplyBubbleID = nil
             commitThinking(to: earlyConfirmationBubbleID ?? responseBubble.id, failed: true)
             let presentation = errorPresentation(error)
@@ -1857,7 +1858,9 @@ struct CopilotView: View {
                 recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
             )
         } else {
-            await closeActiveBrowserTasks()
+            await closeBrowserTasksIfComplete(
+                executionState: bubbles.first(where: { $0.id == bubbleID })?.executionState
+            )
             recentDeviceResults.removeAll(keepingCapacity: true)
         }
         persistConversation()
@@ -1998,17 +2001,14 @@ struct CopilotView: View {
         recoveryAttemptsRemaining: Int
     ) async {
         guard remainingRounds > 0 else {
-            await closeActiveBrowserTasks()
             return
         }
         guard !recentDeviceResults.isEmpty else {
-            await closeActiveBrowserTasks()
             return
         }
         let localResults = Array(recentDeviceResults.suffix(12))
         let hasFailure = localResults.contains { $0.status != .completed || $0.error != nil }
         guard !hasFailure || recoveryAttemptsRemaining > 0 else {
-            await closeActiveBrowserTasks()
             recentDeviceResults.removeAll(keepingCapacity: true)
             return
         }
@@ -2099,12 +2099,13 @@ struct CopilotView: View {
                     recoveryAttemptsRemaining: nextRecoveryBudget
                 )
             } else {
-                await closeActiveBrowserTasks()
+                await closeBrowserTasksIfComplete(executionState: result.executionState)
                 recentDeviceResults.removeAll(keepingCapacity: true)
             }
             persistConversation()
         } catch {
-            await closeActiveBrowserTasks()
+            // Keep the task browser visible for an explicit retry. It remains isolated and the
+            // worker closes it after the bounded idle/max lifetime.
             liveReplyBubbleID = nil
             liveReply.reset()
             commitThinking(to: bubbleID, failed: true)
@@ -2120,6 +2121,11 @@ struct CopilotView: View {
         if recentDeviceResults.contains(where: { $0.status != .completed || $0.error != nil }) { return true }
         guard let bubble = bubbles.first(where: { $0.id == bubbleID }) else { return false }
         return bubble.steps.contains(where: needsLocalResultFollowUp)
+    }
+
+    private func closeBrowserTasksIfComplete(executionState: String?) async {
+        guard executionState == "complete_backend" else { return }
+        await closeActiveBrowserTasks()
     }
 
     private func closeActiveBrowserTasks() async {

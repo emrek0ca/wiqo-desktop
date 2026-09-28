@@ -129,14 +129,20 @@ public static class WindowsValidation
             && IsSafeText(value.Target, 200)
             && (value.TargetBy != "role" || value.Role is "button" or "link" or "textbox" or "searchbox" or "checkbox" or "radio" or "combobox" or "option" or "tab" or "menuitem" or "heading")
             && (value.TargetBy == "role" || value.Role is null);
-        var hasTarget = hasRef ^ hasLegacyTarget;
+        // A current target ref wins over redundant legacy locator metadata from mixed versions.
+        var hasTarget = hasRef || (!hasRef && hasLegacyTarget);
         var noTarget = value.TargetRef is null && value.TargetBy is null && value.Target is null && value.Role is null;
         var noValue = value.Value is null;
         var noDirection = value.Direction is null;
         var noUrl = value.Url is null;
 
+        if (value.Submit is not null && value.Action != "fill") return false;
+        if (value.Key is not null && value.Action != "press") return false;
+        if (value.Offset is not null && (value.Action != "read" || value.Offset is < 0 or > 2_000_000)) return false;
         return value.Action switch
         {
+            "read" => noUrl && noTarget && noValue && noDirection && value.ScrollAmount is null,
+            "press" => noUrl && noTarget && noValue && noDirection && value.ScrollAmount is null && value.Key is "Enter" or "Escape" or "Tab" or "ArrowDown" or "ArrowUp",
             "navigate" => IsPublicBrowserUrl(value.Url) && noTarget && noValue && noDirection && value.ScrollAmount is null,
             "observe" or "back" => noUrl && noTarget && noValue && noDirection && value.ScrollAmount is null,
             "scroll" => noUrl && noTarget && noValue && (value.Direction is "up" or "down") && (value.ScrollAmount is null or >= 1 and <= 3),
