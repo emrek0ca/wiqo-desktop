@@ -41,12 +41,14 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
 
     private enum WorkerFailure: LocalizedError {
         case unavailable
+        case terminated
         case invalidResponse
         case rejected(String, String)
 
         var errorDescription: String? {
             switch self {
             case .unavailable: return "Yerel tarayıcı bileşeni başlatılamadı."
+            case .terminated: return "Yerel tarayıcı işlemi beklenmedik biçimde durdu."
             case .invalidResponse: return "Yerel tarayıcıdan güvenli bir sonuç alınamadı."
             case .rejected(_, let message): return message
             }
@@ -228,7 +230,7 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
         let continuations = Array(pending.values)
         pending.removeAll()
         lock.unlock()
-        continuations.forEach { $0.resume(throwing: WorkerFailure.unavailable) }
+        continuations.forEach { $0.resume(throwing: WorkerFailure.terminated) }
     }
 
     private func safeError(_ error: Error) -> (String, String, String) {
@@ -239,6 +241,8 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
                 return (code, message, category)
             case .unavailable:
                 return ("BROWSER_RUNTIME_MISSING", "Yerel tarayıcı bileşeni başlatılamadı.", "unavailable")
+            case .terminated:
+                return ("BROWSER_FAILED", "Yerel tarayıcı işlemi beklenmedik biçimde durdu.", "tool_failure")
             case .invalidResponse:
                 return ("BROWSER_FAILED", "Tarayıcıdan güvenli bir sonuç alınamadı.", "tool_failure")
             }

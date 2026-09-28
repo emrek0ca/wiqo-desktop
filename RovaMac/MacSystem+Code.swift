@@ -8,17 +8,19 @@ extension MacSystem {
         if payload.scope.lowercased() == "computer" {
             return executeComputerTerminal(payload)
         }
-        // `/private/tmp/...` and `/tmp/...` refer to the same inode, but the sandbox's `subpath`
-        // rules match against the resolved path - a profile built from the raw `/var/folders/...`
-        // URL (which is really a symlink through `/private/var`) silently denies the very
-        // directory the script lives in. Resolving up front is what makes every subpath rule
-        // below actually apply to the directory the script runs from.
-        let temporaryDirectory = FileManager.default.temporaryDirectory
+        // Sandbox subpath rules use the filesystem's canonical path. Foundation's
+        // resolvingSymlinksInPath() leaves /var/folders unchanged on macOS, while the
+        // sandbox resolves it to /private/var/folders and denies main.sh there.
+        let rawTemporaryDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("rova-code-\(UUID().uuidString)", isDirectory: true)
-            .resolvingSymlinksInPath()
         do {
-            try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
-            defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+            try FileManager.default.createDirectory(at: rawTemporaryDirectory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: rawTemporaryDirectory) }
+            guard let canonicalPath = realpath(rawTemporaryDirectory.path, nil) else {
+                return (nil, RovaError(code: "CODE_SANDBOX_FAILED", message: "Kod için geçici klasör doğrulanamadı.", category: "tool_failure"))
+            }
+            defer { free(canonicalPath) }
+            let temporaryDirectory = URL(fileURLWithPath: String(cString: canonicalPath), isDirectory: true)
             let fileExtension: String
             switch payload.language.lowercased() {
             case "python": fileExtension = "py"

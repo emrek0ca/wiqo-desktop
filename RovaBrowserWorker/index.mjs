@@ -207,6 +207,10 @@ async function resolvePublicAddress(host) {
 function createSocksProxy() {
   const server = createServer((client) => {
     client.setTimeout(60_000, () => client.destroy());
+    // Chromium routinely resets speculative connections. A reset is local socket
+    // lifecycle, not a worker failure; always consume it so Node cannot terminate
+    // the JSONL worker between browser commands.
+    client.on("error", () => client.destroy());
     let buffer = Buffer.alloc(0);
     let state = "greeting";
     const onData = async (chunk) => {
@@ -260,10 +264,15 @@ function createSocksProxy() {
             client.pipe(upstream);
             upstream.pipe(client);
           });
-          upstream.once("error", () => {
-            if (!client.destroyed) client.end(Buffer.from([5, 5, 0, 1, 0, 0, 0, 0, 0, 0]));
+          upstream.on("error", () => {
+            if (client.destroyed) return;
+            if (state === "connecting") client.end(Buffer.from([5, 5, 0, 1, 0, 0, 0, 0, 0, 0]));
+            else client.destroy();
           });
           client.once("close", () => upstream.destroy());
+          upstream.once("close", () => {
+            if (!client.destroyed) client.destroy();
+          });
         }
       } catch (error) {
         const code = error?.code === "BROWSER_NETWORK_BLOCKED" ? 2 : 5;
