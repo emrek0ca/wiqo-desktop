@@ -210,7 +210,7 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
             }
             finally { writeGate.Release(); }
         }
-        catch (Exception) { /* The worker enforces an idle/task TTL even if cancellation transport failed. */ }
+        catch (Exception) { /* Cancellation transport is best effort; the task remains visible. */ }
     }
 
     private void WorkerExited(Process child)

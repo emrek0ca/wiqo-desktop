@@ -30,7 +30,6 @@ let playwright;
 let browser;
 let socks;
 let shuttingDown = false;
-let emptySince = Date.now();
 
 const SAFE_ERRORS = {
   BROWSER_RUNTIME_MISSING: "Wiqo tarayıcı çalışma zamanı bulunamadı. Node.js 20 veya üzeri kurulu olmalı.",
@@ -350,7 +349,6 @@ async function ensureBrowser() {
     browser.on("disconnected", () => {
       browser = undefined;
       tasks.clear();
-      emptySince = Date.now();
     });
   } catch {
     throw Object.assign(new Error(), { code: "BROWSER_BROWSER_MISSING" });
@@ -362,7 +360,6 @@ async function closeTask(taskId) {
   if (!task) return;
   tasks.delete(taskId);
   try { await task.context.close(); } catch { /* already closed */ }
-  emptySince = tasks.size === 0 ? Date.now() : emptySince;
 }
 
 async function getTask(taskId, create = false) {
@@ -398,7 +395,6 @@ async function getTask(taskId, create = false) {
       lastTargets: []
     };
     tasks.set(taskId, task);
-    emptySince = 0;
     const removeClosedTask = () => {
       if (tasks.get(taskId)?.context === context && context.pages().length === 0) {
         void closeTask(taskId);
@@ -409,7 +405,6 @@ async function getTask(taskId, create = false) {
     context.on("close", () => {
       if (tasks.get(taskId)?.context === context) {
         tasks.delete(taskId);
-        emptySince = tasks.size === 0 ? Date.now() : emptySince;
       }
     });
   }
@@ -798,7 +793,7 @@ async function execute(message) {
 
 function write(message) {
   try { process.stdout.write(JSON.stringify(message) + "\n"); }
-  catch { /* a closed pipe means the companion has gone away; idle cleanup closes the browser */ }
+  catch { /* a closed pipe means the companion has gone away; parent-watch handles cleanup */ }
 }
 
 function queueFor(taskId, work) {
