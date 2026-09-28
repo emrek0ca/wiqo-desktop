@@ -304,37 +304,44 @@ public enum RovaValidation {
         case .computerBrowser:
             guard case .computerBrowser(let browser) = request.payload,
                   UUID(uuidString: browser.taskId) != nil,
-                  ["navigate", "observe", "click", "fill", "scroll", "submit"].contains(browser.action) else {
+                  ["navigate", "observe", "click", "fill", "select", "scroll", "back", "submit"].contains(browser.action) else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Tarayıcı görevi veya eylemi geçersiz.", category: "validation")
             }
-            let noTarget = browser.targetBy == nil && browser.target == nil && browser.role == nil
+            let validRef = browser.targetRef.map {
+                $0.range(of: #"^p\d+-t\d+$"#, options: .regularExpression) != nil
+            } ?? false
+            let legacyTarget = ["role", "label", "placeholder"].contains(browser.targetBy ?? "")
+                && browser.target.map({ isSafeText($0, maxLength: 240) }) == true
+                && (browser.targetBy != "role" || ["button", "link", "textbox", "searchbox", "checkbox", "radio", "combobox", "option", "tab", "menuitem", "heading"].contains(browser.role ?? ""))
+                && (browser.targetBy == "role" || browser.role == nil)
+            let hasTarget = validRef != legacyTarget
+            let noTarget = browser.targetRef == nil && browser.targetBy == nil && browser.target == nil && browser.role == nil
             let noValue = browser.value == nil
             let noDirection = browser.direction == nil
+            let noScrollAmount = browser.scrollAmount == nil
             switch browser.action {
             case "navigate":
-                guard let url = browser.url, isAllowedBrowserURL(url), noTarget, noValue, noDirection else {
+                guard let url = browser.url, isAllowedBrowserURL(url), noTarget, noValue, noDirection, noScrollAmount else {
                     return RovaError(code: "BROWSER_URL_BLOCKED", message: "Yalnızca herkese açık http/https adresleri açılabilir.", category: "permission")
                 }
-            case "observe":
-                guard browser.url == nil, noTarget, noValue, noDirection else {
+            case "observe", "back":
+                guard browser.url == nil, noTarget, noValue, noDirection, noScrollAmount else {
                     return RovaError(code: "INVALID_PAYLOAD", message: "Sayfa gözlemi ek parametre kabul etmiyor.", category: "validation")
                 }
             case "scroll":
                 guard browser.url == nil, noTarget, noValue,
-                      browser.direction == "up" || browser.direction == "down" else {
+                      browser.direction == "up" || browser.direction == "down",
+                      browser.scrollAmount.map({ (1...3).contains($0) }) ?? true else {
                     return RovaError(code: "INVALID_PAYLOAD", message: "Kaydırma yönü geçersiz.", category: "validation")
                 }
-            case "click", "fill", "submit":
+            case "click", "fill", "select", "submit":
                 guard browser.url == nil,
-                      ["role", "label", "placeholder"].contains(browser.targetBy ?? ""),
-                      let target = browser.target, isSafeText(target, maxLength: 240),
+                      hasTarget,
                       browser.value.map({ $0.count <= 2_000 && !$0.contains("\0") }) ?? true,
-                      browser.action != "fill" || browser.value != nil,
-                      browser.action == "fill" || noValue,
-                      browser.targetBy != "role" || ["button", "link", "textbox", "searchbox", "checkbox", "radio", "combobox", "option", "tab", "menuitem", "heading"].contains(browser.role ?? ""),
-                      browser.targetBy == "role" || browser.role == nil,
-                      browser.action != "submit" || (browser.targetBy == "role" && browser.role == "button"),
-                      noDirection else {
+                      !["fill", "select"].contains(browser.action) || browser.value != nil,
+                      ["fill", "select"].contains(browser.action) || noValue,
+                      browser.action != "submit" || validRef || (browser.targetBy == "role" && browser.role == "button"),
+                      noDirection, noScrollAmount else {
                     return RovaError(code: "INVALID_PAYLOAD", message: "Erişilebilir tarayıcı hedefi veya değeri geçersiz.", category: "validation")
                 }
             default:
@@ -583,7 +590,8 @@ public enum RovaCommandAuthority {
             return true
         case .computerBrowser:
             guard case .computerBrowser(let browser) = payload else { return true }
-            return ["observe", "click", "fill", "submit"].contains(browser.action)
+            if browser.action == "observe" { return browser.contentAccessGranted != true }
+            return ["click", "fill", "select", "submit"].contains(browser.action)
         default:
             return false
         }

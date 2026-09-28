@@ -19,12 +19,16 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
         string Action,
         string TaskId,
         string? Url = null,
+        string? TargetRef = null,
         string? TargetBy = null,
         string? Target = null,
         string? Role = null,
         string? Value = null,
         string? Direction = null,
+        int? ScrollAmount = null,
         string? CancelRequestId = null);
+
+    private sealed record BrowserTarget(string Ref, string Role, string Name);
 
     private sealed record BrowserResult(
         string? TaskId,
@@ -32,6 +36,10 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
         string? Url,
         string? Title,
         string? Text,
+        IReadOnlyList<BrowserTarget>? Targets,
+        int? PageVersion,
+        bool? ContentShared,
+        bool? InteractionApproved,
         bool? Truncated,
         bool? Verified,
         bool? Closed);
@@ -50,7 +58,7 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
     {
         var request = new BrowserRequest(
             Guid.NewGuid().ToString(), payload.Action, payload.TaskId, payload.Url,
-            payload.TargetBy, payload.Target, payload.Role, payload.Value, payload.Direction);
+            payload.TargetRef, payload.TargetBy, payload.Target, payload.Role, payload.Value, payload.Direction, payload.ScrollAmount);
         try
         {
             var envelope = await SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -63,6 +71,10 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
                 url = envelope.Result.Url,
                 title = envelope.Result.Title,
                 text = envelope.Result.Text,
+                targets = envelope.Result.Targets,
+                pageVersion = envelope.Result.PageVersion,
+                contentShared = envelope.Result.ContentShared,
+                interactionApproved = envelope.Result.InteractionApproved,
                 truncated = envelope.Result.Truncated,
                 verified = envelope.Result.Verified
             }, "Tarayıcı işlemi tamamlandı ve sonucu doğrulandı.");

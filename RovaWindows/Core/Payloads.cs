@@ -14,11 +14,14 @@ public sealed record ComputerBrowserPayload(
     string TaskId = "",
     string Action = "",
     string? Url = null,
+    string? TargetRef = null,
     string? TargetBy = null,
     string? Target = null,
     string? Role = null,
     string? Value = null,
-    string? Direction = null);
+    string? Direction = null,
+    int? ScrollAmount = null,
+    bool? ContentAccessGranted = null);
 public sealed record BrowserTaskPayload(string TaskId = "");
 
 public static class PayloadReader

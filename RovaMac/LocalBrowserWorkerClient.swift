@@ -8,11 +8,13 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
         let action: String
         let taskId: String
         var url: String? = nil
+        var targetRef: String? = nil
         var targetBy: String? = nil
         var target: String? = nil
         var role: String? = nil
         var value: String? = nil
         var direction: String? = nil
+        var scrollAmount: Int? = nil
         var cancelRequestId: String? = nil
     }
 
@@ -22,6 +24,10 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
         let url: String?
         let title: String?
         let text: String?
+        let targets: [BrowserTarget]?
+        let pageVersion: Int?
+        let contentShared: Bool?
+        let interactionApproved: Bool?
         let truncated: Bool?
         let verified: Bool?
         let closed: Bool?
@@ -68,11 +74,13 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
             action: payload.action,
             taskId: payload.taskId,
             url: payload.url,
+            targetRef: payload.targetRef,
             targetBy: payload.targetBy,
             target: payload.target,
             role: payload.role,
             value: payload.value,
-            direction: payload.direction
+            direction: payload.direction,
+            scrollAmount: payload.scrollAmount
         )
         do {
             let envelope = try await send(request)
@@ -81,7 +89,7 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
                 throw WorkerFailure.invalidResponse
             }
             return (
-                BrowserContent(taskId: taskId, action: result.action, url: result.url, title: result.title, text: result.text, truncated: result.truncated, verified: result.verified),
+                BrowserContent(taskId: taskId, action: result.action, url: result.url, title: result.title, text: result.text, targets: result.targets, pageVersion: result.pageVersion, contentShared: result.contentShared, interactionApproved: result.interactionApproved, truncated: result.truncated, verified: result.verified),
                 "Tarayıcı işlemi tamamlandı ve sonucu doğrulandı.",
                 nil
             )

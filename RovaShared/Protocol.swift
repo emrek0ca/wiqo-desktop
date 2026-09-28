@@ -185,21 +185,28 @@ public struct ComputerBrowserPayload: Codable, Equatable, Sendable {
     public let taskId: String
     public let action: String
     public let url: String?
+    public let targetRef: String?
     public let targetBy: String?
     public let target: String?
     public let role: String?
     public let value: String?
     public let direction: String?
+    public let scrollAmount: Int?
+    /// Set by the backend only after an approved observe result from this ephemeral task.
+    public let contentAccessGranted: Bool?
 
-    public init(taskId: String, action: String, url: String? = nil, targetBy: String? = nil, target: String? = nil, role: String? = nil, value: String? = nil, direction: String? = nil) {
+    public init(taskId: String, action: String, url: String? = nil, targetRef: String? = nil, targetBy: String? = nil, target: String? = nil, role: String? = nil, value: String? = nil, direction: String? = nil, scrollAmount: Int? = nil, contentAccessGranted: Bool? = nil) {
         self.taskId = taskId
         self.action = action
         self.url = url
+        self.targetRef = targetRef
         self.targetBy = targetBy
         self.target = target
         self.role = role
         self.value = value
         self.direction = direction
+        self.scrollAmount = scrollAmount
+        self.contentAccessGranted = contentAccessGranted
     }
 }
 
@@ -709,22 +716,42 @@ public struct ScreenClickContent: Codable, Equatable, Sendable {
     }
 }
 
+public struct BrowserTarget: Codable, Equatable, Sendable {
+    public let ref: String
+    public let role: String
+    public let name: String
+
+    public init(ref: String, role: String, name: String) {
+        self.ref = ref
+        self.role = role
+        self.name = name
+    }
+}
+
 public struct BrowserContent: Codable, Equatable, Sendable {
     public let taskId: String
     public let action: String?
     public let url: String?
     public let title: String?
     public let text: String?
+    public let targets: [BrowserTarget]?
+    public let pageVersion: Int?
+    public let contentShared: Bool?
+    public let interactionApproved: Bool?
     public let truncated: Bool?
     public let verified: Bool?
     public let closed: Bool?
 
-    public init(taskId: String, action: String? = nil, url: String? = nil, title: String? = nil, text: String? = nil, truncated: Bool? = nil, verified: Bool? = nil, closed: Bool? = nil) {
+    public init(taskId: String, action: String? = nil, url: String? = nil, title: String? = nil, text: String? = nil, targets: [BrowserTarget]? = nil, pageVersion: Int? = nil, contentShared: Bool? = nil, interactionApproved: Bool? = nil, truncated: Bool? = nil, verified: Bool? = nil, closed: Bool? = nil) {
         self.taskId = taskId
         self.action = action
         self.url = url
         self.title = title
         self.text = text
+        self.targets = targets
+        self.pageVersion = pageVersion
+        self.contentShared = contentShared
+        self.interactionApproved = interactionApproved
         self.truncated = truncated
         self.verified = verified
         self.closed = closed

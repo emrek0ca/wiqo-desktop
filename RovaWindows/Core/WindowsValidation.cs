@@ -124,22 +124,24 @@ public static class WindowsValidation
     private static bool IsValidBrowserPayload(ComputerBrowserPayload value)
     {
         if (!Guid.TryParse(value.TaskId, out _)) return false;
-        var hasTarget = (value.TargetBy is "role" or "label" or "placeholder")
+        var hasRef = value.TargetRef is { Length: <= 48 } targetRef && Regex.IsMatch(targetRef, @"^p\d+-t\d+$");
+        var hasLegacyTarget = (value.TargetBy is "role" or "label" or "placeholder")
             && IsSafeText(value.Target, 200)
             && (value.TargetBy != "role" || value.Role is "button" or "link" or "textbox" or "searchbox" or "checkbox" or "radio" or "combobox" or "option" or "tab" or "menuitem" or "heading")
             && (value.TargetBy == "role" || value.Role is null);
-        var noTarget = value.TargetBy is null && value.Target is null && value.Role is null;
+        var hasTarget = hasRef ^ hasLegacyTarget;
+        var noTarget = value.TargetRef is null && value.TargetBy is null && value.Target is null && value.Role is null;
         var noValue = value.Value is null;
         var noDirection = value.Direction is null;
         var noUrl = value.Url is null;
 
         return value.Action switch
         {
-            "navigate" => IsPublicBrowserUrl(value.Url) && noTarget && noValue && noDirection,
-            "observe" => noUrl && noTarget && noValue && noDirection,
-            "scroll" => noUrl && noTarget && noValue && (value.Direction is "up" or "down"),
-            "click" or "submit" => noUrl && hasTarget && noValue && noDirection,
-            "fill" => noUrl && hasTarget && value.Value is { Length: > 0 and <= 2_000 } fillValue && !fillValue.Contains('\0') && noDirection,
+            "navigate" => IsPublicBrowserUrl(value.Url) && noTarget && noValue && noDirection && value.ScrollAmount is null,
+            "observe" or "back" => noUrl && noTarget && noValue && noDirection && value.ScrollAmount is null,
+            "scroll" => noUrl && noTarget && noValue && (value.Direction is "up" or "down") && (value.ScrollAmount is null or >= 1 and <= 3),
+            "click" or "submit" => noUrl && hasTarget && noValue && noDirection && value.ScrollAmount is null,
+            "fill" or "select" => noUrl && hasTarget && value.Value is { Length: > 0 and <= 2_000 } fillValue && !fillValue.Contains('\0') && noDirection && value.ScrollAmount is null,
             _ => false
         };
     }

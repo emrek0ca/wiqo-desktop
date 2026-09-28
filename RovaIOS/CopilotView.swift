@@ -1703,6 +1703,7 @@ struct CopilotView: View {
                     history: history,
                     initialReply: result.reply,
                     bubbleID: replyBubbleID,
+                    remainingRounds: activeBrowserTaskIDs.isEmpty ? 3 : 8,
                     recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
                 )
             } else {
@@ -1851,6 +1852,7 @@ struct CopilotView: View {
                 history: history,
                 initialReply: initialReply,
                 bubbleID: bubbleID,
+                remainingRounds: activeBrowserTaskIDs.isEmpty ? 3 : 8,
                 recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
             )
         } else {
@@ -1991,7 +1993,7 @@ struct CopilotView: View {
         history: [RovaBackendClient.ChatTurn],
         initialReply: String,
         bubbleID: UUID,
-        remainingRounds: Int = 3,
+        remainingRounds: Int,
         recoveryAttemptsRemaining: Int
     ) async {
         guard remainingRounds > 0 else {
