@@ -235,8 +235,13 @@ public enum RovaValidation {
             }
         case .searchFiles:
             guard case .fileSearch(let search) = request.payload,
-                  isSafeText(search.query, maxLength: 120),
-                  search.cursor.map({ UUID(uuidString: $0) != nil }) ?? true else {
+                  search.query.isEmpty || isSafeText(search.query, maxLength: 120),
+                  !search.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || search.hasFilter,
+                  search.cursor.map({ UUID(uuidString: $0) != nil || $0.range(of: #"^o:\d{1,5}$"#, options: .regularExpression) != nil }) ?? true,
+                  search.folder.map({ isValidLocalPath($0) || isValidWindowsLocalPath($0) }) ?? true,
+                  search.kind.map({ FileSearchPayload.kinds.contains($0) }) ?? true,
+                  search.modifiedWithinDays.map({ (1...3_650).contains($0) }) ?? true,
+                  search.sort.map({ FileSearchPayload.sorts.contains($0) }) ?? true else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Dosya arama isteği geçersiz.")
             }
         case .writeFile:
@@ -810,8 +815,12 @@ public enum RovaCommandAuthority {
         }
     }
 
-    public static func requiresUserPresence(type: CommandType, payload: CommandPayload) -> Bool {
+    /// `autoReadOwnFolders` is the person's own switch (the phone's settings): finding, listing and
+    /// reading files inside Desktop, Documents and Downloads then needs no approval. Anything that
+    /// writes, moves, deletes or sends a file, and every path outside those folders, still asks.
+    public static func requiresUserPresence(type: CommandType, payload: CommandPayload, autoReadOwnFolders: Bool = false) -> Bool {
         if isDestructive(type: type, payload: payload) { return true }
+        if autoReadOwnFolders, RovaOwnFolders.isAutoReadable(type: type, payload: payload) { return false }
         switch type {
         case .saveTextFile, .readDocument, .editDocument, .saveArtifact,
              .listFiles, .searchFiles, .readFile, .sendFileToPhone, .writeFile, .moveFile, .copyFile, .deleteFile,
@@ -1052,5 +1061,69 @@ public enum RovaTerminalPolicy {
             options: .regularExpression
         )
         return result
+    }
+}
+
+/// The folders a person's own files live in, and the names that are never read without asking.
+/// Paths are compared as text: `~/Downloads/x.pdf`, `/Users/ada/Downloads/x.pdf` and
+/// `C:\Users\ada\Downloads\x.pdf` are all "Downloads". (The companions resolve symlinks and
+/// re-check what they open; this only decides whether the phone asks first.)
+public enum RovaOwnFolders {
+    public static let names: Set<String> = ["desktop", "documents", "downloads"]
+
+    /// Key material and credential stores. Never auto-read, and left out of automatic searches.
+    private static let sensitiveNames: [String] = [
+        ".ssh", ".gnupg", ".aws", ".kube", ".docker", ".netrc", ".npmrc", ".pypirc", ".git-credentials",
+        "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "keychain", "keychains", "wallet", "1password", "bitwarden", "lastpass"
+    ]
+    private static let sensitiveExtensions: Set<String> = ["pem", "key", "p12", "p8", "pfx", "kdbx", "keystore", "jks", "ovpn", "gpg", "asc", "ppk"]
+    private static let sensitiveWords: [String] = ["password", "parola", "sifre", "şifre", "passwd", "credential", "secret", "recovery code", "backup code", "seed phrase", "private key"]
+
+    private static func components(_ raw: String) -> [String]? {
+        var path = raw.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\\", with: "/")
+        if path.hasPrefix("~/") {
+            path.removeFirst(2)
+        } else if path.hasPrefix("/Users/") {
+            let parts = path.dropFirst("/Users/".count).split(separator: "/", omittingEmptySubsequences: true)
+            guard parts.count >= 1 else { return nil }
+            path = parts.dropFirst().joined(separator: "/")
+        } else if let range = path.range(of: #"^[A-Za-z]:/Users/[^/]+/"#, options: .regularExpression) {
+            path.removeSubrange(range)
+        } else {
+            return nil
+        }
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        return parts.contains("..") || parts.contains(".") ? nil : parts
+    }
+
+    /// The path is (a place inside) Desktop, Documents or Downloads.
+    public static func isOwnFolder(_ raw: String) -> Bool {
+        guard let parts = components(raw), let first = parts.first?.lowercased() else { return false }
+        return names.contains(first)
+    }
+
+    public static func isSensitive(_ raw: String) -> Bool {
+        let lowered = raw.lowercased().replacingOccurrences(of: "\\", with: "/")
+        let parts = lowered.split(separator: "/").map(String.init)
+        if parts.contains(where: { part in sensitiveNames.contains(where: { part == $0 || part.hasPrefix($0 + ".") }) }) { return true }
+        if let last = parts.last, let dot = last.lastIndex(of: "."), sensitiveExtensions.contains(String(last[last.index(after: dot)...])) { return true }
+        if let last = parts.last, last == ".env" || last.hasPrefix(".env.") { return true }
+        return sensitiveWords.contains(where: { lowered.contains($0) })
+    }
+
+    /// Finding, listing and reading inside the own folders, when the name is not sensitive.
+    public static func isAutoReadable(type: CommandType, payload: CommandPayload) -> Bool {
+        switch (type, payload) {
+        case (.listFiles, .fileOperation(let operation)), (.readFile, .fileOperation(let operation)):
+            return isOwnFolder(operation.path) && !isSensitive(operation.path)
+        case (.readDocument, .fileName(let name)):
+            return !isSensitive(name)
+        case (.searchFiles, .fileSearch(let search)):
+            if search.everywhere == true { return false }
+            guard let folder = search.folder else { return true }
+            return isOwnFolder(folder) && !isSensitive(folder)
+        default:
+            return false
+        }
     }
 }

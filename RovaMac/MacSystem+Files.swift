@@ -310,7 +310,13 @@ except Exception:
     }
 
     static func searchFiles(_ payload: FileSearchPayload) async -> (data: CommandData?, message: String, error: RovaError?) {
-        await MacSearchRegistry.shared.search(payload)
+        await MacFileSearch.search(payload)
+    }
+
+    /// A folder the person named ("~/Downloads", an absolute path): it must exist and be a folder.
+    static func resolvedLocalFolder(_ rawPath: String) -> URL? {
+        guard let url = resolvedLocalURL(rawPath), isDirectory(url) else { return nil }
+        return url
     }
 
     static func sendFileToPhone(_ payload: LocalFileOperationPayload, commandID: UUID, accessToken: String) async -> (data: CommandData?, error: RovaError?) {
@@ -397,11 +403,47 @@ except Exception:
         if FileManager.default.fileExists(atPath: destination.path) && !payload.overwrite {
             return RovaError(code: "FILE_EXISTS", message: "Aynı dosya zaten var; üzerine yazma onayı verilmedi.", category: "permission")
         }
+        if FileManager.default.fileExists(atPath: destination.path), let failure = backUp(destination) {
+            return failure
+        }
         do {
             try Data(content.utf8).write(to: destination, options: [.atomic])
             return nil
         } catch {
             return localFileError(code: "FILE_WRITE_FAILED", fallback: "Dosya yazılamadı.", error: error)
+        }
+    }
+
+    /// Where the previous version of a file goes before Wiqo replaces it, so an edit can be undone.
+    static var backupFolder: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Wiqo/Backups", isDirectory: true)
+    }
+
+    private static let backupsKeptPerFile = 10
+
+    /// Copies `file` to `Backups/<name>.<yyyyMMdd-HHmmss>.<ext>` and trims older copies of it.
+    /// Failing to back up stops the overwrite: a replaced file must stay recoverable.
+    private static func backUp(_ file: URL) -> RovaError? {
+        let manager = FileManager.default
+        do {
+            try manager.createDirectory(at: backupFolder, withIntermediateDirectories: true)
+            let stamp = DateFormatter()
+            stamp.locale = Locale(identifier: "en_US_POSIX")
+            stamp.dateFormat = "yyyyMMdd-HHmmss"
+            let base = file.deletingPathExtension().lastPathComponent
+            let ext = file.pathExtension
+            let name = "\(base).\(stamp.string(from: Date()))" + (ext.isEmpty ? "" : ".\(ext)")
+            try manager.copyItem(at: file, to: backupFolder.appendingPathComponent(name))
+            let siblings = ((try? manager.contentsOfDirectory(atPath: backupFolder.path)) ?? [])
+                .filter { $0.hasPrefix("\(base).") && $0.hasSuffix(ext.isEmpty ? "" : ".\(ext)") }
+                .sorted()
+            for old in siblings.dropLast(backupsKeptPerFile) {
+                try? manager.removeItem(at: backupFolder.appendingPathComponent(old))
+            }
+            return nil
+        } catch {
+            return localFileError(code: "BACKUP_FAILED", fallback: "Eski sürümün yedeği alınamadı, dosya değiştirilmedi.", error: error)
         }
     }
 
@@ -430,6 +472,9 @@ except Exception:
         if FileManager.default.fileExists(atPath: destination.path) {
             guard payload.overwrite else {
                 return RovaError(code: "FILE_EXISTS", message: "Hedef zaten var; üzerine yazma onayı verilmedi.", category: "permission")
+            }
+            if !isDirectory(destination), let failure = backUp(destination) {
+                return failure
             }
             do {
                 try FileManager.default.removeItem(at: destination)
@@ -690,86 +735,5 @@ private final class LocalWorkspaceSnapshotStore: @unchecked Sendable {
             result[relative] = "\(values.fileSize ?? 0):\(stamp)"
         }
         return result
-    }
-}
-
-private actor MacSearchRegistry {
-    static let shared = MacSearchRegistry()
-
-    private final class Session {
-        let query: String
-        var enumerator: FileManager.DirectoryEnumerator?
-        var skipped = 0
-        var expiresAt = Date().addingTimeInterval(10 * 60)
-
-        init?(query: String) {
-            self.query = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            guard let enumerator = FileManager.default.enumerator(
-                at: URL(fileURLWithPath: "/", isDirectory: true),
-                includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey],
-                options: [.skipsPackageDescendants],
-                errorHandler: { [weak self] _, _ in
-                    self?.skipped += 1
-                    return true
-                }
-            ) else { return nil }
-            self.enumerator = enumerator
-        }
-    }
-
-    private var sessions: [String: Session] = [:]
-
-    func search(_ payload: FileSearchPayload) -> (data: CommandData?, message: String, error: RovaError?) {
-        sessions = sessions.filter { $0.value.expiresAt > Date() }
-        let id: String
-        let session: Session
-        if let cursor = payload.cursor {
-            guard let existing = sessions[cursor], existing.query == payload.query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current) else {
-                return (nil, "Arama sürdürülemedi.", RovaError(code: "INVALID_CURSOR", message: "Aramayı yeniden başlat."))
-            }
-            id = cursor
-            session = existing
-        } else {
-            guard sessions.count < 5 else {
-                return (nil, "Çok fazla arama açık.", RovaError(code: "SEARCH_LIMIT", message: "Biraz sonra tekrar dene."))
-            }
-            id = UUID().uuidString
-            guard let created = Session(query: payload.query) else {
-                return (nil, "Dosyalar aranamadı.", RovaError(code: "SEARCH_FAILED", message: "Dosyalar aranamadı."))
-            }
-            session = created
-            sessions[id] = session
-        }
-        var matches: [FileSystemEntry] = []
-        var visited = 0
-        let deadline = Date().addingTimeInterval(15)
-        while let url = session.enumerator?.nextObject() as? URL {
-            if Task.isCancelled {
-                sessions.removeValue(forKey: id)
-                return (nil, "Arama iptal edildi.", RovaError(code: "CANCELLED", message: "Arama iptal edildi."))
-            }
-            visited += 1
-            if ["/dev", "/proc", "/System/Volumes/Preboot", "/System/Volumes/VM"].contains(where: { url.path == $0 || url.path.hasPrefix($0 + "/") }) {
-                session.enumerator?.skipDescendants()
-                continue
-            }
-            guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]) else {
-                session.skipped += 1
-                continue
-            }
-            if values.isSymbolicLink == true { session.enumerator?.skipDescendants(); continue }
-            if values.isRegularFile == true && url.path.count <= 500 &&
-                url.lastPathComponent.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).contains(session.query) {
-                matches.append(FileSystemEntry(path: url.standardizedFileURL.path, name: url.lastPathComponent,
-                    byteCount: Int64(values.fileSize ?? 0), modifiedAt: values.contentModificationDate,
-                    isDirectory: false, fileType: url.pathExtension.lowercased()))
-            }
-            if matches.count >= 12 || visited >= 25_000 || Date() >= deadline {
-                session.expiresAt = Date().addingTimeInterval(10 * 60)
-                return (.files(matches), "Kısmi sonuç; devam kodu \(id). Erişilemeyen öğe: \(session.skipped).", nil)
-            }
-        }
-        sessions.removeValue(forKey: id)
-        return (.files(matches), "Arama tamamlandı. Erişilemeyen öğe: \(session.skipped).", nil)
     }
 }

@@ -13,12 +13,30 @@ private var connectorCardBackground: some View {
         }
 }
 
+/// Lets a card hand a short follow-up sentence to the conversation ("… dosyasını özetle").
+struct WiqoFollowUp: Sendable {
+    let send: @MainActor @Sendable (String) -> Void
+}
+
+struct WiqoFollowUpKey: EnvironmentKey {
+    static let defaultValue: WiqoFollowUp? = nil
+}
+
+extension EnvironmentValues {
+    var wiqoFollowUp: WiqoFollowUp? {
+        get { self[WiqoFollowUpKey.self] }
+        set { self[WiqoFollowUpKey.self] = newValue }
+    }
+}
+
 struct ConnectorListCard: View {
     let widget: RovaBackendClient.CopilotResultWidget
     @State private var showsAll = false
+    @State private var picked: RovaBackendClient.CopilotResultWidget.ListItem?
+    @Environment(\.wiqoFollowUp) private var followUp
 
     private enum Domain: String {
-        case mail, calendar, drive, notion, contacts
+        case mail, calendar, drive, notion, contacts, files
 
         var symbol: String {
             switch self {
@@ -27,6 +45,7 @@ struct ConnectorListCard: View {
             case .drive: return "folder.fill"
             case .notion: return "doc.text.fill"
             case .contacts: return "person.2.fill"
+            case .files: return "doc.text.magnifyingglass"
             }
         }
 
@@ -37,6 +56,7 @@ struct ConnectorListCard: View {
             case .drive: return .green
             case .notion: return .primary
             case .contacts: return .orange
+            case .files: return .indigo
             }
         }
 
@@ -47,6 +67,7 @@ struct ConnectorListCard: View {
             case .drive: return "dosya"
             case .notion: return "sayfa"
             case .contacts: return "kişi"
+            case .files: return "dosya"
             }
         }
     }
@@ -69,6 +90,22 @@ struct ConnectorListCard: View {
         }
         .background(connectorCardBackground)
         .accessibilityElement(children: .contain)
+        .confirmationDialog(
+            picked?.title ?? "",
+            isPresented: Binding(get: { picked != nil }, set: { if !$0 { picked = nil } }),
+            titleVisibility: .visible,
+            presenting: picked
+        ) { item in
+            if let path = item.id, item.badge != "Klasör" {
+                Button("Telefonuma gönder") { followUp?.send("\(path) dosyasını telefonuma gönder.") }
+                Button("Oku ve özetle") { followUp?.send("\(path) dosyasını oku ve özetle.") }
+            }
+            if let path = item.id {
+                Button("Bu klasörü listele") { followUp?.send("\(path) klasörünün içini listele.") }
+                    .disabled(item.badge != "Klasör")
+            }
+            Button("Vazgeç", role: .cancel) {}
+        }
     }
 
     private var header: some View {
@@ -213,7 +250,12 @@ struct ConnectorListCard: View {
 
     @ViewBuilder
     private func row(_ item: RovaBackendClient.CopilotResultWidget.ListItem) -> some View {
-        if let raw = item.url, let url = safeURL(raw) {
+        if domain == .files, let path = item.id, followUp != nil {
+            Button { picked = item } label: { rowBody(item, opensLink: false, showsActions: true) }
+                .buttonStyle(.plain)
+                .accessibilityHint("Gönder veya özetle")
+                .accessibilityIdentifier(path)
+        } else if let raw = item.url, let url = safeURL(raw) {
             Link(destination: url) { rowBody(item, opensLink: true) }
                 .buttonStyle(.plain)
                 .accessibilityHint("Kendi uygulamasında açar")
@@ -222,7 +264,7 @@ struct ConnectorListCard: View {
         }
     }
 
-    private func rowBody(_ item: RovaBackendClient.CopilotResultWidget.ListItem, opensLink: Bool) -> some View {
+    private func rowBody(_ item: RovaBackendClient.CopilotResultWidget.ListItem, opensLink: Bool, showsActions: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 10) {
             if domain == .contacts {
                 Text(initials(item.title))
@@ -238,6 +280,14 @@ struct ConnectorListCard: View {
                         .font(.subheadline.weight(domain == .mail ? .semibold : .medium))
                         .foregroundStyle(.primary)
                         .lineLimit(domain == .mail ? 1 : 2)
+                    if let badge = item.badge, !badge.isEmpty {
+                        Text(badge)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(domain.tint)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(domain.tint.opacity(0.12), in: Capsule())
+                    }
                     Spacer(minLength: 4)
                     if let meta = item.meta, !meta.isEmpty {
                         Text(meta)
@@ -259,6 +309,13 @@ struct ConnectorListCard: View {
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                 }
+            }
+            if showsActions {
+                Image(systemName: "ellipsis.circle")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 3)
+                    .accessibilityHidden(true)
             }
             if opensLink {
                 Image(systemName: "arrow.up.right")

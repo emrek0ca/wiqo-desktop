@@ -972,7 +972,7 @@ enum RovaBackendClient {
     ) -> ConverseResult {
         let planned = steps.map { step in
             let localDestructive = RovaCommandAuthority.isDestructive(type: step.type, payload: step.payload)
-            let localPresence = RovaCommandAuthority.requiresUserPresence(type: step.type, payload: step.payload)
+            let localPresence = RovaCommandAuthority.requiresUserPresence(type: step.type, payload: step.payload, autoReadOwnFolders: WiqoApprovalPreferences.autoReadOwnFolders)
             return PlannedCommand(
                 id: step.id ?? UUID(),
                 type: step.type,
@@ -1153,7 +1153,7 @@ enum RovaBackendClient {
         let response = try await authorizedPost("copilot/audio", body: body, as: Response.self)
         let steps = response.steps.map { step in
             let localDestructive = RovaCommandAuthority.isDestructive(type: step.type, payload: step.payload)
-            let localPresence = RovaCommandAuthority.requiresUserPresence(type: step.type, payload: step.payload)
+            let localPresence = RovaCommandAuthority.requiresUserPresence(type: step.type, payload: step.payload, autoReadOwnFolders: WiqoApprovalPreferences.autoReadOwnFolders)
             return PlannedCommand(
                 id: step.id ?? UUID(),
                 type: step.type,

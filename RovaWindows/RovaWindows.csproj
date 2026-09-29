@@ -14,6 +14,10 @@
     <InternalsVisibleTo Include="Wiqo" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Native/ScreenCapture.cs draws with System.Drawing. -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- The shared operation catalogue (exported from RovaShared); see Core/OperationCatalog.cs. -->
     <EmbeddedResource Include="../contracts/companion/operations.json" LogicalName="RovaWindows.operations.json" />
   </ItemGroup>

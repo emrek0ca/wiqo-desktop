@@ -69,8 +69,7 @@ public static class WindowsValidation
                 return target is not null && IsValidLocalPath(target.Path) ? null : Invalid("Dosya yolu geçersiz.");
             case "searchFiles":
                 var search = PayloadReader.Object<FileSearchPayload>(payload, "fileSearch");
-                return search is not null && IsSafeText(search.Query, 120) && (search.Cursor is null || Guid.TryParse(search.Cursor, out _))
-                    ? null : Invalid("Dosya arama isteği geçersiz.");
+                return search is not null && IsValidSearch(search) ? null : Invalid("Dosya arama isteği geçersiz.");
             case "writeFile":
                 var write = PayloadReader.Object<LocalFileOperationPayload>(payload, "fileOperation");
                 return write is not null && IsValidLocalPath(write.Path) && write.Content is { Length: <= 500_000 } content && !content.Contains('\0')
@@ -155,6 +154,21 @@ public static class WindowsValidation
     {
         if (raw is null || raw.Length > 2_048 || raw.Any(character => char.IsControl(character) || (char.IsWhiteSpace(character) && character != ' '))) return false;
         return Uri.TryCreate(raw, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" && uri.Host.Length > 0 && uri.UserInfo.Length == 0;
+    }
+
+    private static readonly HashSet<string> SearchKinds = ["pdf", "document", "spreadsheet", "presentation", "image", "text", "archive", "audio", "video", "folder"];
+
+    /// Mirrors RovaValidation's searchFiles rule: a query may be empty when a filter says enough.
+    private static bool IsValidSearch(FileSearchPayload search)
+    {
+        var hasFilter = search.Kind is not null || search.ModifiedWithinDays is not null || search.Folder is not null;
+        return (search.Query.Length == 0 || IsSafeText(search.Query, 120))
+            && (search.Query.Trim().Length > 0 || hasFilter)
+            && (search.Cursor is null || Guid.TryParse(search.Cursor, out _) || Regex.IsMatch(search.Cursor, @"^o:\d{1,5}$"))
+            && (search.Folder is null || IsValidLocalPath(search.Folder))
+            && (search.Kind is null || SearchKinds.Contains(search.Kind))
+            && (search.ModifiedWithinDays is null or >= 1 and <= 3650)
+            && (search.Sort is null or "recent" or "relevance");
     }
 
     private static bool IsValidBrowserPayload(ComputerBrowserPayload value)

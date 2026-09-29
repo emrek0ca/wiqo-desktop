@@ -83,6 +83,7 @@
 		D20000000000000000000042 /* ThinkingTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000041 /* ThinkingTrace.swift */; };
 		D20000000000000000000043 /* ThinkingTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000044 /* ThinkingTimelineView.swift */; };
 		D20000000000000000000045 /* ThinkingTraceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000046 /* ThinkingTraceTests.swift */; };
+		D30000000000000000000C06 /* OwnFoldersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C05 /* OwnFoldersTests.swift */; };
 		D2000000000000000000002E /* CanvasPackageDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000002F /* CanvasPackageDetectorTests.swift */; };
 		D20000000000000000000030 /* WiqoCanvasSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000011 /* WiqoCanvasSupport.swift */; };
 		B027 /* MacCommandEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F027 /* MacCommandEngineTests.swift */; };
@@ -94,6 +95,7 @@
 		D30000000000000000000021 /* MacSystem+Permissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000081 /* MacSystem+Permissions.swift */; };
 		D30000000000000000000022 /* MacSystem+Device.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000082 /* MacSystem+Device.swift */; };
 		D30000000000000000000023 /* MacSystem+Files.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000083 /* MacSystem+Files.swift */; };
+		D30000000000000000000C08 /* MacSystem+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C07 /* MacSystem+Search.swift */; };
 		D30000000000000000000024 /* MacSystem+Personal.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000084 /* MacSystem+Personal.swift */; };
 		D30000000000000000000025 /* MacSystem+UIControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000085 /* MacSystem+UIControl.swift */; };
 		D30000000000000000000026 /* MacSystem+Code.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000086 /* MacSystem+Code.swift */; };
@@ -101,6 +103,7 @@
 		E50000000000000000000003 /* RovaBrowserWorker in Resources */ = {isa = PBXBuildFile; fileRef = E50000000000000000000004 /* RovaBrowserWorker */; };
 		D30000000000000000000005 /* MacNetworkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000069 /* MacNetworkTests.swift */; };
 		D30000000000000000000006 /* MacTimeoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000006A /* MacTimeoutTests.swift */; };
+		D30000000000000000000C0B /* MacFileSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C0A /* MacFileSearchTests.swift */; };
 		D30000000000000000000007 /* MacRelayPairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000006B /* MacRelayPairingTests.swift */; };
 		D30000000000000000000008 /* ConnectionRoutePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000070 /* ConnectionRoutePolicy.swift */; };
 		D30000000000000000000009 /* ConnectionRoutePolicy.swift in RovaSharedTests */ = {isa = PBXBuildFile; fileRef = D30000000000000000000070 /* ConnectionRoutePolicy.swift */; };
@@ -209,6 +212,7 @@
 		D2000000000000000000004A /* DocumentScannerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DocumentScannerView.swift; sourceTree = "<group>"; };
 		D20000000000000000000044 /* ThinkingTimelineView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThinkingTimelineView.swift; sourceTree = "<group>"; };
 		D20000000000000000000046 /* ThinkingTraceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingTraceTests.swift; sourceTree = "<group>"; };
+		D30000000000000000000C05 /* OwnFoldersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnFoldersTests.swift; sourceTree = "<group>"; };
 		D40000000000000000000002 /* DeviceOutcomeNarrator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceOutcomeNarrator.swift; sourceTree = "<group>"; };
 		D2000000000000000000003A /* CopilotConversationStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotConversationStore.swift; sourceTree = "<group>"; };
 		D20000000000000000000038 /* CopilotSpeechRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotSpeechRecorder.swift; sourceTree = "<group>"; };
@@ -249,6 +253,7 @@
 		D30000000000000000000081 /* MacSystem+Permissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Permissions.swift"; sourceTree = "<group>"; };
 		D30000000000000000000082 /* MacSystem+Device.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Device.swift"; sourceTree = "<group>"; };
 		D30000000000000000000083 /* MacSystem+Files.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Files.swift"; sourceTree = "<group>"; };
+		D30000000000000000000C07 /* MacSystem+Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Search.swift"; sourceTree = "<group>"; };
 		D30000000000000000000084 /* MacSystem+Personal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Personal.swift"; sourceTree = "<group>"; };
 		D30000000000000000000085 /* MacSystem+UIControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+UIControl.swift"; sourceTree = "<group>"; };
 		D30000000000000000000086 /* MacSystem+Code.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Code.swift"; sourceTree = "<group>"; };
@@ -256,6 +261,7 @@
 		E50000000000000000000004 /* RovaBrowserWorker */ = {isa = PBXFileReference; lastKnownFileType = folder; path = RovaBrowserWorker; sourceTree = "<group>"; };
 		D30000000000000000000069 /* MacNetworkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNetworkTests.swift; sourceTree = "<group>"; };
 		D3000000000000000000006A /* MacTimeoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTimeoutTests.swift; sourceTree = "<group>"; };
+		D30000000000000000000C0A /* MacFileSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFileSearchTests.swift; sourceTree = "<group>"; };
 		D3000000000000000000006B /* MacRelayPairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelayPairingTests.swift; sourceTree = "<group>"; };
 		F028 /* project.pbxproj */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = project.pbxproj; sourceTree = "<group>"; };
 		F10000000000000000000014 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Fonts; sourceTree = "<group>"; };
@@ -356,6 +362,7 @@
 				D30000000000000000000081 /* MacSystem+Permissions.swift */,
 				D30000000000000000000082 /* MacSystem+Device.swift */,
 				D30000000000000000000083 /* MacSystem+Files.swift */,
+				D30000000000000000000C07 /* MacSystem+Search.swift */,
 				D30000000000000000000084 /* MacSystem+Personal.swift */,
 				D30000000000000000000085 /* MacSystem+UIControl.swift */,
 				D30000000000000000000086 /* MacSystem+Code.swift */,
@@ -459,6 +466,7 @@
 				F026 /* ProtocolTests.swift */,
 				D2000000000000000000003E /* ReplyStreamSplitterTests.swift */,
 				D20000000000000000000046 /* ThinkingTraceTests.swift */,
+				D30000000000000000000C05 /* OwnFoldersTests.swift */,
 				D2000000000000000000002F /* CanvasPackageDetectorTests.swift */,
 				D30000000000000000000072 /* StoreKitLoadPolicyTests.swift */,
 			);
@@ -471,6 +479,7 @@
 				F027 /* MacCommandEngineTests.swift */,
 				D30000000000000000000069 /* MacNetworkTests.swift */,
 				D3000000000000000000006A /* MacTimeoutTests.swift */,
+				D30000000000000000000C0A /* MacFileSearchTests.swift */,
 				D3000000000000000000006B /* MacRelayPairingTests.swift */,
 			);
 			path = RovaMacTests;
@@ -697,6 +706,7 @@
 				D30000000000000000000021 /* MacSystem+Permissions.swift in Sources */,
 				D30000000000000000000022 /* MacSystem+Device.swift in Sources */,
 				D30000000000000000000023 /* MacSystem+Files.swift in Sources */,
+				D30000000000000000000C08 /* MacSystem+Search.swift in Sources */,
 				D30000000000000000000024 /* MacSystem+Personal.swift in Sources */,
 				E50000000000000000000001 /* LocalBrowserWorkerClient.swift in Sources */,
 				D30000000000000000000025 /* MacSystem+UIControl.swift in Sources */,
@@ -775,6 +785,7 @@
 				D2000000000000000000003F /* ReplyStreamSplitter.swift in Sources */,
 				D20000000000000000000042 /* ThinkingTrace.swift in Sources */,
 				D20000000000000000000045 /* ThinkingTraceTests.swift in Sources */,
+				D30000000000000000000C06 /* OwnFoldersTests.swift in Sources */,
 				D2000000000000000000002E /* CanvasPackageDetectorTests.swift in Sources */,
 				D20000000000000000000030 /* WiqoCanvasSupport.swift in Sources */,
 				A5C0DE000000000000000003 /* WiqoSpeechPermissionBridge.swift in Sources */,
@@ -798,6 +809,7 @@
 				B027 /* MacCommandEngineTests.swift in Sources */,
 				D30000000000000000000005 /* MacNetworkTests.swift in Sources */,
 				D30000000000000000000006 /* MacTimeoutTests.swift in Sources */,
+				D30000000000000000000C0B /* MacFileSearchTests.swift in Sources */,
 				D30000000000000000000007 /* MacRelayPairingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -6,7 +6,15 @@ namespace RovaWindows;
 public sealed record TextFilePayload(string Filename = "", string Content = "");
 public sealed record FileMovePayload(string Source = "", string Destination = "");
 public sealed record LocalFileOperationPayload(string Path = "", string? Destination = null, string? Content = null, bool Overwrite = false, bool Recursive = false, int Page = 0, int PageSize = 100);
-public sealed record FileSearchPayload(string Query = "", string? Cursor = null);
+public sealed record FileSearchPayload(
+    string Query = "",
+    string? Cursor = null,
+    string? Folder = null,
+    bool? Everywhere = null,
+    string? Kind = null,
+    int? ModifiedWithinDays = null,
+    bool? Content = null,
+    string? Sort = null);
 public sealed record ArtifactFilePayload(string ArtifactId = "", string Filename = "", string MimeType = "", string DownloadUrl = "", bool Overwrite = false, long? ByteCount = null, string? Sha256 = null);
 public sealed record ScreenCapturePayload(uint? DisplayId = null, int MaxWidth = 1600);
 public sealed record ApplicationControlPayload(string Action = "", string Target = "", string? BundleIdentifier = null, bool Force = false);

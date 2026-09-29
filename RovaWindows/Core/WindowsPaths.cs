@@ -9,4 +9,6 @@ public static class WindowsPaths
     public static string LogDirectory => Path.Combine(LocalDirectory, "logs");
     public static string UserProfile => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     public static string Desktop => Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+    public static string Documents => Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    public static string Downloads => Path.Combine(UserProfile, "Downloads");
 }

@@ -5,8 +5,21 @@ import SwiftUI
 /// where the *toggle* lives. This reads the same `DeviceCapabilityAuthority` list the Mac already
 /// reports every connection (MacSystem.capabilityAuthorities()), so it's never a second,
 /// hand-maintained catalog that can drift from what the model itself is actually gated on.
+/// How much the phone asks before Wiqo reads the person's own files.
+enum WiqoApprovalPreferences {
+    static let autoReadOwnFoldersKey = "wiqo.autoReadOwnFolders"
+
+    /// Finding, listing and reading inside Desktop, Documents and Downloads without a Face ID
+    /// prompt. On unless the person turned it off; writes, moves, deletes, sending a file and
+    /// anything outside those folders always ask (RovaShared RovaOwnFolders).
+    static var autoReadOwnFolders: Bool {
+        UserDefaults.standard.object(forKey: autoReadOwnFoldersKey) as? Bool ?? true
+    }
+}
+
 struct DeviceCapabilitiesView: View {
     let authorities: [DeviceCapabilityAuthority]
+    @AppStorage(WiqoApprovalPreferences.autoReadOwnFoldersKey) private var autoReadOwnFolders = true
 
     private var sorted: [DeviceCapabilityAuthority] {
         authorities.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
@@ -15,6 +28,11 @@ struct DeviceCapabilitiesView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Toggle("Kendi klasörlerimde onay sorma", isOn: $autoReadOwnFolders)
+                } footer: {
+                    Text("Masaüstü, Belgeler ve İndirilenler'de dosya bulma, listeleme ve okuma Face ID istemez. Dosya yazma, taşıma, silme, telefona gönderme ve bu klasörlerin dışındaki her şey yine sorar.")
+                }
                 if authorities.isEmpty {
                     Text("PC'ye bağlanınca burada güncel yetenekler görünecek.")
                         .foregroundStyle(.secondary)

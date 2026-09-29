@@ -120,6 +120,96 @@ public class ApplicationMatchingTests
     public void SearchFoldsDiacritics() => Assert.Equal("rapor ozeti", FileSearch.Fold("Rapör Özeti"));
 }
 
+public class FileSearchTests
+{
+    private static string Make(TempFolder folder, string relative, double daysAgo = 0, string text = "A")
+    {
+        var path = Path.Combine(folder.Path, relative.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, text);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-daysAgo));
+        return path;
+    }
+
+    private static FileSearch.Spec Spec(TempFolder folder, string query = "", string? kind = null, int? days = null, bool content = false, bool recent = false, bool hidesSensitive = true) =>
+        new(FileSearch.Tokens(query), [folder.Path], kind, days is { } d ? DateTimeOffset.UtcNow.AddDays(-d) : null, content, recent, hidesSensitive);
+
+    private static string[] Names(FileSearch.Spec spec) => FileSearch.Scan(spec, CancellationToken.None, out _).Select(hit => hit.Name).Order().ToArray();
+
+    [Fact]
+    public void FindsByNameKindAndDateAndSkipsOtherProgramsFiles()
+    {
+        using var folder = new TempFolder();
+        Make(folder, "rapor-mart.pdf", 2);
+        Make(folder, "rapor-ocak.pdf", 60);
+        Make(folder, "Alt/rapor.docx", 1);
+        Make(folder, "notlar.txt");
+        Make(folder, "proje/node_modules/paket/rapor.pdf");
+        Make(folder, "proje/DerivedData/x/rapor.pdf");
+
+        Assert.Equal(["rapor-mart.pdf", "rapor-ocak.pdf", "rapor.docx"], Names(Spec(folder, "rapor")));
+        Assert.Equal(["rapor-mart.pdf", "rapor-ocak.pdf"], Names(Spec(folder, "rapor", kind: "pdf")));
+        Assert.Equal(["rapor-mart.pdf", "rapor.docx"], Names(Spec(folder, "rapor", days: 7)));
+        Assert.Equal(["notlar.txt"], Names(Spec(folder, kind: "text", days: 1)));
+        Assert.Equal(["rapor-mart.pdf"], Names(Spec(folder, "mart ra")));
+    }
+
+    [Fact]
+    public void KeyMaterialStaysOutOfAutomaticSearches()
+    {
+        using var folder = new TempFolder();
+        Make(folder, "anahtar/id_rsa");
+        Make(folder, "banka parola.txt");
+        Make(folder, "rapor.pdf");
+        Assert.Equal(["rapor.pdf"], Names(Spec(folder, kind: "pdf")));
+        Assert.Empty(Names(Spec(folder, "parola")));
+        Assert.Equal(["banka parola.txt"], Names(Spec(folder, "parola", hidesSensitive: false)));
+    }
+
+    [Fact]
+    public void ContentSearchLooksInsideTextFiles()
+    {
+        using var folder = new TempFolder();
+        Make(folder, "a.txt", text: "Kira sözleşmesi imzalandı");
+        Make(folder, "b.txt", text: "market listesi");
+        Assert.Equal(["a.txt"], Names(Spec(folder, "kira", content: true)));
+        Assert.Empty(Names(Spec(folder, "kira")));
+    }
+
+    [Fact]
+    public void RankingPutsTheNameThatIsTheQueryFirstAndRecentSortsNewestFirst()
+    {
+        using var folder = new TempFolder();
+        Make(folder, "fatura-eylul-2026.pdf", 0);
+        Make(folder, "fatura.pdf", 30);
+        var query = FileSearch.Scan(Spec(folder, "fatura"), CancellationToken.None, out _);
+        Assert.Equal("fatura.pdf", FileSearch.Rank(query, Spec(folder, "fatura"))[0].Name);
+        Assert.Equal("fatura-eylul-2026.pdf", FileSearch.Rank(query, Spec(folder, "fatura", recent: true))[0].Name);
+    }
+
+    [Fact]
+    public void SearchValidationMatchesTheMacRule()
+    {
+        static WireError? Check(FileSearchPayload search) =>
+            WindowsValidation.Validate("searchFiles", System.Text.Json.JsonSerializer.SerializeToElement(new { kind = "fileSearch", value = search }, WireJson.Options));
+        Assert.Null(Check(new FileSearchPayload("fatura")));
+        Assert.Null(Check(new FileSearchPayload("", Kind: "pdf", ModifiedWithinDays: 7)));
+        Assert.Null(Check(new FileSearchPayload("x", Cursor: "o:24")));
+        Assert.NotNull(Check(new FileSearchPayload("")));
+        Assert.NotNull(Check(new FileSearchPayload("x", Kind: "exe")));
+        Assert.NotNull(Check(new FileSearchPayload("x", ModifiedWithinDays: 0)));
+        Assert.NotNull(Check(new FileSearchPayload("x", Cursor: "o:abc")));
+    }
+
+    [Fact]
+    public void AMissingFolderIsReportedAndAStaleCursorIsRefused()
+    {
+        using var folder = new TempFolder();
+        Assert.Equal("FILE_NOT_FOUND", FileSearch.Search(new FileSearchPayload("x", Folder: Path.Combine(folder.Path, "yok")), CancellationToken.None).Error?.Code);
+        Assert.Equal("INVALID_CURSOR", FileSearch.Search(new FileSearchPayload("x", Cursor: Guid.NewGuid().ToString()), CancellationToken.None).Error?.Code);
+    }
+}
+
 public class LedgerAndSettingsTests
 {
     [Fact]

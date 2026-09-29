@@ -636,13 +636,51 @@ public struct LocalFileOperationPayload: Codable, Equatable, Sendable {
     }
 }
 
+/// A file search. `query` is what the name (and, with `content`, the text) must contain and may be
+/// empty when a filter says enough ("son indirdiğim PDF"). Everything after `cursor` is optional
+/// and left out of the wire form when unset, so older requests and their signatures are unchanged.
 public struct FileSearchPayload: Codable, Equatable, Sendable {
     public let query: String
     public let cursor: String?
+    /// Where to look. Unset means Desktop, Documents and Downloads together.
+    public let folder: String?
+    /// Search the whole profile instead (slower, and the phone asks first).
+    public let everywhere: Bool?
+    /// pdf, document, spreadsheet, presentation, image, text, archive, audio, video or folder.
+    public let kind: String?
+    /// Only files changed in the last N days.
+    public let modifiedWithinDays: Int?
+    /// Also look inside the files (Spotlight on the Mac; text and Office files on Windows).
+    public let content: Bool?
+    /// "recent" (newest first) or "relevance" (default).
+    public let sort: String?
 
-    public init(query: String, cursor: String? = nil) {
+    public static let kinds: Set<String> = ["pdf", "document", "spreadsheet", "presentation", "image", "text", "archive", "audio", "video", "folder"]
+    public static let sorts: Set<String> = ["recent", "relevance"]
+
+    public init(
+        query: String,
+        cursor: String? = nil,
+        folder: String? = nil,
+        everywhere: Bool? = nil,
+        kind: String? = nil,
+        modifiedWithinDays: Int? = nil,
+        content: Bool? = nil,
+        sort: String? = nil
+    ) {
         self.query = query
         self.cursor = cursor
+        self.folder = folder
+        self.everywhere = everywhere
+        self.kind = kind
+        self.modifiedWithinDays = modifiedWithinDays
+        self.content = content
+        self.sort = sort
+    }
+
+    /// Whether anything besides the query narrows the search.
+    public var hasFilter: Bool {
+        kind != nil || modifiedWithinDays != nil || folder != nil
     }
 }
 

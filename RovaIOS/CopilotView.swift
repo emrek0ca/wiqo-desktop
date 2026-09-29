@@ -13,7 +13,10 @@ import UIKit
 private struct QuickSuggestion { let title: String; let icon: String; let requiresDevice: Bool }
 
 private let allSuggestions: [QuickSuggestion] = [
-    QuickSuggestion(title: "Dosya bul ve gönder", icon: "doc.badge.arrow.up", requiresDevice: true),
+    // Read-only on purpose: inside Desktop/Documents/Downloads these run without a Face ID prompt,
+    // so the first thing a newly paired person sees is the Mac answering instantly.
+    QuickSuggestion(title: "Masaüstümdeki son dosyalar", icon: "doc.text.magnifyingglass", requiresDevice: true),
+    QuickSuggestion(title: "Bu hafta indirdiğim dosyalar", icon: "arrow.down.doc", requiresDevice: true),
     QuickSuggestion(title: "Sesi kıs", icon: "speaker.wave.1.fill", requiresDevice: true),
     QuickSuggestion(title: "Ekranı kısarak odaklan", icon: "moon.stars.fill", requiresDevice: true),
     QuickSuggestion(title: "Bugün hava nasıl?", icon: "cloud.sun.fill", requiresDevice: false),
@@ -526,6 +529,7 @@ struct CopilotView: View {
                             openCreatedResource(widget)
                         }
                     }
+                    .environment(\.wiqoFollowUp, WiqoFollowUp { text in Task { await sendMessage(textOverride: text) } })
                     .padding(.horizontal)
                 }
                 if let task = bubble.deferredTask {
