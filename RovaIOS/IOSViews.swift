@@ -552,7 +552,10 @@ struct WiqoHomeView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 model.connect()
-                Task { await subscriptionStore.refreshIfStale() }
+                Task {
+                    await subscriptionStore.storeKit.retryProductsIfNeededOnForeground()
+                    await subscriptionStore.refreshIfStale()
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .wiqoOpenConversation)) { note in

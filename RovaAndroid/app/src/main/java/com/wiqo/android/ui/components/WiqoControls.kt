@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -120,7 +121,7 @@ fun WiqoPillButton(
             .then(borderModifier)
             .clickable(
                 interactionSource = interactionSource,
-                indication = null,
+                indication = ripple(),
                 enabled = enabled && !isLoading,
                 onClick = onClick,
             )
@@ -215,7 +216,7 @@ fun WiqoCheckbox(
             .border(1.dp, if (checked) Color.Transparent else colors.lineStrong, shape)
             .clickable(
                 interactionSource = interactionSource,
-                indication = null,
+                indication = ripple(bounded = false, radius = 18.dp),
                 onClick = { onCheckedChange(!checked) },
             ),
         contentAlignment = Alignment.Center,
@@ -259,7 +260,7 @@ fun RovaActionTile(
             .border(0.5.dp, colors.line, shape)
             .clickable(
                 interactionSource = interactionSource,
-                indication = null,
+                indication = ripple(),
                 onClick = onClick,
             )
             .padding(horizontal = 8.dp),

@@ -299,7 +299,7 @@ actor MacCommandEngine {
         switch type {
         case .getSystemStatus, .getClipboardText, .getClipboardHistory,
              .listCalendarEvents, .listReminders, .listDesktopFiles, .readDesktopFile,
-             .listFiles, .searchFiles, .readFile, .readDocument, .captureScreen, .listRunningApplications,
+             .listFiles, .searchFiles, .readFile, .readDocument, .captureScreen, .listRunningApplications, .localAnalyze,
              .ping:
             return .readOnly
         default:
@@ -314,9 +314,11 @@ actor MacCommandEngine {
         case .computerBrowser:
             // First use may install the pinned Playwright runtime and Chromium into Application Support.
             return 120_000_000_000
+        case .computerDesktop:
+            return 20_000_000_000
         case .endBrowserTask:
             return 5_000_000_000
-        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles:
+        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles, .localAnalyze:
             return 60_000_000_000
         case .listCalendarEvents, .createCalendarEvent, .listReminders, .createReminder,
              .completeReminder, .listDesktopFiles, .readDesktopFile, .listFiles, .readFile,
@@ -643,6 +645,12 @@ actor MacCommandEngine {
             }
             let outcome = await Task.detached(priority: .userInitiated) { MacSystem.clickScreen(payload) }.value
             return (outcome.data, outcome.error == nil ? "Ekran tıklaması gönderildi; sonucu yeniden gözlemlemek gerekiyor." : outcome.error!.message, outcome.error)
+        case .computerDesktop:
+            guard case .computerDesktop(let payload) = request.payload else {
+                return (nil, "Geçersiz masaüstü kontrol isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Masaüstü kontrol payload'ı geçersiz.", category: "validation"))
+            }
+            let outcome = await Task.detached(priority: .userInitiated) { MacSystem.controlDesktop(payload) }.value
+            return (outcome.data, outcome.error == nil ? "Masaüstü eylemi uygulandı ve durum yeniden gözlemlendi." : outcome.error!.message, outcome.error)
         case .computerBrowser:
             guard case .computerBrowser(let payload) = request.payload else {
                 return (nil, "Geçersiz tarayıcı isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Tarayıcı işlemi geçersiz.", category: "validation"))
@@ -655,6 +663,12 @@ actor MacCommandEngine {
             }
             let outcome = await browserWorker.close(taskId: payload.taskId)
             return (outcome.0.map(CommandData.browserTask), outcome.1, outcome.2)
+        case .localAnalyze:
+            guard case .localAnalysis(let payload) = request.payload else {
+                return (nil, "Geçersiz yerel analiz isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Yerel analiz isteği geçersiz.", category: "validation"))
+            }
+            let outcome = await Task.detached(priority: .utility) { MacSystem.localAnalysis(payload) }.value
+            return (outcome.data, outcome.error == nil ? "Yerel analiz tamamlandı." : outcome.error!.message, outcome.error)
         case .listRunningApplications:
             let outcome = await Task.detached(priority: .utility) {
                 MacSystem.listRunningApplications()

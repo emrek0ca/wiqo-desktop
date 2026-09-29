@@ -20,6 +20,7 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
         var submit: Bool? = nil
         var key: String? = nil
         var offset: Int? = nil
+        var steps: [ComputerBrowserStep]? = nil
         var cancelRequestId: String? = nil
     }
 
@@ -31,12 +32,19 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
         let text: String?
         let targets: [BrowserTarget]?
         let pageVersion: Int?
+        let previousPageVersion: Int?
+        let addedTargets: [BrowserTarget]?
+        let changedTargets: [BrowserTarget]?
+        let removedTargetRefs: [String]?
+        let textChanged: Bool?
+        let diffOnly: Bool?
         let contentShared: Bool?
         let interactionApproved: Bool?
         let truncated: Bool?
         let verified: Bool?
         let closed: Bool?
         let nextOffset: Int?
+        let evidence: [ActionVerificationEvidence]?
     }
 
     private struct WorkerError: Decodable {
@@ -91,12 +99,13 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
             interactionAccessGranted: payload.interactionAccessGranted,
             submit: payload.submit,
             key: payload.key,
-            offset: payload.offset
+            offset: payload.offset,
+            steps: payload.steps
         )
         do {
             let envelope = try await send(request)
             if let result = envelope.result, let taskId = result.taskId {
-                let content = BrowserContent(taskId: taskId, action: result.action, url: result.url, title: result.title, text: result.text, targets: result.targets, pageVersion: result.pageVersion, contentShared: result.contentShared, interactionApproved: result.interactionApproved, truncated: result.truncated, verified: result.verified, nextOffset: result.nextOffset)
+                let content = BrowserContent(taskId: taskId, action: result.action, url: result.url, title: result.title, text: result.text, targets: result.targets, pageVersion: result.pageVersion, previousPageVersion: result.previousPageVersion, addedTargets: result.addedTargets, changedTargets: result.changedTargets, removedTargetRefs: result.removedTargetRefs, textChanged: result.textChanged, diffOnly: result.diffOnly, contentShared: result.contentShared, interactionApproved: result.interactionApproved, truncated: result.truncated, verified: result.verified, nextOffset: result.nextOffset, evidence: result.evidence)
                 if let error = envelope.error {
                     let category = error.code.contains("TIMEOUT") ? "timeout" : (error.code.contains("BLOCKED") || error.code.contains("UNSAFE") ? "permission" : "tool_failure")
                     return (content, error.message, RovaError(code: error.code, message: error.message, category: category))
@@ -113,14 +122,14 @@ final class LocalBrowserWorkerClient: @unchecked Sendable {
     }
 
     func close(taskId: String) async -> (BrowserContent?, String, RovaError?) {
-        let request = Request(id: UUID().uuidString.lowercased(), action: "closeTask", taskId: taskId)
+        let request = Request(id: UUID().uuidString.lowercased(), action: "closeBrowser", taskId: taskId)
         do {
             let envelope = try await send(request)
             guard envelope.ok, let result = envelope.result, let id = result.taskId else {
                 if let error = envelope.error { throw WorkerFailure.rejected(error.code, error.message) }
                 throw WorkerFailure.invalidResponse
             }
-            return (BrowserContent(taskId: id, closed: result.closed ?? true), "Göreve özel tarayıcı oturumu kapatıldı.", nil)
+            return (BrowserContent(taskId: id, closed: result.closed ?? true), "Göreve özel görünür tarayıcı kapatıldı.", nil)
         } catch {
             let (code, message, category) = safeError(error)
             return (nil, message, RovaError(code: code, message: message, category: category))

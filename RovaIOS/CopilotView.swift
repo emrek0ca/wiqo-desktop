@@ -896,8 +896,9 @@ struct CopilotView: View {
         case .executeCode: return "terminal"
         case .setClipboardText, .getClipboardText, .getClipboardHistory: return "doc.on.clipboard"
         case .setVolume, .toggleMute, .mediaControl: return "speaker.wave.2.fill"
-        case .captureScreen, .clickScreen, .controlUIElement: return "rectangle.inset.filled.and.person.filled"
+        case .captureScreen, .clickScreen, .controlUIElement, .computerDesktop: return "rectangle.inset.filled.and.person.filled"
         case .computerBrowser, .endBrowserTask: return "safari.fill"
+        case .localAnalyze: return "waveform.path.ecg.rectangle"
         case .getSystemStatus, .ping: return "desktopcomputer"
         default: return "bolt.fill"
         }
@@ -1782,6 +1783,12 @@ struct CopilotView: View {
         step.isDestructive || step.requiresUserPresence
     }
 
+    private func isForceQuitStep(_ step: PlannedCommand) -> Bool {
+        guard step.type == .controlApplication,
+              case .applicationControl(let payload) = step.payload else { return false }
+        return payload.action == .quit && payload.force
+    }
+
     private func pendingLocalSteps(in bubble: ChatBubble) -> [PlannedCommand] {
         bubble.steps.filter { !bubble.executedStepIDs.contains($0.id) }
     }
@@ -2116,8 +2123,8 @@ struct CopilotView: View {
             }
             persistConversation()
         } catch {
-            // Keep the task browser visible for an explicit retry. It remains isolated and the
-            // worker closes it after the bounded idle/max lifetime.
+            // Keep the isolated task browser visible for an explicit retry. Its owner closes it
+            // only when the user explicitly asks or the desktop runtime itself shuts down.
             liveReplyBubbleID = nil
             liveReply.reset()
             commitThinking(to: bubbleID, failed: true)
@@ -2142,11 +2149,26 @@ struct CopilotView: View {
         text: String
     ) {
         let streamBubble = streamBubbleID.flatMap { id in bubbles.first(where: { $0.id == id }) }
+        let incomingForceQuit = result.steps.contains { isForceQuitStep($0) }
         setBubble(bubbleID) { bubble in
             if let streamBubble, streamBubble.id != bubbleID {
                 for (id, update) in streamBubble.executionUpdates { bubble.executionUpdates[id] = update }
                 for row in streamBubble.backendConfirmations where !bubble.backendConfirmations.contains(where: { $0.id == row.id }) {
                     bubble.backendConfirmations.append(row)
+                }
+            }
+            if incomingForceQuit {
+                // The graceful close receipt is the reason for the next safety decision, not a
+                // second user-facing failure. Replace that intermediate row with the pending
+                // force-quit row so the sheet and execution card tell one coherent story.
+                let superseded = Set(bubble.stepResults.compactMap { id, commandResult in
+                    commandResult.error?.code == "APPLICATION_QUIT_REQUIRES_FORCE" ? id : nil
+                })
+                bubble.steps.removeAll { superseded.contains($0.id) }
+                for id in superseded {
+                    bubble.stepResults.removeValue(forKey: id)
+                    bubble.failedSteps.removeValue(forKey: id)
+                    bubble.executedStepIDs.remove(id)
                 }
             }
             let existingStepIDs = Set(bubble.steps.map(\.id))
@@ -2522,7 +2544,7 @@ struct CopilotView: View {
         // ended the turn on "Masaüstüne bakıyorum" with the listing never shown to the model.
         case .readDocument, .readDesktopFile, .readFile, .sendFileToPhone, .searchFiles, .listFiles, .listDesktopFiles, .captureScreen,
              .runShortcut, .controlUIElement, .clickScreen, .listRunningApplications, .getSystemStatus,
-             .listCalendarEvents, .listReminders, .getClipboardText, .getClipboardHistory, .computerBrowser:
+             .listCalendarEvents, .listReminders, .getClipboardText, .getClipboardHistory, .computerDesktop, .computerBrowser:
             return true
         default:
             return false

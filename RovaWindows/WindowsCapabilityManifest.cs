@@ -17,7 +17,7 @@ public static class WindowsCapabilityManifest
         "setClipboardText", "getClipboardText",
         "saveTextFile", "listDesktopFiles", "readDesktopFile", "moveDesktopFile", "renameDesktopFile",
         "listFiles", "searchFiles", "readFile", "sendFileToPhone", "writeFile", "moveFile", "copyFile", "deleteFile",
-        "saveArtifact", "captureScreen", "computerBrowser", "endBrowserTask"
+        "saveArtifact", "captureScreen", "computerDesktop", "computerBrowser", "endBrowserTask", "localAnalyze"
     };
 
     public static string CapabilityFor(string operation) =>
@@ -47,6 +47,8 @@ public static class WindowsCapabilityManifest
         ["device.files.delete"] = ("Dosya silme (Geri Dönüşüm Kutusu)", "confirmation"),
         ["artifact.save"] = ("Dosya kaydetme", "confirmation"),
         ["device.screen.capture"] = ("Ekran gözlemi", "confirmation"),
-        ["device.browser.control"] = ("Geçici tarayıcı", "confirmation")
+        ["device.desktop.control"] = ("Göreve özel masaüstü kontrolü", "confirmation"),
+        ["device.browser.control"] = ("Geçici tarayıcı", "confirmation"),
+        ["local.analysis"] = ("Yerel analiz", "confirmation")
     };
 }

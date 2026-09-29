@@ -84,15 +84,51 @@ public static class WindowsValidation
             case "captureScreen":
                 var capture = PayloadReader.Object<ScreenCapturePayload>(payload, "screenCapture");
                 return capture is not null && capture.MaxWidth is >= 400 and <= 2_400 ? null : Invalid("Ekran görüntüsü ayarları geçersiz.");
+            case "computerDesktop":
+                var desktop = PayloadReader.Object<ComputerDesktopPayload>(payload, "computerDesktop");
+                return desktop is not null && IsValidDesktopPayload(desktop) ? null : Invalid("Masaüstü işlemi geçersiz.", "validation");
             case "computerBrowser":
                 var browser = PayloadReader.Object<ComputerBrowserPayload>(payload, "computerBrowser");
                 return browser is not null && IsValidBrowserPayload(browser) ? null : Invalid("Tarayıcı işlemi geçersiz.", "validation");
             case "endBrowserTask":
                 var browserTask = PayloadReader.Object<BrowserTaskPayload>(payload, "browserTask");
                 return browserTask is not null && Guid.TryParse(browserTask.TaskId, out _) ? null : Invalid("Tarayıcı görevi geçersiz.", "validation");
+            case "localAnalyze":
+                var analysis = PayloadReader.Object<LocalAnalysisPayload>(payload, "localAnalysis");
+                return analysis is not null && IsValidLocalAnalysis(analysis) ? null : Invalid("Yerel analiz isteği geçersiz.", "validation");
             default:
                 return Invalid("Bu işlem Windows'ta desteklenmiyor.");
         }
+    }
+
+    private static bool IsValidLocalAnalysis(LocalAnalysisPayload value)
+    {
+        if (value.Limit is < 1 or > 500 || value.Variables is { Length: > 12 }
+            || (value.Variables?.Any(item => !Regex.IsMatch(item, "^[A-Za-z][A-Za-z0-9]{0,31}$")) ?? false)) return false;
+        return value.Action switch
+        {
+            "dependencyStatus" => value.Path is null && value.Query is null && value.Expression is null && value.Variables is null,
+            "extractDocument" => IsValidLocalPath(value.Path) && value.Query is null && value.Expression is null && value.Variables is null,
+            "queryData" => IsValidLocalPath(value.Path) && IsSafeReadOnlyQuery(value.Query) && value.Expression is null && value.Variables is null,
+            "solveSymbolic" => value.Path is null && value.Query is null && IsSafeSymbolicExpression(value.Expression),
+            "workspaceDiff" => IsValidLocalPath(value.Path) && value.Query is null && value.Expression is null && value.Variables is null,
+            _ => false
+        };
+    }
+
+    private static bool IsSafeReadOnlyQuery(string? value)
+    {
+        var query = value?.Trim() ?? "";
+        return query.Length is > 0 and <= 8_000 && !query.Contains(';') && !query.Contains('\0')
+            && Regex.IsMatch(query, "^(SELECT|WITH)\\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+            && !Regex.IsMatch(query, "\\b(ATTACH|COPY|CREATE|DELETE|DROP|EXPORT|IMPORT|INSERT|INSTALL|LOAD|PRAGMA|UPDATE|CALL|READ_[A-Z0-9_]*|[A-Z0-9_]*SCAN|HTTPFS|SQLITE|POSTGRES|GLOB|SECRET)\\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    private static bool IsSafeSymbolicExpression(string? value)
+    {
+        var expression = value?.Trim() ?? "";
+        return expression.Length is > 0 and <= 2_000 && !expression.Contains("__", StringComparison.Ordinal)
+            && Regex.IsMatch(expression, "^[A-Za-z0-9+*/^=(), \\t.-]+$", RegexOptions.CultureInvariant);
     }
 
     public static bool IsValidDesktopFilename(string? name)
@@ -124,33 +160,98 @@ public static class WindowsValidation
     private static bool IsValidBrowserPayload(ComputerBrowserPayload value)
     {
         if (!Guid.TryParse(value.TaskId, out _)) return false;
-        var hasRef = value.TargetRef is { Length: <= 48 } targetRef && Regex.IsMatch(targetRef, @"^p\d+-t\d+$");
-        var hasLegacyTarget = (value.TargetBy is "role" or "label" or "placeholder")
-            && IsSafeText(value.Target, 200)
-            && (value.TargetBy != "role" || value.Role is "button" or "link" or "textbox" or "searchbox" or "checkbox" or "radio" or "combobox" or "option" or "tab" or "menuitem" or "heading")
-            && (value.TargetBy == "role" || value.Role is null);
+        if (value.Action == "run_steps")
+            return value.Url is null && value.TargetRef is null && value.TargetBy is null && value.Target is null && value.Role is null
+                && value.Value is null && value.Direction is null && value.ScrollAmount is null && value.Submit is null
+                && value.Key is null && value.Offset is null && value.Steps is { Length: >= 1 and <= 8 }
+                && value.Steps.All(IsValidBrowserStep);
+        if (value.Steps is not null) return false;
+        return IsValidBrowserAction(value.Action, value.Url, value.TargetRef, value.TargetBy, value.Target, value.Role,
+            value.Value, value.Direction, value.ScrollAmount, value.Submit, value.Key, value.Offset);
+    }
+
+    private static bool IsValidBrowserStep(ComputerBrowserStep value) =>
+        IsValidBrowserAction(value.Action, value.Url, value.TargetRef, value.TargetBy, value.Target, value.Role,
+            value.Value, value.Direction, value.ScrollAmount, value.Submit, value.Key, value.Offset);
+
+    private static bool IsValidBrowserAction(string action, string? url, string? targetRef, string? targetBy,
+        string? target, string? role, string? value, string? direction, int? scrollAmount, bool? submit,
+        string? key, int? offset)
+    {
+        var hasRef = targetRef is { Length: <= 48 } candidate && IsBrowserTargetRef(candidate);
+        var hasLegacyTarget = (targetBy is "role" or "label" or "placeholder")
+            && IsSafeText(target, 240)
+            && (targetBy != "role" || role is "button" or "link" or "textbox" or "searchbox" or "checkbox" or "radio" or "combobox" or "option" or "tab" or "menuitem" or "heading")
+            && (targetBy == "role" || role is null);
         // A current target ref wins over redundant legacy locator metadata from mixed versions.
         var hasTarget = hasRef || (!hasRef && hasLegacyTarget);
-        var noTarget = value.TargetRef is null && value.TargetBy is null && value.Target is null && value.Role is null;
-        var noValue = value.Value is null;
-        var noDirection = value.Direction is null;
-        var noUrl = value.Url is null;
+        var noTarget = targetRef is null && targetBy is null && target is null && role is null;
+        var noValue = value is null;
+        var noDirection = direction is null;
+        var noUrl = url is null;
 
-        if (value.Submit is not null && value.Action != "fill") return false;
-        if (value.Key is not null && value.Action != "press") return false;
-        if (value.Offset is not null && (value.Action != "read" || value.Offset is < 0 or > 2_000_000)) return false;
-        return value.Action switch
+        if (submit is not null && action != "fill") return false;
+        if (key is not null && action != "press") return false;
+        if (offset is not null && (action != "read" || offset is < 0 or > 2_000_000)) return false;
+        return action switch
         {
-            "read" => noUrl && noTarget && noValue && noDirection && value.ScrollAmount is null,
-            "press" => noUrl && noTarget && noValue && noDirection && value.ScrollAmount is null && value.Key is "Enter" or "Escape" or "Tab" or "ArrowDown" or "ArrowUp",
-            "navigate" => IsPublicBrowserUrl(value.Url) && noTarget && noValue && noDirection && value.ScrollAmount is null,
-            "observe" or "back" => noUrl && noTarget && noValue && noDirection && value.ScrollAmount is null,
-            "scroll" => noUrl && noTarget && noValue && (value.Direction is "up" or "down") && (value.ScrollAmount is null or >= 1 and <= 3),
-            "click" or "submit" => noUrl && hasTarget && noValue && noDirection && value.ScrollAmount is null,
-            "fill" or "select" => noUrl && hasTarget && value.Value is { Length: > 0 and <= 2_000 } fillValue && !fillValue.Contains('\0') && noDirection && value.ScrollAmount is null,
+            "read" => noUrl && noTarget && noValue && noDirection && scrollAmount is null,
+            "press" => noUrl && noTarget && noValue && noDirection && scrollAmount is null && key is "Enter" or "Escape" or "Tab" or "ArrowDown" or "ArrowUp",
+            "navigate" => IsPublicBrowserUrl(url) && noTarget && noValue && noDirection && scrollAmount is null,
+            "observe" or "observe_diff" or "back" => noUrl && noTarget && noValue && noDirection && scrollAmount is null,
+            "scroll" => noUrl && noTarget && noValue && (direction is "up" or "down") && (scrollAmount is null or >= 1 and <= 3),
+            "click" => noUrl && hasTarget && noValue && noDirection && scrollAmount is null,
+            "submit" => noUrl && hasTarget && noValue && noDirection && scrollAmount is null && (hasRef || (targetBy == "role" && role == "button")),
+            "fill" or "select" => noUrl && hasTarget && value is { Length: <= 2_000 } fillValue && !fillValue.Contains('\0') && noDirection && scrollAmount is null,
             _ => false
         };
     }
+
+    private static bool IsValidDesktopPayload(ComputerDesktopPayload value)
+    {
+        if (!Guid.TryParse(value.TaskId, out _) || (value.SnapshotId is not null && !Guid.TryParse(value.SnapshotId, out _))) return false;
+        if (value.Action == "runSteps")
+            return value.SnapshotId is null && value.TargetRef is null && value.SourceRef is null && value.DestinationRef is null
+                && value.NormalizedX is null && value.NormalizedY is null && value.Direction is null && value.Amount is null
+                && value.Text is null && value.Keys is null && value.Steps is { Length: >= 1 and <= 8 }
+                && value.Steps.All(IsValidDesktopStep);
+        if (value.Steps is not null) return false;
+        return IsValidDesktopAction(value.Action, value.TargetRef, value.SourceRef, value.DestinationRef,
+            value.NormalizedX, value.NormalizedY, value.Direction, value.Amount, value.Text, value.Keys, allowCancel: true);
+    }
+
+    private static bool IsValidDesktopStep(ComputerDesktopStep value) =>
+        IsValidDesktopAction(value.Action, value.TargetRef, value.SourceRef, value.DestinationRef,
+            value.NormalizedX, value.NormalizedY, value.Direction, value.Amount, value.Text, value.Keys, allowCancel: false);
+
+    private static bool IsValidDesktopAction(string action, string? targetRef, string? sourceRef, string? destinationRef,
+        double? normalizedX, double? normalizedY, string? direction, int? amount, string? text, string[]? keys, bool allowCancel)
+    {
+        bool ValidRef(string? target) => target is null || IsDesktopTargetRef(target);
+        if (!ValidRef(targetRef) || !ValidRef(sourceRef) || !ValidRef(destinationRef)) return false;
+        if (normalizedX is < 0 or > 1 || normalizedY is < 0 or > 1) return false;
+        if ((normalizedX is null) != (normalizedY is null)) return false;
+        if (text is { Length: > 4_000 } || text?.Contains('\0') == true) return false;
+        var allowedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "command", "control", "option", "alt", "shift", "a", "c", "v", "x", "z", "f", "enter", "escape", "tab", "arrowup", "arrowdown", "arrowleft", "arrowright" };
+        if (keys is { Length: 0 or > 4 } || keys?.Any(key => !allowedKeys.Contains(key)) == true) return false;
+        var hasTarget = targetRef is not null;
+        var hasPoint = normalizedX is not null && normalizedY is not null;
+        return action switch
+        {
+            "observe" => !hasTarget && !hasPoint && sourceRef is null && destinationRef is null && direction is null && amount is null && text is null && keys is null,
+            "cancel" => allowCancel && !hasTarget && !hasPoint && sourceRef is null && destinationRef is null && direction is null && amount is null && text is null && keys is null,
+            "move" or "click" or "doubleClick" or "rightClick" => hasTarget != hasPoint && sourceRef is null && destinationRef is null && direction is null && amount is null && text is null && keys is null,
+            "scroll" => (direction is "up" or "down") && (amount is null or >= 1 and <= 5) && sourceRef is null && destinationRef is null && !hasPoint && text is null && keys is null,
+            "dragDrop" => sourceRef is not null && destinationRef is not null && !hasTarget && !hasPoint && direction is null && amount is null && text is null && keys is null,
+            "type" => hasTarget && text is not null && !hasPoint && sourceRef is null && destinationRef is null && direction is null && amount is null && keys is null,
+            "hotkey" => keys is not null && !hasTarget && !hasPoint && sourceRef is null && destinationRef is null && direction is null && amount is null && text is null,
+            "wait" => amount is >= 50 and <= 5_000 && !hasTarget && !hasPoint && sourceRef is null && destinationRef is null && direction is null && text is null && keys is null,
+            _ => false
+        };
+    }
+
+    private static bool IsBrowserTargetRef(string value) => Regex.IsMatch(value, @"^(?:p\d+-t\d+|b-[0-9a-f]{8})$", RegexOptions.IgnoreCase);
+    private static bool IsDesktopTargetRef(string value) => Regex.IsMatch(value, @"^(?:d\d+-t\d+|d-[0-9a-f]{8})$", RegexOptions.IgnoreCase);
 
     private static bool IsPublicBrowserUrl(string? raw)
     {

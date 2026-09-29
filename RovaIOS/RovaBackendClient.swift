@@ -726,7 +726,10 @@ enum RovaBackendClient {
                     "message": result.message
                 ]
                 if let summary = result.summary { value["summary"] = summary }
-                if let error = result.error { value["error"] = error.message }
+                if let error = result.error {
+                    value["error"] = error.message
+                    value["errorCode"] = error.code
+                }
                 if let dataText = result.dataText { value["dataText"] = dataText }
                 if let imageBase64 = result.imageBase64 { value["imageBase64"] = imageBase64 }
                 if let fileBase64 = result.fileBase64 { value["fileBase64"] = fileBase64 }
@@ -2378,6 +2381,11 @@ enum WiqoOnDeviceIntentModel {
     }
 
     @Generable
+    enum DeviceOperation: String {
+        case none, list_running_applications, control_application, close_managed_browser
+    }
+
+    @Generable
     enum ProjectKind: String {
         case website, document, presentation, images, none
     }
@@ -2393,6 +2401,8 @@ enum WiqoOnDeviceIntentModel {
         let sideEffect: SideEffect
         @Guide(description: "Gerekli araç grupları; en az olanı seç.", .maximumCount(4))
         let candidateToolGroups: [ToolGroup]
+        @Guide(description: "PC isteğinin dar semantik işlemi: açık uygulamaları sorma=list_running_applications; normal uygulama kontrolü=control_application; Wiqo görev tarayıcısını veya Google Chrome for Testing'i kapatma=close_managed_browser; diğerleri=none.")
+        let deviceOperation: DeviceOperation
         @Guide(description: "Çok uzun belge, sunum, web sitesi veya görsel seti ise türü; değilse none.")
         let projectKind: ProjectKind
         @Guide(description: "Karardan ne kadar eminsin.", .range(0.0...1.0))
@@ -2402,6 +2412,8 @@ enum WiqoOnDeviceIntentModel {
     private static let instructions = """
     Wiqo asistanına gelen bir isteği yalnızca sınıflandırırsın; işi yapmaz, araç çağırmaz, yetki vermezsin. \
     Kullanıcının kendi PC/dosya kapsamı güncellik gerektirmez. Olumsuz istek ("gönderme") sohbettir. \
+    PC'de açık/çalışan uygulamaları soran farklı günlük ifadeleri aynı list_running_applications anlamında sınıflandır. \
+    Wiqo'nun görünür görev tarayıcısını ve Google Chrome for Testing'i kapatma isteğini close_managed_browser seç. \
     Emin değilsen düşük confidence ver.
     """
 
@@ -2430,6 +2442,7 @@ enum WiqoOnDeviceIntentModel {
                 "sideEffect": decision.sideEffect.rawValue,
                 "clarificationQuestion": "",
                 "candidateToolGroups": decision.candidateToolGroups.map(\.rawValue),
+                "deviceOperation": decision.deviceOperation.rawValue,
                 "reason": "model_classification",
                 "confidence": decision.confidence,
                 "projectKind": decision.projectKind.rawValue,

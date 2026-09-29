@@ -643,6 +643,20 @@
       "verificationRule" : "application_state"
     },
     {
+      "authority" : "device.desktop.control",
+      "capability" : "device.desktop.control",
+      "isDestructive" : false,
+      "operation" : "computerDesktop",
+      "payloadKind" : "computerDesktop",
+      "requiresUserPresence" : true,
+      "supportedPlatforms" : [
+        "macOS",
+        "windows"
+      ],
+      "timeoutClass" : "long",
+      "verificationRule" : "ui_observation"
+    },
+    {
       "authority" : "device.browser.control",
       "capability" : "device.browser.control",
       "isDestructive" : false,
@@ -669,7 +683,21 @@
       ],
       "timeoutClass" : "medium",
       "verificationRule" : "browser_state"
+    },
+    {
+      "authority" : "local.analysis",
+      "capability" : "local.analysis",
+      "isDestructive" : false,
+      "operation" : "localAnalyze",
+      "payloadKind" : "localAnalysis",
+      "requiresUserPresence" : true,
+      "supportedPlatforms" : [
+        "macOS",
+        "windows"
+      ],
+      "timeoutClass" : "long",
+      "verificationRule" : "structured_local_result"
     }
   ],
-  "version" : 2
+  "version" : 3
 }

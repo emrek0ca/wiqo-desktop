@@ -132,9 +132,15 @@ internal static class ApplicationOperations
             closed = await WaitFor(() => Process.GetProcessesByName(processName).Length == 0, TimeSpan.FromSeconds(4), cancellationToken).ConfigureAwait(false);
         }
         if (!closed)
-            return new Outcome($"{displayName} kapanmadı; kaydedilmemiş bir belge onay bekliyor olabilir.",
-                new { kind = "applicationControl", value = Content("quit", displayName, processName, "running", "running", false, false) },
-                new WireError("APPLICATION_QUIT_TIMEOUT", $"{displayName} kapanmadı; kaydedilmemiş bir belge onay bekliyor olabilir. Zorla kapatmak için açıkça iste."));
+        {
+            var code = force ? "APPLICATION_FORCE_QUIT_FAILED" : "APPLICATION_QUIT_REQUIRES_FORCE";
+            var message = force
+                ? $"{displayName} zorla kapatılamadı; uygulama veya sistem işlemi koruyor olabilir."
+                : $"{displayName} normal biçimde kapanmadı; kaydedilmemiş bir belge sorusu açık olabilir.";
+            return new Outcome(message,
+                new { kind = "applicationControl", value = Content("quit", displayName, processName, "running", "running", false, false, requiresForce: !force) },
+                new WireError(code, message));
+        }
         return Outcome.WithData("applicationControl", Content("quit", displayName, processName, "running", "not_running", true, true), $"{displayName} kapatıldı ve doğrulandı.");
     }
 
@@ -173,9 +179,9 @@ internal static class ApplicationOperations
         return result;
     }
 
-    private static object Content(string action, string name, string? id, string before, string after, bool changed, bool verified, string[]? candidates = null) => new
+    private static object Content(string action, string name, string? id, string before, string after, bool changed, bool verified, string[]? candidates = null, bool? requiresForce = null) => new
     {
-        action, resolvedName = name, bundleIdentifier = id, stateBefore = before, stateAfter = after, changed, verified, candidates = candidates ?? []
+        action, resolvedName = name, bundleIdentifier = id, stateBefore = before, stateAfter = after, changed, verified, requiresForce, candidates = candidates ?? []
     };
 
     private static object Info(InstalledApplication app) => new { name = app.Name, bundleIdentifier = app.Id, path = app.Path };

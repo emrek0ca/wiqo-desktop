@@ -102,6 +102,9 @@
 		D30000000000000000000007 /* MacRelayPairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3000000000000000000006B /* MacRelayPairingTests.swift */; };
 		D30000000000000000000008 /* ConnectionRoutePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000070 /* ConnectionRoutePolicy.swift */; };
 		D30000000000000000000009 /* ConnectionRoutePolicy.swift in RovaSharedTests */ = {isa = PBXBuildFile; fileRef = D30000000000000000000070 /* ConnectionRoutePolicy.swift */; };
+		D30000000000000000000010 /* StoreKitLoadPolicy.swift in RovaIOS */ = {isa = PBXBuildFile; fileRef = D30000000000000000000071 /* StoreKitLoadPolicy.swift */; };
+		D30000000000000000000011 /* StoreKitLoadPolicyTests.swift in RovaSharedTests */ = {isa = PBXBuildFile; fileRef = D30000000000000000000072 /* StoreKitLoadPolicyTests.swift */; };
+		D30000000000000000000012 /* StoreKitLoadPolicy.swift in RovaSharedTests */ = {isa = PBXBuildFile; fileRef = D30000000000000000000071 /* StoreKitLoadPolicy.swift */; };
 		B028 /* OperationManifest.swift in RovaSharedTests */ = {isa = PBXBuildFile; fileRef = F031 /* OperationManifest.swift */; };
 		B029 /* OperationManifest.swift in RovaIOS */ = {isa = PBXBuildFile; fileRef = F031 /* OperationManifest.swift */; };
 		C100 /* WiqoFocusDoNotDisturbOn.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C110 /* WiqoFocusDoNotDisturbOn.shortcut */; };
@@ -235,6 +238,9 @@
 		D30000000000000000000067 /* MacNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNetwork.swift; sourceTree = "<group>"; };
 		D30000000000000000000068 /* MacRelayPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRelayPairing.swift; sourceTree = "<group>"; };
 		D30000000000000000000070 /* ConnectionRoutePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionRoutePolicy.swift; sourceTree = "<group>"; };
+		D30000000000000000000071 /* StoreKitLoadPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitLoadPolicy.swift; sourceTree = "<group>"; };
+		D30000000000000000000072 /* StoreKitLoadPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitLoadPolicyTests.swift; sourceTree = "<group>"; };
+		D30000000000000000000073 /* WiqoLocal.storekit */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = WiqoLocal.storekit; sourceTree = "<group>"; };
 		D30000000000000000000080 /* MacSystem+Applications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Applications.swift"; sourceTree = "<group>"; };
 		D30000000000000000000081 /* MacSystem+Permissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Permissions.swift"; sourceTree = "<group>"; };
 		D30000000000000000000082 /* MacSystem+Device.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Device.swift"; sourceTree = "<group>"; };
@@ -308,6 +314,7 @@
 				F001 /* Protocol.swift */,
 				F031 /* OperationManifest.swift */,
 				D30000000000000000000070 /* ConnectionRoutePolicy.swift */,
+				D30000000000000000000071 /* StoreKitLoadPolicy.swift */,
 				F002 /* Validation.swift */,
 				F003 /* Framing.swift */,
 				F004 /* KeychainStore.swift */,
@@ -407,8 +414,17 @@
 				D40ECA86D390584A080B280F /* Localizable.strings */,
 				F10000000000000000000014 /* Fonts */,
 				F10000000000000000000015 /* KaTeX */,
+				D30000000000000000000074 /* StoreKit */,
 			);
 			path = RovaIOS;
+			sourceTree = "<group>";
+		};
+		D30000000000000000000074 /* StoreKit */ = {
+			isa = PBXGroup;
+			children = (
+				D30000000000000000000073 /* WiqoLocal.storekit */,
+			);
+			path = StoreKit;
 			sourceTree = "<group>";
 		};
 		G004 /* Tests */ = {
@@ -438,6 +454,7 @@
 				D2000000000000000000003E /* ReplyStreamSplitterTests.swift */,
 				D20000000000000000000046 /* ThinkingTraceTests.swift */,
 				D2000000000000000000002F /* CanvasPackageDetectorTests.swift */,
+				D30000000000000000000072 /* StoreKitLoadPolicyTests.swift */,
 			);
 			path = RovaSharedTests;
 			sourceTree = "<group>";
@@ -711,6 +728,7 @@
 				D2000000000000000000000C /* WiqoContextCard.swift in Sources */,
 				D2000000000000000000000E /* WiqoAppPreview.swift in Sources */,
 				D20000000000000000000010 /* WiqoCanvasSupport.swift in Sources */,
+				D30000000000000000000010 /* StoreKitLoadPolicy.swift in RovaIOS */,
 				D30000000000000000000008 /* ConnectionRoutePolicy.swift in Sources */,
 				FF28DCBE30573E6C0006FF82 /* Protocol.swift in Sources */,
 				FF28DCBF30573E6C0006FF82 /* Validation.swift in Sources */,
@@ -760,6 +778,8 @@
 				FF28DCC930573E6C0006FF82 /* QRPairing.swift in Sources */,
 				B028 /* OperationManifest.swift in RovaSharedTests */,
 				D30000000000000000000009 /* ConnectionRoutePolicy.swift in RovaSharedTests */,
+				D30000000000000000000012 /* StoreKitLoadPolicy.swift in RovaSharedTests */,
+				D30000000000000000000011 /* StoreKitLoadPolicyTests.swift in RovaSharedTests */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -862,13 +882,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = wiqo;
 				CODE_SIGN_ENTITLEMENTS = RovaIOS/RovaIOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 7SRKKF75MC;
 				INFOPLIST_FILE = RovaIOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = wiqo;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wiqo.ios;
 				PRODUCT_NAME = Rova;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -886,13 +906,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = wiqo;
 				CODE_SIGN_ENTITLEMENTS = RovaIOS/RovaIOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 7SRKKF75MC;
 				INFOPLIST_FILE = RovaIOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = wiqo;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wiqo.ios;
 				PRODUCT_NAME = Rova;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

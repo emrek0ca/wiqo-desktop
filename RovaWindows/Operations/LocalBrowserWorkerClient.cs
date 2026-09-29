@@ -31,9 +31,12 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
         bool? Submit = null,
         string? Key = null,
         int? Offset = null,
+        IReadOnlyList<ComputerBrowserStep>? Steps = null,
         string? CancelRequestId = null);
 
     private sealed record BrowserTarget(string Ref, string Role, string Name, string? Value = null, bool? Checked = null);
+    private sealed record ActionStateEvidence(string? Identifier, string? Title, int? Version);
+    private sealed record ActionVerificationEvidence(int Index, string Action, string? TargetRef, bool Ok, bool Changed, bool Verified, ActionStateEvidence? Before, ActionStateEvidence? After, string? ErrorCode);
 
     private sealed record BrowserResult(
         string? TaskId,
@@ -43,12 +46,19 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
         string? Text,
         IReadOnlyList<BrowserTarget>? Targets,
         int? PageVersion,
+        int? PreviousPageVersion,
+        IReadOnlyList<BrowserTarget>? AddedTargets,
+        IReadOnlyList<BrowserTarget>? ChangedTargets,
+        IReadOnlyList<string>? RemovedTargetRefs,
+        bool? TextChanged,
+        bool? DiffOnly,
         bool? ContentShared,
         bool? InteractionApproved,
         bool? Truncated,
         bool? Verified,
         bool? Closed,
-        int? NextOffset = null);
+        int? NextOffset = null,
+        IReadOnlyList<ActionVerificationEvidence>? Evidence = null);
 
     private sealed record BrowserError(string Code, string Message);
     private sealed record BrowserEnvelope(string Id, bool Ok, BrowserResult? Result, BrowserError? Error);
@@ -65,7 +75,7 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
         var request = new BrowserRequest(
             Guid.NewGuid().ToString(), payload.Action, payload.TaskId, payload.Url,
             payload.TargetRef, payload.TargetBy, payload.Target, payload.Role, payload.Value, payload.Direction, payload.ScrollAmount,
-            payload.ContentAccessGranted, payload.InteractionAccessGranted, payload.Submit, payload.Key, payload.Offset);
+            payload.ContentAccessGranted, payload.InteractionAccessGranted, payload.Submit, payload.Key, payload.Offset, payload.Steps);
         try
         {
             var envelope = await SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -97,10 +107,10 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
     {
         try
         {
-            var envelope = await SendAsync(new BrowserRequest(Guid.NewGuid().ToString(), "closeTask", taskId), cancellationToken).ConfigureAwait(false);
+            var envelope = await SendAsync(new BrowserRequest(Guid.NewGuid().ToString(), "closeBrowser", taskId), cancellationToken).ConfigureAwait(false);
             if (!envelope.Ok || envelope.Result?.TaskId is not { Length: > 0 } id)
                 return FromError(envelope.Error);
-            return Outcome.WithData("browserTask", new { taskId = id, closed = envelope.Result.Closed ?? true }, "Göreve özel tarayıcı oturumu kapatıldı.");
+            return Outcome.WithData("browserTask", new { taskId = id, closed = envelope.Result.Closed ?? true }, "Göreve özel görünür tarayıcı kapatıldı.");
         }
         catch (OperationCanceledException)
         {
@@ -248,11 +258,18 @@ internal sealed class LocalBrowserWorkerClient : IAsyncDisposable
         text = result.Text,
         targets = result.Targets,
         pageVersion = result.PageVersion,
+        previousPageVersion = result.PreviousPageVersion,
+        addedTargets = result.AddedTargets,
+        changedTargets = result.ChangedTargets,
+        removedTargetRefs = result.RemovedTargetRefs,
+        textChanged = result.TextChanged,
+        diffOnly = result.DiffOnly,
         contentShared = result.ContentShared,
         interactionApproved = result.InteractionApproved,
         truncated = result.Truncated,
         verified = result.Verified,
-        nextOffset = result.NextOffset
+        nextOffset = result.NextOffset,
+        evidence = result.Evidence
     };
 
     private static string ErrorCategory(string code) => code.Contains("TIMEOUT", StringComparison.Ordinal)

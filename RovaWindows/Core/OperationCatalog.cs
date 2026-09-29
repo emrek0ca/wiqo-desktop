@@ -18,7 +18,7 @@ public static class OperationCatalog
     {
         "readDocument", "listFiles", "searchFiles", "readFile", "sendFileToPhone", "captureScreen",
         "controlUIElement", "clickScreen", "controlApplication", "quitApplication", "runShortcut",
-        "computerBrowser", "endBrowserTask"
+        "computerDesktop", "computerBrowser", "endBrowserTask", "localAnalyze"
     };
 
     public static bool PermitsUnattended(string operation) =>
@@ -31,6 +31,8 @@ public static class OperationCatalog
         "readDocument" or "editDocument" or "saveArtifact" or "executeCode" or "runShortcut" or "searchFiles" => TimeSpan.FromSeconds(60),
         // First use may install the pinned Playwright runtime and Chromium into LocalAppData.
         "computerBrowser" => TimeSpan.FromSeconds(120),
+        "computerDesktop" => TimeSpan.FromSeconds(20),
+        "localAnalyze" => TimeSpan.FromSeconds(60),
         "endBrowserTask" => TimeSpan.FromSeconds(5),
         "listDesktopFiles" or "readDesktopFile" or "listFiles" or "readFile" or "writeFile" or "moveFile" or "copyFile" or "deleteFile" or "saveTextFile" => TimeSpan.FromSeconds(20),
         _ => TimeSpan.FromSeconds(10)
@@ -39,7 +41,7 @@ public static class OperationCatalog
     /// Read-only operations run concurrently; everything else is serialized (MacExecutionLane).
     public static bool IsReadOnlyLane(string operation) => operation is
         "getSystemStatus" or "getClipboardText" or "getClipboardHistory" or "listDesktopFiles" or "readDesktopFile" or
-        "listFiles" or "searchFiles" or "readFile" or "readDocument" or "captureScreen" or "listRunningApplications" or "ping";
+        "listFiles" or "searchFiles" or "readFile" or "readDocument" or "captureScreen" or "listRunningApplications" or "localAnalyze" or "ping";
 
     private static IReadOnlyDictionary<string, OperationEntry> Load()
     {

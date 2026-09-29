@@ -7,7 +7,11 @@ Node.js 20 or newer and an internet connection are required for first-use setup.
 The worker starts only for a user-initiated browser task. Each task gets a temporary browser context; closing or expiring the task removes its cookies and page state.
 
 The companion exposes only accessible controls discovered by `observe`. Each control receives a
-short task-local reference; models never send CSS selectors or JavaScript. References are invalidated
-after navigation, clicks, submits, scrolling, back navigation, or a new observation. Ordinary form
-fills and selections may share one observation so a multi-field form does not require a model round
-per field. Password, OTP, payment, upload, login and messaging actions remain blocked.
+short task-local semantic reference; models never send CSS selectors or JavaScript. A reference stays
+stable while its role, accessible name and page identity stay stable. `observe_diff` returns changed
+controls, and `run_steps` executes at most eight validated actions under the same task grant, stopping
+at the first failure and returning per-step evidence. Password, OTP, payment, upload, login and
+messaging actions remain blocked.
+
+Closing a command or finishing a task never closes the visible browser. The task context and browser
+are closed only when the user explicitly asks to close them or the desktop application shuts down.

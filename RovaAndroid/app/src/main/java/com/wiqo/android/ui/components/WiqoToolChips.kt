@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Construction
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -60,12 +62,13 @@ fun WiqoToolChips(
         if (rows.size > 1 && summary != null) {
             Row(
                 modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
+                        indication = ripple(bounded = true),
                         onClick = { isOpen = !isOpen },
                     )
-                    .padding(vertical = 4.dp),
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
@@ -97,10 +100,11 @@ fun WiqoToolChips(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
                             .clickable(
                                 enabled = row.details.isNotEmpty(),
                                 interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
+                                indication = ripple(bounded = true),
                                 onClick = {
                                     expandedIds = if (isExpanded) expandedIds - row.id else expandedIds + row.id
                                 },

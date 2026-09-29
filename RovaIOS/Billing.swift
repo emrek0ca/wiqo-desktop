@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import StoreKit
 
 /// Product identifiers Wiqo sells through StoreKit. See docs/abonelik.md for the plan/billing design.
@@ -128,9 +129,10 @@ final class SubscriptionStore: ObservableObject {
     /// that a subscription bought outside this session is known to the server.
     func start() async {
         async let products: Void = storeKit.loadProducts()
+        async let entitlements: Void = storeKit.reconcileEntitlements()
         await refreshIfStale()
         await products
-        await storeKit.reconcileEntitlements()
+        await entitlements
     }
 
     /// Asks the server only when the snapshot is older than `maxAge` (or a new day has begun).
@@ -219,6 +221,13 @@ enum StoreKitProductLoadState: Equatable {
     case unavailable
 }
 
+enum StoreKitProductLoadErrorCode: String, Equatable {
+    case emptyCatalog = "STOREKIT_EMPTY_CATALOG"
+    case storefrontUnavailable = "STOREKIT_STOREFRONT_UNAVAILABLE"
+    case network = "STOREKIT_NETWORK"
+    case system = "STOREKIT_SYSTEM"
+}
+
 enum PurchaseError: Error, LocalizedError {
     case productUnavailable
     case verificationFailed
@@ -244,11 +253,15 @@ enum PurchaseError: Error, LocalizedError {
 final class StoreKitManager: ObservableObject {
     @Published private(set) var proProduct: Product?
     @Published private(set) var productLoadState: StoreKitProductLoadState = .idle
+    @Published private(set) var lastProductLoadError: StoreKitProductLoadErrorCode?
     @Published private(set) var isPurchasing = false
 
     private weak var subscriptionStore: SubscriptionStore?
     private var updatesTask: Task<Void, Never>?
     private var productLoadTask: Task<Void, Never>?
+    private var didRunStartupLoad = false
+    private var lastProductLoadFailureAt: Date?
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.wiqo.ios", category: "StoreKit")
 
     init() {
         updatesTask = Task { [weak self] in
@@ -266,54 +279,124 @@ final class StoreKitManager: ObservableObject {
         subscriptionStore = store
     }
 
+    var productLoadMessage: String {
+        switch lastProductLoadError {
+        case .emptyCatalog:
+            return "Wiqo Pro bu Apple hesabının mağazasında henüz kullanılamıyor."
+        case .storefrontUnavailable:
+            return "Wiqo Pro bu mağaza bölgesinde kullanılamıyor."
+        case .network:
+            return "App Store’a bağlanılamadı. Bağlantını kontrol edip tekrar dene."
+        case .system, .none:
+            return "App Store fiyatı şu anda alınamadı. Az sonra tekrar dene."
+        }
+    }
+
     func loadProducts() async {
-        await loadProducts(retrying: false)
+        guard !didRunStartupLoad else {
+            if let productLoadTask { await productLoadTask.value }
+            return
+        }
+        didRunStartupLoad = true
+        await loadProducts(trigger: .startup)
+    }
+
+    /// Called when the paywall is presented. It makes one fresh catalog request even if the
+    /// startup request previously failed, while still coalescing with an in-flight request.
+    func loadProductsForPaywall() async {
+        await loadProducts(trigger: .paywall)
     }
 
     func retryLoadingProducts() async {
-        await loadProducts(retrying: true)
+        await loadProducts(trigger: .manual)
     }
 
-    private func loadProducts(retrying: Bool) async {
+    /// A foreground retry is deliberately quiet: it runs at most once after a failed lookup has
+    /// aged for 30 seconds, so returning to the app cannot create a polling loop.
+    func retryProductsIfNeededOnForeground() async {
+        guard proProduct == nil,
+              StoreKitLoadPolicy.shouldRetryOnForeground(lastFailure: lastProductLoadFailureAt, now: Date()) else { return }
+        await loadProducts(trigger: .foreground)
+    }
+
+    private func loadProducts(trigger: StoreKitLoadTrigger) async {
         if proProduct != nil {
             productLoadState = .available
             return
         }
         if let productLoadTask {
             await productLoadTask.value
-            return
+            if proProduct != nil || trigger == .startup {
+                return
+            }
         }
-        guard retrying || productLoadState != .unavailable else { return }
 
         productLoadState = .loading
-        let task = Task { [weak self] in
+        lastProductLoadError = nil
+        let task = Task { @MainActor [weak self] in
+            defer { self?.productLoadTask = nil }
             guard let self else { return }
-            await self.fetchProProduct()
-            self.productLoadTask = nil
+            let delays = StoreKitLoadPolicy.delays(for: trigger)
+            var previousDelay: TimeInterval = 0
+            for (index, delay) in delays.enumerated() {
+                let wait = max(0, delay - previousDelay)
+                if wait > 0 {
+                    try? await Task.sleep(for: .seconds(wait))
+                }
+                previousDelay = delay
+                guard !Task.isCancelled else { return }
+                if index > 0 { self.productLoadState = .loading }
+                if await self.fetchProProduct(attempt: index + 1, isFinalAttempt: index == delays.count - 1) { return }
+            }
         }
         productLoadTask = task
         await task.value
     }
 
-    private func fetchProProduct() async {
+    private func fetchProProduct(attempt: Int, isFinalAttempt: Bool) async -> Bool {
         do {
             let products = try await Product.products(for: [WiqoProduct.proMonthly])
             guard let product = products.first(where: { $0.id == WiqoProduct.proMonthly }) else {
                 proProduct = nil
-                productLoadState = .unavailable
-                return
+                await recordProductLoadFailure(.emptyCatalog, attempt: attempt, isFinalAttempt: isFinalAttempt)
+                return false
             }
             proProduct = product
             productLoadState = .available
+            lastProductLoadError = nil
+            lastProductLoadFailureAt = nil
+            return true
+        } catch let error as StoreKitError {
+            await recordProductLoadFailure(Self.errorCode(for: error), attempt: attempt, isFinalAttempt: isFinalAttempt)
+            return false
         } catch {
-            proProduct = nil
-            productLoadState = .unavailable
+            await recordProductLoadFailure(.system, attempt: attempt, isFinalAttempt: isFinalAttempt)
+            return false
         }
+    }
+
+    private func recordProductLoadFailure(_ code: StoreKitProductLoadErrorCode, attempt: Int, isFinalAttempt: Bool) async {
+        proProduct = nil
+        productLoadState = isFinalAttempt ? .unavailable : .loading
+        lastProductLoadError = code
+        if isFinalAttempt {
+            lastProductLoadFailureAt = Date()
+        }
+        let storefront = await Storefront.current?.countryCode ?? "unknown"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        logger.error("product_lookup_failed product=\(WiqoProduct.proMonthly, privacy: .public) storefront=\(storefront, privacy: .public) version=\(version, privacy: .public) build=\(build, privacy: .public) attempt=\(attempt, privacy: .public) code=\(code.rawValue, privacy: .public)")
+    }
+
+    private static func errorCode(for error: StoreKitError) -> StoreKitProductLoadErrorCode {
+        if case .networkError = error { return .network }
+        if case .notAvailableInStorefront = error { return .storefrontUnavailable }
+        return .system
     }
 
     @discardableResult
     func purchasePro() async throws -> PurchaseOutcome {
-        await loadProducts()
+        await loadProductsForPaywall()
         guard let product = proProduct else { throw PurchaseError.productUnavailable }
         isPurchasing = true
         defer { isPurchasing = false }

@@ -589,7 +589,8 @@ extension MacSystem {
             stateBefore: "running",
             stateAfter: closed ? "not_running" : "running",
             changed: closed,
-            verified: closed
+            verified: closed,
+            requiresForce: !closed && !force ? true : nil
         )
         guard closed else {
             let message = force

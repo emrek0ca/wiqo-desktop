@@ -17,9 +17,10 @@ public sealed class CapabilitySettings
         new("system", "Sistem kontrolü", ["device.system.power", "device.display", "device.audio", "device.media"]),
         new("files", "Dosyalar", ["device.files.list", "device.files.read", "device.files.write", "device.files.move", "device.files.copy", "device.files.delete"]),
         new("documents", "Belgeler", ["document.read", "document.edit", "artifact.save"]),
-        new("screen", "Ekran", ["device.screen.capture", "device.screen.click", "device.ui.control"]),
+        new("screen", "Ekran", ["device.screen.capture", "device.screen.click", "device.ui.control", "device.desktop.control"]),
         new("clipboard", "Pano", ["device.clipboard"]),
-        new("web", "Bağlantılar", ["device.url.open", "device.browser.control"])
+        new("web", "Bağlantılar", ["device.url.open", "device.browser.control"]),
+        new("analysis", "Yerel analiz", ["local.analysis"])
     }.Select(group => group with { Capabilities = group.Capabilities.Where(WindowsCapabilityManifest.Capabilities.Contains).ToArray() })
      .Where(group => group.Capabilities.Count > 0).ToArray();
 

@@ -33,8 +33,11 @@ enum RovaCapabilityCatalog {
         CapabilityGroup(id: "code", title: "Kod Çalıştırma", icon: "chevron.left.forwardslash.chevron.right", capabilities: [
             "device.code.execute"
         ]),
+        CapabilityGroup(id: "analysis", title: "Yerel Analiz", icon: "waveform.path.ecg.rectangle", capabilities: [
+            "local.analysis"
+        ]),
         CapabilityGroup(id: "screen", title: "Ekran ve Arayüz", icon: "rectangle.on.rectangle", capabilities: [
-            "device.screen.capture", "device.screen.click", "device.ui.control"
+            "device.screen.capture", "device.screen.click", "device.ui.control", "device.desktop.control"
         ]),
         CapabilityGroup(id: "clipboard", title: "Pano", icon: "doc.on.clipboard", capabilities: [
             "device.clipboard"

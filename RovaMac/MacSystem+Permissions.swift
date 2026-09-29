@@ -100,8 +100,10 @@ extension MacSystem {
             authority("document.edit", "Belge düzenleme", .confirmation, permissions: fullDisk ? [] : ["Full Disk Access"]),
             authority("artifact.save", "Dosya kaydetme", .confirmation),
             authority("device.code.execute", "Kod çalıştırma", .confirmation),
+            authority("local.analysis", "Yerel analiz", .confirmation, permissions: fullDisk ? [] : ["Full Disk Access"]),
             authority("device.shortcut.run", "Shortcut çalıştırma", .confirmation, permissions: ["Automation"]),
             authority("device.ui.control", "Arayüz kontrolü", accessibility ? .confirmation : .unavailable, permissions: ["Accessibility"], message: accessibility ? nil : "Erişilebilirlik izni gerekli."),
+            authority("device.desktop.control", "Göreve özel masaüstü kontrolü", accessibility ? .confirmation : .unavailable, permissions: ["Accessibility"], message: accessibility ? nil : "Masaüstü kontrolü için Erişilebilirlik izni gerekli."),
             authority("device.screen.capture", "Ekran gözlemi", screenRecording ? .confirmation : .unavailable, permissions: ["Screen Recording"], message: screenRecording ? nil : "Ekran Kaydı izni gerekli."),
             authority("device.screen.click", "Ekrana tıklama", accessibility && screenRecording ? .confirmation : .unavailable, permissions: ["Accessibility", "Screen Recording"], message: accessibility && screenRecording ? nil : "Erişilebilirlik ve Ekran Kaydı izinleri gerekli.")
         ]

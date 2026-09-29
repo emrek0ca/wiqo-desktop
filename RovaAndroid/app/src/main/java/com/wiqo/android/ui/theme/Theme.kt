@@ -1,5 +1,6 @@
 package com.wiqo.android.ui.theme
 
+import android.app.Activity
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -8,8 +9,11 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import com.wiqo.android.data.local.ThemeMode
 
 object WiqoDesign {
@@ -100,6 +104,18 @@ fun WiqoTheme(themeMode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -
             onSurfaceVariant = wiqoColors.ink.copy(alpha = 0.68f),
             error = wiqoColors.red,
         )
+    }
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window
+            if (window != null) {
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                insetsController.isAppearanceLightStatusBars = !dark
+                insetsController.isAppearanceLightNavigationBars = !dark
+            }
+        }
     }
 
     CompositionLocalProvider(LocalWiqoColors provides wiqoColors) {

@@ -1,6 +1,6 @@
 # Wiqo iOS - App Store gönderim rehberi
 
-Sürüm: 1.0.0 (2) · Bundle ID: `com.wiqo.ios` · Minimum iOS 17 · Sadece iPhone
+Sürüm: 1.0 (6) · Bundle ID: `com.wiqo.ios` · Minimum iOS 17 · Sadece iPhone
 
 ## 1. Gönderimden önce (sırayla)
 
@@ -8,8 +8,10 @@ Sürüm: 1.0.0 (2) · Bundle ID: `com.wiqo.ios` · Minimum iOS 17 · Sadece iPho
 2. App Store Connect'te **yeni uygulama** kaydı: bundle `com.wiqo.ios`, SKU `wiqoios001`, ad Wiqo, Apple Kimliği `6814282486`. Eski `com.rova.ios` kaydı (6811908101) kullanılmaz; bundle kimliği kayıtta değiştirilemez.
 3. Abonelik ürünü kurulu (`docs/abonelik.md` bölüm 5.1); sunucu `.env`'de `APPLE_APP_ID=6814282486` olmalı, `APPLE_BUNDLE_ID=com.wiqo.ios` ve `APNS_BUNDLE_ID=com.wiqo.ios` olmalı.
 4. Xcode: Signing & Capabilities → Team seç, Push Notifications ve Sign-in yeteneklerinin yeni App ID ile eşleştiğini doğrula.
-5. TestFlight: kendi iPhone'unda ve 3-5 tanıdık kişide şu akışı dene: kayıt → onboarding → QR eşleştirme → "Sesi kıs" → onay kartı → Pro satın alma (sandbox) → satın alımı geri yükle → hesabı sil.
-6. Product → Archive → Distribute → App Store Connect.
+5. StoreKit sandbox: `Wiqo` şemasının Debug/Run ve Test aksiyonları `RovaIOS/StoreKit/WiqoLocal.storekit` dosyasını kullanır; Release/Archive gerçek App Store kataloğunu kullanır. Ürün kimliği `com.wiqo.ios.pro.monthly`, dönem aylık ve fiyat mağaza storefront'undan okunur.
+6. TestFlight: kendi iPhone'unda ve 3-5 tanıdık kişide şu akışı dene: kayıt → onboarding → QR eşleştirme → "Sesi kıs" → onay kartı → Pro satın alma (sandbox) → satın alımı geri yükle → hesabı sil. Ürünün fiyatı görünmüyorsa paywall'ı yeniden aç, foreground'a dön ve "Tekrar dene"yi kullan; StoreKit yükleme denemeleri sınırlıdır.
+7. App Store Connect'te `com.wiqo.ios.pro.monthly` UPFRONT planının 175 storefront'ta açık ve yeni ülkelerde otomatik etkin olduğunu doğrula.
+8. Product → Archive → Distribute → App Store Connect. Build numarası 6 olmalı.
 
 ## 2. Mağaza metinleri (Türkçe)
 

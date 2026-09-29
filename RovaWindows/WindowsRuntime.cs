@@ -28,18 +28,20 @@ public sealed class WindowsRuntime : IAsyncDisposable
     private readonly CancellationTokenSource lifetime = new();
     private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(60) };
     private readonly LocalBrowserWorkerClient browserWorker = new();
+    private readonly IDesktopControlAdapter? desktopController;
     private readonly int queueCapacity;
     private int queued;
     private string? pairingToken;
     private Func<string, string, CancellationToken, Task<string?>>? fileUploader;
     private Func<CancellationToken, Task<string?>>? accessToken;
 
-    public WindowsRuntime(CapabilitySettings? settings = null, ResultLedger? ledger = null, int queueCapacity = 64)
+    public WindowsRuntime(CapabilitySettings? settings = null, ResultLedger? ledger = null, int queueCapacity = 64, IDesktopControlAdapter? desktopController = null)
     {
         if (queueCapacity < 1) throw new ArgumentOutOfRangeException(nameof(queueCapacity));
         this.settings = settings ?? new CapabilitySettings();
         this.ledger = ledger ?? new ResultLedger();
         this.queueCapacity = queueCapacity;
+        this.desktopController = desktopController;
         Terminal = new WindowsTerminal(() => pairingToken, () => this.settings.TerminalEnabled);
     }
 
@@ -67,7 +69,7 @@ public sealed class WindowsRuntime : IAsyncDisposable
             .Concat(settings.AgentFullAccess ? new[] { AgentFeature } : Array.Empty<string>()).ToArray();
 
     public IReadOnlyList<string> Capabilities => WindowsCapabilityManifest.Capabilities
-        .Where(settings.IsEnabled)
+        .Where(capability => settings.IsEnabled(capability) && (capability != "device.desktop.control" || desktopController is not null))
         .Order(StringComparer.Ordinal).ToArray();
 
     public object[] Authorities => Capabilities.Select(capability =>
@@ -169,6 +171,9 @@ public sealed class WindowsRuntime : IAsyncDisposable
             case "setClipboardText": return SystemOperations.SetClipboard(PayloadReader.String(payload, "clipboardText")!);
             case "getClipboardText": return SystemOperations.GetClipboard();
             case "captureScreen": return SystemOperations.Screenshot(PayloadReader.Object<ScreenCapturePayload>(payload, "screenCapture")!.MaxWidth);
+            case "computerDesktop":
+                return desktopController?.Execute(PayloadReader.Object<ComputerDesktopPayload>(payload, "computerDesktop")!, cancellationToken)
+                    ?? Outcome.Fail("DESKTOP_ADAPTER_UNAVAILABLE", "Windows masaüstü denetimi bu kurulumda kullanılamıyor.", "unavailable");
             case "saveTextFile": return FileOperations.SaveTextFile(PayloadReader.Object<TextFilePayload>(payload, "textFile")!);
             case "listDesktopFiles": return FileOperations.ListDesktop();
             case "readDesktopFile": return FileOperations.ReadDesktop(PayloadReader.String(payload, "fileName")!);
@@ -196,6 +201,8 @@ public sealed class WindowsRuntime : IAsyncDisposable
                 return await browserWorker.ExecuteAsync(PayloadReader.Object<ComputerBrowserPayload>(payload, "computerBrowser")!, cancellationToken).ConfigureAwait(false);
             case "endBrowserTask":
                 return await browserWorker.CloseAsync(PayloadReader.Object<BrowserTaskPayload>(payload, "browserTask")!.TaskId, cancellationToken).ConfigureAwait(false);
+            case "localAnalyze":
+                return await LocalAnalysisOperations.Execute(PayloadReader.Object<LocalAnalysisPayload>(payload, "localAnalysis")!, cancellationToken).ConfigureAwait(false);
             default:
                 return Outcome.Fail("UNSUPPORTED_OPERATION", "Bu işlem Windows'ta desteklenmiyor.");
         }
@@ -233,6 +240,7 @@ public sealed class WindowsRuntime : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         lifetime.Cancel();
+        desktopController?.Dispose();
         await browserWorker.DisposeAsync().ConfigureAwait(false);
         await Terminal.DisposeAsync().ConfigureAwait(false);
         http.Dispose();

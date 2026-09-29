@@ -1,0 +1,58 @@
+{
+  "identifier" : "com.wiqo.ios.storekit.local",
+  "products" : [
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "wiqo-pro-monthly-local",
+      "localizations" : [
+        {
+          "description" : "Wiqo Pro aylık abonelik",
+          "displayName" : "Wiqo Pro",
+          "locale" : "tr_TR"
+        },
+        {
+          "description" : "Wiqo Pro monthly subscription",
+          "displayName" : "Wiqo Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.wiqo.ios.pro.monthly",
+      "referenceName" : "Wiqo Pro Monthly",
+      "subscription" : {
+        "groupNumber" : "1",
+        "period" : "P1M"
+      },
+      "type" : "Auto-Renewable Subscription"
+    }
+  ],
+  "settings" : {
+    "defaultLocale" : "tr_TR",
+    "storefront" : "TUR",
+    "timeRate" : 1
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "1",
+      "localizations" : [
+        {
+          "description" : "Wiqo Pro abonelikleri",
+          "locale" : "tr_TR"
+        },
+        {
+          "description" : "Wiqo Pro subscriptions",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "Wiqo Abonelikler",
+      "subscriptions" : [
+        {
+          "duration" : "1 Month",
+          "familyShareable" : false,
+          "level" : 1,
+          "productID" : "com.wiqo.ios.pro.monthly"
+        }
+      ]
+    }
+  ]
+}

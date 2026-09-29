@@ -67,13 +67,21 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Nightlight
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TableChart
-import androidx.compose.material.icons.outlined.VolumeDown
 import androidx.compose.material.icons.outlined.WbSunny
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.ThumbDown
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -81,6 +89,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -134,7 +143,7 @@ private val quickSuggestions = listOf(
     QuickSuggestion("Bugün hava nasıl?", Icons.Outlined.WbSunny),
     QuickSuggestion("Basit bir hesap makinesi yap", Icons.Outlined.Calculate),
     QuickSuggestion("Dosya bul ve gönder", Icons.Outlined.Search),
-    QuickSuggestion("Sesi kıs", Icons.Outlined.VolumeDown),
+    QuickSuggestion("Sesi kıs", Icons.AutoMirrored.Outlined.VolumeDown),
     QuickSuggestion("Ekranı kısarak odaklan", Icons.Outlined.Nightlight),
     QuickSuggestion("Toplantıya hazırla", Icons.Outlined.CalendarMonth),
     QuickSuggestion("Bu ayki bütçemi tabloya dök", Icons.Outlined.TableChart),
@@ -270,7 +279,7 @@ internal fun ChatScreen(
                     .border(1.dp, colors.line, CircleShape)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
+                        indication = ripple(bounded = true),
                         onClick = onOpenSidebar,
                     ),
                 contentAlignment = Alignment.Center,
@@ -292,27 +301,33 @@ internal fun ChatScreen(
                     .clip(CircleShape)
                     .background(colors.canvas)
                     .border(1.dp, colors.line, CircleShape)
-                    .padding(horizontal = 14.dp),
+                    .padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Box(
-                    modifier = Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onOpenPCSettings,
-                    ),
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = ripple(bounded = true),
+                            onClick = onOpenPCSettings,
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     RovaConnectionIcon(isPaired = isPaired, isConnected = isConnected)
                 }
 
                 Box(
-                    modifier = Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onOpenTemplates,
-                    ),
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = ripple(bounded = true),
+                            onClick = onOpenTemplates,
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -324,11 +339,14 @@ internal fun ChatScreen(
                 }
 
                 Box(
-                    modifier = Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onNewConversation,
-                    ),
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = ripple(bounded = true),
+                            onClick = onNewConversation,
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -358,7 +376,7 @@ internal fun ChatScreen(
                     Image(
                         painter = painterResource(if (colors.isDark) R.drawable.wiqo_mark_dark else R.drawable.wiqo_mark),
                         contentDescription = "Wiqo",
-                        modifier = Modifier.size(68.dp),
+                        modifier = Modifier.size(136.dp),
                     )
                 }
             } else {
@@ -468,37 +486,169 @@ internal fun ChatScreen(
                                     }
                                 }
 
-                                // Copy Reply button matching iOS CopyReplyButton
+                                // Gemini-Style Material 3 Reply Action Bar
+                                var showMenu by remember { mutableStateOf(false) }
+                                var thumbState by remember { mutableStateOf(0) } // 0: none, 1: up, -1: down
+
                                 Row(
                                     modifier = Modifier
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null,
-                                            onClick = {
-                                                clipboardManager.setText(AnnotatedString(message.content))
-                                                copied = true
-                                                scope.launch {
-                                                    delay(1500)
-                                                    copied = false
-                                                }
-                                            },
-                                        )
-                                        .padding(vertical = 4.dp),
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                                 ) {
-                                    Icon(
-                                        imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
-                                        contentDescription = if (copied) "Kopyalandı" else "Yanıtı kopyala",
-                                        tint = if (copied) colors.green else colors.ink.copy(alpha = 0.45f),
-                                        modifier = Modifier.size(15.dp),
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(
-                                        text = if (copied) "Kopyalandı" else "Kopyala",
-                                        fontFamily = WiqoSans,
-                                        fontSize = 12.sp,
-                                        color = if (copied) colors.green else colors.ink.copy(alpha = 0.5f),
-                                    )
+                                    // Copy action
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = ripple(bounded = true, radius = 16.dp),
+                                                onClick = {
+                                                    clipboardManager.setText(AnnotatedString(message.content))
+                                                    copied = true
+                                                    scope.launch {
+                                                        delay(1500)
+                                                        copied = false
+                                                    }
+                                                },
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = if (copied) Icons.Default.Check else Icons.Outlined.ContentCopy,
+                                            contentDescription = if (copied) "Kopyalandı" else "Kopyala",
+                                            tint = if (copied) colors.green else colors.ink.copy(alpha = 0.5f),
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+
+                                    // Thumbs Up action
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = ripple(bounded = true, radius = 16.dp),
+                                                onClick = { thumbState = if (thumbState == 1) 0 else 1 },
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ThumbUp,
+                                            contentDescription = "Beğen",
+                                            tint = if (thumbState == 1) colors.ink else colors.ink.copy(alpha = 0.5f),
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+
+                                    // Thumbs Down action
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = ripple(bounded = true, radius = 16.dp),
+                                                onClick = { thumbState = if (thumbState == -1) 0 else -1 },
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ThumbDown,
+                                            contentDescription = "Beğenme",
+                                            tint = if (thumbState == -1) colors.ink else colors.ink.copy(alpha = 0.5f),
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+
+                                    // Share action
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = ripple(bounded = true, radius = 16.dp),
+                                                onClick = {
+                                                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                                        putExtra(Intent.EXTRA_TEXT, message.content)
+                                                        type = "text/plain"
+                                                    }
+                                                    context.startActivity(Intent.createChooser(sendIntent, "Yanıtı Paylaş"))
+                                                },
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Share,
+                                            contentDescription = "Paylaş",
+                                            tint = colors.ink.copy(alpha = 0.5f),
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+
+                                    // More options dropdown
+                                    Box {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clip(CircleShape)
+                                                .clickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = ripple(bounded = true, radius = 16.dp),
+                                                    onClick = { showMenu = true },
+                                                ),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.MoreVert,
+                                                contentDescription = "Daha fazla",
+                                                tint = colors.ink.copy(alpha = 0.5f),
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = showMenu,
+                                            onDismissRequest = { showMenu = false },
+                                            shape = RoundedCornerShape(16.dp),
+                                            containerColor = colors.surface,
+                                            border = BorderStroke(0.5.dp, colors.line),
+                                            shadowElevation = 8.dp,
+                                            tonalElevation = 2.dp,
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text("Metni kopyala", fontFamily = WiqoSans, fontSize = 14.sp) },
+                                                leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                                onClick = {
+                                                    showMenu = false
+                                                    clipboardManager.setText(AnnotatedString(message.content))
+                                                },
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Yeniden oluştur", fontFamily = WiqoSans, fontSize = 14.sp) },
+                                                leadingIcon = { Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                                onClick = {
+                                                    showMenu = false
+                                                },
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Yanıtı paylaş", fontFamily = WiqoSans, fontSize = 14.sp) },
+                                                leadingIcon = { Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                                onClick = {
+                                                    showMenu = false
+                                                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                                        putExtra(Intent.EXTRA_TEXT, message.content)
+                                                        type = "text/plain"
+                                                    }
+                                                    context.startActivity(Intent.createChooser(sendIntent, "Yanıtı Paylaş"))
+                                                },
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -535,7 +685,7 @@ internal fun ChatScreen(
                             .border(1.dp, colors.line, CircleShape)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
+                                indication = ripple(bounded = true),
                                 onClick = {
                                     val textToSend = suggestion.title
                                     draft = ""
@@ -644,25 +794,75 @@ internal fun ChatScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // "+" Menu button
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable(
-                                enabled = !state.sending,
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = { showPlusMenu = true },
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Ekle",
-                            tint = colors.ink,
-                            modifier = Modifier.size(24.dp),
-                        )
+                    // "+" Menu button with compact Material 3 DropdownMenu
+                    Box {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .clickable(
+                                    enabled = !state.sending,
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = ripple(bounded = true, radius = 18.dp),
+                                    onClick = { showPlusMenu = true },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Ekle",
+                                tint = colors.ink,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showPlusMenu,
+                            onDismissRequest = { showPlusMenu = false },
+                            shape = RoundedCornerShape(16.dp),
+                            containerColor = colors.surface,
+                            border = BorderStroke(0.5.dp, colors.line),
+                            shadowElevation = 8.dp,
+                            tonalElevation = 2.dp,
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Fotoğraf", fontFamily = WiqoSans, fontSize = 14.sp) },
+                                leadingIcon = { Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                onClick = {
+                                    showPlusMenu = false
+                                    photoPicker.launch("image/*")
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Dosya", fontFamily = WiqoSans, fontSize = 14.sp) },
+                                leadingIcon = { Icon(Icons.Outlined.Description, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                onClick = {
+                                    showPlusMenu = false
+                                    filePicker.launch(arrayOf("*/*"))
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Belge tara", fontFamily = WiqoSans, fontSize = 14.sp) },
+                                leadingIcon = { Icon(Icons.Outlined.DocumentScanner, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                onClick = {
+                                    showPlusMenu = false
+                                    val activity = context as? Activity
+                                    if (activity != null) {
+                                        documentScanner.getStartScanIntent(activity)
+                                            .addOnSuccessListener { sender -> scanLauncher.launch(IntentSenderRequest.Builder(sender).build()) }
+                                    }
+                                },
+                            )
+                            HorizontalDivider(color = colors.line, thickness = 0.5.dp)
+                            DropdownMenuItem(
+                                text = { Text("Ajan oluştur", fontFamily = WiqoSans, fontSize = 14.sp) },
+                                leadingIcon = { Icon(Icons.Outlined.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                                onClick = {
+                                    showPlusMenu = false
+                                    isCreatingAgent = true
+                                },
+                            )
+                        }
                     }
 
                     Spacer(Modifier.width(4.dp))
@@ -763,144 +963,7 @@ internal fun ChatScreen(
                 }
             }
         }
-
-        // Modern Attachment Bottom Sheet replacing old DropdownMenu
-        if (showPlusMenu) {
-            val plusSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            ModalBottomSheet(
-                onDismissRequest = { showPlusMenu = false },
-                sheetState = plusSheetState,
-                containerColor = colors.surface,
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = 36.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text(
-                        text = "Paylaş veya Ekle",
-                        fontFamily = WiqoSans,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.ink,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-                    )
-
-                    AttachmentOptionTile(
-                        title = "Fotoğraf",
-                        subtitle = "Galeriden görsel seç veya ekle",
-                        icon = Icons.Outlined.Image,
-                        onClick = {
-                            showPlusMenu = false
-                            photoPicker.launch("image/*")
-                        },
-                    )
-
-                    AttachmentOptionTile(
-                        title = "Dosya",
-                        subtitle = "Cihazındaki belgelere göz at",
-                        icon = Icons.Outlined.Description,
-                        onClick = {
-                            showPlusMenu = false
-                            filePicker.launch(arrayOf("*/*"))
-                        },
-                    )
-
-                    AttachmentOptionTile(
-                        title = "Belge tara",
-                        subtitle = "Kamera ile otomatik tara",
-                        icon = Icons.Outlined.DocumentScanner,
-                        onClick = {
-                            showPlusMenu = false
-                            val activity = context as? Activity ?: return@AttachmentOptionTile
-                            documentScanner.getStartScanIntent(activity)
-                                .addOnSuccessListener { sender -> scanLauncher.launch(IntentSenderRequest.Builder(sender).build()) }
-                        },
-                    )
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = colors.separator)
-
-                    AttachmentOptionTile(
-                        title = "Ajan oluştur",
-                        subtitle = "Özel akıllı görev yardımcısı tanımla",
-                        icon = Icons.Outlined.PersonAdd,
-                        onClick = {
-                            showPlusMenu = false
-                            isCreatingAgent = true
-                        },
-                    )
-                }
-            }
-        }
     }
 }
 
-@Composable
-private fun AttachmentOptionTile(
-    title: String,
-    subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit,
-) {
-    val colors = WiqoDesign.colors
-    val interactionSource = remember { MutableInteractionSource() }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(colors.canvas)
-            .border(1.dp, colors.line.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            )
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(colors.inset),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = colors.ink,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-
-        Spacer(Modifier.width(14.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontFamily = WiqoSans,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                color = colors.ink,
-            )
-            Text(
-                text = subtitle,
-                fontFamily = WiqoSans,
-                fontSize = 13.sp,
-                color = colors.ink3,
-            )
-        }
-
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = colors.ink.copy(alpha = 0.25f),
-            modifier = Modifier.size(16.dp),
-        )
-    }
-}
 

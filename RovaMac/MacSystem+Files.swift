@@ -5,6 +5,153 @@ import UniformTypeIdentifiers
 
 /// Reading, writing and moving files and documents on this Mac.
 extension MacSystem {
+    static func localAnalysis(_ payload: LocalAnalysisPayload) -> (data: CommandData?, error: RovaError?) {
+        if payload.action == .workspaceDiff {
+            guard let path = payload.path, let directory = resolvedLocalURL(path), isDirectory(directory) else {
+                return (nil, RovaError(code: "LOCAL_PATH_INVALID", message: "Çalışma alanı klasörü bulunamadı.", category: "validation"))
+            }
+            let changed = LocalWorkspaceSnapshotStore.shared.diff(directory: directory, limit: payload.limit)
+            let content = LocalAnalysisContent(action: payload.action, adapter: "filesystem", available: true, text: changed.initial ? "Çalışma alanı başlangıç durumu kaydedildi." : nil, changedFiles: changed.files, truncated: changed.truncated)
+            return (.localAnalysis(content), nil)
+        }
+
+        var path: String?
+        if let rawPath = payload.path {
+            guard let url = resolvedLocalURL(rawPath), !isSymbolicLink(url) else {
+                return (nil, RovaError(code: "LOCAL_PATH_INVALID", message: "Yerel analiz yolu bulunamadı veya güvenli değil.", category: "validation"))
+            }
+            path = url.path
+        }
+        let cacheKey = LocalAnalysisResultCache.key(for: payload, resolvedPath: path)
+        if let cacheKey, let cached = LocalAnalysisResultCache.shared.value(for: cacheKey) {
+            return (.localAnalysis(cached), nil)
+        }
+        let request: [String: Any] = [
+            "action": payload.action.rawValue,
+            "path": path.map { $0 as Any } ?? NSNull(),
+            "query": payload.query.map { $0 as Any } ?? NSNull(),
+            "expression": payload.expression.map { $0 as Any } ?? NSNull(),
+            "variables": payload.variables.map { $0 as Any } ?? NSNull(),
+            "limit": payload.limit
+        ]
+        guard JSONSerialization.isValidJSONObject(request),
+              let requestData = try? JSONSerialization.data(withJSONObject: request) else {
+            return (nil, RovaError(code: "LOCAL_ANALYSIS_INVALID", message: "Yerel analiz parametreleri hazırlanamadı.", category: "validation"))
+        }
+        let snapshot = runProcess(
+            executable: "/usr/bin/env",
+            arguments: ["python3", "-c", localAnalysisPython, requestData.base64EncodedString()],
+            timeoutSeconds: 45,
+            environment: [
+                "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+                "HOME": NSHomeDirectory(),
+                "USER": NSUserName(),
+                "LANG": "en_US.UTF-8"
+            ]
+        )
+        if snapshot.timedOut {
+            return (nil, RovaError(code: "LOCAL_ANALYSIS_TIMEOUT", message: "Yerel analiz için ayrılan süre doldu.", category: "timeout"))
+        }
+        guard snapshot.exitCode == 0,
+              let response = try? JSONDecoder().decode(LocalAnalysisWorkerResponse.self, from: snapshot.stdout) else {
+            return (nil, RovaError(code: "LOCAL_ANALYSIS_FAILED", message: "Yerel analiz tamamlanamadı.", category: "tool_failure"))
+        }
+        if response.ok != true {
+            let code = response.errorCode ?? (response.available == false ? "DEPENDENCY_MISSING" : "LOCAL_ANALYSIS_FAILED")
+            return (nil, RovaError(code: code, message: response.errorMessage ?? "Yerel analiz bağımlılığı kullanılamıyor.", category: "tool_failure"))
+        }
+        let dependencies = (response.dependencies ?? [:]).map { LocalDependencyStatus(name: $0.key, available: $0.value) }.sorted { $0.name < $1.name }
+        let content = LocalAnalysisContent(
+            action: payload.action,
+            adapter: response.adapter ?? "python",
+            available: response.available ?? true,
+            text: response.text,
+            columns: response.columns ?? [],
+            rows: response.rows ?? [],
+            dependencies: dependencies,
+            truncated: response.truncated ?? snapshot.truncated
+        )
+        if let cacheKey { LocalAnalysisResultCache.shared.insert(content, for: cacheKey) }
+        return (.localAnalysis(content), nil)
+    }
+
+    private static let localAnalysisPython = #"""
+import base64, importlib.util, json, os, re, sys
+
+def emit(value):
+    sys.stdout.write(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+
+request = json.loads(base64.b64decode(sys.argv[1]).decode("utf-8"))
+action = request.get("action")
+limit = max(1, min(int(request.get("limit") or 100), 500))
+modules = {"markitdown": "markitdown", "duckdb": "duckdb", "sympy": "sympy"}
+
+if action == "dependencyStatus":
+    emit({"ok": True, "adapter": "python", "available": True, "dependencies": {name: importlib.util.find_spec(module) is not None for name, module in modules.items()}})
+    raise SystemExit(0)
+
+required = {"extractDocument": "markitdown", "queryData": "duckdb", "solveSymbolic": "sympy"}.get(action)
+if not required or importlib.util.find_spec(modules[required]) is None:
+    emit({"ok": False, "available": False, "errorCode": "DEPENDENCY_MISSING", "errorMessage": f"{required or 'İstenen'} yerel analiz bağımlılığı kurulu değil."})
+    raise SystemExit(0)
+
+try:
+    if action == "extractDocument":
+        from markitdown import MarkItDown
+        result = MarkItDown().convert(request["path"])
+        text = (getattr(result, "text_content", "") or "").strip()
+        ceiling = min(limit * 100, 50000)
+        emit({"ok": True, "adapter": "markitdown", "available": True, "text": text[:ceiling], "truncated": len(text) > ceiling})
+    elif action == "queryData":
+        import duckdb
+        query = (request.get("query") or "").strip()
+        if not re.match(r"^(select|with)\b", query, re.I) or ";" in query or re.search(r"\b(attach|copy|create|delete|drop|export|import|insert|install|load|pragma|update|call|read_[a-z0-9_]*|[a-z0-9_]*scan|httpfs|sqlite|postgres|glob|secret)\b", query, re.I):
+            raise ValueError("unsafe query")
+        path = request["path"]
+        escaped = path.replace("'", "''")
+        extension = os.path.splitext(path)[1].lower()
+        readers = {".csv": "read_csv_auto", ".tsv": "read_csv_auto", ".json": "read_json_auto", ".jsonl": "read_json_auto", ".parquet": "read_parquet"}
+        reader = readers.get(extension)
+        if not reader:
+            raise ValueError("unsupported data format")
+        con = duckdb.connect(database=":memory:")
+        con.execute(f"CREATE VIEW data AS SELECT * FROM {reader}('{escaped}')")
+        cursor = con.execute(query)
+        columns = [item[0] for item in (cursor.description or [])]
+        values = cursor.fetchmany(limit + 1)
+        rows = [["" if value is None else str(value) for value in row] for row in values[:limit]]
+        emit({"ok": True, "adapter": "duckdb", "available": True, "columns": columns, "rows": rows, "truncated": len(values) > limit})
+    elif action == "solveSymbolic":
+        import sympy as sp
+        expression = (request.get("expression") or "").strip()
+        if not re.match(r"^[A-Za-z0-9+*/^=(), \t.-]+$", expression) or "__" in expression:
+            raise ValueError("unsafe expression")
+        names = request.get("variables") or sorted(set(re.findall(r"\b[A-Za-z][A-Za-z0-9]{0,31}\b", expression)) - {"sin", "cos", "tan", "sqrt", "exp", "log", "Abs"})
+        symbols = {name: sp.Symbol(name) for name in names}
+        locals_map = {**symbols, "sin": sp.sin, "cos": sp.cos, "tan": sp.tan, "sqrt": sp.sqrt, "exp": sp.exp, "log": sp.log, "Abs": sp.Abs}
+        if "=" in expression:
+            left, right = expression.split("=", 1)
+            parsed = sp.Eq(sp.sympify(left.replace("^", "**"), locals=locals_map), sp.sympify(right.replace("^", "**"), locals=locals_map))
+        else:
+            parsed = sp.sympify(expression.replace("^", "**"), locals=locals_map)
+        result = sp.solve(parsed, list(symbols.values()), dict=True) if symbols else sp.simplify(parsed)
+        emit({"ok": True, "adapter": "sympy", "available": True, "text": str(result)[:50000], "truncated": len(str(result)) > 50000})
+except Exception:
+    emit({"ok": False, "available": True, "errorCode": "LOCAL_ANALYSIS_FAILED", "errorMessage": "Yerel analiz girdisi işlenemedi."})
+"""#
+
+    private struct LocalAnalysisWorkerResponse: Decodable {
+        let ok: Bool?
+        let adapter: String?
+        let available: Bool?
+        let text: String?
+        let columns: [String]?
+        let rows: [[String]]?
+        let dependencies: [String: Bool]?
+        let truncated: Bool?
+        let errorCode: String?
+        let errorMessage: String?
+    }
     static func saveTextFile(_ payload: TextFilePayload) -> RovaError? {
         guard RovaValidation.isValidDesktopFilename(payload.filename) else {
             return RovaError(code: "INVALID_FILENAME", message: "Dosya adı geçersiz.")
@@ -456,6 +603,93 @@ extension MacSystem {
     private static func safeDesktopURL(_ filename: String) -> URL? {
         guard RovaValidation.isValidDesktopFilename(filename), let desktop = desktopURL() else { return nil }
         return desktop.appendingPathComponent(filename, isDirectory: false)
+    }
+}
+
+private final class LocalAnalysisResultCache: @unchecked Sendable {
+    static let shared = LocalAnalysisResultCache()
+    private let lock = NSLock()
+    private var values: [String: LocalAnalysisContent] = [:]
+    private var order: [String] = []
+    private let capacity = 32
+
+    static func key(for payload: LocalAnalysisPayload, resolvedPath: String?) -> String? {
+        guard payload.action != .dependencyStatus && payload.action != .workspaceDiff else { return nil }
+        var fileStamp = ""
+        if let resolvedPath {
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: resolvedPath) else { return nil }
+            let size = (attributes[.size] as? NSNumber)?.int64Value ?? -1
+            let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+            fileStamp = "\(resolvedPath)|\(size)|\(Int64(modified * 1_000))"
+        }
+        return [
+            payload.action.rawValue,
+            fileStamp,
+            payload.query ?? "",
+            payload.expression ?? "",
+            (payload.variables ?? []).joined(separator: ","),
+            String(payload.limit)
+        ].joined(separator: "\u{1F}")
+    }
+
+    func value(for key: String) -> LocalAnalysisContent? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let value = values[key] else { return nil }
+        order.removeAll { $0 == key }
+        order.append(key)
+        return value
+    }
+
+    func insert(_ value: LocalAnalysisContent, for key: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        values[key] = value
+        order.removeAll { $0 == key }
+        order.append(key)
+        while order.count > capacity, let oldest = order.first {
+            order.removeFirst()
+            values.removeValue(forKey: oldest)
+        }
+    }
+}
+
+private final class LocalWorkspaceSnapshotStore: @unchecked Sendable {
+    static let shared = LocalWorkspaceSnapshotStore()
+    private let lock = NSLock()
+    private var snapshots: [String: [String: String]] = [:]
+
+    func diff(directory: URL, limit: Int) -> (files: [String], initial: Bool, truncated: Bool) {
+        let current = snapshot(directory)
+        lock.lock()
+        defer { lock.unlock() }
+        let previous = snapshots[directory.path]
+        snapshots[directory.path] = current
+        guard let previous else { return ([], true, false) }
+        let names = Set(previous.keys).union(current.keys)
+        let changed = names.filter { previous[$0] != current[$0] }.sorted()
+        let ceiling = max(1, min(limit, 500))
+        return (Array(changed.prefix(ceiling)), false, changed.count > ceiling)
+    }
+
+    private func snapshot(_ directory: URL) -> [String: String] {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
+        guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return [:] }
+        var result: [String: String] = [:]
+        let base = directory.path.hasSuffix("/") ? directory.path : directory.path + "/"
+        let deadline = Date().addingTimeInterval(1.0)
+        var visited = 0
+        for case let url as URL in enumerator {
+            visited += 1
+            if visited > 20_000 || Date() >= deadline { break }
+            guard let values = try? url.resourceValues(forKeys: Set(keys)) else { continue }
+            if values.isSymbolicLink == true { enumerator.skipDescendants(); continue }
+            guard values.isRegularFile == true else { continue }
+            let relative = url.path.hasPrefix(base) ? String(url.path.dropFirst(base.count)) : url.lastPathComponent
+            let stamp = Int64((values.contentModificationDate ?? .distantPast).timeIntervalSince1970 * 1_000)
+            result[relative] = "\(values.fileSize ?? 0):\(stamp)"
+        }
+        return result
     }
 }
 

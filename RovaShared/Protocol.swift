@@ -57,8 +57,10 @@ public enum CommandType: String, Codable, CaseIterable, Sendable {
     case controlUIElement
     case clickScreen
     case listRunningApplications
+    case computerDesktop
     case computerBrowser
     case endBrowserTask
+    case localAnalyze
 }
 
 public enum MediaAction: String, Codable, CaseIterable, Sendable {
@@ -181,6 +183,36 @@ public struct ScreenClickPayload: Codable, Equatable, Sendable {
     }
 }
 
+public struct ComputerBrowserStep: Codable, Equatable, Sendable {
+    public let action: String
+    public let url: String?
+    public let targetRef: String?
+    public let targetBy: String?
+    public let target: String?
+    public let role: String?
+    public let value: String?
+    public let direction: String?
+    public let scrollAmount: Int?
+    public let submit: Bool?
+    public let key: String?
+    public let offset: Int?
+
+    public init(action: String, url: String? = nil, targetRef: String? = nil, targetBy: String? = nil, target: String? = nil, role: String? = nil, value: String? = nil, direction: String? = nil, scrollAmount: Int? = nil, submit: Bool? = nil, key: String? = nil, offset: Int? = nil) {
+        self.action = action
+        self.url = url
+        self.targetRef = targetRef
+        self.targetBy = targetBy
+        self.target = target
+        self.role = role
+        self.value = value
+        self.direction = direction
+        self.scrollAmount = scrollAmount
+        self.submit = submit
+        self.key = key
+        self.offset = offset
+    }
+}
+
 public struct ComputerBrowserPayload: Codable, Equatable, Sendable {
     public let taskId: String
     public let action: String
@@ -202,8 +234,11 @@ public struct ComputerBrowserPayload: Codable, Equatable, Sendable {
     public let key: String?
     /// read: character offset of the next content chunk.
     public let offset: Int?
+    /// A bounded sequence executed under the same task grant. Every nested action is validated
+    /// independently by the native client and worker, and execution stops on the first failure.
+    public let steps: [ComputerBrowserStep]?
 
-    public init(taskId: String, action: String, url: String? = nil, targetRef: String? = nil, targetBy: String? = nil, target: String? = nil, role: String? = nil, value: String? = nil, direction: String? = nil, scrollAmount: Int? = nil, contentAccessGranted: Bool? = nil, interactionAccessGranted: Bool? = nil, submit: Bool? = nil, key: String? = nil, offset: Int? = nil) {
+    public init(taskId: String, action: String, url: String? = nil, targetRef: String? = nil, targetBy: String? = nil, target: String? = nil, role: String? = nil, value: String? = nil, direction: String? = nil, scrollAmount: Int? = nil, contentAccessGranted: Bool? = nil, interactionAccessGranted: Bool? = nil, submit: Bool? = nil, key: String? = nil, offset: Int? = nil, steps: [ComputerBrowserStep]? = nil) {
         self.taskId = taskId
         self.action = action
         self.url = url
@@ -219,12 +254,134 @@ public struct ComputerBrowserPayload: Codable, Equatable, Sendable {
         self.submit = submit
         self.key = key
         self.offset = offset
+        self.steps = steps
+    }
+}
+
+public enum ComputerDesktopAction: String, Codable, CaseIterable, Sendable {
+    case observe
+    case move
+    case click
+    case doubleClick
+    case rightClick
+    case scroll
+    case dragDrop
+    case type
+    case hotkey
+    case wait
+    case runSteps
+    case cancel
+}
+
+public struct ComputerDesktopStep: Codable, Equatable, Sendable {
+    public let action: ComputerDesktopAction
+    public let targetRef: String?
+    public let sourceRef: String?
+    public let destinationRef: String?
+    public let normalizedX: Double?
+    public let normalizedY: Double?
+    public let direction: String?
+    public let amount: Int?
+    public let text: String?
+    public let keys: [String]?
+
+    public init(action: ComputerDesktopAction, targetRef: String? = nil, sourceRef: String? = nil, destinationRef: String? = nil, normalizedX: Double? = nil, normalizedY: Double? = nil, direction: String? = nil, amount: Int? = nil, text: String? = nil, keys: [String]? = nil) {
+        self.action = action
+        self.targetRef = targetRef
+        self.sourceRef = sourceRef
+        self.destinationRef = destinationRef
+        self.normalizedX = normalizedX
+        self.normalizedY = normalizedY
+        self.direction = direction
+        self.amount = amount
+        self.text = text
+        self.keys = keys
+    }
+}
+
+/// One bounded action in an interactive, task-scoped desktop session. The backend may set
+/// `accessGranted` only after the user approved the first action for this task. Native adapters
+/// still validate every target and block secure or destructive controls locally.
+public struct ComputerDesktopPayload: Codable, Equatable, Sendable {
+    public let taskId: String
+    public let action: ComputerDesktopAction
+    public let snapshotId: String?
+    public let targetRef: String?
+    public let sourceRef: String?
+    public let destinationRef: String?
+    public let normalizedX: Double?
+    public let normalizedY: Double?
+    public let direction: String?
+    public let amount: Int?
+    public let text: String?
+    public let keys: [String]?
+    public let accessGranted: Bool?
+    public let steps: [ComputerDesktopStep]?
+
+    public init(
+        taskId: String,
+        action: ComputerDesktopAction,
+        snapshotId: String? = nil,
+        targetRef: String? = nil,
+        sourceRef: String? = nil,
+        destinationRef: String? = nil,
+        normalizedX: Double? = nil,
+        normalizedY: Double? = nil,
+        direction: String? = nil,
+        amount: Int? = nil,
+        text: String? = nil,
+        keys: [String]? = nil,
+        accessGranted: Bool? = nil,
+        steps: [ComputerDesktopStep]? = nil
+    ) {
+        self.taskId = taskId
+        self.action = action
+        self.snapshotId = snapshotId
+        self.targetRef = targetRef
+        self.sourceRef = sourceRef
+        self.destinationRef = destinationRef
+        self.normalizedX = normalizedX
+        self.normalizedY = normalizedY
+        self.direction = direction
+        self.amount = amount
+        self.text = text
+        self.keys = keys
+        self.accessGranted = accessGranted
+        self.steps = steps
     }
 }
 
 public struct BrowserTaskPayload: Codable, Equatable, Sendable {
     public let taskId: String
     public init(taskId: String) { self.taskId = taskId }
+}
+
+public enum LocalAnalysisAction: String, Codable, CaseIterable, Sendable {
+    case dependencyStatus
+    case extractDocument
+    case queryData
+    case solveSymbolic
+    case workspaceDiff
+}
+
+/// A fixed, read-only local analysis request. The native adapter chooses the implementation and
+/// never executes model supplied code or a shell command.
+public struct LocalAnalysisPayload: Codable, Equatable, Sendable {
+    public let action: LocalAnalysisAction
+    public let path: String?
+    public let query: String?
+    public let expression: String?
+    public let variables: [String]?
+    public let limit: Int
+
+    public init(action: LocalAnalysisAction, path: String? = nil, query: String? = nil, expression: String? = nil, variables: [String]? = nil, limit: Int = 100) {
+        self.action = action
+        self.path = path
+        self.query = query
+        self.expression = expression
+        self.variables = variables
+        self.limit = limit
+    }
 }
 
 public struct MessagePayload: Codable, Equatable, Sendable {
@@ -745,6 +902,42 @@ public struct BrowserTarget: Codable, Equatable, Sendable {
     }
 }
 
+public struct ActionStateEvidence: Codable, Equatable, Sendable {
+    public let identifier: String?
+    public let title: String?
+    public let version: Int?
+
+    public init(identifier: String? = nil, title: String? = nil, version: Int? = nil) {
+        self.identifier = identifier
+        self.title = title
+        self.version = version
+    }
+}
+
+public struct ActionVerificationEvidence: Codable, Equatable, Sendable {
+    public let index: Int
+    public let action: String
+    public let targetRef: String?
+    public let ok: Bool
+    public let changed: Bool
+    public let verified: Bool
+    public let before: ActionStateEvidence?
+    public let after: ActionStateEvidence?
+    public let errorCode: String?
+
+    public init(index: Int, action: String, targetRef: String? = nil, ok: Bool, changed: Bool, verified: Bool, before: ActionStateEvidence? = nil, after: ActionStateEvidence? = nil, errorCode: String? = nil) {
+        self.index = index
+        self.action = action
+        self.targetRef = targetRef
+        self.ok = ok
+        self.changed = changed
+        self.verified = verified
+        self.before = before
+        self.after = after
+        self.errorCode = errorCode
+    }
+}
+
 public struct BrowserContent: Codable, Equatable, Sendable {
     public let taskId: String
     public let action: String?
@@ -753,6 +946,12 @@ public struct BrowserContent: Codable, Equatable, Sendable {
     public let text: String?
     public let targets: [BrowserTarget]?
     public let pageVersion: Int?
+    public let previousPageVersion: Int?
+    public let addedTargets: [BrowserTarget]?
+    public let changedTargets: [BrowserTarget]?
+    public let removedTargetRefs: [String]?
+    public let textChanged: Bool?
+    public let diffOnly: Bool?
     public let contentShared: Bool?
     public let interactionApproved: Bool?
     public let truncated: Bool?
@@ -760,8 +959,9 @@ public struct BrowserContent: Codable, Equatable, Sendable {
     public let closed: Bool?
     /// read: where the next chunk starts; nil at the end of the content.
     public let nextOffset: Int?
+    public let evidence: [ActionVerificationEvidence]?
 
-    public init(taskId: String, action: String? = nil, url: String? = nil, title: String? = nil, text: String? = nil, targets: [BrowserTarget]? = nil, pageVersion: Int? = nil, contentShared: Bool? = nil, interactionApproved: Bool? = nil, truncated: Bool? = nil, verified: Bool? = nil, closed: Bool? = nil, nextOffset: Int? = nil) {
+    public init(taskId: String, action: String? = nil, url: String? = nil, title: String? = nil, text: String? = nil, targets: [BrowserTarget]? = nil, pageVersion: Int? = nil, previousPageVersion: Int? = nil, addedTargets: [BrowserTarget]? = nil, changedTargets: [BrowserTarget]? = nil, removedTargetRefs: [String]? = nil, textChanged: Bool? = nil, diffOnly: Bool? = nil, contentShared: Bool? = nil, interactionApproved: Bool? = nil, truncated: Bool? = nil, verified: Bool? = nil, closed: Bool? = nil, nextOffset: Int? = nil, evidence: [ActionVerificationEvidence]? = nil) {
         self.taskId = taskId
         self.action = action
         self.url = url
@@ -769,12 +969,95 @@ public struct BrowserContent: Codable, Equatable, Sendable {
         self.text = text
         self.targets = targets
         self.pageVersion = pageVersion
+        self.previousPageVersion = previousPageVersion
+        self.addedTargets = addedTargets
+        self.changedTargets = changedTargets
+        self.removedTargetRefs = removedTargetRefs
+        self.textChanged = textChanged
+        self.diffOnly = diffOnly
         self.contentShared = contentShared
         self.interactionApproved = interactionApproved
         self.truncated = truncated
         self.verified = verified
         self.closed = closed
         self.nextOffset = nextOffset
+        self.evidence = evidence
+    }
+}
+
+public struct DesktopTargetFrame: Codable, Equatable, Sendable {
+    public let x: Double
+    public let y: Double
+    public let width: Double
+    public let height: Double
+
+    public init(x: Double, y: Double, width: Double, height: Double) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+}
+
+public struct DesktopTarget: Codable, Equatable, Sendable {
+    public let ref: String
+    public let role: String
+    public let name: String
+    public let frame: DesktopTargetFrame
+    public let actions: [String]
+    public let enabled: Bool
+    public let secure: Bool
+
+    public init(ref: String, role: String, name: String, frame: DesktopTargetFrame, actions: [String], enabled: Bool, secure: Bool) {
+        self.ref = ref
+        self.role = role
+        self.name = name
+        self.frame = frame
+        self.actions = actions
+        self.enabled = enabled
+        self.secure = secure
+    }
+}
+
+/// Compact semantic desktop observation. Screenshots remain a separate, explicitly approved
+/// capability and are never smuggled into this result.
+public struct DesktopControlContent: Codable, Equatable, Sendable {
+    public let taskId: String
+    public let action: ComputerDesktopAction
+    public let snapshotId: String?
+    public let previousSnapshotId: String?
+    public let applicationName: String?
+    public let applicationIdentifier: String?
+    public let windowTitle: String?
+    public let cursorX: Double?
+    public let cursorY: Double?
+    public let targets: [DesktopTarget]
+    public let addedTargets: [DesktopTarget]
+    public let changedTargets: [DesktopTarget]
+    public let removedTargetRefs: [String]
+    public let accessGranted: Bool
+    public let changed: Bool
+    public let verified: Bool
+    public let evidence: [ActionVerificationEvidence]
+
+    public init(taskId: String, action: ComputerDesktopAction, snapshotId: String? = nil, previousSnapshotId: String? = nil, applicationName: String? = nil, applicationIdentifier: String? = nil, windowTitle: String? = nil, cursorX: Double? = nil, cursorY: Double? = nil, targets: [DesktopTarget] = [], addedTargets: [DesktopTarget] = [], changedTargets: [DesktopTarget] = [], removedTargetRefs: [String] = [], accessGranted: Bool, changed: Bool, verified: Bool, evidence: [ActionVerificationEvidence] = []) {
+        self.taskId = taskId
+        self.action = action
+        self.snapshotId = snapshotId
+        self.previousSnapshotId = previousSnapshotId
+        self.applicationName = applicationName
+        self.applicationIdentifier = applicationIdentifier
+        self.windowTitle = windowTitle
+        self.cursorX = cursorX
+        self.cursorY = cursorY
+        self.targets = targets
+        self.addedTargets = addedTargets
+        self.changedTargets = changedTargets
+        self.removedTargetRefs = removedTargetRefs
+        self.accessGranted = accessGranted
+        self.changed = changed
+        self.verified = verified
+        self.evidence = evidence
     }
 }
 
@@ -786,6 +1069,7 @@ public struct ApplicationControlContent: Codable, Equatable, Sendable {
     public let stateAfter: String
     public let changed: Bool
     public let verified: Bool
+    public let requiresForce: Bool?
     public let candidates: [String]
 
     public init(
@@ -796,6 +1080,7 @@ public struct ApplicationControlContent: Codable, Equatable, Sendable {
         stateAfter: String,
         changed: Bool,
         verified: Bool,
+        requiresForce: Bool? = nil,
         candidates: [String] = []
     ) {
         self.action = action
@@ -805,7 +1090,42 @@ public struct ApplicationControlContent: Codable, Equatable, Sendable {
         self.stateAfter = stateAfter
         self.changed = changed
         self.verified = verified
+        self.requiresForce = requiresForce
         self.candidates = candidates
+    }
+}
+
+public struct LocalDependencyStatus: Codable, Equatable, Sendable {
+    public let name: String
+    public let available: Bool
+
+    public init(name: String, available: Bool) {
+        self.name = name
+        self.available = available
+    }
+}
+
+public struct LocalAnalysisContent: Codable, Equatable, Sendable {
+    public let action: LocalAnalysisAction
+    public let adapter: String
+    public let available: Bool
+    public let text: String?
+    public let columns: [String]
+    public let rows: [[String]]
+    public let changedFiles: [String]
+    public let dependencies: [LocalDependencyStatus]
+    public let truncated: Bool
+
+    public init(action: LocalAnalysisAction, adapter: String, available: Bool, text: String? = nil, columns: [String] = [], rows: [[String]] = [], changedFiles: [String] = [], dependencies: [LocalDependencyStatus] = [], truncated: Bool = false) {
+        self.action = action
+        self.adapter = adapter
+        self.available = available
+        self.text = text
+        self.columns = columns
+        self.rows = rows
+        self.changedFiles = changedFiles
+        self.dependencies = dependencies
+        self.truncated = truncated
     }
 }
 
@@ -833,15 +1153,17 @@ public enum CommandPayload: Codable, Equatable, Sendable {
     case shortcut(ShortcutPayload)
     case uiElement(UIElementPayload)
     case screenClick(ScreenClickPayload)
+    case computerDesktop(ComputerDesktopPayload)
     case computerBrowser(ComputerBrowserPayload)
     case browserTask(BrowserTaskPayload)
+    case localAnalysis(LocalAnalysisPayload)
     case reminder(ReminderPayload)
     case completeReminder(CompleteReminderPayload)
     case note(NotePayload)
     case email(EmailPayload)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, fileSearch, codeExecution, screenCapture, shortcut, uiElement, screenClick, computerBrowser, browserTask, reminder, completeReminder, note, email }
+    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, fileSearch, codeExecution, screenCapture, shortcut, uiElement, screenClick, computerDesktop, computerBrowser, browserTask, localAnalysis, reminder, completeReminder, note, email }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -893,10 +1215,14 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             self = .uiElement(try container.decode(UIElementPayload.self, forKey: .value))
         case .screenClick:
             self = .screenClick(try container.decode(ScreenClickPayload.self, forKey: .value))
+        case .computerDesktop:
+            self = .computerDesktop(try container.decode(ComputerDesktopPayload.self, forKey: .value))
         case .computerBrowser:
             self = .computerBrowser(try container.decode(ComputerBrowserPayload.self, forKey: .value))
         case .browserTask:
             self = .browserTask(try container.decode(BrowserTaskPayload.self, forKey: .value))
+        case .localAnalysis:
+            self = .localAnalysis(try container.decode(LocalAnalysisPayload.self, forKey: .value))
         case .reminder:
             self = .reminder(try container.decode(ReminderPayload.self, forKey: .value))
         case .completeReminder:
@@ -979,11 +1305,17 @@ public enum CommandPayload: Codable, Equatable, Sendable {
         case .screenClick(let payload):
             try container.encode(Kind.screenClick, forKey: .kind)
             try container.encode(payload, forKey: .value)
+        case .computerDesktop(let payload):
+            try container.encode(Kind.computerDesktop, forKey: .kind)
+            try container.encode(payload, forKey: .value)
         case .computerBrowser(let payload):
             try container.encode(Kind.computerBrowser, forKey: .kind)
             try container.encode(payload, forKey: .value)
         case .browserTask(let payload):
             try container.encode(Kind.browserTask, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .localAnalysis(let payload):
+            try container.encode(Kind.localAnalysis, forKey: .kind)
             try container.encode(payload, forKey: .value)
         case .reminder(let payload):
             try container.encode(Kind.reminder, forKey: .kind)
@@ -1244,13 +1576,15 @@ public enum CommandData: Codable, Equatable, Sendable {
     case shortcutResult(ShortcutExecutionContent)
     case uiElement(UIElementContent)
     case screenClick(ScreenClickContent)
+    case computerDesktop(DesktopControlContent)
     case computerBrowser(BrowserContent)
     case browserTask(BrowserContent)
+    case localAnalysis(LocalAnalysisContent)
     case applicationControl(ApplicationControlContent)
     case runningApplications([RunningApplicationInfo])
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileTransfer, fileData, processOutput, terminalJob, terminalResult, screenshot, shortcutResult, uiElement, screenClick, computerBrowser, browserTask, applicationControl, runningApplications }
+    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileTransfer, fileData, processOutput, terminalJob, terminalResult, screenshot, shortcutResult, uiElement, screenClick, computerDesktop, computerBrowser, browserTask, localAnalysis, applicationControl, runningApplications }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1297,10 +1631,14 @@ public enum CommandData: Codable, Equatable, Sendable {
             self = .uiElement(try container.decode(UIElementContent.self, forKey: .value))
         case .screenClick:
             self = .screenClick(try container.decode(ScreenClickContent.self, forKey: .value))
+        case .computerDesktop:
+            self = .computerDesktop(try container.decode(DesktopControlContent.self, forKey: .value))
         case .computerBrowser:
             self = .computerBrowser(try container.decode(BrowserContent.self, forKey: .value))
         case .browserTask:
             self = .browserTask(try container.decode(BrowserContent.self, forKey: .value))
+        case .localAnalysis:
+            self = .localAnalysis(try container.decode(LocalAnalysisContent.self, forKey: .value))
         case .applicationControl:
             self = .applicationControl(try container.decode(ApplicationControlContent.self, forKey: .value))
         case .runningApplications:
@@ -1374,11 +1712,17 @@ public enum CommandData: Codable, Equatable, Sendable {
         case .screenClick(let value):
             try container.encode(Kind.screenClick, forKey: .kind)
             try container.encode(value, forKey: .value)
+        case .computerDesktop(let value):
+            try container.encode(Kind.computerDesktop, forKey: .kind)
+            try container.encode(value, forKey: .value)
         case .computerBrowser(let value):
             try container.encode(Kind.computerBrowser, forKey: .kind)
             try container.encode(value, forKey: .value)
         case .browserTask(let value):
             try container.encode(Kind.browserTask, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .localAnalysis(let value):
+            try container.encode(Kind.localAnalysis, forKey: .kind)
             try container.encode(value, forKey: .value)
         case .applicationControl(let value):
             try container.encode(Kind.applicationControl, forKey: .kind)

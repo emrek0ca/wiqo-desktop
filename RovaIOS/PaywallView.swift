@@ -53,7 +53,7 @@ struct PaywallView: View {
                 }
             }
             .task {
-                await storeKit.loadProducts()
+                await storeKit.loadProductsForPaywall()
                 await subscriptionStore.refreshIfStale(maxAge: 60)
             }
             .wiqoToastHost(level: 2)
@@ -108,7 +108,7 @@ struct PaywallView: View {
                 }
             case .unavailable:
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Wiqo Pro şu anda App Store’dan yüklenemedi. Bağlantını kontrol edip tekrar dene.")
+                    Text(storeKit.productLoadMessage)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

@@ -1,5 +1,10 @@
 package com.wiqo.android.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -15,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wiqo.android.AppContainer
 import com.wiqo.android.NotificationLink
+import com.wiqo.android.data.local.ThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,6 +65,7 @@ private fun WiqoHome(
     onNotificationConsumed: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val themeMode by container.preferences.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
 
     var conversationId by remember { mutableStateOf("default") }
     var draftPrompt by remember { mutableStateOf<String?>(null) }
@@ -202,22 +209,25 @@ private fun WiqoHome(
             userEmail = userEmail,
         )
 
-        // Modal Sheets matching iOS .sheet(...) presentations
-        if (showSettings) {
+        // Separate Full-Screen Settings Page
+        AnimatedVisibility(
+            visible = showSettings,
+            enter = slideInHorizontally { it } + fadeIn(),
+            exit = slideOutHorizontally { it } + fadeOut(),
+        ) {
             SettingsSheet(
                 onDismiss = { showSettings = false },
-                onOpenPC = {
-                    showSettings = false
-                    showPCSettings = true
-                },
-                onOpenActivity = {
-                    showSettings = false
-                    showActivity = true
-                },
                 onSignOut = onSignOut,
                 isPaired = isPaired,
+                isConnected = isConnected,
                 deviceName = deviceName,
                 userName = userName,
+                currentThemeMode = themeMode,
+                onThemeModeChange = { mode ->
+                    scope.launch {
+                        container.preferences.setThemeMode(mode)
+                    }
+                },
             )
         }
 

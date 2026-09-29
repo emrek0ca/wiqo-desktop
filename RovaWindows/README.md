@@ -7,7 +7,7 @@ Wiqo'nun Windows yardımcısı. Bildirim alanında çalışır; telefondan gelen
 | Klasör | Ne |
 |---|---|
 | `Core/` | Tel biçimi (tam saniyeli ISO tarih), paylaşılan katalog (`operations.json` gömülü), doğrulama, yetenek ayarları, sonuç defteri, bağlantı güvenliği |
-| `Operations/` | Uygulamalar, sistem (güç, ses, medya, pano, ekran görüntüsü), dosyalar ve arama |
+| `Operations/` | Uygulamalar, sistem (güç, ses, medya, pano, ekran görüntüsü), dosyalar, arama ve isteğe bağlı yerel analiz adaptörleri |
 | `Native/` | Win32 ve Core Audio çağrıları |
 | `Terminal/` | Terminal oturumu v1 ve v2: `run_plan`, `read_file`, `write_file`, `edit_file`, `search`, yama, arka plan işleri, profil |
 | `ProtocolV2Client.cs` | Backend bağlantısı: kayıt, imzalı komutlar, yeniden bağlanma, makbuzlar, otomasyon adımları |
@@ -20,7 +20,7 @@ Wiqo'nun Windows yardımcısı. Bildirim alanında çalışır; telefondan gelen
 - aynı imza ve kanonik JSON vektörleri;
 - Windows manifestosunun, `RovaShared/OperationManifest.swift`'teki Windows listesiyle birebir aynı olması.
 
-Şu an 47 operasyonun 31'i Windows'ta var. Yalnız Mac'te kalanlar Apple'a özgü: Takvim, Anımsatıcılar, Notlar, Mail, Mesajlar, Kısayollar. Bunlara ek olarak şunlar da henüz Windows'ta yok:
+Windows ortak kataloğun doğrulanmış alt kümesini uygular. Yalnız Mac'te kalanlar Apple'a özgü: Takvim, Anımsatıcılar, Notlar, Mail, Mesajlar, Kısayollar. Bunlara ek olarak şunlar da henüz Windows'ta yok:
 - parlaklık;
 - pano geçmişi;
 - belge motoru;
@@ -31,6 +31,7 @@ Windows'a özgü davranışlar:
 - **OneDrive:** Buluttaki dosyalar (reparse point) normal dosya sayılır. Yalnız sembolik link ve junction reddedilir.
 - **Terminal:** Varsa PowerShell 7, yoksa Windows PowerShell 5.1 kullanılır. Çıktı UTF-8'dir. PATH her komutta registry'den taze okunur ve adı gizli bilgiye benzeyen ortam değişkenleri çıkarılır.
 - **Düzenleme:** `edit_file` CRLF dosyalarda LF ile yazılmış metni de bulur. `write_file` dosyanın satır sonlarını ve BOM'unu korur.
+- **Yerel analiz:** MarkItDown belge metni çıkarımı, DuckDB salt okunur tablo sorgusu ve SymPy sembolik matematik için yalnız ilgili çağrıda yüklenir. Bağımlılık yoksa Windows uygulaması açılmaya devam eder ve güvenli `DEPENDENCY_MISSING` sonucu döner.
 
 ## Derleme ve test
 

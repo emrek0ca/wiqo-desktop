@@ -1,5 +1,6 @@
 using System.Net.NetworkInformation;
 using Microsoft.Win32;
+using RovaWindows.Operations;
 
 namespace RovaWindows.App;
 
@@ -22,7 +23,7 @@ internal sealed class CompanionHost : IAsyncDisposable
 
     internal CompanionHost()
     {
-        Runtime = new WindowsRuntime();
+        Runtime = new WindowsRuntime(desktopController: new WindowsDesktopControlAdapter());
         Sessions = new DeviceSessionClient(http);
         Client = new ProtocolV2Client(Runtime, Sessions);
         Client.StateChanged += OnStateChanged;

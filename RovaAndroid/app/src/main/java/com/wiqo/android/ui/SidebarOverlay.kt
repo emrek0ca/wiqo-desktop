@@ -27,17 +27,25 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.BorderStroke
+import android.content.Intent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -83,6 +91,7 @@ fun SidebarOverlay(
     modifier: Modifier = Modifier,
 ) {
     val colors = WiqoDesign.colors
+    val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
 
     val filteredConversations = remember(conversations, searchQuery) {
@@ -159,16 +168,16 @@ fun SidebarOverlay(
                             .clip(CircleShape)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
+                                indication = ripple(bounded = true),
                                 onClick = onNewChat,
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Edit,
+                            imageVector = Icons.Outlined.Edit,
                             contentDescription = "Yeni sohbet",
                             tint = colors.ink,
-                            modifier = Modifier.size(17.dp),
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }
@@ -301,27 +310,46 @@ fun SidebarOverlay(
                                         Box {
                                             IconButton(
                                                 onClick = { menuExpanded = true },
-                                                modifier = Modifier.size(24.dp),
+                                                modifier = Modifier.size(28.dp),
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Default.Delete,
-                                                    contentDescription = "Sil",
+                                                    imageVector = Icons.Outlined.MoreVert,
+                                                    contentDescription = "Seçenekler",
                                                     tint = colors.ink3,
-                                                    modifier = Modifier.size(15.dp),
+                                                    modifier = Modifier.size(17.dp),
                                                 )
                                             }
                                             DropdownMenu(
                                                 expanded = menuExpanded,
                                                 onDismissRequest = { menuExpanded = false },
+                                                shape = RoundedCornerShape(16.dp),
+                                                containerColor = colors.surface,
+                                                border = BorderStroke(0.5.dp, colors.line),
+                                                shadowElevation = 8.dp,
+                                                tonalElevation = 2.dp,
                                             ) {
                                                 DropdownMenuItem(
-                                                    text = { Text("Sohbeti sil", color = colors.red, fontFamily = WiqoSans) },
+                                                    text = { Text("Sohbeti paylaş", color = colors.ink, fontFamily = WiqoSans, fontWeight = FontWeight.Normal) },
+                                                    onClick = {
+                                                        menuExpanded = false
+                                                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                                            putExtra(Intent.EXTRA_TEXT, item.title)
+                                                            type = "text/plain"
+                                                        }
+                                                        context.startActivity(Intent.createChooser(sendIntent, "Sohbeti Paylaş"))
+                                                    },
+                                                    leadingIcon = {
+                                                        Icon(Icons.Outlined.Share, contentDescription = null, tint = colors.ink, modifier = Modifier.size(18.dp))
+                                                    },
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("Sohbeti sil", color = colors.red, fontFamily = WiqoSans, fontWeight = FontWeight.Medium) },
                                                     onClick = {
                                                         menuExpanded = false
                                                         onDeleteConversation(item.id)
                                                     },
                                                     leadingIcon = {
-                                                        Icon(Icons.Default.Delete, contentDescription = null, tint = colors.red)
+                                                        Icon(Icons.Outlined.Delete, contentDescription = null, tint = colors.red, modifier = Modifier.size(18.dp))
                                                     },
                                                 )
                                             }
@@ -347,7 +375,7 @@ fun SidebarOverlay(
                         .fillMaxWidth()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
+                            indication = ripple(),
                             onClick = onOpenSettings,
                         )
                         .padding(horizontal = 16.dp, vertical = 12.dp),

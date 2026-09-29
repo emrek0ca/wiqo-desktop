@@ -1056,9 +1056,11 @@ final class IOSConnectionModel: ObservableObject {
         case .runShortcut: return "Shortcut çalıştır"
         case .controlUIElement: return "Arayüz kontrolü"
         case .clickScreen: return "Ekrana tıkla"
+        case .computerDesktop: return "Masaüstünü kullan"
         case .listRunningApplications: return "Açık uygulamalar"
         case .computerBrowser: return "Tarayıcıda gezin"
         case .endBrowserTask: return "Tarayıcı oturumunu kapat"
+        case .localAnalyze: return "Yerel analiz"
         }
     }
 

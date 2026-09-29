@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -105,12 +106,13 @@ fun WiqoApprovalCard(
                 Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
+                            indication = ripple(bounded = true),
                             onClick = { showsFields = !showsFields },
                         )
-                        .padding(vertical = 4.dp),
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(

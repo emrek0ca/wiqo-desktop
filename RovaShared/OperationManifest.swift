@@ -53,7 +53,7 @@ public struct RovaOperationManifestEntry: Codable, Equatable, Sendable, Identifi
 }
 
 public enum RovaOperationManifest {
-    public static let version = 2
+    public static let version = 3
 
     /// CommandType.allCases is declaration-ordered and therefore stable across every client.
     public static let entries: [RovaOperationManifestEntry] = CommandType.allCases.map(makeEntry)
@@ -134,8 +134,10 @@ public enum RovaOperationManifest {
         case .runShortcut: return "device.shortcut.run"
         case .controlUIElement: return "device.ui.control"
         case .clickScreen: return "device.screen.click"
+        case .computerDesktop: return "device.desktop.control"
         case .listRunningApplications: return "device.app.list"
         case .computerBrowser, .endBrowserTask: return "device.browser.control"
+        case .localAnalyze: return "local.analysis"
         }
     }
 
@@ -172,8 +174,10 @@ public enum RovaOperationManifest {
         case .runShortcut: return "shortcut"
         case .controlUIElement: return "uiElement"
         case .clickScreen: return "screenClick"
+        case .computerDesktop: return "computerDesktop"
         case .computerBrowser: return "computerBrowser"
         case .endBrowserTask: return "browserTask"
+        case .localAnalyze: return "localAnalysis"
         }
     }
 
@@ -194,13 +198,13 @@ public enum RovaOperationManifest {
             CommandType.saveTextFile, .readDocument, .listFiles, .searchFiles, .readFile, .sendFileToPhone, .writeFile,
             .moveFile, .copyFile, .deleteFile, .executeCode, .captureScreen,
             .controlUIElement, .clickScreen, .controlApplication, .getClipboardText,
-            .getClipboardHistory, .computerBrowser
+            .getClipboardHistory, .computerDesktop, .computerBrowser, .localAnalyze
         ].contains(operation)
     }
 
     private static func timeoutClass(for operation: CommandType) -> RovaOperationTimeoutClass {
         switch operation {
-        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles, .sendFileToPhone, .computerBrowser:
+        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles, .sendFileToPhone, .computerDesktop, .computerBrowser, .localAnalyze:
             return .long
         case .listCalendarEvents, .createCalendarEvent, .listReminders, .createReminder,
              .completeReminder, .listDesktopFiles, .readDesktopFile, .listFiles, .readFile,
@@ -224,8 +228,9 @@ public enum RovaOperationManifest {
         case .editDocument: return "document_content"
         case .executeCode: return "process_exit"
         case .captureScreen: return "screen_capture"
-        case .controlUIElement, .clickScreen: return "ui_observation"
+        case .controlUIElement, .clickScreen, .computerDesktop: return "ui_observation"
         case .computerBrowser, .endBrowserTask: return "browser_state"
+        case .localAnalyze: return "structured_local_result"
         default: return "provider_acknowledgement"
         }
     }
@@ -254,7 +259,7 @@ public enum RovaOperationManifest {
              .setClipboardText, .getClipboardText,
              .saveTextFile, .listDesktopFiles, .readDesktopFile, .moveDesktopFile, .renameDesktopFile,
              .listFiles, .searchFiles, .readFile, .sendFileToPhone, .writeFile, .moveFile, .copyFile, .deleteFile,
-             .saveArtifact, .captureScreen, .computerBrowser, .endBrowserTask:
+             .saveArtifact, .captureScreen, .computerDesktop, .computerBrowser, .endBrowserTask, .localAnalyze:
             return true
         default:
             return false

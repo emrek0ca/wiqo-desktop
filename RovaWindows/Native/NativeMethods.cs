@@ -47,6 +47,14 @@ internal static class NativeMethods
     internal const ushort VkMediaPlayPause = 0xB3;
     internal const uint KeyEventFKeyUp = 0x0002;
     internal const uint InputKeyboard = 1;
+    internal const uint InputMouse = 0;
+    internal const uint MouseEventFMove = 0x0001;
+    internal const uint MouseEventFLeftDown = 0x0002;
+    internal const uint MouseEventFLeftUp = 0x0004;
+    internal const uint MouseEventFRightDown = 0x0008;
+    internal const uint MouseEventFRightUp = 0x0010;
+    internal const uint MouseEventFWheel = 0x0800;
+    internal const uint KeyEventFUnicode = 0x0004;
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct KeyboardInput
@@ -62,12 +70,11 @@ internal static class NativeMethods
     internal struct InputUnion
     {
         [FieldOffset(0)] public KeyboardInput Keyboard;
-        // MOUSEINPUT is the largest member; reserve its size so cbSize matches the native INPUT.
-        [FieldOffset(0)] public MouseInputPadding Padding;
+        [FieldOffset(0)] public MouseInput Mouse;
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    internal struct MouseInputPadding
+    internal struct MouseInput
     {
         public int X;
         public int Y;
@@ -86,6 +93,21 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern uint SendInput(uint count, Input[] inputs, int size);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct Point
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetCursorPos(out Point point);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetCursorPos(int x, int y);
 
     // Clipboard
     internal const uint CfUnicodeText = 13;

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -93,9 +95,10 @@ fun WiqoCodeBlock(
             if (onRun != null) {
                 Row(
                     modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
+                            indication = ripple(bounded = true),
                             onClick = { onRun() },
                         )
                         .padding(horizontal = 8.dp, vertical = 4.dp),
@@ -118,9 +121,10 @@ fun WiqoCodeBlock(
             }
             Box(
                 modifier = Modifier
+                    .clip(CircleShape)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
+                        indication = ripple(bounded = false, radius = 16.dp),
                         onClick = {
                             clipboardManager.setText(AnnotatedString(code))
                             copied = true
