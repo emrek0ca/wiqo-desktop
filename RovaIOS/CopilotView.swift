@@ -118,7 +118,13 @@ struct CopilotView: View {
             case .assistant: role = .assistant
             case .system: role = .system
             }
-            var bubble = ChatBubble(role: role, text: stored.text, artifacts: stored.artifacts ?? [], widgets: stored.widgets ?? [], attachmentThumbnails: stored.attachmentThumbnails ?? [])
+            var bubble = ChatBubble(
+                role: role,
+                text: stored.text,
+                artifacts: stored.artifacts ?? [],
+                widgets: CopilotWidgetCatalog.normalized(stored.widgets ?? []),
+                attachmentThumbnails: stored.attachmentThumbnails ?? []
+            )
             bubble.thinking = stored.thinking
             bubble.attachedFileNames = stored.fileNames ?? []
             bubble.deferredTask = stored.deferredTask
@@ -505,10 +511,20 @@ struct CopilotView: View {
                         isStreaming: bubble.id == liveReplyBubbleID
                     )
                 }
-                ForEach(bubble.widgets.indices, id: \.self) { index in
-                    let widget = bubble.widgets[index]
-                    CopilotResultWidgetView(widget: widget) {
-                        openCreatedResource(widget)
+                ForEach(bubble.widgets, id: \.stableID) { widget in
+                    let widgetArtifact = widget.artifactId.flatMap { artifactID in
+                        bubble.artifacts.first(where: { $0.id == artifactID })
+                    }
+                    CopilotResultWidgetView(
+                        widget: widget,
+                        artifact: widgetArtifact,
+                        isOpeningArtifact: widgetArtifact.map { openingArtifactID == $0.id } ?? false
+                    ) {
+                        if let widgetArtifact {
+                            Task { await openArtifact(widgetArtifact) }
+                        } else {
+                            openCreatedResource(widget)
+                        }
                     }
                     .padding(.horizontal)
                 }
@@ -548,10 +564,12 @@ struct CopilotView: View {
             }
             executionWidget(for: bubble)
             codeExecutionCards(for: bubble)
-            if !bubble.artifacts.isEmpty {
-                artifactCard(for: bubble.artifacts, awaitingSave: bubble.needsConfirmation)
+            let widgetArtifactIDs = Set(bubble.widgets.compactMap { $0.type == .artifact ? $0.artifactId : nil })
+            let legacyArtifacts = bubble.artifacts.filter { !widgetArtifactIDs.contains($0.id) }
+            if !legacyArtifacts.isEmpty {
+                artifactCard(for: legacyArtifacts, awaitingSave: bubble.needsConfirmation)
             }
-            if bubble.role == .assistant {
+            if bubble.role == .assistant && !bubble.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 CopyReplyButton(text: bubble.text)
             }
         }
@@ -1684,7 +1702,7 @@ struct CopilotView: View {
                 bubble.projectTask = result.projectTask
                 bubble.agentTask = result.agentTask
                 bubble.artifacts = result.artifacts
-                bubble.widgets = result.widgets
+                bubble.widgets = CopilotWidgetCatalog.normalized(result.widgets)
                 bubble.backendConfirmations = mergedBackendConfirmations(
                     existing: bubble.backendConfirmations,
                     incoming: result.backendConfirmations,
@@ -2135,14 +2153,7 @@ struct CopilotView: View {
             bubble.steps.append(contentsOf: result.steps.filter { !existingStepIDs.contains($0.id) })
             let existingArtifactIDs = Set(bubble.artifacts.map(\.id))
             bubble.artifacts.append(contentsOf: result.artifacts.filter { !existingArtifactIDs.contains($0.id) })
-            for widget in result.widgets {
-                if widget.type == .weather {
-                    bubble.widgets.removeAll { $0.type == .weather }
-                    bubble.widgets.append(widget)
-                } else if !bubble.widgets.contains(widget) {
-                    bubble.widgets.append(widget)
-                }
-            }
+            bubble.widgets = CopilotWidgetCatalog.merging(bubble.widgets, with: result.widgets)
             bubble.text = text
             bubble.executionState = result.executionState
             bubble.replyIsProgress = result.replyIsProgress
@@ -2454,7 +2465,12 @@ struct CopilotView: View {
             case .assistant: role = .assistant
             case .system: role = .system
             }
-            return ChatBubble(role: role, text: item.text, artifacts: item.artifacts ?? [], widgets: item.widgets ?? [])
+            return ChatBubble(
+                role: role,
+                text: item.text,
+                artifacts: item.artifacts ?? [],
+                widgets: CopilotWidgetCatalog.normalized(item.widgets ?? [])
+            )
         }
         turnCount = summary.turnCount
         CopilotConversationStore.saveTurnCount(summary.turnCount, for: conversationID)
@@ -2600,11 +2616,12 @@ struct CopilotView: View {
             case .assistant: role = .assistant
             case .system: role = .system
             }
+            let widgets = CopilotWidgetCatalog.normalized(bubble.widgets)
             return CopilotStoredMessage(
                 role: role,
                 text: bubble.text,
                 artifacts: bubble.artifacts.isEmpty ? nil : bubble.artifacts,
-                widgets: bubble.widgets.isEmpty ? nil : bubble.widgets,
+                widgets: widgets.isEmpty ? nil : widgets,
                 attachmentThumbnails: bubble.attachmentThumbnails.isEmpty ? nil : bubble.attachmentThumbnails,
                 thinking: bubble.thinking,
                 fileNames: bubble.attachedFileNames.isEmpty ? nil : bubble.attachedFileNames,
@@ -2639,6 +2656,8 @@ private enum CopilotWidgetDestination: Identifiable {
 
 private struct CopilotResultWidgetView: View {
     let widget: RovaBackendClient.CopilotResultWidget
+    let artifact: RovaBackendClient.ArtifactDescriptor?
+    let isOpeningArtifact: Bool
     let onTap: () -> Void
     @State private var isExpanded = false
 
@@ -2651,7 +2670,202 @@ private struct CopilotResultWidgetView: View {
             weatherCard
         case .sources:
             sourcesCard
+        case .artifact:
+            artifactResultCard
+        case .task_result:
+            taskResultCard
+        case .error:
+            errorResultCard
+        case .approval:
+            // Pending confirmations are rendered by the existing execution card, which owns
+            // the live confirmation ID and approve/reject actions. Rendering this projection
+            // separately would create a second, misleading approval surface.
+            EmptyView()
+        case .unknown:
+            EmptyView()
         }
+    }
+
+    private var taskResultCard: some View {
+        let completed = max(0, widget.completedSteps ?? 0)
+        let total = max(completed, widget.totalSteps ?? completed)
+        let status = widget.taskStatus ?? "completed"
+        let label = status == "completed" ? "Tamamlandı" : status == "partial" ? "Kısmen tamamlandı" : "Tamamlanamadı"
+        let symbol = widget.capability == "browser" ? "safari"
+            : widget.capability == "desktop" ? "macwindow" : "desktopcomputer"
+        let tint: Color = status == "failed" ? .red : status == "partial" ? .orange : .green
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(tint)
+                    .frame(width: 40, height: 40)
+                    .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(widget.title ?? "Görev sonucu")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(widget.summary ?? "\(completed)/\(total) adım tamamlandı")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 4)
+                Text(label)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(tint.opacity(0.1), in: Capsule())
+                    .fixedSize()
+            }
+            if status != "completed", total > 0 {
+                ProgressView(value: Double(completed), total: Double(total))
+                    .tint(tint)
+                    .accessibilityLabel("\(completed) / \(total) adım tamamlandı")
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(widgetCardBackground)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var errorResultCard: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label(widget.title ?? "İşlem tamamlanamadı", systemImage: "exclamationmark.triangle.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.red)
+            if let message = widget.message, !message.isEmpty {
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let code = widget.code, !code.isEmpty {
+                Text(code)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.red.opacity(0.14), lineWidth: 1))
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var artifactResultCard: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Button(action: onTap) {
+                HStack(spacing: 10) {
+                    Image(systemName: artifactSymbol)
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 40, height: 40)
+                        .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(widget.title ?? artifact?.filename ?? "Dosya")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        Text(artifactSubtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    if isOpeningArtifact {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Dosyayı açar")
+
+            if widget.variant == "table", let preview = widget.tablePreview,
+               !preview.columns.isEmpty || !preview.rows.isEmpty {
+                tablePreview(preview)
+            } else if let artifact, hasInlineArtifactPreview(artifact.mimeType) {
+                InlineArtifactPreview(artifact: artifact, onOpenFullscreen: onTap)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(widgetCardBackground)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func tablePreview(_ preview: RovaBackendClient.CopilotResultWidget.TablePreview) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                if !preview.columns.isEmpty {
+                    HStack(spacing: 0) {
+                        ForEach(Array(preview.columns.enumerated()), id: \.offset) { _, cell in
+                            Text(cell)
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(2)
+                                .frame(width: 120, alignment: .leading)
+                                .padding(8)
+                                .background(Color.primary.opacity(0.04))
+                        }
+                    }
+                }
+                ForEach(Array(preview.rows.enumerated()), id: \.offset) { _, row in
+                    HStack(spacing: 0) {
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                            Text(cell.isEmpty ? "—" : cell)
+                                .font(.caption)
+                                .lineLimit(2)
+                                .frame(width: 120, alignment: .leading)
+                                .padding(8)
+                        }
+                    }
+                    Divider()
+                }
+                if preview.totalRows > preview.rows.count {
+                    Text("\(preview.totalRows - preview.rows.count) satır daha")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(8)
+                }
+            }
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityLabel("Tablo önizlemesi, \(preview.totalRows) satır")
+    }
+
+    private var artifactSymbol: String {
+        switch widget.variant {
+        case "document", "pdf": return "doc.text"
+        case "spreadsheet", "table": return "tablecells"
+        case "chart": return "chart.bar"
+        case "diagram": return "point.3.connected.trianglepath.dotted"
+        case "image": return "photo"
+        case "code": return "chevron.left.forwardslash.chevron.right"
+        default: return "doc"
+        }
+    }
+
+    private func hasInlineArtifactPreview(_ mimeType: String) -> Bool {
+        if case .none = ArtifactInlineKind(mimeType: mimeType) { return false }
+        return true
+    }
+
+    private var artifactSubtitle: String {
+        let labels: [String: String] = ["document": "Belge", "pdf": "PDF", "spreadsheet": "Tablo dosyası", "table": "Tablo", "chart": "Grafik", "diagram": "Diyagram", "image": "Görsel", "code": "Kod", "file": "Dosya"]
+        let kind = labels[widget.variant ?? "file"] ?? "Dosya"
+        let bytes = widget.byteCount ?? artifact?.byteCount
+        return bytes.map { "\(kind) · \(ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file))" } ?? kind
     }
 
     private var sourcesCard: some View {
@@ -2782,7 +2996,8 @@ private struct CopilotResultWidgetView: View {
         let title = isAgent
             ? (widget.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Yeni ajan")
             : "Otomasyon"
-        let summary = widget.detail.flatMap { $0.isEmpty ? nil : $0 }
+        let summary = widget.summary.flatMap { $0.isEmpty ? nil : $0 }
+            ?? widget.detail.flatMap { $0.isEmpty ? nil : $0 }
             ?? widget.scheduleLabel.flatMap { $0.isEmpty ? nil : $0 }
         let detailTitle = isAgent ? "Görev" : "İstek"
 
@@ -2966,7 +3181,6 @@ private struct CopilotResultWidgetView: View {
                 Divider().padding(.horizontal, 16)
                 VStack(alignment: .leading, spacing: 16) {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
-                        weatherMetric("Hissedilen", value: temperature(current?.feelsLikeC), symbol: "thermometer.medium")
                         weatherMetric("Nem", value: percent(current?.humidityPercent), symbol: "humidity")
                         weatherMetric("Rüzgâr", value: wind(current?.windKmh), symbol: "wind")
                     }
@@ -2991,12 +3205,16 @@ private struct CopilotResultWidgetView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("3 günlük tahmin")
                                 .font(.subheadline.weight(.semibold))
-                            HStack(alignment: .top, spacing: 8) {
-                                ForEach(Array(days.enumerated()), id: \.offset) { _, day in
-                                    dailyForecastCell(day)
-                                        .frame(maxWidth: .infinity)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                LazyHStack(alignment: .top, spacing: 8) {
+                                    ForEach(Array(days.enumerated()), id: \.offset) { _, day in
+                                        dailyForecastCell(day)
+                                        .frame(width: 96)
+                                    }
                                 }
+                                .padding(.vertical, 1)
                             }
+                            .accessibilityLabel("Üç günlük hava tahmini")
                         }
                     }
 
@@ -3005,11 +3223,6 @@ private struct CopilotResultWidgetView: View {
                         if let observedAt = current?.observedAt, let localTime = localTime(observedAt) {
                             Text("·")
                             Text("Güncellendi \(localTime)")
-                        }
-                        if let timezone = widget.timezone, !timezone.isEmpty {
-                            Text("·")
-                            Text(timezone)
-                                .lineLimit(1)
                         }
                     }
                     .font(.caption)

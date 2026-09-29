@@ -85,3 +85,80 @@ struct ChatBubble: Identifiable {
     var projectNarrative: [RovaBackendClient.ProjectDetail.Event] = []
     var projectLiveLine: String? = nil
 }
+
+extension RovaBackendClient.CopilotResultWidget {
+    var stableID: String {
+        if let widgetId, !widgetId.isEmpty { return widgetId }
+        switch type {
+        case .created_resource:
+            return "created:\(resourceType?.rawValue ?? "unknown"):\(id.map { String($0) } ?? "unknown")"
+        case .weather:
+            return "weather:\((location ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+        case .sources:
+            return "sources"
+        case .artifact:
+            return "artifact:\(artifactId ?? "unknown")"
+        case .task_result:
+            return "task:\(taskId ?? widgetId ?? "unknown")"
+        case .approval:
+            return "approval:\(confirmationId ?? widgetId ?? "unknown")"
+        case .error:
+            return "error:\(taskId ?? widgetId ?? "unknown")"
+        case .unknown:
+            return "unknown"
+        }
+    }
+}
+
+/// The single client-side merge point for typed result cards. SSE, polling, and history can all
+/// deliver the same verified widget; the catalog keeps one card per real resource/location and
+/// never parses assistant text to decide what to show.
+enum CopilotWidgetCatalog {
+    static func normalized(_ widgets: [RovaBackendClient.CopilotResultWidget]) -> [RovaBackendClient.CopilotResultWidget] {
+        var result: [RovaBackendClient.CopilotResultWidget] = []
+        var indexes: [String: Int] = [:]
+        for widget in widgets {
+            // The current confirmation card already owns the same request ID and approve/reject
+            // actions. Keep its typed projection transient, but avoid rendering a duplicate card.
+            guard widget.type != .unknown, widget.type != .approval else { continue }
+            let key = stableKey(for: widget)
+            if let index = indexes[key] {
+                result[index] = widget
+            } else if result.count < 8 {
+                indexes[key] = result.count
+                result.append(widget)
+            }
+        }
+        return result
+    }
+
+    static func merging(
+        _ existing: [RovaBackendClient.CopilotResultWidget],
+        with incoming: [RovaBackendClient.CopilotResultWidget]
+    ) -> [RovaBackendClient.CopilotResultWidget] {
+        normalized(existing + incoming)
+    }
+
+    private static func stableKey(for widget: RovaBackendClient.CopilotResultWidget) -> String {
+        if let widgetId = widget.widgetId, !widgetId.isEmpty { return widgetId }
+        switch widget.type {
+        case .created_resource:
+            return "created:\(widget.resourceType?.rawValue ?? "unknown"):\(widget.id.map { String($0) } ?? "unknown")"
+        case .weather:
+            let location = (widget.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return "weather:\(location)"
+        case .sources:
+            return "sources"
+        case .artifact:
+            return "artifact:\(widget.artifactId ?? "unknown")"
+        case .task_result:
+            return "task:\(widget.taskId ?? widget.widgetId ?? "unknown")"
+        case .approval:
+            return "approval:\(widget.confirmationId ?? widget.widgetId ?? "unknown")"
+        case .error:
+            return "error:\(widget.taskId ?? widget.widgetId ?? "unknown")"
+        case .unknown:
+            return "unknown"
+        }
+    }
+}

@@ -283,7 +283,19 @@ enum RovaBackendClient {
     }
 
     struct CopilotResultWidget: Codable, Hashable, Sendable {
-        enum Kind: String, Codable { case created_resource, weather, sources }
+        enum Kind: String, Codable {
+            case created_resource, weather, sources, artifact, task_result, approval, error, unknown
+
+            init(from decoder: Decoder) throws {
+                let value = try decoder.singleValueContainer().decode(String.self)
+                self = Kind(rawValue: value) ?? .unknown
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.singleValueContainer()
+                try container.encode(rawValue)
+            }
+        }
         enum ResourceType: String, Codable { case agent, automation }
 
         struct Source: Codable, Hashable, Sendable, Identifiable {
@@ -321,6 +333,12 @@ enum RovaBackendClient {
             let rainMm: Double?
         }
 
+        struct TablePreview: Codable, Hashable, Sendable {
+            let columns: [String]
+            let rows: [[String]]
+            let totalRows: Int
+        }
+
         let type: Kind
         let resourceType: ResourceType?
         let id: Int?
@@ -335,10 +353,32 @@ enum RovaBackendClient {
         let presentation: String?
         let location: String?
         let source: String?
+        /// Stable backend identity used for deterministic merge/dedup across SSE, polling and
+        /// history. These are optional for messages written by older backend versions.
+        let widgetId: String?
+        let version: Int?
+        let state: String?
+        let summary: String?
         let current: WeatherCurrent?
         let hourly: [WeatherHour]?
         let days: [WeatherDay]?
         let sources: [Source]?
+        let artifactId: String?
+        let variant: String?
+        let mimeType: String?
+        let byteCount: Int?
+        let tablePreview: TablePreview?
+        let taskId: String?
+        let capability: String?
+        let taskStatus: String?
+        let completedSteps: Int?
+        let totalSteps: Int?
+        let confirmationId: String?
+        let expiresAt: String?
+        let code: String?
+        let category: String?
+        let message: String?
+        let retryable: Bool?
     }
 
     /// The handle a chat reply carries for a background agent task; the card polls the detail.
