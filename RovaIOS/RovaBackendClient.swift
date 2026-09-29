@@ -1535,6 +1535,30 @@ enum RovaBackendClient {
         return try await authorizedPost("mcp/servers", body: body, as: Response.self).toolCount
     }
 
+    /// Messaging apps linked to this account (backend src/channels/).
+    struct ChannelStatus: Decodable, Sendable {
+        struct Telegram: Decodable, Sendable { let available: Bool; let bot: String? }
+        struct Link: Decodable, Identifiable, Sendable { let id: Int; let channel: String; let label: String? }
+        let telegram: Telegram
+        let links: [Link]
+    }
+
+    static func fetchChannels() async throws -> ChannelStatus {
+        try await authorizedGet("channels", as: ChannelStatus.self)
+    }
+
+    /// A one-time link that opens the Telegram bot with the code already in it.
+    static func startTelegramLink() async throws -> URL {
+        struct Response: Decodable { let url: String }
+        let response = try await authorizedPost("channels/telegram/link-code", body: [:], as: Response.self)
+        guard let url = URL(string: response.url), url.scheme == "https", url.host == "t.me" else { throw RovaBackendError.invalidResponse }
+        return url
+    }
+
+    static func unlinkChannel(id: Int) async throws {
+        _ = try await authorizedMutate("channels/\(id)", method: "DELETE")
+    }
+
     static func deleteMcpServer(id: Int) async throws {
         _ = try await authorizedMutate("mcp/servers/\(id)", method: "DELETE")
     }

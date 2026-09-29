@@ -82,6 +82,7 @@ struct ConnectedAccountsView: View {
                     }
                 }
 
+                TelegramChannelSection()
                 McpServersSection()
 
                 if let errorMessage {
