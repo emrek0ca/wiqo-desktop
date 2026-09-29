@@ -1513,6 +1513,32 @@ enum RovaBackendClient {
         return url
     }
 
+    /// A remote MCP server the user connected (backend src/mcp/). The key never comes back.
+    struct McpServer: Decodable, Identifiable, Sendable {
+        let id: Int
+        let name: String
+        let url: String
+        let hasToken: Bool
+    }
+
+    static func fetchMcpServers() async throws -> [McpServer] {
+        struct Response: Decodable { let servers: [McpServer] }
+        return try await authorizedGet("mcp/servers", as: Response.self).servers
+    }
+
+    /// The backend connects and lists the server's tools before keeping it, so a wrong address or
+    /// key fails here with a readable message instead of at the first use.
+    static func addMcpServer(name: String, url: String, authToken: String?) async throws -> Int {
+        struct Response: Decodable { let toolCount: Int }
+        var body: [String: Any] = ["name": name, "url": url]
+        if let authToken, !authToken.isEmpty { body["authToken"] = authToken }
+        return try await authorizedPost("mcp/servers", body: body, as: Response.self).toolCount
+    }
+
+    static func deleteMcpServer(id: Int) async throws {
+        _ = try await authorizedMutate("mcp/servers/\(id)", method: "DELETE")
+    }
+
     static func disconnectOAuth(provider: String) async throws {
         _ = try await authorizedMutate("oauth/\(provider)", method: "DELETE")
     }

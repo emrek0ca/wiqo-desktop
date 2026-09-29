@@ -82,6 +82,8 @@ struct ConnectedAccountsView: View {
                     }
                 }
 
+                McpServersSection()
+
                 if let errorMessage {
                     Text(errorMessage)
                         .font(.footnote)
