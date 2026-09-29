@@ -284,7 +284,7 @@ enum RovaBackendClient {
 
     struct CopilotResultWidget: Codable, Hashable, Sendable {
         enum Kind: String, Codable {
-            case created_resource, weather, sources, artifact, task_result, approval, error, unknown
+            case created_resource, weather, sources, artifact, task_result, approval, error, list, table, unknown
 
             init(from decoder: Decoder) throws {
                 let value = try decoder.singleValueContainer().decode(String.self)
@@ -339,6 +339,20 @@ enum RovaBackendClient {
             let totalRows: Int
         }
 
+        /// One row of a connector card (mail, event, file, page, person).
+        struct ListItem: Codable, Hashable, Sendable {
+            let id: String?
+            let title: String
+            let subtitle: String?
+            let detail: String?
+            let meta: String?
+            let badge: String?
+            /// ISO start/end for calendar items; the card groups them by day.
+            let start: String?
+            let end: String?
+            let url: String?
+        }
+
         let type: Kind
         let resourceType: ResourceType?
         let id: Int?
@@ -379,6 +393,14 @@ enum RovaBackendClient {
         let category: String?
         let message: String?
         let retryable: Bool?
+        /// list: which connected service (mail, calendar, drive, notion, contacts) and its rows.
+        let domain: String?
+        let items: [ListItem]?
+        let total: Int?
+        /// table: spreadsheet rows.
+        let columns: [String]?
+        let rows: [[String]]?
+        let totalRows: Int?
     }
 
     /// The handle a chat reply carries for a background agent task; the card polls the detail.

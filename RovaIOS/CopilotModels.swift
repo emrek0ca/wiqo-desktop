@@ -104,6 +104,10 @@ extension RovaBackendClient.CopilotResultWidget {
             return "approval:\(confirmationId ?? widgetId ?? "unknown")"
         case .error:
             return "error:\(taskId ?? widgetId ?? "unknown")"
+        case .list:
+            return "list:\(domain ?? "unknown")"
+        case .table:
+            return "table:\((title ?? "").lowercased())"
         case .unknown:
             return "unknown"
         }
@@ -157,6 +161,10 @@ enum CopilotWidgetCatalog {
             return "approval:\(widget.confirmationId ?? widget.widgetId ?? "unknown")"
         case .error:
             return "error:\(widget.taskId ?? widget.widgetId ?? "unknown")"
+        case .list:
+            return "list:\(widget.domain ?? "unknown")"
+        case .table:
+            return "table:\((widget.title ?? "").lowercased())"
         case .unknown:
             return "unknown"
         }

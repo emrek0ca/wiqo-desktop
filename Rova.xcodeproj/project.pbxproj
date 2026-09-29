@@ -65,6 +65,7 @@
 		D2000000000000000000002A /* WiqoControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000002B /* WiqoControls.swift */; };
 		D20000000000000000000002 /* WiqoTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* WiqoTheme.swift */; };
 		D20000000000000000000004 /* WiqoToolChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000005 /* WiqoToolChips.swift */; };
+		D30000000000000000000C02 /* WiqoConnectorCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C01 /* WiqoConnectorCards.swift */; };
 		D20000000000000000000006 /* WiqoApprovalCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* WiqoApprovalCard.swift */; };
 		D20000000000000000000008 /* WiqoCodeBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000009 /* WiqoCodeBlock.swift */; };
 		D2000000000000000000000A /* WiqoRecommendationCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000B /* WiqoRecommendationCard.swift */; };
@@ -217,6 +218,7 @@
 		D2000000000000000000002B /* WiqoControls.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoControls.swift; sourceTree = "<group>"; };
 		D20000000000000000000003 /* WiqoTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoTheme.swift; sourceTree = "<group>"; };
 		D20000000000000000000005 /* WiqoToolChips.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoToolChips.swift; sourceTree = "<group>"; };
+		D30000000000000000000C01 /* WiqoConnectorCards.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoConnectorCards.swift; sourceTree = "<group>"; };
 		D20000000000000000000007 /* WiqoApprovalCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoApprovalCard.swift; sourceTree = "<group>"; };
 		D20000000000000000000009 /* WiqoCodeBlock.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoCodeBlock.swift; sourceTree = "<group>"; };
 		D2000000000000000000000B /* WiqoRecommendationCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoRecommendationCard.swift; sourceTree = "<group>"; };
@@ -383,6 +385,7 @@
 				D2000000000000000000002B /* WiqoControls.swift */,
 				D20000000000000000000003 /* WiqoTheme.swift */,
 				D20000000000000000000005 /* WiqoToolChips.swift */,
+				D30000000000000000000C01 /* WiqoConnectorCards.swift */,
 				D20000000000000000000007 /* WiqoApprovalCard.swift */,
 				D20000000000000000000009 /* WiqoCodeBlock.swift */,
 				D2000000000000000000000B /* WiqoRecommendationCard.swift */,
@@ -722,6 +725,7 @@
 				D2000000000000000000002A /* WiqoControls.swift in Sources */,
 				D20000000000000000000002 /* WiqoTheme.swift in Sources */,
 				D20000000000000000000004 /* WiqoToolChips.swift in Sources */,
+				D30000000000000000000C02 /* WiqoConnectorCards.swift in Sources */,
 				D20000000000000000000006 /* WiqoApprovalCard.swift in Sources */,
 				D20000000000000000000008 /* WiqoCodeBlock.swift in Sources */,
 				D2000000000000000000000A /* WiqoRecommendationCard.swift in Sources */,

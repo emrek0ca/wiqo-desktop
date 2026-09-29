@@ -2698,6 +2698,10 @@ private struct CopilotResultWidgetView: View {
             taskResultCard
         case .error:
             errorResultCard
+        case .list:
+            ConnectorListCard(widget: widget)
+        case .table:
+            ConnectorTableCard(widget: widget)
         case .approval:
             // Pending confirmations are rendered by the existing execution card, which owns
             // the live confirmation ID and approve/reject actions. Rendering this projection
