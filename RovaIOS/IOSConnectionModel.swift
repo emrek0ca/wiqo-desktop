@@ -870,6 +870,18 @@ final class IOSConnectionModel: ObservableObject {
             for delay in [0, 1, 2] {
                 if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000) }
                 guard let self, !Task.isCancelled, self.isPaired, self.state != .connected else { return }
+                // Ask presence first (one cheap GET): a command to a PC the backend already knows is
+                // offline is a guaranteed 503, and with every reconnect cycle probing three times
+                // that was a steady stream of failed requests. The presence stream announces the
+                // moment the PC is back; until then only the bounded reconnect backoff continues.
+                if let target = self.pairedMacDeviceID ?? self.deviceInfo?.id,
+                   let devices = try? await RovaBackendClient.fetchDevices(),
+                   !devices.contains(where: { $0.id.caseInsensitiveCompare(target.uuidString) == .orderedSame && $0.online }) {
+                    self.isReconnecting = false
+                    self.state = .failed
+                    self.scheduleReconnect()
+                    return
+                }
                 let result = await self.send(.ping)
                 if result.error == nil { return }
             }
