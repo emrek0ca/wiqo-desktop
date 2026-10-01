@@ -345,7 +345,8 @@ final class MacBackendChannel: NSObject {
                     "name": target.name,
                     "bundleIdentifier": target.bundleIdentifier ?? "",
                     "isRunning": target.isRunning,
-                    "supportedActions": target.supportedActions.map(\.rawValue)
+                    "supportedActions": target.supportedActions.map(\.rawValue),
+                    "category": target.category ?? ""
                 ] as [String: Any]
             },
             "authorities": info.authorities.map { authority in

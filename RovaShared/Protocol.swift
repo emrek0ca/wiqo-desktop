@@ -505,14 +505,18 @@ public struct DeviceApplicationTarget: Codable, Equatable, Sendable, Identifiabl
     public let bundleIdentifier: String?
     public let isRunning: Bool
     public let supportedActions: [ApplicationControlAction]
+    /// What kind of program it is, from its own Info.plist ("music", "developer-tools"...), so a
+    /// request like "müzik çalar aç" can be matched by meaning to an app whose name says nothing.
+    public let category: String?
 
     public var id: String { bundleIdentifier ?? name }
 
-    public init(name: String, bundleIdentifier: String?, isRunning: Bool, supportedActions: [ApplicationControlAction]) {
+    public init(name: String, bundleIdentifier: String?, isRunning: Bool, supportedActions: [ApplicationControlAction], category: String? = nil) {
         self.name = name
         self.bundleIdentifier = bundleIdentifier
         self.isRunning = isRunning
         self.supportedActions = supportedActions
+        self.category = category
     }
 }
 

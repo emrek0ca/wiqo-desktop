@@ -275,13 +275,19 @@ extension MacSystem {
         func actions(for bundleIdentifier: String?) -> [ApplicationControlAction] {
             bundleIdentifier == "com.apple.finder" ? [.open, .activate] : [.open, .activate, .quit]
         }
+        var categoryByBundle: [String: String] = [:]
+        for record in installed {
+            guard let bundleIdentifier = record.bundleIdentifier,
+                  let raw = Bundle(path: record.path)?.object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String else { continue }
+            categoryByBundle[bundleIdentifier.lowercased()] = raw.replacingOccurrences(of: "public.app-category.", with: "")
+        }
         func add(name: String, bundleIdentifier: String?, isRunning: Bool) {
             let normalized = ApplicationNameMatcher.normalize(name)
             let key = bundleIdentifier?.lowercased() ?? "name:\(normalized)"
             guard !normalized.isEmpty, !usedKeys.contains(key), !usedNames.contains(normalized) else { return }
             usedKeys.insert(key)
             usedNames.insert(normalized)
-            targets.append(DeviceApplicationTarget(name: name, bundleIdentifier: bundleIdentifier, isRunning: isRunning, supportedActions: actions(for: bundleIdentifier)))
+            targets.append(DeviceApplicationTarget(name: name, bundleIdentifier: bundleIdentifier, isRunning: isRunning, supportedActions: actions(for: bundleIdentifier), category: bundleIdentifier.flatMap { categoryByBundle[$0.lowercased()] }))
         }
 
         let runningBundles = Set(running.compactMap { $0.bundleIdentifier?.lowercased() })
