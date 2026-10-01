@@ -655,7 +655,14 @@ public struct FileSearchPayload: Codable, Equatable, Sendable {
     public let content: Bool?
     /// "recent" (newest first) or "relevance" (default).
     public let sort: String?
+    /// Other words for the same thing ("kontrat" for "sözleşme"); a file matching any of them counts.
+    public let alternatives: [String]?
+    /// List the files in scope without matching names (newest first, up to 1,000) so the backend can
+    /// rank them by meaning. Only on the Mac; the phone asks the same way as for a normal search.
+    public let survey: Bool?
 
+    public static let maxAlternatives = 6
+    public static let surveyLimit = 1_000
     public static let kinds: Set<String> = ["pdf", "document", "spreadsheet", "presentation", "image", "text", "archive", "audio", "video", "folder"]
     public static let sorts: Set<String> = ["recent", "relevance"]
 
@@ -667,7 +674,9 @@ public struct FileSearchPayload: Codable, Equatable, Sendable {
         kind: String? = nil,
         modifiedWithinDays: Int? = nil,
         content: Bool? = nil,
-        sort: String? = nil
+        sort: String? = nil,
+        alternatives: [String]? = nil,
+        survey: Bool? = nil
     ) {
         self.query = query
         self.cursor = cursor
@@ -677,6 +686,8 @@ public struct FileSearchPayload: Codable, Equatable, Sendable {
         self.modifiedWithinDays = modifiedWithinDays
         self.content = content
         self.sort = sort
+        self.alternatives = alternatives
+        self.survey = survey
     }
 
     /// Whether anything besides the query narrows the search.

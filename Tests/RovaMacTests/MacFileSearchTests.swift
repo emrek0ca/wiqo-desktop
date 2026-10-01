@@ -22,9 +22,12 @@ final class MacFileSearchTests: XCTestCase {
         return url
     }
 
-    private func spec(_ query: String = "", kind: String? = nil, days: Int? = nil, recent: Bool = false, hidesSensitive: Bool = true) -> MacFileSearch.Spec {
-        MacFileSearch.Spec(
+    private func spec(_ query: String = "", alternatives: [String] = [], kind: String? = nil, days: Int? = nil, recent: Bool = false, hidesSensitive: Bool = true) -> MacFileSearch.Spec {
+        let groups = ([MacFileSearch.tokens(from: query)] + alternatives.map(MacFileSearch.tokens(from:))).filter { !$0.isEmpty }
+        return MacFileSearch.Spec(
             tokens: MacFileSearch.tokens(from: query),
+            groups: groups,
+            limit: 400,
             roots: [root],
             kind: kind,
             since: days.map { Date().addingTimeInterval(-Double($0) * 86_400) },
@@ -37,6 +40,15 @@ final class MacFileSearchTests: XCTestCase {
     private func names(_ entries: [FileSystemEntry]) -> [String] { entries.map(\.name) }
 
     // MARK: The Spotlight expression
+
+    func testAnAlternativeWordMatchesAndTheExpressionOrsTheGroups() throws {
+        try make("kira_kontrat_2024.pdf")
+        try make("fatura.pdf")
+        let found = MacFileSearch.walk(spec("sözleşme", alternatives: ["kontrat", "anlaşma"]))
+        XCTAssertEqual(names(found), ["kira_kontrat_2024.pdf"])
+        let predicate = MacFileSearch.spotlightPredicate(spec("sözleşme", alternatives: ["kontrat"]))
+        XCTAssertTrue(predicate.contains("*sözleşme*") && predicate.contains("*kontrat*") && predicate.contains("||"), predicate)
+    }
 
     func testWordsAreCleanedSoTheyCannotChangeTheExpression() {
         XCTAssertEqual(MacFileSearch.tokens(from: #"fatura "*" (eylül) kMDItemFSName == x"#), ["fatura", "eylül", "kMDItemFSName", "x"])

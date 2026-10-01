@@ -236,7 +236,10 @@ public enum RovaValidation {
         case .searchFiles:
             guard case .fileSearch(let search) = request.payload,
                   search.query.isEmpty || isSafeText(search.query, maxLength: 120),
-                  !search.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || search.hasFilter,
+                  !search.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || search.hasFilter || search.survey == true,
+                  (search.alternatives ?? []).count <= FileSearchPayload.maxAlternatives,
+                  (search.alternatives ?? []).allSatisfy({ isSafeText($0, maxLength: 60) }),
+                  search.survey != true || search.everywhere != true,
                   search.cursor.map({ UUID(uuidString: $0) != nil || $0.range(of: #"^o:\d{1,5}$"#, options: .regularExpression) != nil }) ?? true,
                   search.folder.map({ isValidLocalPath($0) || isValidWindowsLocalPath($0) }) ?? true,
                   search.kind.map({ FileSearchPayload.kinds.contains($0) }) ?? true,

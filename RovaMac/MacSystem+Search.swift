@@ -7,6 +7,10 @@ import Foundation
 enum MacFileSearch {
     struct Spec: Equatable {
         var tokens: [String]
+        /// The query's words first, then each alternative's: a name matching any group counts.
+        var groups: [[String]]
+        /// Most files one search may return (a survey lists far more than a page).
+        var limit: Int
         var roots: [URL]
         var kind: String?
         var since: Date?
@@ -87,9 +91,12 @@ enum MacFileSearch {
         }
         if roots.isEmpty { return (nil, RovaError(code: "SEARCH_FAILED", message: "Aranacak klasör bulunamadı.", category: "tool_failure")) }
         let words = tokens(from: payload.query)
+        let alternatives = (payload.alternatives ?? []).prefix(FileSearchPayload.maxAlternatives).map(tokens(from:)).filter { !$0.isEmpty }
         let since = payload.modifiedWithinDays.map { now.addingTimeInterval(-Double($0) * 86_400) }
         let spec = Spec(
             tokens: words,
+            groups: ([words] + alternatives).filter { !$0.isEmpty },
+            limit: candidateLimit,
             roots: roots,
             kind: payload.kind,
             since: since,
@@ -104,17 +111,23 @@ enum MacFileSearch {
     /// ("rapor" finds "Rapör"); with `content`, a word may also match inside the file.
     static func spotlightPredicate(_ spec: Spec) -> String {
         var parts: [String] = []
-        for token in spec.tokens {
-            let name = "kMDItemDisplayName == \"*\(token)*\"cd"
-            parts.append(spec.content ? "(\(name) || kMDItemTextContent == \"*\(token)*\"cd)" : name)
+        let alternatives = spec.groups.count > 1
+        let groupClauses: [String] = spec.groups.map { group in
+            let clauses = group.map { token -> String in
+                let name = "kMDItemDisplayName == \"*\(token)*\"cd"
+                return spec.content ? "(\(name) || kMDItemTextContent == \"*\(token)*\"cd)" : name
+            }
+            let joined = clauses.joined(separator: " && ")
+            return alternatives && clauses.count > 1 ? "(" + joined + ")" : joined
         }
+        if !groupClauses.isEmpty { parts.append(alternatives ? "(" + groupClauses.joined(separator: " || ") + ")" : groupClauses[0]) }
         if let kind = spec.kind {
             if kind == "text" {
                 parts.append("(kMDItemContentTypeTree == \"public.plain-text\" && kMDItemContentTypeTree != \"public.source-code\")")
             } else if let types = uniformTypes[kind] {
                 parts.append("(" + types.map { "kMDItemContentTypeTree == \"\($0)\"" }.joined(separator: " || ") + ")")
             }
-        } else if spec.tokens.isEmpty {
+        } else if spec.groups.isEmpty {
             parts.append("kMDItemContentType != \"public.folder\"")
         }
         if let since = spec.since {
@@ -142,6 +155,10 @@ enum MacFileSearch {
 
     /// Higher is a better match: the name is the query, starts with it, holds every word; shorter
     /// paths win ties, since what people mean is rarely buried in a project checkout.
+    static func score(name: String, path: String, groups: [[String]]) -> Double {
+        groups.map { score(name: name, path: path, tokens: $0) }.max() ?? 0
+    }
+
     static func score(name: String, path: String, tokens: [String]) -> Double {
         guard !tokens.isEmpty else { return 0 }
         let folded = fold((name as NSString).deletingPathExtension)
@@ -178,8 +195,8 @@ enum MacFileSearch {
                 let leftDate = left.modifiedAt ?? .distantPast, rightDate = right.modifiedAt ?? .distantPast
                 if leftDate != rightDate { return leftDate > rightDate }
             } else {
-                let leftScore = score(name: left.name, path: left.path, tokens: spec.tokens)
-                let rightScore = score(name: right.name, path: right.path, tokens: spec.tokens)
+                let leftScore = score(name: left.name, path: left.path, groups: spec.groups)
+                let rightScore = score(name: right.name, path: right.path, groups: spec.groups)
                 if leftScore != rightScore { return leftScore > rightScore }
                 let leftDate = left.modifiedAt ?? .distantPast, rightDate = right.modifiedAt ?? .distantPast
                 if leftDate != rightDate { return leftDate > rightDate }
@@ -207,16 +224,43 @@ enum MacFileSearch {
             let walked = await Task.detached(priority: .userInitiated) { walk(spec) }.value
             if entries == nil || !walked.isEmpty { entries = walked; usedIndex = false }
         }
+        if payload.survey == true {
+            return await survey(payload, spec: spec, matched: entries ?? [], usedIndex: usedIndex)
+        }
         let ranked = rank(entries ?? [], spec: spec)
-        let page = Array(ranked.dropFirst(offset).prefix(pageSize))
+        let page = Array(ranked.dropFirst(offset).prefix(payload.survey == true ? FileSearchPayload.surveyLimit : pageSize))
         let scope = spec.roots.map { $0.lastPathComponent == NSUserName() ? "Ev klasörü" : displayName(for: $0) }.joined(separator: ", ")
         let remaining = ranked.count - offset - page.count
-        var message = ranked.isEmpty
+        var message = payload.survey == true
+            ? "\(page.count) dosya listelendi (\(scope))."
+            : ranked.isEmpty
             ? "Eşleşen dosya bulunamadı (aranan: \(scope))."
             : "\(ranked.count) sonuç (aranan: \(scope)); \(offset + 1)–\(offset + page.count) gösteriliyor."
         if remaining > 0 { message += " Devam kodu o:\(offset + page.count)." }
         if spec.content && !usedIndex { message += " İçerik araması için Spotlight dizini gerekli; yalnızca adlara bakıldı." }
         return (.files(page), message, nil)
+    }
+
+    /// Every file in scope, newest first (the name matches, whatever their age, go first), so the
+    /// backend can rank them by what they mean rather than by the words in their names.
+    private static func survey(_ payload: FileSearchPayload, spec: Spec, matched: [FileSystemEntry], usedIndex: Bool) async -> (data: CommandData?, message: String, error: RovaError?) {
+        var widened = spec
+        widened.tokens = []
+        widened.groups = []
+        widened.recent = true
+        widened.limit = FileSearchPayload.surveyLimit
+        let everything = widened
+        var broad = await Task.detached(priority: .userInitiated) { spotlight(everything) }.value
+        if broad == nil || broad?.isEmpty == true {
+            broad = await Task.detached(priority: .userInitiated) { walk(everything) }.value
+        }
+        var seen = Set<String>()
+        var listed: [FileSystemEntry] = []
+        for entry in rank(matched, spec: spec) + rank(broad ?? [], spec: everything) where seen.insert(entry.path).inserted {
+            listed.append(entry)
+            if listed.count >= FileSearchPayload.surveyLimit { break }
+        }
+        return (.files(listed), "\(listed.count) dosya listelendi.", nil)
     }
 
     private static func displayName(for url: URL) -> String {
@@ -237,12 +281,12 @@ enum MacFileSearch {
         guard !result.timedOut, result.exitCode == 0, let text = String(data: result.stdout, encoding: .utf8) else { return nil }
         var seen = Set<String>()
         var entries: [FileSystemEntry] = []
-        for line in text.split(whereSeparator: \.isNewline).prefix(candidateLimit * 3) {
+        for line in text.split(whereSeparator: \.isNewline).prefix(spec.limit * 3) {
             let path = String(line)
             guard admissible(path, spec), seen.insert(path).inserted, let found = entry(for: URL(fileURLWithPath: path)) else { continue }
             if let since = spec.since, let modified = found.modifiedAt, modified < since { continue }
             entries.append(found)
-            if entries.count >= candidateLimit { break }
+            if entries.count >= spec.limit { break }
         }
         return entries
     }
@@ -252,7 +296,7 @@ enum MacFileSearch {
         let deadline = Date().addingTimeInterval(8)
         var visited = 0
         var found: [FileSystemEntry] = []
-        let folded = spec.tokens.map(fold)
+        let folded = spec.groups.map { $0.map(fold) }
         let wanted = spec.kind.flatMap { extensions[$0] }
         for root in spec.roots {
             guard let walker = FileManager.default.enumerator(
@@ -262,14 +306,15 @@ enum MacFileSearch {
             ) else { continue }
             while let url = walker.nextObject() as? URL {
                 visited += 1
-                if visited > 20_000 || Date() >= deadline || found.count >= candidateLimit { return found }
+                if visited > 20_000 || Date() >= deadline || found.count >= spec.limit { return found }
                 if noisyComponents.contains(url.lastPathComponent.lowercased()) { walker.skipDescendants(); continue }
                 guard let item = entry(for: url) else { continue }
                 if item.isDirectory && spec.kind != "folder" { continue }
                 if spec.kind == "folder" && !item.isDirectory { continue }
                 if let wanted, !wanted.contains(url.pathExtension.lowercased()) { continue }
                 if let since = spec.since, (item.modifiedAt ?? .distantPast) < since { continue }
-                if !folded.allSatisfy({ fold(url.lastPathComponent).contains($0) }) { continue }
+                let foldedName = fold(url.lastPathComponent)
+                if !folded.isEmpty, !folded.contains(where: { group in group.allSatisfy { foldedName.contains($0) } }) { continue }
                 if admissible(item.path, spec) { found.append(item) }
             }
         }
