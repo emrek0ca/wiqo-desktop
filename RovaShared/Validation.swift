@@ -251,6 +251,14 @@ public enum RovaValidation {
                   content.count <= 500_000, !content.contains("\0") else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Dosya yazma isteği geçersiz.")
             }
+        case .convertFile:
+            // The destination is optional (the PDF lands next to the source); when given it must be a .pdf path.
+            guard case .fileOperation(let operation) = request.payload,
+                  isValidLocalPath(operation.path),
+                  RovaFileConversion.canConvert(path: operation.path),
+                  operation.destination.map({ isValidLocalPath($0) && $0.lowercased().hasSuffix(".pdf") && $0 != operation.path }) ?? true else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Bu dosya PDF'e çevrilemez veya yol geçersiz.")
+            }
         case .moveFile, .copyFile:
             guard case .fileOperation(let operation) = request.payload,
                   isValidLocalPath(operation.path),
@@ -760,7 +768,7 @@ public enum RovaCommandAuthority {
         case .readDesktopFile, .readFile, .sendFileToPhone: return "device.files.read"
         case .saveTextFile, .writeFile: return "device.files.write"
         case .moveDesktopFile, .renameDesktopFile, .moveFile: return "device.files.move"
-        case .copyFile: return "device.files.copy"
+        case .copyFile, .convertFile: return "device.files.copy"
         case .deleteFile: return "device.files.delete"
         case .saveArtifact: return "artifact.save"
         case .readDocument: return "document.read"
@@ -790,7 +798,7 @@ public enum RovaCommandAuthority {
         switch type {
         case .lockMac, .sleepMac, .displaySleep, .sendMessage, .sendEmail, .createNote,
              .createCalendarEvent, .createReminder, .completeReminder, .moveDesktopFile, .renameDesktopFile, .saveArtifact,
-             .editDocument, .writeFile, .moveFile, .copyFile, .deleteFile, .executeCode,
+             .editDocument, .writeFile, .moveFile, .copyFile, .convertFile, .deleteFile, .executeCode,
              .clickScreen, .runShortcut:
             return true
         case .controlApplication:
@@ -823,7 +831,7 @@ public enum RovaCommandAuthority {
         if autoReadOwnFolders, RovaOwnFolders.isAutoReadable(type: type, payload: payload) { return false }
         switch type {
         case .saveTextFile, .readDocument, .editDocument, .saveArtifact,
-             .listFiles, .searchFiles, .readFile, .sendFileToPhone, .writeFile, .moveFile, .copyFile, .deleteFile,
+             .listFiles, .searchFiles, .readFile, .sendFileToPhone, .writeFile, .moveFile, .copyFile, .convertFile, .deleteFile,
              .executeCode, .captureScreen, .controlUIElement, .clickScreen,
              .controlApplication, .getClipboardText, .getClipboardHistory:
             return true
@@ -1125,5 +1133,38 @@ public enum RovaOwnFolders {
         default:
             return false
         }
+    }
+}
+
+/// Which files can be turned into a PDF, and by what. Shared so the phone can refuse a request the
+/// Mac could never fulfil, and the Mac picks the engine by the same table.
+public enum RovaFileConversion {
+    public enum Engine: Equatable, Sendable {
+        /// `sips`: images.
+        case image
+        /// `cupsfilter`: plain text and PDFs.
+        case text
+        /// LibreOffice when installed, else Pages, Numbers or Keynote driven by AppleScript.
+        case office(preferredApp: String)
+    }
+
+    private static let images: Set<String> = ["png", "jpg", "jpeg", "heic", "tif", "tiff", "gif", "bmp"]
+    private static let text: Set<String> = ["txt", "md", "log"]
+    private static let writer: Set<String> = ["docx", "doc", "rtf", "odt", "pages", "html", "htm"]
+    private static let sheet: Set<String> = ["xlsx", "xls", "csv", "ods", "numbers"]
+    private static let slides: Set<String> = ["pptx", "ppt", "odp", "key"]
+
+    public static func engine(for path: String) -> Engine? {
+        let ext = (path as NSString).pathExtension.lowercased()
+        if images.contains(ext) { return .image }
+        if text.contains(ext) { return .text }
+        if writer.contains(ext) { return .office(preferredApp: "Pages") }
+        if sheet.contains(ext) { return .office(preferredApp: "Numbers") }
+        if slides.contains(ext) { return .office(preferredApp: "Keynote") }
+        return nil
+    }
+
+    public static func canConvert(path: String) -> Bool {
+        engine(for: path) != nil
     }
 }

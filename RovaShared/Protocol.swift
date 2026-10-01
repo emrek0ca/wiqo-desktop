@@ -50,6 +50,7 @@ public enum CommandType: String, Codable, CaseIterable, Sendable {
     case writeFile
     case moveFile
     case copyFile
+    case convertFile
     case deleteFile
     case executeCode
     case captureScreen

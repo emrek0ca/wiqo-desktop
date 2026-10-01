@@ -737,3 +737,137 @@ private final class LocalWorkspaceSnapshotStore: @unchecked Sendable {
         return result
     }
 }
+
+// MARK: - Convert to PDF
+
+extension MacSystem {
+    /// Turns a file into a PDF next to it (or at the requested path) and returns the new file as a
+    /// one-entry listing, so the result shows up as the same file card a search produces. The
+    /// original is never touched. Images use `sips`, plain text `cupsfilter`; Word, Excel and
+    /// PowerPoint files go through LibreOffice when it is installed, otherwise through Pages,
+    /// Numbers or Keynote, which open those formats and export a faithful PDF.
+    static func convertFile(_ payload: LocalFileOperationPayload) async -> (data: CommandData?, message: String, error: RovaError?) {
+        let manager = FileManager.default
+        guard let source = resolvedLocalURL(payload.path), manager.fileExists(atPath: source.path),
+              !isDirectory(source), !isSymbolicLink(source),
+              let engine = RovaFileConversion.engine(for: source.path) else {
+            return (nil, "Dosya bulunamadı veya PDF'e çevrilemez.", RovaError(code: "INVALID_FILE_PATH", message: "Bu dosya PDF'e çevrilemez ya da bulunamadı.", category: "tool_failure"))
+        }
+        let requested = payload.destination.flatMap { resolvedLocalURL($0, allowingMissingLastComponent: true) }
+        if payload.destination != nil, requested == nil {
+            return (nil, "Hedef yol geçersiz.", RovaError(code: "INVALID_FILE_PATH", message: "PDF'in kaydedileceği yol geçersiz.", category: "tool_failure"))
+        }
+        let preferred = requested ?? source.deletingPathExtension().appendingPathExtension("pdf")
+        guard isDirectory(preferred.deletingLastPathComponent()) else {
+            return (nil, "Hedef klasör yok.", RovaError(code: "INVALID_FILE_PATH", message: "PDF'in kaydedileceği klasör bulunamadı.", category: "tool_failure"))
+        }
+        let destination = uniqueConversionURL(preferred, overwrite: payload.overwrite)
+        // Engines write to a scratch folder first, so a half-written PDF never appears next to the original.
+        let scratch = manager.temporaryDirectory.appendingPathComponent("wiqo-convert-\(UUID().uuidString)", isDirectory: true)
+        do { try manager.createDirectory(at: scratch, withIntermediateDirectories: true) } catch {
+            return (nil, "Geçici klasör açılamadı.", RovaError(code: "CONVERT_FAILED", message: "Dönüştürme başlatılamadı.", category: "tool_failure"))
+        }
+        defer { try? manager.removeItem(at: scratch) }
+        let produced = scratch.appendingPathComponent("out.pdf")
+        let failure: String? = await runConversion(engine, source: source, output: produced, scratch: scratch)
+        guard failure == nil,
+              let size = (try? manager.attributesOfItem(atPath: produced.path))?[.size] as? Int64, size > 0 else {
+            let reason = failure ?? "PDF üretilemedi."
+            return (nil, reason, RovaError(code: "CONVERT_FAILED", message: reason, category: "tool_failure"))
+        }
+        do {
+            if manager.fileExists(atPath: destination.path) { try manager.removeItem(at: destination) }
+            try manager.moveItem(at: produced, to: destination)
+        } catch {
+            return (nil, "PDF kaydedilemedi.", RovaError(code: "FILE_WRITE_FAILED", message: "PDF hedef klasöre kaydedilemedi.", category: "tool_failure"))
+        }
+        let entry = FileSystemEntry(path: destination.standardizedFileURL.path, name: destination.lastPathComponent, byteCount: size, modifiedAt: Date(), isDirectory: false, fileType: "pdf")
+        return (.files([entry]), "PDF hazır: \(destination.lastPathComponent)", nil)
+    }
+
+    private static func uniqueConversionURL(_ url: URL, overwrite: Bool) -> URL {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: url.path), !overwrite else { return url }
+        let base = url.deletingPathExtension().lastPathComponent
+        for index in 2...99 {
+            let candidate = url.deletingLastPathComponent().appendingPathComponent("\(base) (\(index)).pdf")
+            if !manager.fileExists(atPath: candidate.path) { return candidate }
+        }
+        return url
+    }
+
+    /// Returns nil on success, otherwise a sentence for the person.
+    private static func runConversion(_ engine: RovaFileConversion.Engine, source: URL, output: URL, scratch: URL) async -> String? {
+        switch engine {
+        case .image:
+            let result = await runProcess("/usr/bin/sips", ["-s", "format", "pdf", source.path, "--out", output.path], timeout: 60)
+            return result.status == 0 ? nil : "Görsel PDF'e çevrilemedi."
+        case .text:
+            let result = await runProcess("/usr/sbin/cupsfilter", ["-m", "application/pdf", source.path], timeout: 60)
+            guard result.status == 0, !result.stdout.isEmpty else { return "Metin PDF'e çevrilemedi." }
+            return (try? result.stdout.write(to: output)) != nil ? nil : "PDF yazılamadı."
+        case .office(let app):
+            if let soffice = libreOfficeExecutable() {
+                let result = await runProcess(soffice, ["--headless", "--convert-to", "pdf", "--outdir", scratch.path, source.path], timeout: 120)
+                let converted = scratch.appendingPathComponent(source.deletingPathExtension().lastPathComponent + ".pdf")
+                if result.status == 0, (try? FileManager.default.moveItem(at: converted, to: output)) != nil { return nil }
+            }
+            return await exportWithIWork(app: app, source: source, output: output)
+        }
+    }
+
+    private static func libreOfficeExecutable() -> String? {
+        ["/Applications/LibreOffice.app/Contents/MacOS/soffice", "/opt/homebrew/bin/soffice", "/usr/local/bin/soffice"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    private static func exportWithIWork(app: String, source: URL, output: URL) async -> String? {
+        let bundleIDs = ["Pages": "com.apple.iWork.Pages", "Numbers": "com.apple.iWork.Numbers", "Keynote": "com.apple.iWork.Keynote"]
+        guard let bundleID = bundleIDs[app], NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil else {
+            return "Bu dosyayı PDF'e çevirmek için \(app) veya LibreOffice kurulu olmalı."
+        }
+        func quoted(_ text: String) -> String { "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\"" }
+        let script = """
+        with timeout of 110 seconds
+            tell application \(quoted(app))
+                set theDocument to open POSIX file \(quoted(source.path))
+                export theDocument to POSIX file \(quoted(output.path)) as PDF
+                close theDocument saving no
+            end tell
+        end timeout
+        """
+        let result = await runProcess("/usr/bin/osascript", ["-e", script], timeout: 120)
+        if result.status == 0 { return nil }
+        return result.stderr.contains("-1743") || result.stderr.contains("not allowed")
+            ? "\(app) için Wiqo'ya Otomasyon izni ver (Sistem Ayarları › Gizlilik ve Güvenlik › Otomasyon)."
+            : "\(app) dosyayı PDF'e çeviremedi."
+    }
+
+    private struct ProcessResult { let status: Int32; let stdout: Data; let stderr: String }
+
+    private static func runProcess(_ executable: String, _ arguments: [String], timeout: TimeInterval) async -> ProcessResult {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: executable)
+                process.arguments = arguments
+                let out = Pipe(), err = Pipe()
+                process.standardOutput = out
+                process.standardError = err
+                do { try process.run() } catch {
+                    continuation.resume(returning: ProcessResult(status: -1, stdout: Data(), stderr: "başlatılamadı"))
+                    return
+                }
+                let timer = DispatchSource.makeTimerSource(queue: .global())
+                timer.schedule(deadline: .now() + timeout)
+                timer.setEventHandler { if process.isRunning { process.terminate() } }
+                timer.resume()
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                let errorData = err.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                timer.cancel()
+                continuation.resume(returning: ProcessResult(status: process.terminationStatus, stdout: data, stderr: String(data: errorData, encoding: .utf8) ?? ""))
+            }
+        }
+    }
+}

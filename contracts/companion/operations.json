@@ -549,6 +549,19 @@
       "verificationRule" : "filesystem_state"
     },
     {
+      "authority" : "device.files.copy",
+      "capability" : "device.files.copy",
+      "isDestructive" : true,
+      "operation" : "convertFile",
+      "payloadKind" : "fileOperation",
+      "requiresUserPresence" : true,
+      "supportedPlatforms" : [
+        "macOS"
+      ],
+      "timeoutClass" : "long",
+      "verificationRule" : "filesystem_state"
+    },
+    {
       "authority" : "device.files.delete",
       "capability" : "device.files.delete",
       "isDestructive" : true,

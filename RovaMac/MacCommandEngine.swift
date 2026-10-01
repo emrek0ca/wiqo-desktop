@@ -318,8 +318,8 @@ actor MacCommandEngine {
             return 20_000_000_000
         case .endBrowserTask:
             return 5_000_000_000
-        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles, .localAnalyze:
-            return 60_000_000_000
+        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles, .convertFile, .localAnalyze:
+            return 130_000_000_000
         case .listCalendarEvents, .createCalendarEvent, .listReminders, .createReminder,
              .completeReminder, .listDesktopFiles, .readDesktopFile, .listFiles, .readFile,
              .writeFile, .moveFile, .copyFile, .deleteFile, .saveTextFile:
@@ -600,6 +600,12 @@ actor MacCommandEngine {
             }
             let error = await Task.detached(priority: .userInitiated) { MacSystem.copyFile(payload) }.value
             return (nil, error == nil ? "Dosya kopyalandı." : error!.message, error)
+        case .convertFile:
+            guard case .fileOperation(let payload) = request.payload else {
+                return (nil, "Geçersiz PDF dönüştürme isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolu geçersiz.", category: "tool_failure"))
+            }
+            let outcome = await MacSystem.convertFile(payload)
+            return (outcome.data, outcome.message, outcome.error)
         case .deleteFile:
             guard case .fileOperation(let payload) = request.payload else {
                 return (nil, "Geçersiz dosya silme isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolu geçersiz.", category: "tool_failure"))
