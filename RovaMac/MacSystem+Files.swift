@@ -812,8 +812,83 @@ extension MacSystem {
                 let converted = scratch.appendingPathComponent(source.deletingPathExtension().lastPathComponent + ".pdf")
                 if result.status == 0, (try? FileManager.default.moveItem(at: converted, to: output)) != nil { return nil }
             }
-            return await exportWithIWork(app: app, source: source, output: output)
+            // Documents the system's own text engine can read need no other program at all.
+            if app == "Pages", await MainActor.run(body: { nativeDocumentPDF(source: source, output: output) }) { return nil }
+            let candidates: [(name: String, bundleID: String, microsoft: Bool)] = {
+                switch app {
+                case "Pages": return [("Pages", "com.apple.iWork.Pages", false), ("Microsoft Word", "com.microsoft.Word", true)]
+                case "Numbers": return [("Numbers", "com.apple.iWork.Numbers", false), ("Microsoft Excel", "com.microsoft.Excel", true)]
+                default: return [("Keynote", "com.apple.iWork.Keynote", false), ("Microsoft PowerPoint", "com.microsoft.Powerpoint", true)]
+                }
+            }()
+            var lastFailure: String?
+            for candidate in candidates where NSWorkspace.shared.urlForApplication(withBundleIdentifier: candidate.bundleID) != nil {
+                let failure = candidate.microsoft
+                    ? await exportWithMicrosoftOffice(app: candidate.name, source: source, output: output)
+                    : await exportWithIWork(app: candidate.name, source: source, output: output)
+                if failure == nil { return nil }
+                lastFailure = failure
+            }
+            return lastFailure ?? "Bu dosyayı PDF'e çevirmek için Pages/Numbers/Keynote, Microsoft Office veya LibreOffice kurulu olmalı."
         }
+    }
+
+    /// Word, rich text, OpenDocument and HTML files, laid out by the system's text engine onto
+    /// Letter pages. Plain and without a program in the way; tables and images come through, the
+    /// fine layout of a designed document does not.
+    @MainActor
+    private static func nativeDocumentPDF(source: URL, output: URL) -> Bool {
+        guard let attributed = try? NSAttributedString(url: source, options: [:], documentAttributes: nil), attributed.length > 0 else { return false }
+        let page = NSSize(width: 595, height: 842)
+        let margin: CGFloat = 54
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: page.width - margin * 2, height: page.height - margin * 2))
+        textView.isVerticallyResizable = true
+        textView.textContainer?.containerSize = NSSize(width: page.width - margin * 2, height: .greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textStorage?.setAttributedString(attributed)
+        textView.sizeToFit()
+        let info = NSPrintInfo()
+        info.paperSize = page
+        info.topMargin = margin; info.bottomMargin = margin; info.leftMargin = margin; info.rightMargin = margin
+        info.horizontalPagination = .fit
+        info.verticalPagination = .automatic
+        info.jobDisposition = .save
+        info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = output
+        let operation = NSPrintOperation(view: textView, printInfo: info)
+        operation.showsPrintPanel = false
+        operation.showsProgressPanel = false
+        return operation.run()
+    }
+
+    private static func exportWithMicrosoftOffice(app: String, source: URL, output: URL) async -> String? {
+        func quoted(_ text: String) -> String { "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\"" }
+        let body: String
+        switch app {
+        case "Microsoft Word":
+            body = """
+            open POSIX file \(quoted(source.path))
+            save as active document file name \(quoted(output.path)) file format format PDF
+            close active document saving no
+            """
+        case "Microsoft Excel":
+            body = """
+            open workbook workbook file name \(quoted(source.path))
+            save workbook as active workbook filename \(quoted(output.path)) file format PDF file format
+            close active workbook saving no
+            """
+        default:
+            body = """
+            open \(quoted(source.path))
+            save active presentation in \(quoted(output.path)) as save as PDF
+            close active presentation
+            """
+        }
+        let script = "with timeout of 110 seconds\n tell application \(quoted(app))\n\(body)\n end tell\nend timeout"
+        let result = await runProcess("/usr/bin/osascript", ["-e", script], timeout: 120)
+        if result.status == 0 { return nil }
+        return result.stderr.contains("-1743") || result.stderr.contains("not allowed")
+            ? "\(app) için Wiqo'ya Otomasyon izni ver (Sistem Ayarları › Gizlilik ve Güvenlik › Otomasyon)."
+            : "\(app) dosyayı PDF'e çeviremedi."
     }
 
     private static func libreOfficeExecutable() -> String? {

@@ -41,6 +41,20 @@ final class MacFileSearchTests: XCTestCase {
 
     // MARK: The Spotlight expression
 
+    func testAWordDocumentBecomesAPDFWithoutAnyOfficeProgram() async throws {
+        let text = NSAttributedString(string: "Merhaba dünya. Bu bir deneme raporudur.\n\nİkinci paragraf.")
+        let docx = try text.data(from: NSRange(location: 0, length: text.length), documentAttributes: [.documentType: NSAttributedString.DocumentType.officeOpenXML])
+        let url = root.appendingPathComponent("rapor.docx")
+        try docx.write(to: url)
+        let outcome = await MacSystem.convertFile(LocalFileOperationPayload(path: url.path))
+        XCTAssertNil(outcome.error?.message)
+        guard case .files(let entries)? = outcome.data, let entry = entries.first else { return XCTFail("no file card") }
+        XCTAssertEqual(entry.name, "rapor.pdf")
+        let bytes = try Data(contentsOf: URL(fileURLWithPath: entry.path))
+        XCTAssertEqual(String(decoding: bytes.prefix(4), as: UTF8.self), "%PDF")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "the original stays")
+    }
+
     func testAnAlternativeWordMatchesAndTheExpressionOrsTheGroups() throws {
         try make("kira_kontrat_2024.pdf")
         try make("fatura.pdf")
