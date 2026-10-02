@@ -22,7 +22,7 @@ struct RovaMacApp: App {
         MenuBarExtra {
             MacMenuView(runtime: runtime)
         } label: {
-            Image(systemName: agentAccess.isEnabled ? "bolt.circle.fill" : "arrow.triangle.2.circlepath")
+            Image(systemName: agentAccess.isActive ? "bolt.circle.fill" : "arrow.triangle.2.circlepath")
         }
         Window("Wiqo telefonu bağla", id: RovaWindowID.pairingQR) {
             PairingQRView(runtime: runtime)

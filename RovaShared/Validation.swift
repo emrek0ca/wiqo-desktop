@@ -254,6 +254,15 @@ public enum RovaValidation {
                   content.count <= 500_000, !content.contains("\0") else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Dosya yazma isteği geçersiz.")
             }
+        case .grantAgentAccess:
+            guard case .agentGrant(let grant) = request.payload,
+                  (0...AgentGrantPayload.maxMinutes).contains(grant.minutes),
+                  grant.folders.count <= AgentGrantPayload.maxFolders,
+                  grant.minutes == 0 || !grant.folders.isEmpty,
+                  grant.folders.allSatisfy(isValidLocalPath),
+                  grant.label.count <= 160, !grant.label.contains(where: { $0.isNewline || $0 == "\0" }) else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Görev izni geçersiz: en çok \(AgentGrantPayload.maxMinutes) dakika, \(AgentGrantPayload.maxFolders) klasör.")
+            }
         case .runFilePlan:
             guard case .filePlan(let plan) = request.payload, filePlanError(plan) == nil else {
                 return RovaError(code: "INVALID_PAYLOAD", message: filePlanErrorMessage(request.payload))
@@ -830,7 +839,7 @@ public enum RovaCommandAuthority {
         case .saveTextFile, .writeFile: return "device.files.write"
         case .moveDesktopFile, .renameDesktopFile, .moveFile: return "device.files.move"
         case .copyFile, .convertFile: return "device.files.copy"
-        case .runFilePlan: return "device.files.list"
+        case .runFilePlan, .grantAgentAccess: return "device.files.list"
         case .deleteFile: return "device.files.delete"
         case .saveArtifact: return "artifact.save"
         case .readDocument: return "document.read"
@@ -860,7 +869,7 @@ public enum RovaCommandAuthority {
         switch type {
         case .lockMac, .sleepMac, .displaySleep, .sendMessage, .sendEmail, .createNote,
              .createCalendarEvent, .createReminder, .completeReminder, .moveDesktopFile, .renameDesktopFile, .saveArtifact,
-             .editDocument, .writeFile, .moveFile, .copyFile, .convertFile, .runFilePlan, .deleteFile, .executeCode,
+             .editDocument, .writeFile, .moveFile, .copyFile, .convertFile, .runFilePlan, .grantAgentAccess, .deleteFile, .executeCode,
              .clickScreen, .runShortcut:
             return true
         case .controlApplication:

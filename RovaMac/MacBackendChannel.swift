@@ -338,7 +338,9 @@ final class MacBackendChannel: NSObject {
             "capabilities": info.capabilities,
             // Optional protocol features; an older backend ignores the field.
             "features": (CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2] : [])
-                + (AgentAccessStore.shared.isEnabled ? [AgentAccessStore.feature] : []),
+                + (AgentAccessStore.shared.isEnabled ? [AgentAccessStore.feature] : [])
+                + (AgentAccessStore.shared.isActive && !AgentAccessStore.shared.isEnabled ? [AgentAccessStore.taskActiveFeature] : [])
+                + [AgentAccessStore.grantFeature],
             "terminalProfile": terminalProfileJSON.flatMap { try? JSONSerialization.jsonObject(with: $0) } ?? NSNull(),
             "applicationTargets": info.applicationTargets.map { target in
                 [
@@ -524,8 +526,12 @@ final class MacBackendChannel: NSObject {
             let error = RovaError(code: code, message: message, category: "permission")
             self?.sendInteractiveCommandResult(commandId: payload.commandId, result: CommandResult(commandID: request.id, status: .denied, message: message, startedAt: now, finishedAt: now, error: error), on: task)
         }
-        guard AgentAccessStore.shared.isEnabled else {
-            deny("FULL_ACCESS_DISABLED", "Bu PC'de tam yetki kapalı; Wiqo Mac ayarlarından açılmadan ajan komut çalıştıramaz.")
+        guard AgentAccessStore.shared.isActive else {
+            deny("FULL_ACCESS_DISABLED", "Bu PC'de tam yetki kapalı ve geçerli bir görev izni yok; telefondan onaylanmadan ajan komut çalıştıramaz.")
+            return
+        }
+        if let reason = AgentAccessStore.shared.denial(for: request) {
+            deny("AGENT_SCOPE", reason)
             return
         }
         let capability = RovaCommandAuthority.capability(for: request.type, payload: request.payload)

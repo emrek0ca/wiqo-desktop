@@ -600,6 +600,12 @@ actor MacCommandEngine {
             }
             let error = await Task.detached(priority: .userInitiated) { MacSystem.copyFile(payload) }.value
             return (nil, error == nil ? "Dosya kopyalandı." : error!.message, error)
+        case .grantAgentAccess:
+            guard case .agentGrant(let grant) = request.payload else {
+                return (nil, "Geçersiz görev izni.", RovaError(code: "INVALID_PAYLOAD", message: "Görev izni geçersiz.", category: "tool_failure"))
+            }
+            await MainActor.run { AgentAccessStore.shared.grant(minutes: grant.minutes, folders: grant.folders, label: grant.label) }
+            return (nil, grant.minutes == 0 ? "PC görev izni kapatıldı." : "PC görev izni verildi (\(grant.minutes) dk).", nil)
         case .runFilePlan:
             guard case .filePlan(let plan) = request.payload else {
                 return (nil, "Geçersiz plan isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Plan geçersiz.", category: "tool_failure"))

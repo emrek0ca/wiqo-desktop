@@ -125,7 +125,7 @@ public enum RovaOperationManifest {
         case .saveTextFile, .writeFile: return "device.files.write"
         case .moveDesktopFile, .renameDesktopFile, .moveFile: return "device.files.move"
         case .copyFile, .convertFile: return "device.files.copy"
-        case .runFilePlan: return "device.files.list"
+        case .runFilePlan, .grantAgentAccess: return "device.files.list"
         case .deleteFile: return "device.files.delete"
         case .saveArtifact: return "artifact.save"
         case .readDocument: return "document.read"
@@ -169,6 +169,7 @@ public enum RovaOperationManifest {
         case .listDesktopFiles: return "none"
         case .listFiles, .readFile, .sendFileToPhone, .writeFile, .moveFile, .copyFile, .convertFile, .deleteFile: return "fileOperation"
         case .runFilePlan: return "filePlan"
+        case .grantAgentAccess: return "agentGrant"
         case .searchFiles: return "fileSearch"
         case .editDocument: return "document"
         case .executeCode: return "codeExecution"
@@ -188,7 +189,7 @@ public enum RovaOperationManifest {
         case .lockMac, .sleepMac, .displaySleep, .sendMessage, .sendEmail, .createNote,
              .createCalendarEvent, .createReminder, .completeReminder, .moveDesktopFile,
              .renameDesktopFile, .saveArtifact, .editDocument, .writeFile, .moveFile,
-             .copyFile, .convertFile, .runFilePlan, .deleteFile, .executeCode, .clickScreen, .runShortcut:
+             .copyFile, .convertFile, .runFilePlan, .grantAgentAccess, .deleteFile, .executeCode, .clickScreen, .runShortcut:
             return true
         default:
             return false
@@ -225,6 +226,7 @@ public enum RovaOperationManifest {
         case .setClipboardText: return "clipboard_readback"
         case .getClipboardText, .getClipboardHistory: return "clipboard_snapshot"
         case .saveTextFile, .writeFile, .moveFile, .copyFile, .convertFile, .deleteFile, .saveArtifact, .runFilePlan: return "filesystem_state"
+        case .grantAgentAccess: return "agent_grant"
         case .readDesktopFile, .readDocument, .listDesktopFiles, .listFiles, .searchFiles, .readFile: return "filesystem_snapshot"
         case .sendFileToPhone: return "artifact_delivery"
         case .editDocument: return "document_content"

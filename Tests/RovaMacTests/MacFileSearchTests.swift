@@ -106,6 +106,30 @@ final class MacFileSearchTests: XCTestCase {
         XCTAssertNotNil(RovaValidation.filePlanError(FilePlanPayload(steps: [FilePlanStep(id: "s1", op: "search", query: "x"), FilePlanStep(id: "s2", op: "send", path: "$s1*", transferId: UUID().uuidString)])), "no fan-out for send")
     }
 
+    @MainActor
+    func testATaskGrantCoversFileWorkInItsFoldersOnly() throws {
+        let store = AgentAccessStore.shared
+        store.revokeTaskGrant()
+        func request(_ type: CommandType, _ payload: CommandPayload) -> CommandRequest { CommandRequest(type: type, payload: payload) }
+        let inside = root.appendingPathComponent("a.pdf").path
+        XCTAssertNotNil(store.denial(for: request(.readFile, .fileOperation(LocalFileOperationPayload(path: inside)))), "no grant, no agent")
+        store.grant(minutes: 5, folders: [root.path], label: "deneme")
+        defer { store.revokeTaskGrant() }
+        XCTAssertTrue(store.isActive)
+        XCTAssertNil(store.denial(for: request(.readFile, .fileOperation(LocalFileOperationPayload(path: inside)))))
+        XCTAssertNil(store.denial(for: request(.moveFile, .fileOperation(LocalFileOperationPayload(path: inside, destination: root.appendingPathComponent("b.pdf").path)))))
+        XCTAssertNotNil(store.denial(for: request(.readFile, .fileOperation(LocalFileOperationPayload(path: "/etc/hosts")))), "outside the folders")
+        XCTAssertNotNil(store.denial(for: request(.moveFile, .fileOperation(LocalFileOperationPayload(path: inside, destination: "/tmp/x.pdf")))), "destination outside")
+        XCTAssertNotNil(store.denial(for: request(.deleteFile, .fileOperation(LocalFileOperationPayload(path: inside)))), "never a delete")
+        XCTAssertNotNil(store.denial(for: request(.controlApplication, .applicationControl(ApplicationControlPayload(action: .quit, target: "Safari")))), "no apps under a file grant")
+        XCTAssertNil(store.denial(for: request(.searchFiles, .fileSearch(FileSearchPayload(query: "x", folder: root.path)))))
+        XCTAssertNotNil(store.denial(for: request(.searchFiles, .fileSearch(FileSearchPayload(query: "x")))), "a search without a folder would reach Desktop, Documents and Downloads")
+        store.revokeTaskGrant()
+        XCTAssertFalse(store.isActive)
+        XCTAssertNotNil(RovaValidation.validate(CommandRequest(type: .grantAgentAccess, payload: .agentGrant(AgentGrantPayload(minutes: 90, folders: [root.path], label: "x")))), "at most 30 minutes")
+        XCTAssertNil(RovaValidation.validate(CommandRequest(type: .grantAgentAccess, payload: .agentGrant(AgentGrantPayload(minutes: 10, folders: ["~/Desktop"], label: "deneme")))))
+    }
+
     func testAPlanThatCouldHideAnActionIsRefused() {
         func error(_ steps: [FilePlanStep]) -> String? { RovaValidation.filePlanError(FilePlanPayload(steps: steps)) }
         XCTAssertNotNil(error([]))

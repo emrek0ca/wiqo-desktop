@@ -575,6 +575,19 @@
       "verificationRule" : "filesystem_state"
     },
     {
+      "authority" : "device.files.list",
+      "capability" : "device.files.list",
+      "isDestructive" : true,
+      "operation" : "grantAgentAccess",
+      "payloadKind" : "agentGrant",
+      "requiresUserPresence" : true,
+      "supportedPlatforms" : [
+        "macOS"
+      ],
+      "timeoutClass" : "short",
+      "verificationRule" : "agent_grant"
+    },
+    {
       "authority" : "device.files.delete",
       "capability" : "device.files.delete",
       "isDestructive" : true,

@@ -82,6 +82,7 @@ final class MacRuntime: ObservableObject {
     private var applicationChangeRefreshTask: Task<Void, Never>?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var agentAccessObserver: AnyCancellable?
+    private var taskGrantObserver: AnyCancellable?
     private var shortcutInstallRefreshTask: Task<Void, Never>?
     private var pairingRenewalTask: Task<Void, Never>?
     private var pathMonitor: NWPathMonitor?
@@ -444,6 +445,10 @@ final class MacRuntime: ObservableObject {
         if agentAccessObserver == nil {
             // The backend learns about full access from the registration's feature list.
             agentAccessObserver = AgentAccessStore.shared.$isEnabled.dropFirst().removeDuplicates().sink { [weak self] _ in
+                Task { @MainActor in self?.broadcastDeviceInfo() }
+            }
+            // A task grant from the phone (or its end) changes the feature list the same way.
+            taskGrantObserver = AgentAccessStore.shared.$taskGrant.dropFirst().removeDuplicates().sink { [weak self] _ in
                 Task { @MainActor in self?.broadcastDeviceInfo() }
             }
         }

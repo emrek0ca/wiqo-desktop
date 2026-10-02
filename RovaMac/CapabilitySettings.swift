@@ -120,7 +120,28 @@ final class AgentAccessStore: ObservableObject {
     static let feature = "agent.fullAccess"
     private static let key = "wiqo.agentFullAccess"
 
+    /// Registration feature: this Mac accepts a task grant from the phone.
+    static let grantFeature = "agent.taskGrant"
+    /// Registration feature while a task grant is running: the backend executes the chat's own steps here without the phone.
+    static let taskActiveFeature = "agent.taskActive"
+
+    /// What the phone approved for one task: where the agent may touch files, until when.
+    struct TaskGrant: Equatable {
+        let folders: [String]
+        let expiresAt: Date
+        let label: String
+    }
+
+    /// Only these may run under a task grant (the permanent switch above still allows everything).
+    /// Files and documents; never a delete, never apps, terminal or the screen.
+    private static let taskTypes: Set<CommandType> = [
+        .ping, .getSystemStatus, .listDesktopFiles, .readDesktopFile, .listFiles, .searchFiles, .readFile,
+        .sendFileToPhone, .moveFile, .copyFile, .convertFile, .runFilePlan, .writeFile, .readDocument
+    ]
+
     @Published private(set) var isEnabled: Bool
+    @Published private(set) var taskGrant: TaskGrant?
+    private var expiry: Task<Void, Never>?
     /// The agent step running right now, for the menu bar.
     @Published private(set) var currentStep: String?
     @Published private(set) var completedSteps = 0
@@ -134,6 +155,67 @@ final class AgentAccessStore: ObservableObject {
         isEnabled = enabled
         if !enabled { currentStep = nil }
         UserDefaults.standard.set(enabled, forKey: Self.key)
+    }
+
+    /// The backend may run agent commands: the permanent switch, or a task grant that has not expired.
+    var isActive: Bool { isEnabled || (taskGrant.map { $0.expiresAt > Date() } ?? false) }
+
+    /// A signed phone approval: `minutes` of work in these folders; 0 withdraws it.
+    func grant(minutes: Int, folders: [String], label: String) {
+        expiry?.cancel()
+        guard minutes > 0 else {
+            taskGrant = nil
+            currentStep = nil
+            return
+        }
+        let grant = TaskGrant(folders: folders, expiresAt: Date().addingTimeInterval(Double(minutes) * 60), label: label)
+        taskGrant = grant
+        expiry = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(minutes) * 60 * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { if self?.taskGrant == grant { self?.taskGrant = nil; self?.currentStep = nil } }
+        }
+    }
+
+    func revokeTaskGrant() { grant(minutes: 0, folders: [], label: "") }
+
+    /// Why an agent command may not run, or nil. With the permanent switch everything may; under a
+    /// task grant only file work, and only inside the granted folders.
+    func denial(for request: CommandRequest) -> String? {
+        if isEnabled { return nil }
+        guard let grant = taskGrant, grant.expiresAt > Date() else { return "PC görev izni bitti; telefondan yeniden onayla." }
+        guard Self.taskTypes.contains(request.type) else { return "Bu işlem görev izninin kapsamında değil." }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        func absolute(_ raw: String) -> String {
+            let expanded = raw == "~" ? home : raw.hasPrefix("~/") ? home + String(raw.dropFirst(1)) : raw
+            return URL(fileURLWithPath: expanded).standardizedFileURL.path
+        }
+        let roots = grant.folders.map(absolute)
+        func inside(_ raw: String) -> Bool {
+            let path = absolute(raw)
+            return roots.contains { path == $0 || path.hasPrefix($0 + "/") }
+        }
+        let ownFolders = ["Desktop", "Documents", "Downloads"].map { home + "/" + $0 }
+        func searchScopeOK(_ folder: String?) -> Bool {
+            folder.map(inside) ?? ownFolders.allSatisfy { own in roots.contains { own == $0 || own.hasPrefix($0 + "/") } }
+        }
+        switch request.payload {
+        case .fileOperation(let operation):
+            return inside(operation.path) && (operation.destination.map(inside) ?? true) ? nil : "Bu yol görev izninin klasörlerinin dışında."
+        case .fileSearch(let search):
+            return searchScopeOK(search.folder) ? nil : "Arama görev izninin klasörlerinin dışına çıkıyor; klasör belirt."
+        case .fileName:
+            return inside("~/Desktop") ? nil : "Masaüstü görev izninde değil."
+        case .filePlan(let plan):
+            let allowed = plan.steps.allSatisfy { step in
+                (step.path.map { $0.hasPrefix("$") || inside($0) } ?? true)
+                    && (step.destination.map(inside) ?? true)
+                    && (step.op == "search" ? searchScopeOK(step.folder) : (step.folder.map(inside) ?? true))
+            }
+            return allowed ? nil : "Plan görev izninin klasörlerinin dışına çıkıyor."
+        default:
+            return nil
+        }
     }
 
     func stepStarted(_ label: String) { currentStep = label }

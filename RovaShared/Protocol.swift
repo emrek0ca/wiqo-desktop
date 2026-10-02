@@ -52,6 +52,7 @@ public enum CommandType: String, Codable, CaseIterable, Sendable {
     case copyFile
     case convertFile
     case runFilePlan
+    case grantAgentAccess
     case deleteFile
     case executeCode
     case captureScreen
@@ -779,6 +780,24 @@ public struct PlanResult: Codable, Equatable, Sendable {
     }
 }
 
+/// The phone's one-time approval for the PC agent to work on its own for a while (rova-backend
+/// src/agent/pcAgent.ts): where it may touch files and for how long. `minutes: 0` withdraws it.
+public struct AgentGrantPayload: Codable, Equatable, Sendable {
+    public let minutes: Int
+    public let folders: [String]
+    /// What the person asked for, shown in the Mac's menu bar while the grant lasts.
+    public let label: String
+
+    public static let maxMinutes = 30
+    public static let maxFolders = 4
+
+    public init(minutes: Int, folders: [String], label: String) {
+        self.minutes = minutes
+        self.folders = folders
+        self.label = label
+    }
+}
+
 public struct CodeExecutionPayload: Codable, Equatable, Sendable {
     public let language: String
     public let code: String
@@ -1282,6 +1301,7 @@ public enum CommandPayload: Codable, Equatable, Sendable {
     case fileOperation(LocalFileOperationPayload)
     case fileSearch(FileSearchPayload)
     case filePlan(FilePlanPayload)
+    case agentGrant(AgentGrantPayload)
     case codeExecution(CodeExecutionPayload)
     case screenCapture(ScreenCapturePayload)
     case shortcut(ShortcutPayload)
@@ -1297,7 +1317,7 @@ public enum CommandPayload: Codable, Equatable, Sendable {
     case email(EmailPayload)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, fileSearch, filePlan, codeExecution, screenCapture, shortcut, uiElement, screenClick, computerDesktop, computerBrowser, browserTask, localAnalysis, reminder, completeReminder, note, email }
+    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, fileSearch, filePlan, agentGrant, codeExecution, screenCapture, shortcut, uiElement, screenClick, computerDesktop, computerBrowser, browserTask, localAnalysis, reminder, completeReminder, note, email }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1341,6 +1361,8 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             self = .fileSearch(try container.decode(FileSearchPayload.self, forKey: .value))
         case .filePlan:
             self = .filePlan(try container.decode(FilePlanPayload.self, forKey: .value))
+        case .agentGrant:
+            self = .agentGrant(try container.decode(AgentGrantPayload.self, forKey: .value))
         case .codeExecution:
             self = .codeExecution(try container.decode(CodeExecutionPayload.self, forKey: .value))
         case .screenCapture:
@@ -1428,6 +1450,9 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             try container.encode(payload, forKey: .value)
         case .filePlan(let payload):
             try container.encode(Kind.filePlan, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .agentGrant(let payload):
+            try container.encode(Kind.agentGrant, forKey: .kind)
             try container.encode(payload, forKey: .value)
         case .codeExecution(let payload):
             try container.encode(Kind.codeExecution, forKey: .kind)

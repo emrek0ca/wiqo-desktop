@@ -22,15 +22,17 @@ struct MacMenuView: View {
             } else if let detail = runtime.startupDetail, runtime.serviceState != .starting {
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
-            if agentAccess.isEnabled {
+            if agentAccess.isActive {
                 Divider()
-                Label(agentAccess.currentStep.map { "Ajan çalışıyor: \($0)" } ?? "Tam yetki açık", systemImage: "bolt.shield.fill")
+                Label(agentAccess.currentStep.map { "Ajan çalışıyor: \($0)" }
+                      ?? (agentAccess.isEnabled ? "Tam yetki açık" : "Görev izni: \(agentAccess.taskGrant?.label ?? "")"), systemImage: "bolt.shield.fill")
                     .font(.subheadline)
                     .foregroundStyle(.orange)
                 Button {
                     agentAccess.setEnabled(false)
+                    agentAccess.revokeTaskGrant()
                 } label: {
-                    Label("Durdur ve tam yetkiyi kapat", systemImage: "stop.circle")
+                    Label(agentAccess.isEnabled ? "Durdur ve tam yetkiyi kapat" : "Görev iznini bitir", systemImage: "stop.circle")
                 }
             }
             Divider()

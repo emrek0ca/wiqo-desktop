@@ -895,7 +895,7 @@ struct CopilotView: View {
             return "app.fill"
         case .listDesktopFiles, .readDesktopFile, .moveDesktopFile, .renameDesktopFile, .saveTextFile,
              .saveArtifact, .readDocument, .editDocument, .listFiles, .searchFiles, .readFile, .sendFileToPhone, .writeFile, .moveFile,
-             .copyFile, .convertFile, .runFilePlan, .deleteFile:
+             .copyFile, .convertFile, .runFilePlan, .grantAgentAccess, .deleteFile:
             return "doc.fill"
         case .executeCode: return "terminal"
         case .setClipboardText, .getClipboardText, .getClipboardHistory: return "doc.on.clipboard"
