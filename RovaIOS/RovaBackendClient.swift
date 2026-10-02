@@ -491,6 +491,34 @@ enum RovaBackendClient {
         let summary: String?
     }
 
+    struct AgentBudget: Decodable, Sendable {
+        let paused: Bool
+        let usedTokens: Int
+        let limitTokens: Int
+        let tasksToday: Int
+    }
+
+    struct AgentAuditEntry: Decodable, Identifiable, Sendable {
+        let id: Int
+        let kind: String
+        let summary: String
+        let createdAt: String
+    }
+
+    static func fetchAgentBudget() async throws -> AgentBudget {
+        try await authorizedGet("agents/budget", as: AgentBudget.self)
+    }
+
+    static func setAgentPaused(_ paused: Bool) async throws -> AgentBudget {
+        let data = try await authorizedPut("agents/pause", body: ["paused": paused])
+        return try JSONDecoder().decode(AgentBudget.self, from: data)
+    }
+
+    static func fetchAgentAudit() async throws -> [AgentAuditEntry] {
+        struct Response: Decodable { let entries: [AgentAuditEntry] }
+        return try await authorizedGet("agents/audit?limit=30", as: Response.self).entries
+    }
+
     static func fetchWatchSources() async throws -> [WatchSource] {
         struct Response: Decodable { let sources: [WatchSource] }
         return try await authorizedGet("agents/watch", as: Response.self).sources

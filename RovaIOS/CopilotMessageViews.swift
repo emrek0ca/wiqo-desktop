@@ -1133,6 +1133,8 @@ struct NamedAgentsView: View {
     @State private var agents: [RovaBackendClient.NamedAgent] = []
     @State private var watch: [RovaBackendClient.WatchSource] = []
     @State private var events: [RovaBackendClient.AgentEvent] = []
+    @State private var budget: RovaBackendClient.AgentBudget?
+    @State private var auditEntries: [RovaBackendClient.AgentAuditEntry] = []
     @State private var loaded = false
     @State private var notice: String?
     @State private var agentToDelete: RovaBackendClient.NamedAgent?
@@ -1141,6 +1143,20 @@ struct NamedAgentsView: View {
     var body: some View {
         List {
             Section {
+                if let budget {
+                    Toggle(isOn: Binding(
+                        get: { !budget.paused },
+                        set: { value in Task { await setPaused(!value) } }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Kendi başına çalış")
+                            Text(budget.paused ? "Duraklatıldı: izleme ve rutinler durdu"
+                                 : "Bugün \(budget.usedTokens / 1000) bin / \(budget.limitTokens / 1000) bin birim kullandı")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 ForEach(watch) { source in
                     Toggle(isOn: Binding(
                         get: { source.enabled },
@@ -1159,6 +1175,17 @@ struct NamedAgentsView: View {
                         Text(event.summary ?? event.title).font(.subheadline)
                         Text(Self.statusLabel(event.status)).font(.caption).foregroundStyle(.secondary)
                     }
+                }
+                if !auditEntries.isEmpty {
+                    DisclosureGroup("Ne yaptı?") {
+                        ForEach(auditEntries.prefix(12)) { entry in
+                            Text(entry.summary)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 2)
+                        }
+                    }
+                    .font(.subheadline.weight(.medium))
                 }
             } header: {
                 Text("Wiqo seni izliyor")
@@ -1270,7 +1297,15 @@ struct NamedAgentsView: View {
         agents = (try? await RovaBackendClient.fetchAgents()) ?? agents
         watch = (try? await RovaBackendClient.fetchWatchSources()) ?? watch
         events = (try? await RovaBackendClient.fetchAgentEvents()) ?? events
+        budget = (try? await RovaBackendClient.fetchAgentBudget()) ?? budget
+        auditEntries = (try? await RovaBackendClient.fetchAgentAudit()) ?? auditEntries
         loaded = true
+    }
+
+    private func setPaused(_ paused: Bool) async {
+        if let updated = try? await RovaBackendClient.setAgentPaused(paused) { budget = updated }
+        else { notice = "Ayar kaydedilemedi." }
+        auditEntries = (try? await RovaBackendClient.fetchAgentAudit()) ?? auditEntries
     }
 
     private func setWatch(_ source: String, enabled: Bool) async {
