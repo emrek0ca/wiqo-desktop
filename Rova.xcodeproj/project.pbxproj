@@ -96,6 +96,7 @@
 		D30000000000000000000021 /* MacSystem+Permissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000081 /* MacSystem+Permissions.swift */; };
 		D30000000000000000000022 /* MacSystem+Device.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000082 /* MacSystem+Device.swift */; };
 		D30000000000000000000023 /* MacSystem+Files.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000083 /* MacSystem+Files.swift */; };
+		D30000000000000000000C0F /* MacSystem+Plan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C0E /* MacSystem+Plan.swift */; };
 		D30000000000000000000C08 /* MacSystem+Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C07 /* MacSystem+Search.swift */; };
 		D30000000000000000000024 /* MacSystem+Personal.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000084 /* MacSystem+Personal.swift */; };
 		D30000000000000000000025 /* MacSystem+UIControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000085 /* MacSystem+UIControl.swift */; };
@@ -255,6 +256,7 @@
 		D30000000000000000000081 /* MacSystem+Permissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Permissions.swift"; sourceTree = "<group>"; };
 		D30000000000000000000082 /* MacSystem+Device.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Device.swift"; sourceTree = "<group>"; };
 		D30000000000000000000083 /* MacSystem+Files.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Files.swift"; sourceTree = "<group>"; };
+		D30000000000000000000C0E /* MacSystem+Plan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Plan.swift"; sourceTree = "<group>"; };
 		D30000000000000000000C07 /* MacSystem+Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Search.swift"; sourceTree = "<group>"; };
 		D30000000000000000000084 /* MacSystem+Personal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Personal.swift"; sourceTree = "<group>"; };
 		D30000000000000000000085 /* MacSystem+UIControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+UIControl.swift"; sourceTree = "<group>"; };
@@ -365,6 +367,7 @@
 				D30000000000000000000082 /* MacSystem+Device.swift */,
 				D30000000000000000000083 /* MacSystem+Files.swift */,
 				D30000000000000000000C07 /* MacSystem+Search.swift */,
+				D30000000000000000000C0E /* MacSystem+Plan.swift */,
 				D30000000000000000000084 /* MacSystem+Personal.swift */,
 				D30000000000000000000085 /* MacSystem+UIControl.swift */,
 				D30000000000000000000086 /* MacSystem+Code.swift */,
@@ -710,6 +713,7 @@
 				D30000000000000000000022 /* MacSystem+Device.swift in Sources */,
 				D30000000000000000000023 /* MacSystem+Files.swift in Sources */,
 				D30000000000000000000C08 /* MacSystem+Search.swift in Sources */,
+				D30000000000000000000C0F /* MacSystem+Plan.swift in Sources */,
 				D30000000000000000000024 /* MacSystem+Personal.swift in Sources */,
 				E50000000000000000000001 /* LocalBrowserWorkerClient.swift in Sources */,
 				D30000000000000000000025 /* MacSystem+UIControl.swift in Sources */,

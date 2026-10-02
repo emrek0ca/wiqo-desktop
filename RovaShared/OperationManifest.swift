@@ -125,6 +125,7 @@ public enum RovaOperationManifest {
         case .saveTextFile, .writeFile: return "device.files.write"
         case .moveDesktopFile, .renameDesktopFile, .moveFile: return "device.files.move"
         case .copyFile, .convertFile: return "device.files.copy"
+        case .runFilePlan: return "device.files.list"
         case .deleteFile: return "device.files.delete"
         case .saveArtifact: return "artifact.save"
         case .readDocument: return "document.read"
@@ -167,6 +168,7 @@ public enum RovaOperationManifest {
         case .saveArtifact: return "artifactFile"
         case .listDesktopFiles: return "none"
         case .listFiles, .readFile, .sendFileToPhone, .writeFile, .moveFile, .copyFile, .convertFile, .deleteFile: return "fileOperation"
+        case .runFilePlan: return "filePlan"
         case .searchFiles: return "fileSearch"
         case .editDocument: return "document"
         case .executeCode: return "codeExecution"
@@ -186,7 +188,7 @@ public enum RovaOperationManifest {
         case .lockMac, .sleepMac, .displaySleep, .sendMessage, .sendEmail, .createNote,
              .createCalendarEvent, .createReminder, .completeReminder, .moveDesktopFile,
              .renameDesktopFile, .saveArtifact, .editDocument, .writeFile, .moveFile,
-             .copyFile, .convertFile, .deleteFile, .executeCode, .clickScreen, .runShortcut:
+             .copyFile, .convertFile, .runFilePlan, .deleteFile, .executeCode, .clickScreen, .runShortcut:
             return true
         default:
             return false
@@ -204,7 +206,7 @@ public enum RovaOperationManifest {
 
     private static func timeoutClass(for operation: CommandType) -> RovaOperationTimeoutClass {
         switch operation {
-        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles, .sendFileToPhone, .convertFile, .computerDesktop, .computerBrowser, .localAnalyze:
+        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles, .sendFileToPhone, .convertFile, .runFilePlan, .computerDesktop, .computerBrowser, .localAnalyze:
             return .long
         case .listCalendarEvents, .createCalendarEvent, .listReminders, .createReminder,
              .completeReminder, .listDesktopFiles, .readDesktopFile, .listFiles, .readFile,
@@ -222,7 +224,7 @@ public enum RovaOperationManifest {
         case .setVolume, .toggleMute, .setBrightness, .mediaControl: return "system_state"
         case .setClipboardText: return "clipboard_readback"
         case .getClipboardText, .getClipboardHistory: return "clipboard_snapshot"
-        case .saveTextFile, .writeFile, .moveFile, .copyFile, .convertFile, .deleteFile, .saveArtifact: return "filesystem_state"
+        case .saveTextFile, .writeFile, .moveFile, .copyFile, .convertFile, .deleteFile, .saveArtifact, .runFilePlan: return "filesystem_state"
         case .readDesktopFile, .readDocument, .listDesktopFiles, .listFiles, .searchFiles, .readFile: return "filesystem_snapshot"
         case .sendFileToPhone: return "artifact_delivery"
         case .editDocument: return "document_content"

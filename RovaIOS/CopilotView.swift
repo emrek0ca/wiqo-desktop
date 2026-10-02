@@ -895,7 +895,7 @@ struct CopilotView: View {
             return "app.fill"
         case .listDesktopFiles, .readDesktopFile, .moveDesktopFile, .renameDesktopFile, .saveTextFile,
              .saveArtifact, .readDocument, .editDocument, .listFiles, .searchFiles, .readFile, .sendFileToPhone, .writeFile, .moveFile,
-             .copyFile, .convertFile, .deleteFile:
+             .copyFile, .convertFile, .runFilePlan, .deleteFile:
             return "doc.fill"
         case .executeCode: return "terminal"
         case .setClipboardText, .getClipboardText, .getClipboardHistory: return "doc.on.clipboard"
@@ -1928,6 +1928,19 @@ struct CopilotView: View {
                 do {
                     guard let deviceID = model.pairedDeviceIDForTransfer else { throw RovaBackendError.invalidResponse }
                     try await RovaBackendClient.registerFileTransfer(commandID: step.id, deviceID: deviceID)
+                    result = await model.send(step.type, payload: step.payload, commandID: step.id)
+                } catch {
+                    let now = Date()
+                    result = CommandResult(commandID: step.id, status: .failed, message: "Dosya aktarımı başlatılamadı.", startedAt: now, finishedAt: now, error: RovaError(code: "TRANSFER_UNAVAILABLE", message: "Dosya aktarımı başlatılamadı."))
+                }
+            } else if step.type == .runFilePlan, case .filePlan(let plan) = step.payload {
+                // Every file the plan sends needs its transfer registered before the Mac uploads it.
+                do {
+                    let transfers = plan.steps.filter { $0.op == "send" }.compactMap { $0.transferId.flatMap(UUID.init(uuidString:)) }
+                    if !transfers.isEmpty {
+                        guard let deviceID = model.pairedDeviceIDForTransfer else { throw RovaBackendError.invalidResponse }
+                        for transfer in transfers { try await RovaBackendClient.registerFileTransfer(commandID: transfer, deviceID: deviceID) }
+                    }
                     result = await model.send(step.type, payload: step.payload, commandID: step.id)
                 } catch {
                     let now = Date()

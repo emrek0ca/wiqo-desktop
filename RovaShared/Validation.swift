@@ -254,6 +254,10 @@ public enum RovaValidation {
                   content.count <= 500_000, !content.contains("\0") else {
                 return RovaError(code: "INVALID_PAYLOAD", message: "Dosya yazma isteği geçersiz.")
             }
+        case .runFilePlan:
+            guard case .filePlan(let plan) = request.payload, filePlanError(plan) == nil else {
+                return RovaError(code: "INVALID_PAYLOAD", message: filePlanErrorMessage(request.payload))
+            }
         case .convertFile:
             // The destination is optional (the PDF lands next to the source); when given it must be a .pdf path.
             guard case .fileOperation(let operation) = request.payload,
@@ -509,6 +513,60 @@ public enum RovaValidation {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 255, trimmed != ".", trimmed != ".." else { return false }
         return !trimmed.contains("/") && !trimmed.contains("\\") && !trimmed.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 })
+    }
+
+    /// Why a file plan is refused, or nil when it is well formed. Bindings ("$s1") are legal only in a
+    /// step's `path`, and only for an earlier step whose result holds files.
+    public static func filePlanError(_ plan: FilePlanPayload) -> String? {
+        guard (1...FilePlanPayload.maxSteps).contains(plan.steps.count) else { return "Plan 1–\(FilePlanPayload.maxSteps) adım içermeli." }
+        var earlier: [String: String] = [:]
+        for step in plan.steps {
+            guard step.id.range(of: #"^[a-z][a-z0-9]{0,7}$"#, options: .regularExpression) != nil, earlier[step.id] == nil else { return "Adım kimliği geçersiz veya tekrarlanıyor." }
+            guard FilePlanPayload.operations.contains(step.op) else { return "Bilinmeyen plan işlemi: \(step.op)." }
+            /// "$s1" is the first file of an earlier step; "$s1*" is all of them (up to 20), for move, copy and convert.
+            func pathOK(_ value: String?, allowAll: Bool = false) -> Bool {
+                guard let value else { return false }
+                if value.hasPrefix("$") {
+                    let all = value.hasSuffix("*")
+                    guard !all || allowAll else { return false }
+                    let name = String(value.dropFirst().dropLast(all ? 1 : 0))
+                    return earlier[name].map(FilePlanPayload.producesFiles.contains) ?? false
+                }
+                return isValidLocalPath(value)
+            }
+            switch step.op {
+            case "search":
+                guard (step.query ?? "").isEmpty || isSafeText(step.query ?? "", maxLength: 120),
+                      !(step.query ?? "").trimmingCharacters(in: .whitespaces).isEmpty || step.kind != nil || step.folder != nil || step.modifiedWithinDays != nil,
+                      (step.alternatives ?? []).count <= FileSearchPayload.maxAlternatives,
+                      (step.alternatives ?? []).allSatisfy({ isSafeText($0, maxLength: 60) }),
+                      step.folder.map({ isValidLocalPath($0) }) ?? true,
+                      step.kind.map({ FileSearchPayload.kinds.contains($0) }) ?? true,
+                      step.modifiedWithinDays.map({ (1...3_650).contains($0) }) ?? true,
+                      step.sort.map({ FileSearchPayload.sorts.contains($0) }) ?? true else { return "Arama adımı geçersiz (\(step.id))." }
+            case "list":
+                guard let path = step.path, isValidLocalPath(path) else { return "Listeleme adımı bir klasör yolu ister (\(step.id))." }
+            case "read":
+                guard pathOK(step.path) else { return "read adımı geçerli bir dosya yolu ya da önceki adıma bağ ister (\(step.id))." }
+            case "send":
+                guard pathOK(step.path), let transfer = step.transferId, UUID(uuidString: transfer) != nil else { return "send adımı bir dosya yolu (ya da bağ) ve aktarım kimliği ister (\(step.id))." }
+            case "convert":
+                let all = step.path?.hasSuffix("*") ?? false
+                guard pathOK(step.path, allowAll: true), step.path.map({ $0.hasPrefix("$") || RovaFileConversion.canConvert(path: $0) }) ?? false,
+                      all ? step.destination == nil : (step.destination.map({ isValidLocalPath($0) && $0.lowercased().hasSuffix(".pdf") }) ?? true) else { return "Çevirme adımı geçersiz (\(step.id))." }
+            default: // move, copy
+                let all = step.path?.hasSuffix("*") ?? false
+                guard pathOK(step.path, allowAll: true), let destination = step.destination, isValidLocalPath(destination), step.path != destination,
+                      !all || destination.hasSuffix("/") else { return "\(step.op) adımı kaynak ve hedef yol ister; birden çok dosya için hedef bir klasör olmalı, / ile bitmeli (\(step.id))." }
+            }
+            earlier[step.id] = step.op
+        }
+        return nil
+    }
+
+    private static func filePlanErrorMessage(_ payload: CommandPayload) -> String {
+        if case .filePlan(let plan) = payload { return filePlanError(plan) ?? "Plan geçersiz." }
+        return "Plan isteği geçersiz."
     }
 
     private static func isSafeText(_ value: String, maxLength: Int) -> Bool {
@@ -772,6 +830,7 @@ public enum RovaCommandAuthority {
         case .saveTextFile, .writeFile: return "device.files.write"
         case .moveDesktopFile, .renameDesktopFile, .moveFile: return "device.files.move"
         case .copyFile, .convertFile: return "device.files.copy"
+        case .runFilePlan: return "device.files.list"
         case .deleteFile: return "device.files.delete"
         case .saveArtifact: return "artifact.save"
         case .readDocument: return "document.read"
@@ -801,7 +860,7 @@ public enum RovaCommandAuthority {
         switch type {
         case .lockMac, .sleepMac, .displaySleep, .sendMessage, .sendEmail, .createNote,
              .createCalendarEvent, .createReminder, .completeReminder, .moveDesktopFile, .renameDesktopFile, .saveArtifact,
-             .editDocument, .writeFile, .moveFile, .copyFile, .convertFile, .deleteFile, .executeCode,
+             .editDocument, .writeFile, .moveFile, .copyFile, .convertFile, .runFilePlan, .deleteFile, .executeCode,
              .clickScreen, .runShortcut:
             return true
         case .controlApplication:

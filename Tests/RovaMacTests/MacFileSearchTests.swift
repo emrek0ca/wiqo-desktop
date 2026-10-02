@@ -55,6 +55,69 @@ final class MacFileSearchTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "the original stays")
     }
 
+    private func wordDocument(named name: String) throws -> URL {
+        let text = NSAttributedString(string: "Plan deneme belgesi.")
+        let docx = try text.data(from: NSRange(location: 0, length: text.length), documentAttributes: [.documentType: NSAttributedString.DocumentType.officeOpenXML])
+        let url = root.appendingPathComponent(name)
+        try docx.write(to: url)
+        return url
+    }
+
+    func testAPlanFindsConvertsAndStopsAtTheFirstFailure() async throws {
+        _ = try wordDocument(named: "plan-raporu.docx")
+        let plan = FilePlanPayload(steps: [
+            FilePlanStep(id: "s1", op: "search", query: "plan-raporu", folder: root.path),
+            FilePlanStep(id: "s2", op: "convert", path: "$s1")
+        ])
+        XCTAssertNil(RovaValidation.filePlanError(plan))
+        let outcome = await MacSystem.runFilePlan(plan, transferToken: nil)
+        XCTAssertNil(outcome.error?.message)
+        guard case .planResult(let result)? = outcome.data else { return XCTFail("no plan result") }
+        XCTAssertEqual(result.steps.map(\.status), ["completed", "completed"])
+        XCTAssertEqual(result.steps[1].files?.first?.name, "plan-raporu.pdf")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("plan-raporu.pdf").path))
+
+        let missing = FilePlanPayload(steps: [
+            FilePlanStep(id: "s1", op: "search", query: "böyle-bir-dosya-yok", folder: root.path),
+            FilePlanStep(id: "s2", op: "convert", path: "$s1"),
+            FilePlanStep(id: "s3", op: "send", path: "$s2", transferId: UUID().uuidString)
+        ])
+        let stopped = await MacSystem.runFilePlan(missing, transferToken: nil)
+        XCTAssertNotNil(stopped.error)
+        guard case .planResult(let halted)? = stopped.data else { return XCTFail("no plan result") }
+        XCTAssertEqual(halted.steps.map(\.status), ["completed", "failed", "skipped"])
+    }
+
+    func testAPlanCanMoveEveryFileItFoundIntoAFolder() async throws {
+        _ = try wordDocument(named: "a-rapor.docx")
+        _ = try wordDocument(named: "b-rapor.docx")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("arsiv"), withIntermediateDirectories: true)
+        let plan = FilePlanPayload(steps: [
+            FilePlanStep(id: "s1", op: "search", query: "rapor", kind: "document", folder: root.path),
+            FilePlanStep(id: "s2", op: "move", path: "$s1*", destination: root.appendingPathComponent("arsiv").path + "/")
+        ])
+        XCTAssertNil(RovaValidation.filePlanError(plan))
+        let outcome = await MacSystem.runFilePlan(plan, transferToken: nil)
+        XCTAssertNil(outcome.error?.message)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("arsiv/a-rapor.docx").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("arsiv/b-rapor.docx").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("a-rapor.docx").path))
+        XCTAssertNotNil(RovaValidation.filePlanError(FilePlanPayload(steps: [FilePlanStep(id: "s1", op: "search", query: "x"), FilePlanStep(id: "s2", op: "move", path: "$s1*", destination: "~/Desktop/arsiv")])), "a folder destination must end with /")
+        XCTAssertNotNil(RovaValidation.filePlanError(FilePlanPayload(steps: [FilePlanStep(id: "s1", op: "search", query: "x"), FilePlanStep(id: "s2", op: "send", path: "$s1*", transferId: UUID().uuidString)])), "no fan-out for send")
+    }
+
+    func testAPlanThatCouldHideAnActionIsRefused() {
+        func error(_ steps: [FilePlanStep]) -> String? { RovaValidation.filePlanError(FilePlanPayload(steps: steps)) }
+        XCTAssertNotNil(error([]))
+        XCTAssertNotNil(error([FilePlanStep(id: "s1", op: "delete", path: "~/Desktop/a.pdf")]), "no delete in a plan")
+        XCTAssertNotNil(error([FilePlanStep(id: "s1", op: "convert", path: "$s2")]), "a binding must point at an earlier step")
+        XCTAssertNotNil(error([FilePlanStep(id: "s1", op: "send", path: "$s1", transferId: UUID().uuidString)]), "a step cannot bind to itself")
+        XCTAssertNotNil(error([FilePlanStep(id: "s1", op: "move", path: "~/Desktop/a.pdf", destination: "$s2")]), "only the path may be bound")
+        XCTAssertNotNil(error([FilePlanStep(id: "s1", op: "read", path: "~/Desktop/a.txt"), FilePlanStep(id: "s2", op: "send", path: "$s1", transferId: UUID().uuidString)]), "read gives no file to bind")
+        XCTAssertNotNil(error([FilePlanStep(id: "s1", op: "search", query: "fatura", kind: "pdf"), FilePlanStep(id: "s2", op: "send", path: "$s1")]), "a send needs its transfer id")
+        XCTAssertNil(error([FilePlanStep(id: "s1", op: "search", query: "fatura", kind: "pdf"), FilePlanStep(id: "s2", op: "send", path: "$s1", transferId: UUID().uuidString)]))
+    }
+
     func testAnAlternativeWordMatchesAndTheExpressionOrsTheGroups() throws {
         try make("kira_kontrat_2024.pdf")
         try make("fatura.pdf")

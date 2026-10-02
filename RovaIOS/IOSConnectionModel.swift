@@ -1063,6 +1063,7 @@ final class IOSConnectionModel: ObservableObject {
         case .moveFile: return "Dosya taşı"
         case .copyFile: return "Dosya kopyala"
         case .convertFile: return "PDF'e çevir"
+        case .runFilePlan: return "Dosya planı"
         case .deleteFile: return "Dosya sil"
         case .executeCode: return "Kod çalıştır"
         case .captureScreen: return "Ekran görüntüsü"

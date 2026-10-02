@@ -51,6 +51,7 @@ public enum CommandType: String, Codable, CaseIterable, Sendable {
     case moveFile
     case copyFile
     case convertFile
+    case runFilePlan
     case deleteFile
     case executeCode
     case captureScreen
@@ -700,6 +701,84 @@ public struct FileSearchPayload: Codable, Equatable, Sendable {
     }
 }
 
+/// One step of a file plan (see rova-backend docs/plan-packet.md). `path` may be "$s1": the first
+/// file in the result of the earlier step with that id.
+public struct FilePlanStep: Codable, Equatable, Sendable {
+    public let id: String
+    /// search, list, read, convert, send, move or copy.
+    public let op: String
+    public let path: String?
+    public let destination: String?
+    public let query: String?
+    public let alternatives: [String]?
+    public let kind: String?
+    public let folder: String?
+    public let modifiedWithinDays: Int?
+    public let sort: String?
+    /// For "send": the transfer id the phone registered with the backend before dispatching the plan.
+    public let transferId: String?
+
+    public init(id: String, op: String, path: String? = nil, destination: String? = nil, query: String? = nil, alternatives: [String]? = nil, kind: String? = nil, folder: String? = nil, modifiedWithinDays: Int? = nil, sort: String? = nil, transferId: String? = nil) {
+        self.id = id
+        self.op = op
+        self.path = path
+        self.destination = destination
+        self.query = query
+        self.alternatives = alternatives
+        self.kind = kind
+        self.folder = folder
+        self.modifiedWithinDays = modifiedWithinDays
+        self.sort = sort
+        self.transferId = transferId
+    }
+}
+
+public struct FilePlanPayload: Codable, Equatable, Sendable {
+    public let steps: [FilePlanStep]
+
+    public static let maxSteps = 6
+    public static let operations: Set<String> = ["search", "list", "read", "convert", "send", "move", "copy"]
+    /// Operations whose result holds files a later step may name with "$id".
+    public static let producesFiles: Set<String> = ["search", "list", "convert"]
+
+    public init(steps: [FilePlanStep]) {
+        self.steps = steps
+    }
+}
+
+/// What one step of a plan did. Steps after a failure are "skipped".
+public struct PlanStepResult: Codable, Equatable, Sendable {
+    public let id: String
+    public let op: String
+    /// completed, failed or skipped.
+    public let status: String
+    public let message: String
+    public let files: [FileSystemEntry]?
+    public let text: String?
+    /// What a "send" step delivered: the artifact the backend stored, under the transfer id the plan named.
+    public let artifactId: String?
+    public let transferId: String?
+
+    public init(id: String, op: String, status: String, message: String, files: [FileSystemEntry]? = nil, text: String? = nil, artifactId: String? = nil, transferId: String? = nil) {
+        self.id = id
+        self.op = op
+        self.status = status
+        self.message = message
+        self.files = files
+        self.text = text
+        self.artifactId = artifactId
+        self.transferId = transferId
+    }
+}
+
+public struct PlanResult: Codable, Equatable, Sendable {
+    public let steps: [PlanStepResult]
+
+    public init(steps: [PlanStepResult]) {
+        self.steps = steps
+    }
+}
+
 public struct CodeExecutionPayload: Codable, Equatable, Sendable {
     public let language: String
     public let code: String
@@ -1202,6 +1281,7 @@ public enum CommandPayload: Codable, Equatable, Sendable {
     case artifactFile(ArtifactFilePayload)
     case fileOperation(LocalFileOperationPayload)
     case fileSearch(FileSearchPayload)
+    case filePlan(FilePlanPayload)
     case codeExecution(CodeExecutionPayload)
     case screenCapture(ScreenCapturePayload)
     case shortcut(ShortcutPayload)
@@ -1217,7 +1297,7 @@ public enum CommandPayload: Codable, Equatable, Sendable {
     case email(EmailPayload)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, fileSearch, codeExecution, screenCapture, shortcut, uiElement, screenClick, computerDesktop, computerBrowser, browserTask, localAnalysis, reminder, completeReminder, note, email }
+    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, fileSearch, filePlan, codeExecution, screenCapture, shortcut, uiElement, screenClick, computerDesktop, computerBrowser, browserTask, localAnalysis, reminder, completeReminder, note, email }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1259,6 +1339,8 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             self = .fileOperation(try container.decode(LocalFileOperationPayload.self, forKey: .value))
         case .fileSearch:
             self = .fileSearch(try container.decode(FileSearchPayload.self, forKey: .value))
+        case .filePlan:
+            self = .filePlan(try container.decode(FilePlanPayload.self, forKey: .value))
         case .codeExecution:
             self = .codeExecution(try container.decode(CodeExecutionPayload.self, forKey: .value))
         case .screenCapture:
@@ -1343,6 +1425,9 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             try container.encode(payload, forKey: .value)
         case .fileSearch(let payload):
             try container.encode(Kind.fileSearch, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .filePlan(let payload):
+            try container.encode(Kind.filePlan, forKey: .kind)
             try container.encode(payload, forKey: .value)
         case .codeExecution(let payload):
             try container.encode(Kind.codeExecution, forKey: .kind)
@@ -1636,9 +1721,10 @@ public enum CommandData: Codable, Equatable, Sendable {
     case localAnalysis(LocalAnalysisContent)
     case applicationControl(ApplicationControlContent)
     case runningApplications([RunningApplicationInfo])
+    case planResult(PlanResult)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileTransfer, fileData, processOutput, terminalJob, terminalResult, screenshot, shortcutResult, uiElement, screenClick, computerDesktop, computerBrowser, browserTask, localAnalysis, applicationControl, runningApplications }
+    private enum Kind: String, Codable { case systemStatus, applications, ping, fileContent, desktopFiles, calendarEvents, reminders, clipboardText, clipboardHistory, documentContent, installedApplications, files, fileTransfer, fileData, processOutput, terminalJob, terminalResult, screenshot, shortcutResult, uiElement, screenClick, computerDesktop, computerBrowser, browserTask, localAnalysis, applicationControl, runningApplications, planResult }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1697,6 +1783,8 @@ public enum CommandData: Codable, Equatable, Sendable {
             self = .applicationControl(try container.decode(ApplicationControlContent.self, forKey: .value))
         case .runningApplications:
             self = .runningApplications(try container.decode([RunningApplicationInfo].self, forKey: .value))
+        case .planResult:
+            self = .planResult(try container.decode(PlanResult.self, forKey: .value))
         }
     }
 
@@ -1783,6 +1871,9 @@ public enum CommandData: Codable, Equatable, Sendable {
             try container.encode(value, forKey: .value)
         case .runningApplications(let value):
             try container.encode(Kind.runningApplications, forKey: .kind)
+            try container.encode(value, forKey: .value)
+        case .planResult(let value):
+            try container.encode(Kind.planResult, forKey: .kind)
             try container.encode(value, forKey: .value)
         }
     }
