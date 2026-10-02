@@ -1131,6 +1131,8 @@ struct AgentTasksView: View {
 /// Ajanlarım: named agents, their routine and exactly what they remember - forget or delete here.
 struct NamedAgentsView: View {
     @State private var agents: [RovaBackendClient.NamedAgent] = []
+    @State private var watch: [RovaBackendClient.WatchSource] = []
+    @State private var events: [RovaBackendClient.AgentEvent] = []
     @State private var loaded = false
     @State private var notice: String?
     @State private var agentToDelete: RovaBackendClient.NamedAgent?
@@ -1138,6 +1140,29 @@ struct NamedAgentsView: View {
 
     var body: some View {
         List {
+            Section {
+                ForEach(watch) { source in
+                    Toggle(isOn: Binding(
+                        get: { source.enabled },
+                        set: { value in Task { await setWatch(source.source, enabled: value) } }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(source.source == "gmail" ? "Gelen mailleri izle" : "Takvimi izle")
+                            Text(source.lastError ?? (source.source == "gmail" ? "Önemli olanı haber verir, gerisini sessizce not eder" : "Yeni ve değişen etkinlikleri takip eder"))
+                                .font(.caption)
+                                .foregroundStyle(source.lastError == nil ? Color.secondary : WiqoTheme.red)
+                        }
+                    }
+                }
+                ForEach(events.prefix(5)) { event in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(event.summary ?? event.title).font(.subheadline)
+                        Text(Self.statusLabel(event.status)).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Wiqo seni izliyor")
+            }
             if loaded && agents.isEmpty {
                 VStack(spacing: 12) {
                     WiqoAgentMascot("general", size: 72)
@@ -1166,9 +1191,11 @@ struct NamedAgentsView: View {
                                     Task { await forgetMemory(for: agent) }
                                 }
                             }
-                            Button("Ajanı sil", systemImage: "trash", role: .destructive) {
-                                agentToDelete = agent
-                                confirmingDelete = true
+                            if agent.isPrimary != true {
+                                Button("Ajanı sil", systemImage: "trash", role: .destructive) {
+                                    agentToDelete = agent
+                                    confirmingDelete = true
+                                }
                             }
                         } label: {
                             Image(systemName: "ellipsis.circle")
@@ -1241,6 +1268,23 @@ struct NamedAgentsView: View {
 
     private func load() async {
         agents = (try? await RovaBackendClient.fetchAgents()) ?? agents
+        watch = (try? await RovaBackendClient.fetchWatchSources()) ?? watch
+        events = (try? await RovaBackendClient.fetchAgentEvents()) ?? events
         loaded = true
+    }
+
+    private func setWatch(_ source: String, enabled: Bool) async {
+        if let updated = try? await RovaBackendClient.setWatchSource(source, enabled: enabled) { watch = updated }
+        else { notice = "Ayar kaydedilemedi." }
+    }
+
+    private static func statusLabel(_ status: String) -> String {
+        switch status {
+        case "notified": return "Haber verdi"
+        case "handled": return "Ajan üzerinde çalışıyor"
+        case "noted": return "Not aldı"
+        case "ignored": return "Önemsiz bulundu"
+        default: return "Bekliyor"
+        }
     }
 }

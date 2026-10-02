@@ -468,10 +468,43 @@ enum RovaBackendClient {
         let name: String
         let role: String
         let persona: String?
+        let isPrimary: Bool?
         let cron: String?
         let nextRunAt: String?
         let lastRunAt: String?
         let memory: String
+    }
+
+    /// What the primary agent watches (opt-in) and what it noticed (backend agent/events.ts).
+    struct WatchSource: Decodable, Identifiable, Sendable {
+        let source: String
+        let enabled: Bool
+        let lastError: String?
+        var id: String { source }
+    }
+
+    struct AgentEvent: Decodable, Identifiable, Sendable {
+        let id: Int
+        let source: String
+        let title: String
+        let status: String
+        let summary: String?
+    }
+
+    static func fetchWatchSources() async throws -> [WatchSource] {
+        struct Response: Decodable { let sources: [WatchSource] }
+        return try await authorizedGet("agents/watch", as: Response.self).sources
+    }
+
+    static func setWatchSource(_ source: String, enabled: Bool) async throws -> [WatchSource] {
+        struct Response: Decodable { let sources: [WatchSource] }
+        let data = try await authorizedPut("agents/watch/\(source)", body: ["enabled": enabled])
+        return try JSONDecoder().decode(Response.self, from: data).sources
+    }
+
+    static func fetchAgentEvents() async throws -> [AgentEvent] {
+        struct Response: Decodable { let events: [AgentEvent] }
+        return try await authorizedGet("agents/events?limit=15", as: Response.self).events
     }
 
     static func fetchAgents() async throws -> [NamedAgent] {
