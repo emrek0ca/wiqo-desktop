@@ -1134,6 +1134,7 @@ struct NamedAgentsView: View {
     @State private var watch: [RovaBackendClient.WatchSource] = []
     @State private var events: [RovaBackendClient.AgentEvent] = []
     @State private var budget: RovaBackendClient.AgentBudget?
+    @State private var standing: [RovaBackendClient.StandingRule] = []
     @State private var auditEntries: [RovaBackendClient.AgentAuditEntry] = []
     @State private var loaded = false
     @State private var notice: String?
@@ -1171,9 +1172,25 @@ struct NamedAgentsView: View {
                     }
                 }
                 ForEach(events.prefix(5)) { event in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(event.summary ?? event.title).font(.subheadline)
-                        Text(Self.statusLabel(event.status)).font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(event.summary ?? event.title).font(.subheadline)
+                            Text(Self.statusLabel(event.status)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        Menu {
+                            Button("Önemsiz, bir daha gösterme", systemImage: "bell.slash") {
+                                Task { try? await RovaBackendClient.sendEventFeedback(id: event.id, important: false); await load() }
+                            }
+                            Button("Önemliydi", systemImage: "bell.badge") {
+                                Task { try? await RovaBackendClient.sendEventFeedback(id: event.id, important: true); await load() }
+                            }
+                        } label: {
+                            Image(systemName: "hand.thumbsup")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 36, height: 36)
+                        }
+                        .accessibilityLabel("Bu olayı değerlendir")
                     }
                 }
                 if !auditEntries.isEmpty {
@@ -1189,6 +1206,20 @@ struct NamedAgentsView: View {
                 }
             } header: {
                 Text("Wiqo seni izliyor")
+            }
+            if !standing.isEmpty {
+                Section {
+                    ForEach(standing) { rule in
+                        Toggle(rule.label, isOn: Binding(
+                            get: { rule.enabled },
+                            set: { value in Task { if let updated = try? await RovaBackendClient.setStandingRule(rule.tool, enabled: value) { standing = updated } } }
+                        ))
+                    }
+                } header: {
+                    Text("Onay istemeden yap")
+                } footer: {
+                    Text("30 gün geçerli, günde en fazla 10 kez. Mail göndermek ve silmek her zaman onay ister.")
+                }
             }
             if loaded && agents.isEmpty {
                 VStack(spacing: 12) {
@@ -1298,6 +1329,7 @@ struct NamedAgentsView: View {
         watch = (try? await RovaBackendClient.fetchWatchSources()) ?? watch
         events = (try? await RovaBackendClient.fetchAgentEvents()) ?? events
         budget = (try? await RovaBackendClient.fetchAgentBudget()) ?? budget
+        standing = (try? await RovaBackendClient.fetchStandingRules()) ?? standing
         auditEntries = (try? await RovaBackendClient.fetchAgentAudit()) ?? auditEntries
         loaded = true
     }

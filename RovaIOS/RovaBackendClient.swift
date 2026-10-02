@@ -505,6 +505,29 @@ enum RovaBackendClient {
         let createdAt: String
     }
 
+    struct StandingRule: Decodable, Identifiable, Sendable {
+        let tool: String
+        let label: String
+        let enabled: Bool
+        var id: String { tool }
+    }
+
+    static func fetchStandingRules() async throws -> [StandingRule] {
+        struct Response: Decodable { let rules: [StandingRule] }
+        return try await authorizedGet("agents/standing", as: Response.self).rules
+    }
+
+    static func setStandingRule(_ tool: String, enabled: Bool) async throws -> [StandingRule] {
+        struct Response: Decodable { let rules: [StandingRule] }
+        let data = try await authorizedPut("agents/standing/\(tool)", body: ["enabled": enabled])
+        return try JSONDecoder().decode(Response.self, from: data).rules
+    }
+
+    static func sendEventFeedback(id: Int, important: Bool) async throws {
+        struct Response: Decodable { let ok: Bool }
+        _ = try await authorizedPost("agents/events/\(id)/feedback", body: ["kind": important ? "important" : "unimportant"], as: Response.self)
+    }
+
     static func fetchAgentBudget() async throws -> AgentBudget {
         try await authorizedGet("agents/budget", as: AgentBudget.self)
     }
