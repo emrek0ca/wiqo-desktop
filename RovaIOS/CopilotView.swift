@@ -75,6 +75,7 @@ struct CopilotView: View {
     /// Mirrors the backend's `files` cap in routes/copilot.ts.
     private let maxFiles = 5
     @State private var memoryCandidates: [RovaBackendClient.MemoryCandidate] = []
+    @State private var openWork: RovaBackendClient.OpenWork?
     @State private var screenshotObservationCount = 0
     @StateObject private var audioRecorder = WiqoSpeechRecorder()
     @State private var isStartingAudio = false
@@ -145,6 +146,19 @@ struct CopilotView: View {
             }
             if !memoryCandidates.isEmpty {
                 memoryCandidatesCard
+            }
+            if let openWork, !bubbles.isEmpty, !isSending {
+                WiqoRecommendationCard(
+                    title: "Yarım kalan iş",
+                    message: "\(openWork.goal)\n\(openWork.detail)",
+                    primaryTitle: "Devam et",
+                    onPrimary: {
+                        self.openWork = nil
+                        Task { await sendMessage(textOverride: "devam et") }
+                    },
+                    onDismiss: { self.openWork = nil }
+                )
+                .padding(.horizontal)
             }
             if bubbles.isEmpty {
                 emptyState
@@ -267,7 +281,8 @@ struct CopilotView: View {
     private func loadSideCards() async {
         async let suggestions: Void = loadProactiveSuggestions()
         async let candidates: Void = loadMemoryCandidates()
-        _ = await (suggestions, candidates)
+        async let unfinished: Void = loadOpenWork()
+        _ = await (suggestions, candidates, unfinished)
     }
 
     /// A Mac suggestion is only actually actionable when one is paired, currently reachable, and
@@ -2480,6 +2495,11 @@ struct CopilotView: View {
         if let suggestions = try? await RovaBackendClient.refreshProactiveSuggestions() {
             proactiveSuggestions = suggestions
         }
+    }
+
+    private func loadOpenWork() async {
+        guard RovaBackendClient.isAuthenticated, !bubbles.isEmpty else { return }
+        openWork = try? await RovaBackendClient.fetchOpenWork(conversationID: conversationID)
     }
 
     private func loadMemoryCandidates() async {

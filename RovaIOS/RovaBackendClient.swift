@@ -1167,6 +1167,14 @@ enum RovaBackendClient {
         return AudioConverseResult(transcript: response.transcript, reply: response.reply, steps: steps, executionState: response.executionState, artifacts: response.artifacts, audioData: generatedAudio, audioError: response.audioError)
     }
 
+    /// A PC task of this conversation that stopped on a failed step, if it is still fresh.
+    struct OpenWork: Decodable, Equatable { let goal: String; let detail: String }
+
+    static func fetchOpenWork(conversationID: String) async throws -> OpenWork? {
+        struct Response: Decodable { let openWork: OpenWork? }
+        return try await authorizedGet("conversations/\(conversationID)/open-work", as: Response.self).openWork
+    }
+
     static func fetchMemoryCandidates() async throws -> [MemoryCandidate] {
         let key = mobileReadCacheKey("memory/candidates")
         if let data = WiqoMobileReadCache.shared.data(for: key, maxAge: 20),
