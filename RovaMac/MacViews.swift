@@ -352,7 +352,7 @@ struct MacSettingsView: View {
                             Text(permission.detail).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button("Aç") { openSettings(permission.url) }
+                        Button(permission.granted ? "Aç" : "İzin ver") { grant(permission) }
                             .buttonStyle(.borderless)
                     }
                     .padding(.vertical, 3)
@@ -511,12 +511,33 @@ struct MacSettingsView: View {
             let rows = await Task.detached(priority: .userInitiated) {
                 [
                     MacPermission(id: "accessibility", title: "Erişilebilirlik", detail: "Arayüz kontrolü ve ekran tıklaması için", granted: MacSystem.hasAccessibilityAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"),
-                    MacPermission(id: "full-disk", title: "Tam Disk Erişimi", detail: "Belgeleri okuyup kaydetmek için", granted: MacSystem.hasFullDiskAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"),
+                    MacPermission(id: "full-disk", title: "Tam Disk Erişimi", detail: "Belgeleri okuyup kaydetmek için. Listede yoksa Finder'da seçili Wiqo'yu pencereye sürükle veya + ile ekle", granted: MacSystem.hasFullDiskAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"),
                     MacPermission(id: "screen-recording", title: "Ekran Kaydı", detail: "Ekran gözlemi için", granted: MacSystem.hasScreenRecordingAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"),
                     MacPermission(id: "calendar", title: "Takvim", detail: "Takvim adımları için", granted: MacSystem.hasCalendarAccess(), url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")
                 ]
             }.value
             privacyPermissions = rows
+        }
+    }
+
+    /// Opening the pane alone leaves Wiqo out of the list: macOS only lists an app after it has
+    /// asked. So ask first (accessibility, screen recording, calendar) or touch a protected folder
+    /// (full disk, which has no request API), show the app in Finder for drag-and-drop, then open the pane.
+    private func grant(_ permission: MacPermission) {
+        NSApp.activate(ignoringOtherApps: true)
+        switch permission.id {
+        case "accessibility": _ = MacSystem.requestAccessibilityAccess()
+        case "screen-recording": _ = MacSystem.requestScreenRecordingAccess()
+        case "calendar": Task { _ = await MacSystem.requestCalendarAccessForWarmUp() }
+        case "full-disk":
+            MacSystem.registerForFullDiskAccess()
+            NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+        default: break
+        }
+        openSettings(permission.url)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            refreshPrivacyPermissions()
         }
     }
 

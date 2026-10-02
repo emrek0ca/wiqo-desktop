@@ -48,6 +48,15 @@ extension MacSystem {
         return existingFolders.isEmpty || existingFolders.allSatisfy { FileManager.default.isReadableFile(atPath: $0.path) }
     }
 
+    /// Full Disk Access has no request call. Reading a protected folder is what makes macOS list
+    /// the app (or at least count the attempt), so the settings pane has an entry to switch on.
+    static func registerForFullDiskAccess() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        for folder in ["Library/Safari", "Library/Mail", "Library/Messages"] {
+            _ = try? FileManager.default.contentsOfDirectory(atPath: home.appendingPathComponent(folder).path)
+        }
+    }
+
     static func capabilityAuthorities() -> [DeviceCapabilityAuthority] {
         let accessibility = hasAccessibilityAccess()
         let screenRecording = hasScreenRecordingAccess()
