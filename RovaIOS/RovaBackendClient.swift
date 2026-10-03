@@ -505,6 +505,83 @@ enum RovaBackendClient {
         let createdAt: String
     }
 
+    /// "Kod projelerim": persistent web/Python projects built by describing them in chat (backend codeprojects/).
+    struct CodeProject: Decodable, Identifiable, Sendable {
+        struct Share: Decodable, Sendable { let url: String; let expiresAt: String }
+        let id: Int
+        let name: String
+        let kind: String
+        let version: Int
+        let updatedAt: String
+        let fileCount: Int?
+        let share: Share?
+    }
+
+    struct CodeProjectFile: Decodable, Identifiable, Sendable {
+        let path: String
+        let bytes: Int
+        var id: String { path }
+    }
+
+    struct CodeProjectVersion: Decodable, Identifiable, Sendable {
+        let version: Int
+        let summary: String
+        let verified: Bool
+        let createdAt: String
+        var id: Int { version }
+    }
+
+    struct CodeProjectDetail: Decodable, Sendable {
+        let project: CodeProject
+        let files: [CodeProjectFile]
+        let history: [CodeProjectVersion]
+    }
+
+    struct CodeRunResult: Decodable, Sendable {
+        let exitCode: Int
+        let timedOut: Bool
+        let stdout: String
+        let stderr: String
+        let durationMs: Int
+    }
+
+    static func fetchCodeProjects() async throws -> [CodeProject] {
+        struct Response: Decodable { let projects: [CodeProject] }
+        return try await authorizedGet("code-projects", as: Response.self).projects
+    }
+
+    static func fetchCodeProject(id: Int) async throws -> CodeProjectDetail {
+        try await authorizedGet("code-projects/\(id)", as: CodeProjectDetail.self)
+    }
+
+    static func fetchCodeFile(id: Int, path: String) async throws -> String {
+        struct Response: Decodable { let content: String }
+        return try await authorizedPost("code-projects/\(id)/file", body: ["path": path], as: Response.self).content
+    }
+
+    static func fetchCodeProjectBundle(id: Int) async throws -> String {
+        struct Response: Decodable { let html: String }
+        return try await authorizedGet("code-projects/\(id)/bundle", as: Response.self).html
+    }
+
+    static func undoCodeProject(id: Int) async throws {
+        struct Response: Decodable { let version: Int }
+        _ = try await authorizedPost("code-projects/\(id)/undo", body: [:], as: Response.self)
+    }
+
+    static func runCodeProject(id: Int) async throws -> CodeRunResult {
+        try await authorizedPost("code-projects/\(id)/run", body: [:], as: CodeRunResult.self)
+    }
+
+    static func shareCodeProject(id: Int, enabled: Bool) async throws -> CodeProject {
+        struct Response: Decodable { let project: CodeProject }
+        return try await authorizedPost("code-projects/\(id)/share", body: ["enabled": enabled], as: Response.self).project
+    }
+
+    static func deleteCodeProject(id: Int) async throws {
+        _ = try await authorizedMutate("code-projects/\(id)", method: "DELETE")
+    }
+
     struct StandingRule: Decodable, Identifiable, Sendable {
         let tool: String
         let label: String
@@ -539,7 +616,7 @@ enum RovaBackendClient {
 
     static func fetchAgentAudit() async throws -> [AgentAuditEntry] {
         struct Response: Decodable { let entries: [AgentAuditEntry] }
-        return try await authorizedGet("agents/audit?limit=30", as: Response.self).entries
+        return try await authorizedGet("agents/audit", as: Response.self).entries
     }
 
     static func fetchWatchSources() async throws -> [WatchSource] {
@@ -555,7 +632,7 @@ enum RovaBackendClient {
 
     static func fetchAgentEvents() async throws -> [AgentEvent] {
         struct Response: Decodable { let events: [AgentEvent] }
-        return try await authorizedGet("agents/events?limit=15", as: Response.self).events
+        return try await authorizedGet("agents/events", as: Response.self).events
     }
 
     static func fetchAgents() async throws -> [NamedAgent] {

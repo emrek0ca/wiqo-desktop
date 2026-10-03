@@ -60,6 +60,7 @@
 		D20000000000000000000037 /* CopilotSpeechRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000038 /* CopilotSpeechRecorder.swift */; };
 		D20000000000000000000035 /* CopilotExecutionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000036 /* CopilotExecutionViews.swift */; };
 		D20000000000000000000033 /* CopilotMessageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000034 /* CopilotMessageViews.swift */; };
+		D30000000000000000000C11 /* CodeProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C10 /* CodeProjectsView.swift */; };
 		D20000000000000000000031 /* CopilotModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000032 /* CopilotModels.swift */; };
 		D2000000000000000000002C /* WiqoSettingsKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000002D /* WiqoSettingsKit.swift */; };
 		D2000000000000000000002A /* WiqoControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000002B /* WiqoControls.swift */; };
@@ -220,6 +221,7 @@
 		D20000000000000000000038 /* CopilotSpeechRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotSpeechRecorder.swift; sourceTree = "<group>"; };
 		D20000000000000000000036 /* CopilotExecutionViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotExecutionViews.swift; sourceTree = "<group>"; };
 		D20000000000000000000034 /* CopilotMessageViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotMessageViews.swift; sourceTree = "<group>"; };
+		D30000000000000000000C10 /* CodeProjectsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodeProjectsView.swift; sourceTree = "<group>"; };
 		D20000000000000000000032 /* CopilotModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotModels.swift; sourceTree = "<group>"; };
 		D2000000000000000000002D /* WiqoSettingsKit.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoSettingsKit.swift; sourceTree = "<group>"; };
 		D2000000000000000000002B /* WiqoControls.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoControls.swift; sourceTree = "<group>"; };
@@ -394,6 +396,7 @@
 				D20000000000000000000038 /* CopilotSpeechRecorder.swift */,
 				D20000000000000000000036 /* CopilotExecutionViews.swift */,
 				D20000000000000000000034 /* CopilotMessageViews.swift */,
+				D30000000000000000000C10 /* CodeProjectsView.swift */,
 				D20000000000000000000032 /* CopilotModels.swift */,
 				D2000000000000000000002D /* WiqoSettingsKit.swift */,
 				D2000000000000000000002B /* WiqoControls.swift */,
@@ -740,6 +743,7 @@
 				D20000000000000000000037 /* CopilotSpeechRecorder.swift in Sources */,
 				D20000000000000000000035 /* CopilotExecutionViews.swift in Sources */,
 				D20000000000000000000033 /* CopilotMessageViews.swift in Sources */,
+				D30000000000000000000C11 /* CodeProjectsView.swift in Sources */,
 				D20000000000000000000031 /* CopilotModels.swift in Sources */,
 				D2000000000000000000002C /* WiqoSettingsKit.swift in Sources */,
 				D2000000000000000000002A /* WiqoControls.swift in Sources */,

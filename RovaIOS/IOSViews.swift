@@ -1274,6 +1274,12 @@ struct SettingsView: View {
                 WiqoRow(systemImage: "person.2.circle", title: "Ajanlarım", subtitle: "Rol, rutin ve hafıza", showsDivider: true) { EmptyView() }
             }
             .buttonStyle(WiqoRowButtonStyle())
+            NavigationLink {
+                CodeProjectsView()
+            } label: {
+                WiqoRow(systemImage: "chevron.left.forwardslash.chevron.right", title: "Kod projelerim", subtitle: "Sohbette yazdırdığın uygulama ve programlar", showsDivider: true) { EmptyView() }
+            }
+            .buttonStyle(WiqoRowButtonStyle())
             if let taskAutomationError {
                 Text(taskAutomationError)
                     .font(.footnote)
