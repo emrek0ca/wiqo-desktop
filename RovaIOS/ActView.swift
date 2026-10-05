@@ -25,6 +25,16 @@ struct ActView: View {
     private var canCreate: Bool { !creating && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3 }
 
     var body: some View {
+        Group {
+            if let opened {
+                CodeProjectWorkspaceView(projectID: opened.id, embedded: true, onBack: { self.opened = nil })
+            } else {
+                projectList
+            }
+        }
+    }
+
+    private var projectList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 composerCard
@@ -36,9 +46,6 @@ struct ActView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .background(RovaDesign.canvas)
-        .navigationDestination(item: $opened) { project in
-            CodeProjectWorkspaceView(projectID: project.id)
-        }
         .confirmationDialog("Proje silinsin mi?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible, presenting: pendingDelete) { project in
             Button("\(project.name) projesini sil", role: .destructive) { Task { await delete(project) } }
             Button("Vazgeç", role: .cancel) {}
@@ -264,6 +271,8 @@ private struct ProjectRow: View {
 struct CodeProjectWorkspaceView: View {
     let projectID: Int
     var isModal = false
+    var embedded = false
+    var onBack: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -283,24 +292,34 @@ struct CodeProjectWorkspaceView: View {
     private var canSend: Bool { !working && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 }
     private var latest: RovaBackendClient.CodeProjectVersion? { detail?.history.first }
 
-    private var chips: [String] {
-        isWeb ? ["Koyu tema", "Renkleri değiştir", "Başlığı değiştir", "Daha sade yap"] : ["Çıktıyı düzenle", "Örnek veri ekle", "Daha hızlı yap"]
-    }
-
     var body: some View {
         VStack(spacing: 0) {
+            if embedded {
+                HStack(spacing: 10) {
+                    Button { onBack?() } label: { Label("Projeler", systemImage: "chevron.left") }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(WiqoTheme.ink)
+                    Text(detail?.project.name ?? "Proje")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    menu
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+            }
             stage
             Divider()
             footer
         }
         .background(RovaDesign.canvas)
-        .navigationTitle(detail?.project.name ?? "Proje")
+        .navigationTitle(embedded ? "" : (detail?.project.name ?? "Proje"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if isModal {
                 ToolbarItem(placement: .topBarLeading) { Button("Kapat") { dismiss() } }
             }
-            ToolbarItem(placement: .topBarTrailing) { menu }
+            if !embedded { ToolbarItem(placement: .topBarTrailing) { menu } }
         }
         .sheet(isPresented: $showingDetails, onDismiss: { Task { await load() } }) {
             NavigationStack { CodeProjectDetailView(projectID: projectID) }
@@ -411,22 +430,6 @@ struct CodeProjectWorkspaceView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let latest { changeStrip(latest) }
-            if draft.isEmpty && !working {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(chips, id: \.self) { chip in
-                            Button { draft = chip; focused = true } label: {
-                                Text(chip)
-                                    .font(.footnote.weight(.medium))
-                                    .padding(.horizontal, 12)
-                                    .frame(height: 30)
-                                    .background(WiqoTheme.inset, in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("Ne değiştirelim?", text: $draft, axis: .vertical)
                     .lineLimit(1...4)
@@ -459,7 +462,7 @@ struct CodeProjectWorkspaceView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("v\(entry.version) · \(entry.summary)")
                     .font(.footnote)
-                    .lineLimit(2)
+                    .lineLimit(1)
                 if !entry.verified {
                     Text("Çalışmıyor olabilir; geri al ya da düzeltmesini iste.")
                         .font(.caption2)
@@ -552,7 +555,7 @@ struct CodeProjectWorkspaceView: View {
     private func deleteProject() async {
         do {
             try await RovaBackendClient.deleteCodeProject(id: projectID)
-            dismiss()
+            if embedded { onBack?() } else { dismiss() }
         } catch {
             notice = "Proje silinemedi."
         }

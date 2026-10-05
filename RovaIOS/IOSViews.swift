@@ -499,16 +499,19 @@ struct WiqoHomeView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if mode == .chat {
-                    CopilotView(model: model, authSession: authSession, subscriptionStore: subscriptionStore, conversationID: conversationID, draftPrompt: draftPrompt)
-                        .id(conversationID)
-                } else {
-                    ActView()
-                }
+            ZStack {
+                CopilotView(model: model, authSession: authSession, subscriptionStore: subscriptionStore, conversationID: conversationID, draftPrompt: draftPrompt)
+                    .id(conversationID)
+                    .opacity(mode == .chat ? 1 : 0)
+                    .allowsHitTesting(mode == .chat)
+                    .accessibilityHidden(mode != .chat)
+                ActView()
+                    .opacity(mode == .act ? 1 : 0)
+                    .allowsHitTesting(mode == .act)
+                    .accessibilityHidden(mode != .act)
             }
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(mode == .chat ? .hidden : .automatic, for: .navigationBar)
+                .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         WiqoPillTabs<HomeMode>(
@@ -516,10 +519,12 @@ struct WiqoHomeView: View {
                                 WiqoPillTabs<HomeMode>.Option(value: .chat, title: "Chat"),
                                 WiqoPillTabs<HomeMode>.Option(value: .act, title: "Act")
                             ],
-                            selection: $mode
+                            selection: $mode,
+                            horizontalPadding: 8
                         )
+                        .frame(width: 126)
+                        .accessibilityLabel("Chat veya Act")
                     }
-                    if mode == .chat {
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
                             dismissKeyboard()
@@ -530,7 +535,7 @@ struct WiqoHomeView: View {
                             Image(systemName: "line.3.horizontal")
                                 .fontWeight(.medium)
                         }
-                        .accessibilityLabel("Sohbet geçmişi")
+                        .accessibilityLabel("Yan menü")
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         HStack(spacing: 16) {
@@ -541,21 +546,19 @@ struct WiqoHomeView: View {
                                 RovaConnectionIcon(model: model)
                             }
                             .accessibilityLabel("PC ayarları")
-                            Button {
-                                dismissKeyboard()
-                                showTemplates = true
-                            } label: {
-                                Image(systemName: "clock.badge")
+                            if mode == .chat {
+                                Menu {
+                                    Button { startNewChat() } label: { Label("Yeni sohbet", systemImage: "square.and.pencil") }
+                                    Button {
+                                        dismissKeyboard()
+                                        showTemplates = true
+                                    } label: { Label("Otomasyon şablonları", systemImage: "clock.badge") }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
+                                }
+                                .accessibilityLabel("Sohbet eylemleri")
                             }
-                            .accessibilityLabel("Otomasyon şablonları")
-                            Button {
-                                startNewChat()
-                            } label: {
-                                Image(systemName: "square.and.pencil")
-                            }
-                            .accessibilityLabel("Yeni sohbet")
                         }
-                    }
                     }
                 }
         }
@@ -578,6 +581,7 @@ struct WiqoHomeView: View {
                 }
             }
         }
+        .onChange(of: mode) { _, _ in dismissKeyboard() }
         .onReceive(NotificationCenter.default.publisher(for: .wiqoOpenConversation)) { note in
             // "Sohbette devam et" from an automation run: close any sheet and open that chat.
             guard let id = note.object as? String, !id.isEmpty else { return }
@@ -586,6 +590,7 @@ struct WiqoHomeView: View {
             draftPrompt = nil
             conversations = CopilotConversationStore.all()
             conversationID = id
+            mode = .chat
         }
         .onReceive(NotificationCenter.default.publisher(for: RovaApprovalNotificationRoute.notificationName)) { note in
             let storedID = RovaApprovalNotificationRoute.consume()?.uuidString
@@ -650,10 +655,12 @@ struct WiqoHomeView: View {
                         closeSidebar()
                         draftPrompt = nil
                         conversationID = id
+                        mode = .chat
                     },
                     onNewChat: {
                         closeSidebar()
                         startNewChat()
+                        mode = .chat
                     },
                     onDelete: { id in
                         if id == conversationID { conversationID = CopilotConversationStore.newIdentifier() }

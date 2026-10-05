@@ -166,6 +166,7 @@ struct WiqoPillTabs<Value: Hashable>: View {
 
     let options: [Option]
     @Binding var selection: Value
+    var horizontalPadding: CGFloat = 14
     @Namespace private var pill
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -183,10 +184,12 @@ struct WiqoPillTabs<Value: Hashable>: View {
                             Image(systemName: systemImage)
                         }
                         Text(option.title)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
                     }
                     .font(.footnote.weight(.medium))
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: 34)
+                    .padding(.horizontal, horizontalPadding)
+                    .frame(minHeight: 38)
                     .frame(maxWidth: .infinity)
                     .foregroundStyle(isSelected ? Color(uiColor: .systemBackground) : Color.secondary)
                     .background {
