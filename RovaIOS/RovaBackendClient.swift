@@ -605,6 +605,18 @@ enum RovaBackendClient {
         _ = try await authorizedPost("code-projects/jobs/\(id)/cancel", body: [:], as: Response.self)
     }
 
+    struct CodeProjectSnapshot: Decodable, Sendable {
+        struct Header: Decodable, Sendable { let id: Int; let name: String; let kind: String; let version: Int }
+        struct File: Decodable, Sendable { let path: String; let content: String }
+        let project: Header
+        let files: [File]
+    }
+
+    /// Every file of a project at its current version: what a device keeps as its full local copy.
+    static func fetchCodeProjectSnapshot(id: Int) async throws -> CodeProjectSnapshot {
+        try await authorizedGet("code-projects/\(id)/snapshot", as: CodeProjectSnapshot.self)
+    }
+
     /// Opening a project makes it the one the backend treats as current.
     static func openCodeProject(id: Int) async {
         struct Response: Decodable { let ok: Bool }

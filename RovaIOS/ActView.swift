@@ -298,8 +298,17 @@ struct ActView: View {
         do {
             projects = try await RovaBackendClient.fetchCodeProjects()
             if creating == false { notice = nil }
+            let fresh = projects
+            Task { await ActProjectStore.sync(with: fresh) }
         } catch {
-            if projects.isEmpty { notice = "Projeler yüklenemedi." }
+            // Offline: the copies on this phone are the list.
+            if projects.isEmpty {
+                projects = ActProjectStore.all().map {
+                    RovaBackendClient.CodeProject(id: $0.id, name: $0.name, kind: $0.kind, version: $0.version, updatedAt: "", fileCount: $0.files.count, share: nil)
+                }
+                if projects.isEmpty { notice = "Projeler yüklenemedi." }
+                else { notice = "Çevrimdışı: bu telefondaki kopyalar gösteriliyor." }
+            }
         }
         loaded = true
     }
@@ -465,7 +474,9 @@ struct CodeProjectWorkspaceView: View {
     @State private var confirmingDelete = false
     @FocusState private var focused: Bool
 
-    private var isWeb: Bool { detail?.project.kind != "python" }
+    @State private var localKind: String?
+    @State private var localName: String?
+    private var isWeb: Bool { (detail?.project.kind ?? localKind) != "python" }
     private var canSend: Bool { !working && activeJobID == nil && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 }
     private var latest: RovaBackendClient.CodeProjectVersion? { detail?.history.first }
 
@@ -476,7 +487,7 @@ struct CodeProjectWorkspaceView: View {
                     Button { onBack?() } label: { Label("Projeler", systemImage: "chevron.left") }
                         .buttonStyle(.plain)
                         .foregroundStyle(WiqoTheme.ink)
-                    Text(detail?.project.name ?? "Proje")
+                    Text(detail?.project.name ?? localName ?? "Proje")
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                     Spacer(minLength: 4)
@@ -490,7 +501,7 @@ struct CodeProjectWorkspaceView: View {
             footer
         }
         .background(RovaDesign.canvas)
-        .navigationTitle(embedded ? "" : (detail?.project.name ?? "Proje"))
+        .navigationTitle(embedded ? "" : (detail?.project.name ?? localName ?? "Proje"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if isModal {
@@ -522,7 +533,7 @@ struct CodeProjectWorkspaceView: View {
 
     @ViewBuilder private var stage: some View {
         ZStack {
-            if detail == nil && notice == nil {
+            if detail == nil && localKind == nil && notice == nil {
                 ProgressView()
             } else if isWeb {
                 if let html {
@@ -675,15 +686,29 @@ struct CodeProjectWorkspaceView: View {
     // MARK: İşlemler
 
     private func load() async {
+        // The copy on this phone opens first, with or without a connection.
+        if html == nil, let local = ActProjectStore.load(projectID) {
+            localKind = local.kind
+            localName = local.name
+            if local.kind == "web", let bundle = local.bundle { html = bundle; reloadToken += 1 }
+        }
         do {
-            detail = try await RovaBackendClient.fetchCodeProject(id: projectID)
-            if detail?.project.kind == "web" {
-                html = try await RovaBackendClient.fetchCodeProjectBundle(id: projectID)
-                reloadToken += 1
+            let fresh = try await RovaBackendClient.fetchCodeProject(id: projectID)
+            detail = fresh
+            if fresh.project.kind == "web" {
+                if let pulled = await ActProjectStore.pull(projectID, knownServerVersion: fresh.project.version), let bundle = pulled.bundle {
+                    if bundle != html { html = bundle; reloadToken += 1 }
+                } else {
+                    html = try await RovaBackendClient.fetchCodeProjectBundle(id: projectID)
+                    reloadToken += 1
+                }
+            } else {
+                await ActProjectStore.pull(projectID, knownServerVersion: fresh.project.version)
             }
             notice = nil
         } catch {
-            notice = detail == nil ? "Proje yüklenemedi." : "Önizleme açılamadı."
+            if detail == nil && localKind != nil { notice = "Çevrimdışı: bu telefondaki kopya gösteriliyor." }
+            else { notice = detail == nil ? "Proje yüklenemedi." : "Önizleme açılamadı." }
         }
     }
 
