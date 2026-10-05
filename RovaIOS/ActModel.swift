@@ -317,6 +317,7 @@ final class ActModel: ObservableObject {
         guard RovaBackendClient.isAuthenticated, !syncing else { return }
         syncing = true
         defer { syncing = false }
+        await purgeEmptyProjects()
         await migrateLegacyIfNeeded()
         do {
             let remote = try await hub.projects()
@@ -441,26 +442,49 @@ final class ActModel: ObservableObject {
     // MARK: One-time move from the first, plaintext version
 
     private var migratedKey: String { "act.legacy.migrated.\(RovaBackendClient.currentUserID ?? "anonymous")" }
+    /// Server ids already brought over (so a retry never makes a second copy).
+    private var movedKey: String { "act.legacy.moved.\(RovaBackendClient.currentUserID ?? "anonymous")" }
+    private var migrating = false
 
-    /// Projects made before projects were end-to-end encrypted: downloaded once, sealed, and removed from the server.
+    /// Projects made before projects were end-to-end encrypted: downloaded once, sealed, and removed from the
+    /// server. Idempotent: each server project is moved at most once, empty ones are just dropped.
     private func migrateLegacyIfNeeded() async {
-        guard !UserDefaults.standard.bool(forKey: migratedKey) else { return }
+        guard !UserDefaults.standard.bool(forKey: migratedKey), !migrating else { return }
+        migrating = true
+        defer { migrating = false }
         guard let legacy = try? await RovaBackendClient.fetchCodeProjects() else { return }
-        var allMoved = true
+        var moved = Set((UserDefaults.standard.array(forKey: movedKey) as? [Int]) ?? [])
+        var allDone = true
         for item in legacy {
-            guard let snapshot = try? await RovaBackendClient.fetchCodeProjectSnapshot(id: item.id) else { allMoved = false; continue }
+            if moved.contains(item.id) {
+                if (try? await RovaBackendClient.deleteCodeProject(id: item.id)) == nil { allDone = false }
+                continue
+            }
+            guard let snapshot = try? await RovaBackendClient.fetchCodeProjectSnapshot(id: item.id) else { allDone = false; continue }
             var files: [String: String] = [:]
             for file in snapshot.files { files[file.path] = file.content }
-            let entry = ActHistoryEntry(id: UUID(), summary: "Önceki sürümden aktarıldı", date: Date(), verified: true, source: "Wiqo", changes: diff([:], files))
-            let local = ActLocalProject(id: UUID().uuidString, mode: .devices, replica: ActReplica(meta: ActProjectMeta(name: snapshot.project.name, kind: snapshot.project.kind), files: files), history: [entry], updatedAt: Date())
-            store(local)
-            await sync(local.id)
-            if let synced = project(local.id), synced.replica.hubId != nil, synced.replica.version >= 1 {
-                try? await RovaBackendClient.deleteCodeProject(id: item.id)
-            } else {
-                allMoved = false
+            if !files.isEmpty {
+                let entry = ActHistoryEntry(id: UUID(), summary: "Önceki sürümden aktarıldı", date: Date(), verified: true, source: "Wiqo", changes: diff([:], files))
+                let local = ActLocalProject(id: UUID().uuidString, mode: .devices, replica: ActReplica(meta: ActProjectMeta(name: snapshot.project.name, kind: snapshot.project.kind), files: files), history: [entry], updatedAt: Date())
+                store(local)
+                // Remember the move before anything else can run again.
+                moved.insert(item.id)
+                UserDefaults.standard.set(Array(moved), forKey: movedKey)
+                await sync(local.id)
+                guard let synced = project(local.id), synced.replica.hubId != nil, synced.replica.version >= 1 else { allDone = false; continue }
             }
+            // An empty server project (a create that never finished) has nothing to move.
+            if (try? await RovaBackendClient.deleteCodeProject(id: item.id)) != nil { moved.insert(item.id); UserDefaults.standard.set(Array(moved), forKey: movedKey) } else { allDone = false }
         }
-        if allMoved { UserDefaults.standard.set(true, forKey: migratedKey) }
+        if allDone { UserDefaults.standard.set(true, forKey: migratedKey) }
+    }
+
+    /// Projects without a single file (left by an unfinished create or an earlier bug) are removed, here and on the hub.
+    func purgeEmptyProjects() async {
+        for p in projects where p.files.isEmpty && job?.projectID != p.id {
+            if p.mode == .devices, let hubID = p.replica.hubId { try? await hub.deleteProject(id: hubID) }
+            ActProjectStore.delete(p.id)
+            projects.removeAll { $0.id == p.id }
+        }
     }
 }

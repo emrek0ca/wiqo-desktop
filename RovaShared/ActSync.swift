@@ -71,6 +71,8 @@ public enum ActSync {
     @discardableResult
     public static func syncOnce(_ replica: inout ActReplica, hub: ActHub, keys: ActKeys, device: String, summary: String = "değişiklik") async throws -> ActSyncReport {
         var report = ActSyncReport()
+        // A project with nothing in it is not worth a hub entry (and an unfinished create must never leave one behind).
+        if replica.hubId == nil && replica.files.isEmpty { return report }
         try await ensureOnHub(&replica, hub: hub, keys: keys)
         guard let id = replica.hubId else { return report }
 
