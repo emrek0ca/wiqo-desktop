@@ -25,6 +25,58 @@ private func verifyActCandidate(taskID: Int, candidateID: String) async {
     }
 }
 
+/// The three steps every Act job goes through, in order.
+enum ActStage: Int, CaseIterable {
+    case writing, verifying, saving
+
+    var title: String {
+        switch self {
+        case .writing: return "Yazılıyor"
+        case .verifying: return "Telefonda deneniyor"
+        case .saving: return "Kaydediliyor"
+        }
+    }
+}
+
+/// One progress card for creating and for changing: the steps in order, the current one marked,
+/// the job's own message under it, and a way to stop.
+private struct ActJobCard: View {
+    let stage: ActStage
+    let message: String?
+    let onCancel: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(ActStage.allCases, id: \.rawValue) { step in
+                HStack(spacing: 10) {
+                    Group {
+                        if step.rawValue < stage.rawValue {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
+                        } else if step == stage {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "circle").foregroundStyle(.tertiary)
+                        }
+                    }
+                    .frame(width: 20, height: 20)
+                    Text(step.title)
+                        .font(.subheadline.weight(step == stage ? .semibold : .regular))
+                        .foregroundStyle(step.rawValue > stage.rawValue ? .secondary : .primary)
+                }
+            }
+            if let message, !message.isEmpty {
+                Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            if let onCancel {
+                Button("Durdur", action: onCancel).font(.footnote.weight(.medium))
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
 enum ActJobOutcome {
     case finished(RovaBackendClient.CodeProjectJob)
     case failed(String)
@@ -35,7 +87,7 @@ enum ActJobOutcome {
 /// backend asks, and says what went wrong instead of waiting silently. Server errors are retried for
 /// about 30 seconds before the job is reported as unreachable.
 @MainActor
-private func watchActJob(id: Int, progress: (String) -> Void, isCurrent: () -> Bool) async -> ActJobOutcome {
+private func watchActJob(id: Int, progress: (ActStage, String) -> Void, isCurrent: () -> Bool) async -> ActJobOutcome {
     var tried: Set<String> = []
     var failures = 0
     for _ in 0..<130 {
@@ -45,20 +97,21 @@ private func watchActJob(id: Int, progress: (String) -> Void, isCurrent: () -> B
             failures = 0
             if job.finished { return .finished(job) }
             if job.status == "waiting_device", let candidate = job.verification {
-                progress("Telefonda deneniyor…")
+                progress(.verifying, "Sayfa bu telefonun tarayıcısında açılıp deneniyor.")
                 if tried.insert(candidate.candidateId).inserted {
                     await verifyActCandidate(taskID: id, candidateID: candidate.candidateId)
+                    progress(.saving, "")
                     continue
                 }
             } else {
-                progress(job.progress ?? "Hazırlanıyor…")
+                progress(.writing, job.progress ?? "Hazırlanıyor…")
             }
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             if message.contains("bulunamadı") { return .failed("Görev bulunamadı; listeyi yenileyip tekrar dene.") }
             failures += 1
             if failures >= 15 { return .failed("Sunucuya ulaşılamadı: \(message)") }
-            if failures >= 3 { progress("Bağlantı zayıf, yeniden deneniyor…") }
+            if failures >= 3 { progress(.writing, "Bağlantı zayıf, yeniden deneniyor…") }
         }
         try? await Task.sleep(for: .seconds(2))
     }
@@ -74,6 +127,7 @@ struct ActView: View {
     @State private var creating = false
     @State private var activeJobID: Int?
     @State private var jobProgress: String?
+    @State private var jobStage: ActStage = .writing
     @State private var notice: String?
     @State private var opened: OpenedProject?
     @State private var pendingDelete: RovaBackendClient.CodeProject?
@@ -174,12 +228,8 @@ struct ActView: View {
             .buttonStyle(.wiqoPill(.accent))
             .disabled(!canCreate)
 
-            if let jobProgress {
-                Text(jobProgress).font(.footnote).foregroundStyle(.secondary)
-            }
-            if let activeJobID {
-                Button("Görevi durdur") { Task { await cancelCreateJob(activeJobID) } }
-                    .font(.footnote)
+            if creating || activeJobID != nil {
+                ActJobCard(stage: jobStage, message: jobProgress, onCancel: activeJobID.map { id in { Task { await cancelCreateJob(id) } } })
             }
 
             if let notice {
@@ -282,7 +332,7 @@ struct ActView: View {
     private var createRequestStorageKey: String { "act-create-request-\(RovaBackendClient.currentUserID ?? "anonymous")" }
 
     private func watchCreateJob(_ id: Int) async {
-        let outcome = await watchActJob(id: id, progress: { jobProgress = $0 }, isCurrent: { activeJobID == id })
+        let outcome = await watchActJob(id: id, progress: { jobStage = $0; jobProgress = $1 }, isCurrent: { activeJobID == id })
         switch outcome {
         case .finished(let job):
             UserDefaults.standard.removeObject(forKey: createJobStorageKey)
@@ -407,6 +457,7 @@ struct CodeProjectWorkspaceView: View {
     @State private var working = false
     @State private var activeJobID: Int?
     @State private var jobProgress: String?
+    @State private var jobStage: ActStage = .writing
     @State private var notice: String?
     @State private var warning: String?
     @State private var reloadToken = 0
@@ -532,21 +583,11 @@ struct CodeProjectWorkspaceView: View {
     }
 
     private var workingOverlay: some View {
-        VStack(spacing: 10) {
-            ProgressView()
-            Text(jobProgress ?? "Değişiklik hazırlanıyor")
-                .font(.subheadline.weight(.medium))
-            Text("Yazılıyor, denenip doğrulanıyor.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if let activeJobID {
-                Button("Görevi durdur") { Task { await cancelEditJob(activeJobID) } }
-                    .font(.footnote)
-            }
-        }
-        .padding(22)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .transition(.opacity)
+        ActJobCard(stage: jobStage, message: jobProgress, onCancel: activeJobID.map { id in { Task { await cancelEditJob(id) } } })
+            .frame(maxWidth: 300)
+            .padding(8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .transition(.opacity)
     }
 
     // MARK: Alt bölüm
@@ -675,7 +716,7 @@ struct CodeProjectWorkspaceView: View {
     private var editRequestStorageKey: String { "act-edit-request-\(RovaBackendClient.currentUserID ?? "anonymous")-\(projectID)" }
 
     private func watchEditJob(_ id: Int) async {
-        let outcome = await watchActJob(id: id, progress: { jobProgress = $0 }, isCurrent: { activeJobID == id })
+        let outcome = await watchActJob(id: id, progress: { jobStage = $0; jobProgress = $1 }, isCurrent: { activeJobID == id })
         switch outcome {
         case .finished(let job):
             UserDefaults.standard.removeObject(forKey: editJobStorageKey)

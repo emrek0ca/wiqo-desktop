@@ -548,15 +548,6 @@ enum RovaBackendClient {
         let durationMs: Int
     }
 
-    /// What a create/edit from the Act tab returns: the project as it is now and how the change went.
-    struct CodeProjectEditResult: Decodable, Sendable {
-        let project: CodeProject
-        let version: Int
-        let summary: String
-        let verified: Bool
-        let problem: String?
-    }
-
     struct CodeProjectJob: Decodable, Sendable {
         struct Verification: Decodable, Sendable { let candidateId: String }
         struct Result: Decodable, Sendable {
@@ -612,16 +603,6 @@ enum RovaBackendClient {
     static func cancelCodeProjectJob(id: Int) async throws {
         struct Response: Decodable { let ok: Bool }
         _ = try await authorizedPost("code-projects/jobs/\(id)/cancel", body: [:], as: Response.self)
-    }
-
-    /// A new project from a description (writer + checks run on the backend; up to ~2 minutes).
-    static func createCodeProject(request: String) async throws -> CodeProjectEditResult {
-        try await authorizedPost("code-projects", body: ["request": request], as: CodeProjectEditResult.self, timeout: 180)
-    }
-
-    /// One change to this project; it can only ever touch this project.
-    static func editCodeProject(id: Int, request: String) async throws -> CodeProjectEditResult {
-        try await authorizedPost("code-projects/\(id)/edit", body: ["request": request], as: CodeProjectEditResult.self, timeout: 180)
     }
 
     /// Opening a project makes it the one the backend treats as current.
