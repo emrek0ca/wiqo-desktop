@@ -123,7 +123,7 @@ actor MacProjectSync {
             var pulled = 0
             var copies = 0
             var foreign = 0
-            for project in remote {
+            for project in remote where project.version > 0 || linked[project.id] != nil {
                 if let dir = linked[project.id] {
                     let report = try await syncFolder(dir, keys: keys)
                     pushed += report.pushed

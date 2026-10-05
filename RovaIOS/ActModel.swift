@@ -42,6 +42,7 @@ final class ActModel: ObservableObject {
     private var keys: ActKeys { ActKeyStore.loadOrCreate() }
     private var cancelRequested = false
     private var syncing = false
+    private var syncingIDs: Set<String> = []
 
     private static let device = "iPhone"
     private static let consentKey = "act.writer.consent.v1"
@@ -323,7 +324,8 @@ final class ActModel: ObservableObject {
             let remote = try await hub.projects()
             let known = Set(projects.compactMap { $0.replica.hubId })
             var foreign = 0
-            for hubProject in remote where !known.contains(hubProject.id) {
+            // An entry with no version has nothing in it yet (another device is mid-way); it is picked up once it has.
+            for hubProject in remote where !known.contains(hubProject.id) && hubProject.version > 0 {
                 guard let replica = try await ActSync.download(hubProject: hubProject, hub: hub, keys: keys) else { foreign += 1; continue }
                 let files = replica.files
                 let entry = ActHistoryEntry(id: UUID(), summary: "Başka cihazdan alındı", date: Date(), verified: true, source: "Başka cihaz", changes: diff([:], files))
@@ -360,10 +362,14 @@ final class ActModel: ObservableObject {
     }
 
     func sync(_ id: String) async {
-        guard var p = project(id), p.mode == .devices, job?.projectID != id else { return }
+        // One pass per project at a time: overlapping passes (a save, the tab opening, a change notice) each
+        // created their own hub entry for a project that had none yet, and every new entry woke the others.
+        guard var p = project(id), p.mode == .devices, job?.projectID != id, !syncingIDs.contains(id) else { return }
+        syncingIDs.insert(id)
+        defer { syncingIDs.remove(id) }
         let before = p.files
+        var replica = p.replica
         do {
-            var replica = p.replica
             let report = try await ActSync.syncOnce(&replica, hub: hub, keys: keys, device: Self.device)
             p.replica = replica
             if report.pulled > 0 || !report.conflictCopies.isEmpty {
@@ -376,6 +382,12 @@ final class ActModel: ObservableObject {
             if report.changed { store(p) } else if p.replica != project(id)?.replica { ActProjectStore.save(p); if let i = projects.firstIndex(where: { $0.id == id }) { projects[i] = p } }
             syncNote = nil
         } catch {
+            // A hub entry made before the failure must be remembered, or the next pass makes another one.
+            if replica.hubId != nil, replica.hubId != p.replica.hubId, var current = project(id) {
+                current.replica.hubId = replica.hubId
+                ActProjectStore.save(current)
+                if let i = projects.firstIndex(where: { $0.id == id }) { projects[i] = current }
+            }
             syncNote = (error as? LocalizedError)?.errorDescription
         }
     }
