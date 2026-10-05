@@ -92,6 +92,8 @@ extension RovaBackendClient.CopilotResultWidget {
         switch type {
         case .created_resource:
             return "created:\(resourceType?.rawValue ?? "unknown"):\(id.map { String($0) } ?? "unknown")"
+        case .code_change:
+            return "code:\(id.map { String($0) } ?? "unknown"):\(projectVersion.map { String($0) } ?? "0")"
         case .weather:
             return "weather:\((location ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
         case .sources:
@@ -148,6 +150,8 @@ enum CopilotWidgetCatalog {
         switch widget.type {
         case .created_resource:
             return "created:\(widget.resourceType?.rawValue ?? "unknown"):\(widget.id.map { String($0) } ?? "unknown")"
+        case .code_change:
+            return "code:\(widget.id.map { String($0) } ?? "unknown"):\(widget.projectVersion.map { String($0) } ?? "0")"
         case .weather:
             let location = (widget.location ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return "weather:\(location)"

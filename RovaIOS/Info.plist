@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 	<key>CFBundleDisplayName</key>
 	<string>Wiqo</string>
 	<key>CFBundleExecutable</key>
@@ -16,6 +14,8 @@
 	<string>Wiqo</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -27,16 +27,10 @@
 			</array>
 		</dict>
 	</array>
-	<key>CFBundleShortVersionString</key>
-	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>UIAppFonts</key>
-	<array>
-		<string>Fonts/InterVariable.ttf</string>
-		<string>Fonts/JetBrainsMono-Regular.ttf</string>
-		<string>Fonts/JetBrainsMono-Medium.ttf</string>
-	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
@@ -56,6 +50,12 @@
 	<string>Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Wiqo, sesli komutunuzu iPhone’unuzda metne dönüştürmek için konuşma tanımayı kullanır.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fonts/InterVariable.ttf</string>
+		<string>Fonts/JetBrainsMono-Regular.ttf</string>
+		<string>Fonts/JetBrainsMono-Medium.ttf</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 </dict>

@@ -284,7 +284,7 @@ enum RovaBackendClient {
 
     struct CopilotResultWidget: Codable, Hashable, Sendable {
         enum Kind: String, Codable {
-            case created_resource, weather, sources, artifact, task_result, approval, error, list, table, unknown
+            case created_resource, code_change, weather, sources, artifact, task_result, approval, error, list, table, unknown
 
             init(from decoder: Decoder) throws {
                 let value = try decoder.singleValueContainer().decode(String.self)
@@ -401,6 +401,9 @@ enum RovaBackendClient {
         let columns: [String]?
         let rows: [[String]]?
         let totalRows: Int?
+        /// code_change: the project's version after this change, and whether the change was checked.
+        let projectVersion: Int?
+        let verified: Bool?
     }
 
     /// The handle a chat reply carries for a background agent task; the card polls the detail.
@@ -932,6 +935,8 @@ enum RovaBackendClient {
                 throw RovaBackendError.copilotPayloadTooLarge
             }
         }
+        
+        
         if !files.isEmpty {
             let encoded = try encoder.encode(files)
             guard encoded.count <= Self.maxFileContentsPayloadBytes,

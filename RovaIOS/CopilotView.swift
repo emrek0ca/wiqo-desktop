@@ -2725,6 +2725,8 @@ private struct CopilotResultWidgetView: View {
         switch widget.type {
         case .created_resource:
             createdResourceCard
+        case .code_change:
+            CodeChangeCard(widget: widget)
         case .weather:
             weatherCard
         case .sources:
