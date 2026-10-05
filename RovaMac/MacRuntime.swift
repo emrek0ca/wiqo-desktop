@@ -49,9 +49,11 @@ final class MacRuntime: ObservableObject {
     /// "Wiqo Projeleri" folder sync with the account's other devices (see MacProjectSync).
     @Published private(set) var projectSyncStatus = "Senkron kapalı"
     private var projectSyncStatusTask: Task<Void, Never>?
-    private lazy var projectSync = MacProjectSync(apiBase: MacBackendChannel.apiBaseURL, allowRun: { UserDefaults.standard.bool(forKey: MacStorage.runProjectsKey) }) { [weak self] in
+    private lazy var projectSync = MacProjectSync(apiBase: MacBackendChannel.apiBaseURL, flavor: MacStorage.flavor, allowRun: { UserDefaults.standard.bool(forKey: MacStorage.runProjectsKey) }) { [weak self] in
         await self?.backendChannel.accessTokenForFileTransfer()
     }
+    /// The key that makes Act projects private; it arrives from the iPhone or is typed in as a recovery code.
+    @Published private(set) var hasProjectKey = ActKeyStore.load(flavor: MacStorage.flavor) != nil
     @Published private(set) var automations: [MacAutomation] = []
     @Published private(set) var isLoadingAutomations = false
     @Published private(set) var automationsError: String?
@@ -186,6 +188,18 @@ final class MacRuntime: ObservableObject {
                 try? await Task.sleep(for: .seconds(4))
             }
         }
+    }
+
+    func setProjectKey(_ keys: ActKeys) {
+        try? ActKeyStore.save(keys, flavor: MacStorage.flavor)
+        hasProjectKey = true
+    }
+
+    /// Returns false when the recovery code is not valid.
+    func useRecoveryCode(_ code: String) -> Bool {
+        guard let keys = ActKeys.fromRecoveryCode(code) else { return false }
+        setProjectKey(keys)
+        return true
     }
 
     /// Opens the folder that holds the synced projects in Finder.
@@ -657,6 +671,12 @@ final class MacRuntime: ObservableObject {
                 return
             }
             await backendChannel.connect(token: backendToken)
+        case .projectKey(let encoded):
+            guard session.isAuthenticated else {
+                authLogger.warning("Project key rejected before authentication")
+                return
+            }
+            if let data = Data(base64Encoded: encoded), let keys = ActKeys(master: data) { setProjectKey(keys) }
         default:
             authLogger.warning("Unsupported message rejected")
             session.send(WireEnvelope(requestID: envelope.requestID, message: .failure(RovaError(code: "UNSUPPORTED_MESSAGE", message: "Mesaj desteklenmiyor."))))

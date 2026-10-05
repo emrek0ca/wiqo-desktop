@@ -284,6 +284,8 @@ struct MacSettingsView: View {
     /// Privacy permission states, computed off the main thread on appear/refresh - never in `body`.
     @State private var privacyPermissions: [MacPermission] = []
     @AppStorage(MacStorage.runProjectsKey) private var runProjects = false
+    @State private var recoveryCode = ""
+    @State private var recoveryMessage: String?
 
     var body: some View {
         TabView {
@@ -311,9 +313,18 @@ struct MacSettingsView: View {
         Form {
             Section("Projeler") {
                 LabeledContent("Senkron", value: runtime.projectSyncStatus)
+                LabeledContent("Proje anahtarı", value: runtime.hasProjectKey ? "Var" : "Yok")
+                if !runtime.hasProjectKey {
+                    HStack {
+                        TextField("iPhone'daki kurtarma kodu", text: $recoveryCode)
+                        Button("Kullan") { recoveryMessage = runtime.useRecoveryCode(recoveryCode) ? nil : "Kod geçersiz"; if runtime.hasProjectKey { recoveryCode = "" } }
+                            .disabled(recoveryCode.count < 20)
+                    }
+                    if let recoveryMessage { Text(recoveryMessage).font(.caption).foregroundStyle(.red) }
+                }
                 Button("Wiqo Projeleri klasörünü aç") { runtime.openProjectsFolder() }
                 Toggle("Telefondan gelen Python projelerini bu Mac'te çalıştır", isOn: $runProjects)
-                Text("Act projelerin bu klasörde gerçek dosyalar olarak durur; istediğin editörde düzenle, değişiklikler telefona da gider.")
+                Text("Act projelerin bu klasörde gerçek dosyalar olarak durur; istediğin editörde düzenle, değişiklikler cihazlarına şifreli gider.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

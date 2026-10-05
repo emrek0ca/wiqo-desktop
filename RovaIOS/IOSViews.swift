@@ -582,6 +582,9 @@ struct WiqoHomeView: View {
             }
         }
         .onChange(of: mode) { _, _ in dismissKeyboard() }
+        .onReceive(NotificationCenter.default.publisher(for: .wiqoOpenAct)) { _ in
+            mode = .act
+        }
         .onReceive(NotificationCenter.default.publisher(for: .wiqoOpenConversation)) { note in
             // "Sohbette devam et" from an automation run: close any sheet and open that chat.
             guard let id = note.object as? String, !id.isEmpty else { return }

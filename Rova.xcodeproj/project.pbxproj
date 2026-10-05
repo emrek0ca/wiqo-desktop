@@ -132,6 +132,7 @@
 		D30000000000000000000C11 /* CodeProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C10 /* CodeProjectsView.swift */; };
 		D30000000000000000000C13 /* ActView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C12 /* ActView.swift */; };
 		D30000000000000000000C15 /* ActProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C14 /* ActProjectStore.swift */; };
+		D50000000000000000000200 /* ActModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000201 /* ActModel.swift */; };
 		D40000000000000000000001 /* DeviceOutcomeNarrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000002 /* DeviceOutcomeNarrator.swift */; };
 		E50000000000000000000001 /* LocalBrowserWorkerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50000000000000000000002 /* LocalBrowserWorkerClient.swift */; };
 		E50000000000000000000003 /* RovaBrowserWorker in Resources */ = {isa = PBXBuildFile; fileRef = E50000000000000000000004 /* RovaBrowserWorker */; };
@@ -250,6 +251,7 @@
 		D30000000000000000000C10 /* CodeProjectsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodeProjectsView.swift; sourceTree = "<group>"; };
 		D30000000000000000000C12 /* ActView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActView.swift; sourceTree = "<group>"; };
 		D30000000000000000000C14 /* ActProjectStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActProjectStore.swift; sourceTree = "<group>"; };
+		D50000000000000000000201 /* ActModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActModel.swift; sourceTree = "<group>"; };
 		D40000000000000000000002 /* DeviceOutcomeNarrator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceOutcomeNarrator.swift; sourceTree = "<group>"; };
 		E027010A9289E389FE2FC646 /* AutomationTemplatesView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AutomationTemplatesView.swift; sourceTree = "<group>"; };
 		E50000000000000000000002 /* LocalBrowserWorkerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBrowserWorkerClient.swift; sourceTree = "<group>"; };
@@ -431,6 +433,7 @@
 				D30000000000000000000C10 /* CodeProjectsView.swift */,
 				D30000000000000000000C12 /* ActView.swift */,
 				D30000000000000000000C14 /* ActProjectStore.swift */,
+				D50000000000000000000201 /* ActModel.swift */,
 				D20000000000000000000032 /* CopilotModels.swift */,
 				D2000000000000000000002D /* WiqoSettingsKit.swift */,
 				D2000000000000000000002B /* WiqoControls.swift */,
@@ -777,6 +780,7 @@
 				D30000000000000000000C11 /* CodeProjectsView.swift in Sources */,
 				D30000000000000000000C13 /* ActView.swift in Sources */,
 				D30000000000000000000C15 /* ActProjectStore.swift in Sources */,
+				D50000000000000000000200 /* ActModel.swift in Sources */,
 				D20000000000000000000031 /* CopilotModels.swift in Sources */,
 				D2000000000000000000002C /* WiqoSettingsKit.swift in Sources */,
 				D2000000000000000000002A /* WiqoControls.swift in Sources */,

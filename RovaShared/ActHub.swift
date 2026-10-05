@@ -143,6 +143,33 @@ public struct ActHub: Sendable {
         try await send("POST", "code-sync/run", body: ["files": files.map { ["path": $0.path, "content": $0.content] }], as: RunResult.self, timeout: 60)
     }
 
+    // MARK: Tasks for the person's computer
+
+    public struct PcTask: Decodable, Sendable {
+        public let id: Int
+        public let status: String
+        public let output: String
+        public var finished: Bool { status == "done" || status == "failed" }
+    }
+
+    public func startPcTask(projectId: Int, action: String) async throws -> PcTask {
+        try await send("POST", "code-sync/projects/\(projectId)/pc-tasks", body: ["action": action], as: PcTask.self)
+    }
+
+    public func pcTask(_ id: Int) async throws -> PcTask { try await get("code-sync/pc-tasks/\(id)", as: PcTask.self) }
+
+    // The computer's side: pick up what was handed over, answer with the outcome.
+    public struct PendingPcTask: Decodable, Sendable { public let id: Int; public let projectId: Int; public let action: String }
+
+    public func pendingPcTasks() async throws -> [PendingPcTask] {
+        struct Response: Decodable { let tasks: [PendingPcTask] }
+        return try await get("code-sync/pc-tasks/pending", as: Response.self).tasks
+    }
+
+    public func finishPcTask(id: Int, ok: Bool, output: String) async {
+        _ = try? await send("POST", "code-sync/pc-tasks/\(id)/result", body: ["ok": ok, "output": output], as: Ok.self)
+    }
+
     // MARK: HTTP
 
     private struct Ok: Decodable { let ok: Bool }

@@ -1,58 +1,19 @@
-import CryptoKit
 import SwiftUI
-
-private func actRequestFingerprint(_ text: String) -> String {
-    SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
-}
-
-/// Tries the candidate page in the phone's own WebKit and reports the answer. Never throws: if the answer
-/// cannot be delivered, the backend saves the change unverified once its grace period is over.
-@MainActor
-private func verifyActCandidate(taskID: Int, candidateID: String) async {
-    do {
-        let candidate = try await RovaBackendClient.fetchCodeProjectCandidate(id: taskID)
-        guard candidate.candidateId == candidateID else { return }
-        switch await ActWebVerifier().verify(candidate.html) {
-        case .passed:
-            try await RovaBackendClient.reportCodeProjectVerification(id: taskID, candidateId: candidateID, problems: [])
-        case .problems(let list):
-            try await RovaBackendClient.reportCodeProjectVerification(id: taskID, candidateId: candidateID, problems: list)
-        case .unavailable:
-            try await RovaBackendClient.reportCodeProjectVerification(id: taskID, candidateId: candidateID, problems: [], skipped: true)
-        }
-    } catch {
-        // Left to the backend's grace period.
-    }
-}
-
-/// The three steps every Act job goes through, in order.
-enum ActStage: Int, CaseIterable {
-    case writing, verifying, saving
-
-    var title: String {
-        switch self {
-        case .writing: return "Yazılıyor"
-        case .verifying: return "Telefonda deneniyor"
-        case .saving: return "Kaydediliyor"
-        }
-    }
-}
 
 /// One progress card for creating and for changing: the steps in order, the current one marked,
 /// the job's own message under it, and a way to stop.
 private struct ActJobCard: View {
-    let stage: ActStage
-    let message: String?
-    let onCancel: (() -> Void)?
+    let job: ActJobState
+    let onCancel: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(ActStage.allCases, id: \.rawValue) { step in
                 HStack(spacing: 10) {
                     Group {
-                        if step.rawValue < stage.rawValue {
+                        if step.rawValue < job.stage.rawValue {
                             Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
-                        } else if step == stage {
+                        } else if step == job.stage {
                             ProgressView().controlSize(.small)
                         } else {
                             Image(systemName: "circle").foregroundStyle(.tertiary)
@@ -60,16 +21,14 @@ private struct ActJobCard: View {
                     }
                     .frame(width: 20, height: 20)
                     Text(step.title)
-                        .font(.subheadline.weight(step == stage ? .semibold : .regular))
-                        .foregroundStyle(step.rawValue > stage.rawValue ? .secondary : .primary)
+                        .font(.subheadline.weight(step == job.stage ? .semibold : .regular))
+                        .foregroundStyle(step.rawValue > job.stage.rawValue ? .secondary : .primary)
                 }
             }
-            if let message, !message.isEmpty {
-                Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            if !job.message.isEmpty {
+                Text(job.message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
-            if let onCancel {
-                Button("Durdur", action: onCancel).font(.footnote.weight(.medium))
-            }
+            Button("Durdur", action: onCancel).font(.footnote.weight(.medium))
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -77,63 +36,41 @@ private struct ActJobCard: View {
     }
 }
 
-enum ActJobOutcome {
-    case finished(RovaBackendClient.CodeProjectJob)
-    case failed(String)
-    case stillRunning
+/// Said before the first request is sent to the writer, and before every one for a device-only project.
+private struct WriterConsentAlert: ViewModifier {
+    @Binding var isPresented: Bool
+    let deviceOnly: Bool
+    let onContinue: () -> Void
+
+    func body(content: Content) -> some View {
+        content.alert("Yazara gönderilecek", isPresented: $isPresented) {
+            Button("Devam et") { onContinue() }
+            Button("Vazgeç", role: .cancel) {}
+        } message: {
+            Text(deviceOnly
+                 ? "Bu proje yalnız bu cihazda duruyor. İsteği yazmak için dosyaları bu istek boyunca yazar modele gönderilir; sunucuda saklanmaz."
+                 : "İsteği yazmak için projenin dosyaları yazar modele gönderilir ve sunucuda saklanmaz. Projen cihazlar arasında şifreli senkronlanır; sunucu içeriği okuyamaz.")
+        }
+    }
 }
 
-/// Follows one Act job to its end: shows the job's real progress, tries the page on this phone when the
-/// backend asks, and says what went wrong instead of waiting silently. Server errors are retried for
-/// about 30 seconds before the job is reported as unreachable.
-@MainActor
-private func watchActJob(id: Int, progress: (ActStage, String) -> Void, isCurrent: () -> Bool) async -> ActJobOutcome {
-    var tried: Set<String> = []
-    var failures = 0
-    for _ in 0..<130 {
-        if Task.isCancelled || !isCurrent() { return .stillRunning }
-        do {
-            let job = try await RovaBackendClient.fetchCodeProjectJob(id: id)
-            failures = 0
-            if job.finished { return .finished(job) }
-            if job.status == "waiting_device", let candidate = job.verification {
-                progress(.verifying, "Sayfa bu telefonun tarayıcısında açılıp deneniyor.")
-                if tried.insert(candidate.candidateId).inserted {
-                    await verifyActCandidate(taskID: id, candidateID: candidate.candidateId)
-                    progress(.saving, "")
-                    continue
-                }
-            } else {
-                progress(.writing, job.progress ?? "Hazırlanıyor…")
-            }
-        } catch {
-            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            if message.contains("bulunamadı") { return .failed("Görev bulunamadı; listeyi yenileyip tekrar dene.") }
-            failures += 1
-            if failures >= 15 { return .failed("Sunucuya ulaşılamadı: \(message)") }
-            if failures >= 3 { progress(.writing, "Bağlantı zayıf, yeniden deneniyor…") }
-        }
-        try? await Task.sleep(for: .seconds(2))
+private extension View {
+    func writerConsent(isPresented: Binding<Bool>, deviceOnly: Bool, onContinue: @escaping () -> Void) -> some View {
+        modifier(WriterConsentAlert(isPresented: isPresented, deviceOnly: deviceOnly, onContinue: onContinue))
     }
-    return .stillRunning
 }
 
 /// The "Act" tab: where apps, games, pages and programs are made. A description creates a project;
 /// every project is a row in the list; opening one keeps all further changes on that project.
 struct ActView: View {
-    @State private var projects: [RovaBackendClient.CodeProject] = []
-    @State private var loaded = false
+    @ObservedObject private var model = ActModel.shared
     @State private var draft = ""
-    @State private var creating = false
-    @State private var activeJobID: Int?
-    @State private var jobProgress: String?
-    @State private var jobStage: ActStage = .writing
-    @State private var notice: String?
-    @State private var opened: OpenedProject?
-    @State private var pendingDelete: RovaBackendClient.CodeProject?
+    @State private var mode: ActPrivacyMode = .devices
+    @State private var openedID: String?
+    @State private var pendingDelete: ActLocalProject?
+    @State private var showingPrivacy = false
+    @State private var showingConsent = false
     @FocusState private var composerFocused: Bool
-
-    private struct OpenedProject: Hashable { let id: Int }
 
     private static let suggestions: [(title: String, prompt: String)] = [
         ("Sayaç", "Artır, azalt ve sıfırla butonları olan bir sayaç uygulaması yap"),
@@ -143,15 +80,20 @@ struct ActView: View {
         ("Python", "Python ile 1'den 100'e kadar asal sayıları yazdıran bir program yap")
     ]
 
-    private var canCreate: Bool { !creating && activeJobID == nil && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3 }
+    private var creating: Bool { model.job != nil && model.job?.projectID == nil }
+    private var canCreate: Bool { model.job == nil && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3 }
 
     var body: some View {
         Group {
-            if let opened {
-                CodeProjectWorkspaceView(projectID: opened.id, embedded: true, onBack: { self.opened = nil })
+            if let openedID, model.project(openedID) != nil {
+                CodeProjectWorkspaceView(projectID: openedID, embedded: true, onBack: { self.openedID = nil })
             } else {
                 projectList
             }
+        }
+        .task {
+            model.reload()
+            await model.syncAll()
         }
     }
 
@@ -168,20 +110,14 @@ struct ActView: View {
         .scrollDismissesKeyboard(.interactively)
         .background(RovaDesign.canvas)
         .confirmationDialog("Proje silinsin mi?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible, presenting: pendingDelete) { project in
-            Button("\(project.name) projesini sil", role: .destructive) { Task { await delete(project) } }
+            Button("\(project.name) projesini sil", role: .destructive) { Task { await model.delete(project.id) } }
             Button("Vazgeç", role: .cancel) {}
         } message: { _ in
-            Text("Dosyalar ve geçmiş silinir; geri alınamaz.")
+            Text("Dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.")
         }
-        .task {
-            await load()
-            if let id = UserDefaults.standard.object(forKey: createJobStorageKey) as? Int {
-                activeJobID = id
-                creating = true
-                await watchCreateJob(id)
-            }
-        }
-        .refreshable { await load() }
+        .sheet(isPresented: $showingPrivacy) { ActPrivacySheet() }
+        .writerConsent(isPresented: $showingConsent, deviceOnly: mode == .deviceOnly) { startCreate() }
+        .refreshable { await model.syncAll() }
     }
 
     // MARK: - Yeni proje
@@ -194,11 +130,11 @@ struct ActView: View {
             TextField("Örn. günlük su takibi uygulaması", text: $draft, axis: .vertical)
                 .lineLimit(2...5)
                 .focused($composerFocused)
-                .disabled(creating)
+                .disabled(model.job != nil)
                 .padding(12)
                 .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-            if draft.isEmpty && !creating {
+            if draft.isEmpty && model.job == nil {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(Self.suggestions, id: \.title) { suggestion in
@@ -218,21 +154,31 @@ struct ActView: View {
                 }
             }
 
-            Button { Task { await create() } } label: {
-                HStack(spacing: 8) {
-                    if creating { ProgressView().controlSize(.small).tint(Color(.systemBackground)) }
-                    Text(creating ? "Hazırlanıyor…" : "Oluştur")
+            HStack(spacing: 10) {
+                Menu {
+                    ForEach([ActPrivacyMode.devices, .deviceOnly], id: \.self) { option in
+                        Button { mode = option } label: { Label(option.title, systemImage: mode == option ? "checkmark" : option.systemImage) }
+                    }
+                } label: {
+                    Label(mode.title, systemImage: mode.systemImage)
+                        .font(.footnote.weight(.medium))
+                        .padding(.horizontal, 12)
+                        .frame(height: 34)
+                        .background(WiqoTheme.inset, in: Capsule())
                 }
-                .frame(maxWidth: .infinity)
+                .disabled(model.job != nil)
+                Spacer(minLength: 0)
+                Button { requestCreate() } label: {
+                    Text(creating ? "Hazırlanıyor…" : "Oluştur").frame(minWidth: 96)
+                }
+                .buttonStyle(.wiqoPill(.accent))
+                .disabled(!canCreate)
             }
-            .buttonStyle(.wiqoPill(.accent))
-            .disabled(!canCreate)
 
-            if creating || activeJobID != nil {
-                ActJobCard(stage: jobStage, message: jobProgress, onCancel: activeJobID.map { id in { Task { await cancelCreateJob(id) } } })
+            if let job = model.job, job.projectID == nil {
+                ActJobCard(job: job) { Task { await model.cancel() } }
             }
-
-            if let notice {
+            if let notice = model.notice {
                 Label(notice, systemImage: "exclamationmark.circle")
                     .font(.footnote)
                     .foregroundStyle(WiqoTheme.red)
@@ -243,14 +189,31 @@ struct ActView: View {
         .wiqoCard(radius: 20)
     }
 
+    private func requestCreate() {
+        composerFocused = false
+        if model.needsConsent(for: nil) || mode == .deviceOnly { showingConsent = true } else { startCreate() }
+    }
+
+    private func startCreate() {
+        model.recordConsent()
+        let request = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            if let id = await model.create(request: request, mode: mode) {
+                draft = ""
+                WiqoHaptics.selection()
+                openedID = id
+            }
+        }
+    }
+
     // MARK: - Liste
 
     @ViewBuilder private var projectsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Projelerim").font(.headline)
-                if !projects.isEmpty {
-                    Text("\(projects.count)")
+                if !model.projects.isEmpty {
+                    Text("\(model.projects.count)")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 7)
@@ -258,12 +221,20 @@ struct ActView: View {
                         .background(WiqoTheme.inset, in: Capsule())
                 }
                 Spacer()
+                Button { showingPrivacy = true } label: { Label("Gizlilik", systemImage: "lock.shield").font(.footnote.weight(.medium)) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(WiqoTheme.ink)
             }
             .padding(.horizontal, 4)
 
-            if !loaded {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
-            } else if projects.isEmpty {
+            if let note = model.syncNote {
+                Label(note, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 4)
+            }
+
+            if model.projects.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "square.stack.3d.up")
                         .font(.system(size: 28))
@@ -279,11 +250,11 @@ struct ActView: View {
                 .padding(.vertical, 28)
             } else {
                 VStack(spacing: 10) {
-                    ForEach(projects) { project in
-                        Button { opened = OpenedProject(id: project.id) } label: { ProjectRow(project: project) }
+                    ForEach(model.projects) { project in
+                        Button { openedID = project.id } label: { ProjectRow(project: project) }
                             .buttonStyle(.plain)
                             .contextMenu {
-                                Button { opened = OpenedProject(id: project.id) } label: { Label("Aç", systemImage: "arrow.up.right.square") }
+                                Button { openedID = project.id } label: { Label("Aç", systemImage: "arrow.up.right.square") }
                                 Button(role: .destructive) { pendingDelete = project } label: { Label("Sil", systemImage: "trash") }
                             }
                     }
@@ -291,109 +262,14 @@ struct ActView: View {
             }
         }
     }
-
-    // MARK: - İşlemler
-
-    private func load() async {
-        do {
-            projects = try await RovaBackendClient.fetchCodeProjects()
-            if creating == false { notice = nil }
-            let fresh = projects
-            Task { await ActProjectStore.sync(with: fresh) }
-        } catch {
-            // Offline: the copies on this phone are the list.
-            if projects.isEmpty {
-                projects = ActProjectStore.all().map {
-                    RovaBackendClient.CodeProject(id: $0.id, name: $0.name, kind: $0.kind, version: $0.version, updatedAt: "", fileCount: $0.files.count)
-                }
-                if projects.isEmpty { notice = "Projeler yüklenemedi." }
-                else { notice = "Çevrimdışı: bu telefondaki kopyalar gösteriliyor." }
-            }
-        }
-        loaded = true
-    }
-
-    private func create() async {
-        let request = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard request.count >= 3, !creating else { return }
-        creating = true
-        notice = nil
-        composerFocused = false
-        defer { creating = false }
-        do {
-            let fingerprint = actRequestFingerprint(request)
-            let key = UserDefaults.standard.string(forKey: "\(createRequestStorageKey)-hash") == fingerprint
-                ? (UserDefaults.standard.string(forKey: createRequestStorageKey) ?? UUID().uuidString) : UUID().uuidString
-            UserDefaults.standard.set(key, forKey: createRequestStorageKey)
-            UserDefaults.standard.set(fingerprint, forKey: "\(createRequestStorageKey)-hash")
-            let id = try await RovaBackendClient.startCodeProjectJob(operation: "create", request: request, requestKey: key)
-            UserDefaults.standard.set(id, forKey: createJobStorageKey)
-            UserDefaults.standard.removeObject(forKey: createRequestStorageKey)
-            UserDefaults.standard.removeObject(forKey: "\(createRequestStorageKey)-hash")
-            activeJobID = id
-            await watchCreateJob(id)
-        } catch {
-            notice = (error as? RovaBackendError)?.errorDescription ?? "Proje oluşturulamadı; biraz sonra tekrar dene."
-        }
-    }
-
-    private var createJobStorageKey: String { "act-create-job-\(RovaBackendClient.currentUserID ?? "anonymous")" }
-    private var createRequestStorageKey: String { "act-create-request-\(RovaBackendClient.currentUserID ?? "anonymous")" }
-
-    private func watchCreateJob(_ id: Int) async {
-        let outcome = await watchActJob(id: id, progress: { jobStage = $0; jobProgress = $1 }, isCurrent: { activeJobID == id })
-        switch outcome {
-        case .finished(let job):
-            UserDefaults.standard.removeObject(forKey: createJobStorageKey)
-            activeJobID = nil
-            jobProgress = nil
-            creating = false
-            if job.result?.succeeded == true, let projectId = job.result?.projectId {
-                draft = ""
-                WiqoHaptics.selection()
-                await load()
-                opened = OpenedProject(id: projectId)
-            } else {
-                notice = job.result?.problem ?? job.error ?? "Proje tamamlanamadı."
-            }
-        case .failed(let message):
-            UserDefaults.standard.removeObject(forKey: createJobStorageKey)
-            activeJobID = nil
-            jobProgress = nil
-            creating = false
-            notice = message
-        case .stillRunning:
-            if activeJobID == id { jobProgress = "Görev sürüyor; biraz sonra listeyi yenile." }
-        }
-    }
-
-    private func cancelCreateJob(_ id: Int) async {
-        do {
-            try await RovaBackendClient.cancelCodeProjectJob(id: id)
-            UserDefaults.standard.removeObject(forKey: createJobStorageKey)
-            activeJobID = nil
-            creating = false
-            jobProgress = nil
-            notice = "Görev durduruldu."
-        } catch { notice = "Görev şu anda durdurulamadı; durumunu tekrar kontrol et." }
-    }
-
-    private func delete(_ project: RovaBackendClient.CodeProject) async {
-        do {
-            try await RovaBackendClient.deleteCodeProject(id: project.id)
-            projects.removeAll { $0.id == project.id }
-        } catch {
-            notice = "Proje silinemedi."
-        }
-    }
 }
 
 private struct ProjectRow: View {
-    let project: RovaBackendClient.CodeProject
+    let project: ActLocalProject
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: project.kind == "web" ? "safari" : "terminal")
+            Image(systemName: project.isWeb ? "safari" : "terminal")
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(WiqoTheme.ink)
                 .frame(width: 40, height: 40)
@@ -409,6 +285,9 @@ private struct ProjectRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
+            Image(systemName: project.mode.systemImage)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.tertiary)
@@ -419,20 +298,6 @@ private struct ProjectRow: View {
         .contentShape(Rectangle())
     }
 
-    private var caption: String {
-        var parts = [project.kind == "web" ? "Web" : "Python", "v\(project.version)"]
-        if let when = Self.relative(project.updatedAt) { parts.append(when) }
-        return parts.joined(separator: " · ")
-    }
-
-    private static let sqlite: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter
-    }()
-
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = Locale(identifier: "tr_TR")
@@ -440,9 +305,66 @@ private struct ProjectRow: View {
         return formatter
     }()
 
-    private static func relative(_ value: String) -> String? {
-        guard let date = sqlite.date(from: value) else { return nil }
-        return relativeFormatter.localizedString(for: date, relativeTo: Date())
+    private var caption: String {
+        [project.isWeb ? "Web" : "Python", "v\(project.versionNumber)", Self.relativeFormatter.localizedString(for: project.updatedAt, relativeTo: Date())].joined(separator: " · ")
+    }
+}
+
+// MARK: - Gizlilik
+
+/// What stays where, the recovery code, and entering another device's code.
+private struct ActPrivacySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var model = ActModel.shared
+    @State private var revealed = false
+    @State private var code = ""
+    @State private var message: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Label("Projelerin bu telefonda tam kopya olarak durur; önizleme ve çalıştırma burada olur.", systemImage: "iphone")
+                    Label("Bağlı cihazların arasında şifreli senkronlanır. Anahtar yalnız cihazlarında; sunucu dosya adlarını ve içeriği okuyamaz.", systemImage: "lock.icloud")
+                    Label("Yazar modele yalnız bir istek yazılırken, o isteğin dosyaları gider ve saklanmaz. Yalnız bu cihaz projelerinde her seferinde sorulur.", systemImage: "text.badge.checkmark")
+                } header: { Text("Nasıl çalışır") }
+
+                Section {
+                    if revealed {
+                        Text(model.recoveryCode).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                        Button("Kopyala") { UIPasteboard.general.string = model.recoveryCode; message = "Kopyalandı." }
+                    } else {
+                        Button("Kurtarma kodunu göster") { revealed = true }
+                    }
+                } header: { Text("Kurtarma kodu") } footer: {
+                    Text("Yeni bir cihaza geçerken veya Windows'ta projelerini açarken gerekir. Güvenli bir yere yaz; kaybedersen şifreli projeler açılamaz.")
+                }
+
+                Section {
+                    TextField("Başka cihazdaki kod", text: $code)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .font(.system(.callout, design: .monospaced))
+                    Button("Kodu kullan") {
+                        if model.useRecoveryCode(code) {
+                            message = "Anahtar değişti; projeler yeniden eşitleniyor."
+                            code = ""
+                            Task { await model.syncAll() }
+                        } else {
+                            message = "Kod geçersiz; 55 karakteri kontrol et."
+                        }
+                    }
+                    .disabled(code.count < 20)
+                } header: { Text("Başka bir cihazın anahtarı") } footer: {
+                    Text("Mac'e anahtar, telefon ve Mac aynı ağda bağlandığında kendiliğinden gider.")
+                }
+
+                if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
+            }
+            .navigationTitle("Gizlilik")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Bitti") { dismiss() } } }
+        }
     }
 }
 
@@ -451,35 +373,28 @@ private struct ProjectRow: View {
 /// One project, full screen: the running page (or the program's output) on top, one input at the
 /// bottom. Whatever is typed there changes this project and nothing else.
 struct CodeProjectWorkspaceView: View {
-    let projectID: Int
-    var isModal = false
+    let projectID: String
     var embedded = false
     var onBack: (() -> Void)? = nil
 
+    @ObservedObject private var model = ActModel.shared
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var detail: RovaBackendClient.CodeProjectDetail?
-    @State private var html: String?
-    @State private var runResult: RovaBackendClient.CodeRunResult?
+    @State private var runResult: ActHub.RunResult?
+    @State private var running = false
     @State private var draft = ""
-    @State private var working = false
-    @State private var activeJobID: Int?
-    @State private var jobProgress: String?
-    @State private var jobStage: ActStage = .writing
-    @State private var notice: String?
-    @State private var warning: String?
     @State private var reloadToken = 0
     @State private var showingDetails = false
     @State private var confirmingDelete = false
-    @FocusState private var focused: Bool
-
-    @State private var localKind: String?
+    @State private var showingConsent = false
     @State private var pcStatus: String?
     @State private var pcOutput: String?
-    @State private var localName: String?
-    private var isWeb: Bool { (detail?.project.kind ?? localKind) != "python" }
-    private var canSend: Bool { !working && activeJobID == nil && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 }
-    private var latest: RovaBackendClient.CodeProjectVersion? { detail?.history.first }
+    @FocusState private var focused: Bool
+
+    private var project: ActLocalProject? { model.project(projectID) }
+    private var working: Bool { model.job?.projectID == projectID }
+    private var canSend: Bool { model.job == nil && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 }
+    private var isWeb: Bool { project?.isWeb ?? true }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -488,9 +403,10 @@ struct CodeProjectWorkspaceView: View {
                     Button { onBack?() } label: { Label("Projeler", systemImage: "chevron.left") }
                         .buttonStyle(.plain)
                         .foregroundStyle(WiqoTheme.ink)
-                    Text(detail?.project.name ?? localName ?? "Proje")
+                    Text(project?.name ?? "Proje")
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
+                    Image(systemName: project?.mode.systemImage ?? "lock.icloud").font(.caption).foregroundStyle(.secondary)
                     Spacer(minLength: 4)
                     menu
                 }
@@ -502,31 +418,21 @@ struct CodeProjectWorkspaceView: View {
             footer
         }
         .background(RovaDesign.canvas)
-        .navigationTitle(embedded ? "" : (detail?.project.name ?? localName ?? "Proje"))
+        .navigationTitle(embedded ? "" : (project?.name ?? "Proje"))
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if isModal {
-                ToolbarItem(placement: .topBarLeading) { Button("Kapat") { dismiss() } }
-            }
-            if !embedded { ToolbarItem(placement: .topBarTrailing) { menu } }
-        }
-        .sheet(isPresented: $showingDetails, onDismiss: { Task { await load() } }) {
-            NavigationStack { CodeProjectDetailView(projectID: projectID) }
-        }
+        .toolbar { if !embedded { ToolbarItem(placement: .topBarTrailing) { menu } } }
+        .sheet(isPresented: $showingDetails) { NavigationStack { CodeProjectDetailView(projectID: projectID) } }
         .confirmationDialog("Proje silinsin mi?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Projeyi sil", role: .destructive) { Task { await deleteProject() } }
             Button("Vazgeç", role: .cancel) {}
         } message: {
-            Text("Dosyalar ve geçmiş silinir; geri alınamaz.")
+            Text("Dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.")
         }
+        .writerConsent(isPresented: $showingConsent, deviceOnly: project?.mode == .deviceOnly) { startSend() }
         .task {
-            await RovaBackendClient.openCodeProject(id: projectID)
-            await load()
-            if let id = UserDefaults.standard.object(forKey: editJobStorageKey) as? Int {
-                activeJobID = id
-                working = true
-                await watchEditJob(id)
-            }
+            model.reload()
+            await model.sync(projectID)
+            reloadToken += 1
         }
     }
 
@@ -534,28 +440,36 @@ struct CodeProjectWorkspaceView: View {
 
     @ViewBuilder private var stage: some View {
         ZStack {
-            if detail == nil && localKind == nil && notice == nil {
-                ProgressView()
-            } else if isWeb {
-                if let html {
-                    WiqoHTMLWebView(
-                        html: WiqoHTMLDocument.wrap(html, viewportWidth: WiqoPreviewDevice.phone.viewportWidth, reduceMotion: reduceMotion),
-                        projectDataKey: String(projectID),
-                        reloadToken: reloadToken
-                    )
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(WiqoTheme.lineStrong, lineWidth: 0.5) }
-                    .shadow(color: .black.opacity(0.08), radius: 12, y: 5)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                } else if notice == nil {
-                    ProgressView()
+            if let project {
+                if isWeb {
+                    if let page = project.bundle {
+                        WiqoHTMLWebView(
+                            html: WiqoHTMLDocument.wrap(page, viewportWidth: WiqoPreviewDevice.phone.viewportWidth, reduceMotion: reduceMotion),
+                            projectDataKey: project.id,
+                            reloadToken: reloadToken
+                        )
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(WiqoTheme.lineStrong, lineWidth: 0.5) }
+                        .shadow(color: .black.opacity(0.08), radius: 12, y: 5)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                    } else {
+                        Text("Bu projede açılacak bir sayfa (index.html) yok.").font(.footnote).foregroundStyle(.secondary)
+                    }
+                } else {
+                    pythonStage
                 }
             } else {
-                pythonStage
+                ProgressView()
             }
-            if working { workingOverlay }
+            if let job = model.job, job.projectID == projectID {
+                ActJobCard(job: job) { Task { await model.cancel() } }
+                    .frame(maxWidth: 300)
+                    .padding(8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .transition(.opacity)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -565,33 +479,14 @@ struct CodeProjectWorkspaceView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Button { Task { await run() } } label: { Label(runResult == nil ? "Çalıştır" : "Tekrar çalıştır", systemImage: "play.fill").frame(maxWidth: .infinity) }
                     .buttonStyle(.wiqoPill(.accent))
-                    .disabled(working)
+                    .disabled(running || model.job != nil)
                 if let pcOutput, !pcOutput.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Mac çıktısı").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        Text(pcOutput).font(.system(.footnote, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(14)
-                    .wiqoCard()
+                    outputCard("Mac çıktısı", pcOutput, error: nil)
                 }
                 if let runResult {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Çıktı").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        Text(runResult.stdout.isEmpty ? (runResult.timedOut ? "Program zamanında bitmedi." : "Çıktı yok.") : runResult.stdout)
-                            .font(.system(.footnote, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        if !runResult.stderr.isEmpty {
-                            Text(runResult.stderr)
-                                .font(.system(.footnote, design: .monospaced))
-                                .foregroundStyle(WiqoTheme.red)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    .padding(14)
-                    .wiqoCard()
+                    outputCard("Çıktı", runResult.stdout.isEmpty ? (runResult.timedOut ? "Program zamanında bitmedi." : "Çıktı yok.") : runResult.stdout, error: runResult.stderr.isEmpty ? nil : runResult.stderr)
                 } else {
-                    Text("Programı çalıştırınca çıktısı burada görünür.")
+                    Text("Programı çalıştırınca çıktısı burada görünür. Çalıştırma için dosyalar bu istek boyunca sunucudaki güvenli ortama gider ve saklanmaz.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
@@ -602,27 +497,24 @@ struct CodeProjectWorkspaceView: View {
         }
     }
 
-    private var workingOverlay: some View {
-        ActJobCard(stage: jobStage, message: jobProgress, onCancel: activeJobID.map { id in { Task { await cancelEditJob(id) } } })
-            .frame(maxWidth: 300)
-            .padding(8)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .transition(.opacity)
+    private func outputCard(_ title: String, _ text: String, error: String?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text(text).font(.system(.footnote, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            if let error { Text(error).font(.system(.footnote, design: .monospaced)).foregroundStyle(WiqoTheme.red).frame(maxWidth: .infinity, alignment: .leading) }
+        }
+        .padding(14)
+        .wiqoCard()
     }
 
     // MARK: Alt bölüm
 
     private var footer: some View {
         VStack(spacing: 10) {
-            if let notice {
+            if let notice = model.notice {
                 Label(notice, systemImage: "exclamationmark.circle")
                     .font(.footnote)
                     .foregroundStyle(WiqoTheme.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if let warning {
-                Label(warning, systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let pcStatus {
@@ -635,16 +527,16 @@ struct CodeProjectWorkspaceView: View {
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
-            if let latest { changeStrip(latest) }
+            if let latest = project?.history.first { changeStrip(latest) }
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("Ne değiştirelim?", text: $draft, axis: .vertical)
                     .lineLimit(1...4)
                     .focused($focused)
-                    .disabled(working)
+                    .disabled(model.job != nil)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                Button { Task { await send() } } label: {
+                Button { requestSend() } label: {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(Color(.systemBackground))
@@ -661,25 +553,25 @@ struct CodeProjectWorkspaceView: View {
         .background(.bar)
     }
 
-    private func changeStrip(_ entry: RovaBackendClient.CodeProjectVersion) -> some View {
+    private func changeStrip(_ entry: ActHistoryEntry) -> some View {
         HStack(spacing: 10) {
             Image(systemName: entry.verified ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(entry.verified ? Color.green : Color.orange)
             VStack(alignment: .leading, spacing: 1) {
-                Text("v\(entry.version) · \(entry.summary)")
+                Text("v\(project?.versionNumber ?? 0) · \(entry.summary)")
                     .font(.footnote)
                     .lineLimit(1)
                 if !entry.verified {
-                    Text("Çalışmıyor olabilir; geri al ya da düzeltmesini iste.")
+                    Text("Telefonda denenemedi; çalışmıyorsa geri al.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 6)
-            Button { Task { await undo() } } label: { Label("Geri al", systemImage: "arrow.uturn.backward").font(.footnote.weight(.medium)) }
+            Button { undo() } label: { Label("Geri al", systemImage: "arrow.uturn.backward").font(.footnote.weight(.medium)) }
                 .buttonStyle(.plain)
                 .foregroundStyle(WiqoTheme.ink)
-                .disabled(working || (detail?.history.count ?? 0) < 2)
+                .disabled(model.job != nil || !model.canUndo(projectID))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -688,8 +580,8 @@ struct CodeProjectWorkspaceView: View {
 
     private var menu: some View {
         Menu {
-            Button { Task { await undo() } } label: { Label("Son değişikliği geri al", systemImage: "arrow.uturn.backward") }
-                .disabled(working || (detail?.history.count ?? 0) < 2)
+            Button { undo() } label: { Label("Son değişikliği geri al", systemImage: "arrow.uturn.backward") }
+                .disabled(model.job != nil || !model.canUndo(projectID))
             if isWeb {
                 Button { reloadToken += 1 } label: { Label("Sayfayı yenile", systemImage: "arrow.clockwise") }
             }
@@ -702,7 +594,14 @@ struct CodeProjectWorkspaceView: View {
                 Button { Task { await handOff("open_editor", "Editörde açılıyor…") } } label: { Label("Mac'te editörde aç", systemImage: "chevron.left.forwardslash.chevron.right") }
                 Button { Task { await handOff("open_folder", "Klasör açılıyor…") } } label: { Label("Klasörü Mac'te aç", systemImage: "folder") }
             }
-            Button { showingDetails = true } label: { Label("Dosyalar, geçmiş, dosya olarak paylaş", systemImage: "doc.on.doc") }
+            Section("Gizlilik") {
+                ForEach([ActPrivacyMode.devices, .deviceOnly], id: \.self) { option in
+                    Button { Task { await model.setMode(projectID, to: option) } } label: {
+                        Label(option.title, systemImage: project?.mode == option ? "checkmark" : option.systemImage)
+                    }
+                }
+            }
+            Button { showingDetails = true } label: { Label("Dosyalar, geçmiş, paylaş", systemImage: "doc.on.doc") }
             Divider()
             Button(role: .destructive) { confirmingDelete = true } label: { Label("Projeyi sil", systemImage: "trash") }
         } label: {
@@ -713,148 +612,50 @@ struct CodeProjectWorkspaceView: View {
 
     // MARK: İşlemler
 
-    private func load() async {
-        // The copy on this phone opens first, with or without a connection.
-        if html == nil, let local = ActProjectStore.load(projectID) {
-            localKind = local.kind
-            localName = local.name
-            if local.kind == "web", let bundle = local.bundle { html = bundle; reloadToken += 1 }
-        }
-        do {
-            let fresh = try await RovaBackendClient.fetchCodeProject(id: projectID)
-            detail = fresh
-            if fresh.project.kind == "web" {
-                if let pulled = await ActProjectStore.pull(projectID, knownServerVersion: fresh.project.version), let bundle = pulled.bundle {
-                    if bundle != html { html = bundle; reloadToken += 1 }
-                } else {
-                    html = try await RovaBackendClient.fetchCodeProjectBundle(id: projectID)
-                    reloadToken += 1
-                }
-            } else {
-                await ActProjectStore.pull(projectID, knownServerVersion: fresh.project.version)
-            }
-            notice = nil
-        } catch {
-            if detail == nil && localKind != nil { notice = "Çevrimdışı: bu telefondaki kopya gösteriliyor." }
-            else { notice = detail == nil ? "Proje yüklenemedi." : "Önizleme açılamadı." }
-        }
-    }
-
-    private func send() async {
-        let request = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard request.count >= 2, !working else { return }
-        working = true
-        notice = nil
-        warning = nil
+    private func requestSend() {
         focused = false
-        defer { working = false }
-        do {
-            let fingerprint = actRequestFingerprint(request)
-            let key = UserDefaults.standard.string(forKey: "\(editRequestStorageKey)-hash") == fingerprint
-                ? (UserDefaults.standard.string(forKey: editRequestStorageKey) ?? UUID().uuidString) : UUID().uuidString
-            UserDefaults.standard.set(key, forKey: editRequestStorageKey)
-            UserDefaults.standard.set(fingerprint, forKey: "\(editRequestStorageKey)-hash")
-            let id = try await RovaBackendClient.startCodeProjectJob(operation: "edit", request: request, projectId: projectID, requestKey: key)
-            UserDefaults.standard.set(id, forKey: editJobStorageKey)
-            UserDefaults.standard.removeObject(forKey: editRequestStorageKey)
-            UserDefaults.standard.removeObject(forKey: "\(editRequestStorageKey)-hash")
-            activeJobID = id
-            await watchEditJob(id)
-        } catch {
-            notice = (error as? RovaBackendError)?.errorDescription ?? "Değişiklik uygulanamadı; proje değişmedi."
-        }
+        if model.needsConsent(for: project) { showingConsent = true } else { startSend() }
     }
 
-    private var editJobStorageKey: String { "act-edit-job-\(RovaBackendClient.currentUserID ?? "anonymous")-\(projectID)" }
-    private var editRequestStorageKey: String { "act-edit-request-\(RovaBackendClient.currentUserID ?? "anonymous")-\(projectID)" }
-
-    private func watchEditJob(_ id: Int) async {
-        let outcome = await watchActJob(id: id, progress: { jobStage = $0; jobProgress = $1 }, isCurrent: { activeJobID == id })
-        switch outcome {
-        case .finished(let job):
-            UserDefaults.standard.removeObject(forKey: editJobStorageKey)
-            activeJobID = nil
-            jobProgress = nil
-            working = false
-            if job.result?.succeeded == true {
+    private func startSend() {
+        model.recordConsent()
+        let request = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            await model.edit(projectID, request: request)
+            if model.notice == nil || model.notice?.hasPrefix("Telefonda denenemedi") == true {
                 draft = ""
                 WiqoHaptics.selection()
-                runResult = nil
-                warning = job.result?.verified == false ? job.result?.problem : nil
-                await load()
-            } else {
-                notice = job.result?.problem ?? job.error ?? "Değişiklik uygulanamadı; proje değişmedi."
             }
-        case .failed(let message):
-            UserDefaults.standard.removeObject(forKey: editJobStorageKey)
-            activeJobID = nil
-            jobProgress = nil
-            working = false
-            notice = message
-        case .stillRunning:
-            if activeJobID == id { jobProgress = "Görev sürüyor; projeyi yeniden açınca durumu görürsün." }
-        }
-    }
-
-    private func cancelEditJob(_ id: Int) async {
-        do {
-            try await RovaBackendClient.cancelCodeProjectJob(id: id)
-            UserDefaults.standard.removeObject(forKey: editJobStorageKey)
-            activeJobID = nil
-            working = false
-            jobProgress = nil
-            notice = "Görev durduruldu; proje değişmedi."
-        } catch { notice = "Görev şu anda durdurulamadı; durumunu tekrar kontrol et." }
-    }
-
-    private func undo() async {
-        guard !working else { return }
-        working = true
-        defer { working = false }
-        do {
-            try await RovaBackendClient.undoCodeProject(id: projectID)
-            warning = nil
             runResult = nil
-            await load()
-        } catch {
-            notice = "Geri alınacak değişiklik yok."
+            reloadToken += 1
         }
+    }
+
+    private func undo() {
+        model.undo(projectID)
+        runResult = nil
+        reloadToken += 1
     }
 
     private func run() async {
-        working = true
-        defer { working = false }
-        do { runResult = try await RovaBackendClient.runCodeProject(id: projectID) }
-        catch { notice = "Program çalıştırılamadı." }
+        running = true
+        defer { running = false }
+        do { runResult = try await model.runPython(projectID) }
+        catch { model.notice = (error as? LocalizedError)?.errorDescription ?? "Program çalıştırılamadı." }
     }
 
-    /// Hands one of the fixed actions to the paired Mac and follows it to its answer.
     private func handOff(_ action: String, _ message: String) async {
         pcStatus = message
         pcOutput = nil
-        do {
-            let task = try await RovaBackendClient.startCodeProjectPcTask(projectId: projectID, action: action)
-            for _ in 0..<40 {
-                try? await Task.sleep(for: .seconds(2))
-                let current = try await RovaBackendClient.fetchCodeProjectPcTask(id: task.id)
-                if current.finished {
-                    pcStatus = current.status == "done" ? (action == "run" ? "Mac çalıştırdı." : current.output) : "Mac: \(current.output)"
-                    if action == "run" { pcOutput = current.output }
-                    return
-                }
-            }
-            pcStatus = "Mac yanıt vermedi; açık ve internete bağlı mı?"
-        } catch {
-            pcStatus = (error as? RovaBackendError)?.errorDescription ?? "Mac'e iletilemedi."
-        }
+        let result = await model.handOff(projectID, action: action) { pcStatus = $0 }
+        pcStatus = result.ok ? (action == "run" ? "Mac çalıştırdı." : result.text) : "Mac: \(result.text)"
+        if action == "run" { pcOutput = result.text }
     }
 
     private func deleteProject() async {
-        do {
-            try await RovaBackendClient.deleteCodeProject(id: projectID)
+        await model.delete(projectID)
+        if model.project(projectID) == nil {
             if embedded { onBack?() } else { dismiss() }
-        } catch {
-            notice = "Proje silinemedi."
         }
     }
 }

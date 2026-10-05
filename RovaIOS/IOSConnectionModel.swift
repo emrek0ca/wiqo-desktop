@@ -754,6 +754,10 @@ final class IOSConnectionModel: ObservableObject {
     func sendBackendTokenIfAvailable() {
         guard state == .connected, let token = RovaBackendClient.token else { return }
         sendEnvelope(WireEnvelope(message: .backendToken(token)))
+        // The key for private Act projects goes the same way: straight to the paired Mac, never via the backend.
+        if let keys = ActKeyStore.load() {
+            sendEnvelope(WireEnvelope(message: .projectKey(keys.master.base64EncodedString())))
+        }
     }
 
     private func sendEnvelope(_ envelope: WireEnvelope, on source: NWConnection? = nil) {

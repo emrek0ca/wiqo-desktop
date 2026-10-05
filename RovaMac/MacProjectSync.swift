@@ -1,71 +1,40 @@
 import AppKit
-import CryptoKit
 import Foundation
 
 /// Keeps the person's Act projects as real folders on this Mac (`~/Wiqo Projeleri/<ad>/`) in step with
-/// the account's other devices. The folder is the full local copy: it can be opened in any editor, run
-/// and previewed here. The server is only the hub that orders versions.
+/// their other devices, privately: everything that reaches the sync hub is sealed with a key only the
+/// person's devices hold (see `ActKeys`), so the hub cannot read a file name or a file.
 ///
-/// - Remote changes are written into the folder.
-/// - Edits made in the folder are pushed on top of the version they started from. Different files
-///   merge; the same file changed on both sides keeps both (the Mac's copy is saved next to it).
-/// - A folder with an `index.html` or `main.py` and no sync record becomes a new synced project.
-/// Nothing is ever deleted from the folder because a project disappeared remotely.
+/// The folder is the full local copy: open it in any editor, run it, preview it here. The rules (push local
+/// edits on top of a version, merge disjoint files, keep both sides on a conflict) are `ActSync`'s, shared
+/// with the iPhone. Nothing is ever deleted from a folder because a project disappeared remotely.
 actor MacProjectSync {
-    struct Remote: Decodable { let id: Int; let name: String; let kind: String; let version: Int }
-
-    private struct Meta: Codable {
-        var projectId: Int
+    /// What is written next to the files so the next pass knows where this folder stands.
+    private struct Link: Codable {
+        var hubId: Int
         var version: Int
-        var hashes: [String: String]
-    }
-
-    private struct Snapshot: Decodable {
-        struct Header: Decodable { let id: Int; let name: String; let kind: String; let version: Int }
-        struct File: Decodable { let path: String; let content: String }
-        let project: Header
-        let files: [File]
-    }
-
-    private struct Changes: Decodable {
-        struct Version: Decodable {
-            struct Change: Decodable { let path: String; let after: String? }
-            let version: Int
-            let changes: [Change]
-        }
-        let version: Int
-        let versions: [Version]?
-        let needsSnapshot: Bool?
-    }
-
-    private struct PushResponse: Decodable {
-        let ok: Bool
-        let version: Int?
-        let merged: Bool?
-        let conflict: Bool?
-        let paths: [String]?
-        let error: String?
+        var meta: ActProjectMeta
+        var base: [String: String]
     }
 
     static let metaName = ".wiqo-sync.json"
-    private static let maxFiles = 40
-    private static let maxFileBytes = 100 * 1024
-    private static let textExtensions: Set<String> = ["html", "htm", "css", "js", "json", "txt", "md", "py", "svg", "csv"]
+    private static let previewName = ".wiqo-preview.html"
 
     private let root: URL
-    private let apiBase: URL
+    private let hub: ActHub
     private let device: String
-    private let token: @Sendable () async -> String?
+    private let flavor: String
     private let allowRun: @Sendable () -> Bool
     private var loop: Task<Void, Never>?
     private(set) var status = "Senkron kapalı"
 
     init(root: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Wiqo Projeleri", isDirectory: true),
-         apiBase: URL, device: String = "Mac", allowRun: @escaping @Sendable () -> Bool = { false }, token: @escaping @Sendable () async -> String?) {
+         apiBase: URL, device: String = "Mac", flavor: String = "", allowRun: @escaping @Sendable () -> Bool = { false },
+         token: @escaping @Sendable () async -> String?) {
         self.root = root
-        self.apiBase = apiBase
+        self.hub = ActHub(baseURL: apiBase, token: token)
         self.device = device
-        self.token = token
+        self.flavor = flavor
         self.allowRun = allowRun
     }
 
@@ -93,127 +62,87 @@ actor MacProjectSync {
     /// One full pass; safe to call at any time. Returns a short status line.
     @discardableResult
     func syncOnce() async -> String {
-        guard let accessToken = await token(), !accessToken.isEmpty else {
-            status = "Wiqo hesabına bağlı değil"
+        guard let keys = ActKeyStore.load(flavor: flavor) else {
+            status = "Proje anahtarı yok: iPhone'la aynı ağda bağlan ya da kurtarma kodunu gir"
             return status
         }
         do {
-            let remote: [Remote] = try await get("code-projects", token: accessToken, key: "projects")
+            let remote = try await hub.projects()
+            var linked = linkedFolders()
             var pushed = 0
             var pulled = 0
-            var conflicts = 0
-            var folders = linkedFolders()
+            var copies = 0
+            var foreign = 0
             for project in remote {
-                let dir = folders[project.id] ?? newFolder(for: project.name)
-                if folders[project.id] == nil { folders[project.id] = dir }
-                let outcome = try await syncProject(project, in: dir, token: accessToken)
-                pushed += outcome.pushed
-                pulled += outcome.pulled
-                conflicts += outcome.conflicts
+                if let dir = linked[project.id] {
+                    let report = try await syncFolder(dir, keys: keys)
+                    pushed += report.pushed
+                    pulled += report.pulled
+                    copies += report.conflictCopies.count
+                } else if let replica = try await ActSync.download(hubProject: project, hub: hub, keys: keys) {
+                    let dir = newFolder(for: replica.meta.name)
+                    try write(replica, into: dir, previous: nil)
+                    linked[project.id] = dir
+                    pulled += replica.files.count
+                } else {
+                    foreign += 1
+                }
             }
-            let imported = try await importNewFolders(known: Set(folders.values.map(\.path)), token: accessToken)
-            await handlePcTasks(folders: folders, token: accessToken)
-            status = "Eşit · \(remote.count + imported) proje" + (pushed + pulled + imported > 0 ? " · son: ↑\(pushed + imported) ↓\(pulled)" : "") + (conflicts > 0 ? " · \(conflicts) çakışma kopyası" : "")
+            let imported = try await importNewFolders(known: Set(linked.values.map(\.path)), keys: keys)
+            await handlePcTasks(folders: linked)
+            status = "Eşit · \(remote.count + imported) proje" + (pushed + pulled + imported > 0 ? " · son: ↑\(pushed + imported) ↓\(pulled)" : "")
+                + (copies > 0 ? " · \(copies) çakışma kopyası" : "")
+                + (foreign > 0 ? " · \(foreign) proje başka anahtarla şifreli" : "")
         } catch {
             status = "Senkron hatası: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
         }
         return status
     }
 
-    private struct Outcome { var pushed = 0; var pulled = 0; var conflicts = 0 }
+    private func syncFolder(_ dir: URL, keys: ActKeys) async throws -> ActSyncReport {
+        guard let link = readLink(dir) else { return ActSyncReport() }
+        let before = scan(dir)
+        var replica = ActReplica(hubId: link.hubId, version: link.version, meta: link.meta, files: before, base: link.base)
+        let report = try await ActSync.syncOnce(&replica, hub: hub, keys: keys, device: device, summary: "\(device) düzenlemesi")
+        try write(replica, into: dir, previous: before)
+        return report
+    }
 
-    private func syncProject(_ project: Remote, in dir: URL, token: String) async throws -> Outcome {
-        var outcome = Outcome()
-        var latest = project.version
+    /// New folders with a page or a program become synced projects.
+    private func importNewFolders(known: Set<String>, keys: ActKeys) async throws -> Int {
         let fm = FileManager.default
-        guard var meta = readMeta(dir) else {
-            // First time on this Mac: take the whole project.
-            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-            let snap: Snapshot = try await get("code-projects/\(project.id)/snapshot", token: token)
-            try write(snap, into: dir)
-            outcome.pulled = snap.files.count
-            return outcome
+        guard let entries = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return 0 }
+        var imported = 0
+        for dir in entries where !known.contains(dir.path) {
+            guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true, readLink(dir) == nil, !dir.lastPathComponent.hasPrefix(".") else { continue }
+            let files = scan(dir)
+            guard files.keys.contains("index.html") || files.keys.contains("main.py") else { continue }
+            let kind = files.keys.contains("index.html") ? "web" : "python"
+            var replica = ActReplica(meta: ActProjectMeta(name: dir.lastPathComponent, kind: kind), files: files)
+            try await ActSync.syncOnce(&replica, hub: hub, keys: keys, device: device, summary: "\(device): içe aktarıldı")
+            try write(replica, into: dir, previous: files)
+            imported += 1
         }
-
-        // 1. Local edits first: push them on top of the version they started from.
-        let (changes, current) = localChanges(dir, meta: meta)
-        if !changes.isEmpty {
-            let body: [String: Any] = [
-                "baseVersion": meta.version, "summary": "\(device) düzenlemesi", "device": device,
-                "changes": changes.map { ["path": $0.path, "after": $0.after as Any? ?? NSNull()] }
-            ]
-            let (data, status) = try await post("code-projects/\(project.id)/push", body: body, token: token, allowStatus: [409])
-            let result = try JSONDecoder().decode(PushResponse.self, from: data)
-            if status == 409, result.conflict == true {
-                // Keep both: the server's file goes in place, this Mac's version is saved beside it and pushed next pass.
-                let snap: Snapshot = try await get("code-projects/\(project.id)/snapshot", token: token)
-                let clashing = Set(result.paths ?? [])
-                for path in clashing {
-                    if let mine = current[path] {
-                        let copy = conflictCopyName(path)
-                        try writeFile(dir.appendingPathComponent(copy), mine)
-                    }
-                }
-                try write(snap, into: dir)
-                outcome.conflicts = clashing.count
-                return outcome
-            }
-            guard result.ok, let version = result.version else { throw SyncError.server(result.error ?? "Değişiklikler gönderilemedi.") }
-            // A merged push sits on top of versions this folder has not seen: stay at the old version so the
-            // pull below brings them in (our own version comes along too and rewrites identical content).
-            if result.merged != true { meta.version = version }
-            latest = max(latest, version)
-            meta.hashes = current.mapValues { Self.hash($0) }
-            for change in changes where change.after == nil { meta.hashes.removeValue(forKey: change.path) }
-            writeMeta(dir, meta)
-            outcome.pushed = changes.count
-        }
-
-        // 2. Remote changes since the version this folder is at.
-        if latest > meta.version {
-            let since: Changes = try await get("code-projects/\(project.id)/changes?since=\(meta.version)", token: token)
-            if since.needsSnapshot == true {
-                let snap: Snapshot = try await get("code-projects/\(project.id)/snapshot", token: token)
-                try write(snap, into: dir, keepingLocalEdits: true)
-                outcome.pulled = snap.files.count
-            } else {
-                var applied = 0
-                for version in since.versions ?? [] {
-                    for change in version.changes {
-                        let target = dir.appendingPathComponent(change.path)
-                        if let content = change.after {
-                            try writeFile(target, content)
-                            meta.hashes[change.path] = Self.hash(content)
-                        } else {
-                            try? fm.removeItem(at: target)
-                            meta.hashes.removeValue(forKey: change.path)
-                        }
-                        applied += 1
-                    }
-                    meta.version = version.version
-                }
-                writeMeta(dir, meta)
-                outcome.pulled = applied
-            }
-        }
-        return outcome
+        return imported
     }
 
     // MARK: - Tasks handed over from the phone
 
-    private struct PcTask: Decodable { let id: Int; let projectId: Int; let action: String }
-
-    /// Picks up what the phone handed to this Mac and answers with the outcome. Never throws: a failure
-    /// is the task's answer, not a sync error.
-    private func handlePcTasks(folders: [Int: URL], token: String) async {
-        guard let tasks: [PcTask] = try? await get("code-projects/pc-tasks/pending", token: token, key: "tasks") else { return }
+    /// Picks up what the phone handed to this Mac and answers with the outcome. A failure is the task's answer.
+    private func handlePcTasks(folders: [Int: URL]) async {
+        guard let tasks = try? await hub.pendingPcTasks() else { return }
         for task in tasks {
             let (ok, output) = await perform(task, folder: folders[task.projectId])
-            _ = try? await post("code-projects/pc-tasks/\(task.id)/result", body: ["ok": ok, "output": output], token: token, allowStatus: [409])
+            await hub.finishPcTask(id: task.id, ok: ok, output: output)
         }
     }
 
-    private func perform(_ task: PcTask, folder: URL?) async -> (Bool, String) {
+    private static let editorBundles = [
+        "Visual Studio Code": "com.microsoft.VSCode", "Cursor": "com.todesktop.230313mzl4w4u92", "Xcode": "com.apple.dt.Xcode",
+        "Sublime Text": "com.sublimetext.4", "TextEdit": "com.apple.TextEdit"
+    ]
+
+    private func perform(_ task: ActHub.PendingPcTask, folder: URL?) async -> (Bool, String) {
         guard let folder, FileManager.default.fileExists(atPath: folder.path) else { return (false, "Proje klasörü bu Mac'te yok; senkron bitince tekrar dene.") }
         switch task.action {
         case "open_folder":
@@ -232,10 +161,12 @@ actor MacProjectSync {
             if !opened { await MainActor.run { _ = NSWorkspace.shared.open(folder) } }
             return (true, opened ? "Klasör editörde açıldı." : "Editör bulunamadı; klasör Finder'da açıldı.")
         case "open_preview":
-            guard let token = await self.token(), let html = try? await bundleHTML(projectId: task.projectId, token: token) else { return (false, "Önizleme hazırlanamadı.") }
-            let page = folder.appendingPathComponent(".wiqo-preview.html")
-            do { try html.write(to: page, atomically: true, encoding: .utf8) } catch { return (false, "Önizleme dosyası yazılamadı.") }
-            await MainActor.run { _ = NSWorkspace.shared.open(page) }
+            // Built here from the folder: the page never has to leave this Mac.
+            let files = scan(folder).sorted { $0.key < $1.key }.map { ActBundler.File(path: $0.key, content: $0.value) }
+            guard let page = ActBundler.bundleWeb(files).map(ActBundler.ensureViewport) else { return (false, "Bu projede önizlenecek bir sayfa (index.html) yok.") }
+            let url = folder.appendingPathComponent(Self.previewName)
+            do { try page.write(to: url, atomically: true, encoding: .utf8) } catch { return (false, "Önizleme dosyası yazılamadı.") }
+            await MainActor.run { _ = NSWorkspace.shared.open(url) }
             return (true, "Sayfa Mac'in tarayıcısında açıldı.")
         case "run":
             guard allowRun() else { return (false, "Mac'te çalıştırma kapalı. Mac'te Wiqo Ayarları > Projeler'den 'Telefondan gelen Python projelerini bu Mac'te çalıştır'ı aç.") }
@@ -243,17 +174,6 @@ actor MacProjectSync {
         default:
             return (false, "Bilinmeyen görev.")
         }
-    }
-
-    private static let editorBundles = [
-        "Visual Studio Code": "com.microsoft.VSCode", "Cursor": "com.todesktop.230313mzl4w4u92", "Xcode": "com.apple.dt.Xcode",
-        "Sublime Text": "com.sublimetext.4", "TextEdit": "com.apple.TextEdit"
-    ]
-
-    private func bundleHTML(projectId: Int, token: String) async throws -> String {
-        struct Bundle: Decodable { let html: String }
-        let bundle: Bundle = try await get("code-projects/\(projectId)/bundle", token: token)
-        return bundle.html
     }
 
     /// Runs the project's `main.py` with this Mac's Python (30 s limit, output capped). Only when the person allowed it.
@@ -289,37 +209,12 @@ actor MacProjectSync {
         }
     }
 
-    // MARK: - New folders on the Mac become projects
-
-    private func importNewFolders(known: Set<String>, token: String) async throws -> Int {
-        let fm = FileManager.default
-        guard let entries = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return 0 }
-        var imported = 0
-        for dir in entries where !known.contains(dir.path) {
-            guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true, readMeta(dir) == nil,
-                  !dir.lastPathComponent.hasPrefix(".") else { continue }
-            let files = scan(dir)
-            guard !files.isEmpty, files.keys.contains("index.html") || files.keys.contains("main.py") else { continue }
-            let kind = files.keys.contains("index.html") ? "web" : "python"
-            let body: [String: Any] = [
-                "name": dir.lastPathComponent, "kind": kind, "device": device,
-                "files": files.map { ["path": $0.key, "content": $0.value] }
-            ]
-            let (data, _) = try await post("code-projects/import", body: body, token: token, allowStatus: [])
-            struct Imported: Decodable { let id: Int; let version: Int }
-            let result = try JSONDecoder().decode(Imported.self, from: data)
-            writeMeta(dir, Meta(projectId: result.id, version: result.version, hashes: files.mapValues { Self.hash($0) }))
-            imported += 1
-        }
-        return imported
-    }
-
     // MARK: - Folder helpers
 
     private func linkedFolders() -> [Int: URL] {
         guard let entries = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return [:] }
         var result: [Int: URL] = [:]
-        for dir in entries { if let meta = readMeta(dir) { result[meta.projectId] = dir } }
+        for dir in entries { if let link = readLink(dir) { result[link.hubId] = dir } }
         return result
     }
 
@@ -334,13 +229,9 @@ actor MacProjectSync {
         return candidate
     }
 
-    private func readMeta(_ dir: URL) -> Meta? {
+    private func readLink(_ dir: URL) -> Link? {
         guard let data = try? Data(contentsOf: dir.appendingPathComponent(Self.metaName)) else { return nil }
-        return try? JSONDecoder().decode(Meta.self, from: data)
-    }
-
-    private func writeMeta(_ dir: URL, _ meta: Meta) {
-        if let data = try? JSONEncoder().encode(meta) { try? data.write(to: dir.appendingPathComponent(Self.metaName), options: .atomic) }
+        return try? JSONDecoder().decode(Link.self, from: data)
     }
 
     /// Text files of a project folder, relative path → content (dot files, big files and other types skipped).
@@ -348,101 +239,28 @@ actor MacProjectSync {
         guard let walker = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return [:] }
         var files: [String: String] = [:]
         for case let url as URL in walker {
-            guard files.count < Self.maxFiles,
+            guard files.count < ActSync.maxFiles,
                   let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]), values.isRegularFile == true,
-                  (values.fileSize ?? 0) <= Self.maxFileBytes, Self.textExtensions.contains(url.pathExtension.lowercased()),
                   !url.path.contains("/node_modules/"),
                   let content = try? String(contentsOf: url, encoding: .utf8) else { continue }
             let relative = String(url.path.dropFirst(dir.path.count + 1))
-            if relative.split(separator: "/").count <= 4 { files[relative] = content }
+            if ActSync.isSyncable(path: relative, content: content) { files[relative] = content }
         }
         return files
     }
 
-    /// What differs from the last synced state: new or changed files and files that are gone.
-    private func localChanges(_ dir: URL, meta: Meta) -> ([(path: String, after: String?)], [String: String]) {
-        let current = scan(dir)
-        var changes: [(path: String, after: String?)] = []
-        for (path, content) in current where meta.hashes[path] != Self.hash(content) { changes.append((path, content)) }
-        for path in meta.hashes.keys where current[path] == nil { changes.append((path, nil)) }
-        return (changes, current)
-    }
-
-    private func write(_ snap: Snapshot, into dir: URL, keepingLocalEdits: Bool = false) throws {
-        var hashes: [String: String] = [:]
-        for file in snap.files {
-            let target = dir.appendingPathComponent(file.path)
-            if keepingLocalEdits, let mine = try? String(contentsOf: target, encoding: .utf8), mine != file.content {
-                try writeFile(dir.appendingPathComponent(conflictCopyName(file.path)), mine)
-            }
-            try writeFile(target, file.content)
-            hashes[file.path] = Self.hash(file.content)
+    /// Makes the folder match the replica: changed and new files written, files that were in step and are gone removed.
+    private func write(_ replica: ActReplica, into dir: URL, previous: [String: String]?) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        for (path, content) in replica.files where previous?[path] != content {
+            let target = dir.appendingPathComponent(path)
+            try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try content.write(to: target, atomically: true, encoding: .utf8)
         }
-        writeMeta(dir, Meta(projectId: snap.project.id, version: snap.project.version, hashes: hashes))
-    }
-
-    private func writeFile(_ url: URL, _ content: String) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try content.write(to: url, atomically: true, encoding: .utf8)
-    }
-
-    private func conflictCopyName(_ path: String) -> String {
-        let ns = path as NSString
-        let ext = ns.pathExtension
-        let base = ns.deletingPathExtension
-        return "\(base) - \(device) kopyası" + (ext.isEmpty ? "" : ".\(ext)")
-    }
-
-    static func hash(_ text: String) -> String {
-        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
-    }
-
-    // MARK: - HTTP
-
-    private enum SyncError: LocalizedError {
-        case server(String)
-        var errorDescription: String? { if case .server(let message) = self { return message }; return nil }
-    }
-
-    private func request(_ path: String, token: String, method: String, body: Data? = nil) -> URLRequest {
-        var request = URLRequest(url: URL(string: path, relativeTo: apiBase)!.absoluteURL, timeoutInterval: 30)
-        request.httpMethod = method
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        if let body {
-            request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        }
-        return request
-    }
-
-    private func get<T: Decodable>(_ path: String, token: String) async throws -> T {
-        let (data, response) = try await URLSession.shared.data(for: request(path, token: token, method: "GET"))
-        try check(response, data)
-        return try JSONDecoder().decode(T.self, from: data)
-    }
-
-    private func get<T: Decodable>(_ path: String, token: String, key: String) async throws -> [T] {
-        let (data, response) = try await URLSession.shared.data(for: request(path, token: token, method: "GET"))
-        try check(response, data)
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], let inner = object[key],
-              let slice = try? JSONSerialization.data(withJSONObject: inner) else { return [] }
-        return try JSONDecoder().decode([T].self, from: slice)
-    }
-
-    private func post(_ path: String, body: [String: Any], token: String, allowStatus: Set<Int>) async throws -> (Data, Int) {
-        let payload = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: request(path, token: token, method: "POST", body: payload))
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if !allowStatus.contains(status) { try check(response, data) }
-        return (data, status)
-    }
-
-    private func check(_ response: URLResponse, _ data: Data) throws {
-        guard let http = response as? HTTPURLResponse else { throw SyncError.server("Geçersiz yanıt.") }
-        guard (200..<300).contains(http.statusCode) else {
-            let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
-                .flatMap { ($0["error"] as? [String: Any])?["message"] as? String }
-            throw SyncError.server(message ?? "Sunucu \(http.statusCode) döndürdü.")
-        }
+        for path in (previous ?? [:]).keys where replica.files[path] == nil { try? fm.removeItem(at: dir.appendingPathComponent(path)) }
+        guard let hubId = replica.hubId else { return }
+        let link = Link(hubId: hubId, version: replica.version, meta: replica.meta, base: replica.base)
+        try JSONEncoder().encode(link).write(to: dir.appendingPathComponent(Self.metaName), options: .atomic)
     }
 }

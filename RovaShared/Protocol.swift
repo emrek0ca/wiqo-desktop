@@ -2114,10 +2114,13 @@ public enum WireMessage: Codable, Equatable, Sendable {
     /// local connection, once, so the Mac can open its own persistent channel to the backend
     /// (see MacBackendChannel) without needing a separate Mac-side login screen.
     case backendToken(String)
+    /// The key that makes Act projects private to the person's devices (base64, 32 bytes). Sent once by the
+    /// iPhone over this authenticated local connection; it never goes through the backend.
+    case projectKey(String)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
     private enum Kind: String, Codable {
-        case hello, pair, pairAccepted, authenticate, authenticated, command, result, failure, backendToken
+        case hello, pair, pairAccepted, authenticate, authenticated, command, result, failure, backendToken, projectKey
     }
 
     public init(from decoder: Decoder) throws {
@@ -2132,6 +2135,7 @@ public enum WireMessage: Codable, Equatable, Sendable {
         case .result: self = .result(try container.decode(CommandResult.self, forKey: .value))
         case .failure: self = .failure(try container.decode(RovaError.self, forKey: .value))
         case .backendToken: self = .backendToken(try container.decode(String.self, forKey: .value))
+        case .projectKey: self = .projectKey(try container.decode(String.self, forKey: .value))
         }
     }
 
@@ -2146,6 +2150,7 @@ public enum WireMessage: Codable, Equatable, Sendable {
         case .command(let value): try container.encode(Kind.command, forKey: .kind); try container.encode(value, forKey: .value)
         case .result(let value): try container.encode(Kind.result, forKey: .kind); try container.encode(value, forKey: .value)
         case .backendToken(let value): try container.encode(Kind.backendToken, forKey: .kind); try container.encode(value, forKey: .value)
+        case .projectKey(let value): try container.encode(Kind.projectKey, forKey: .kind); try container.encode(value, forKey: .value)
         case .failure(let value): try container.encode(Kind.failure, forKey: .kind); try container.encode(value, forKey: .value)
         }
     }
