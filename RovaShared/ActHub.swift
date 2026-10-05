@@ -143,6 +143,16 @@ public struct ActHub: Sendable {
         try await send("POST", "code-sync/run", body: ["files": files.map { ["path": $0.path, "content": $0.content] }], as: RunResult.self, timeout: 60)
     }
 
+    // MARK: Change notice
+
+    /// A long request: returns as soon as anything in the person's projects changes on any device (or after
+    /// about 25 seconds with the same number). Call it in a loop with the number last seen.
+    public func waitForChange(since stamp: Int) async throws -> Int {
+        struct Response: Decodable { let stamp: Int }
+        let (data, _) = try await raw("GET", "code-sync/wait?stamp=\(stamp)", body: nil, acceptable: [], timeout: 40)
+        return try decode(Response.self, data).stamp
+    }
+
     // MARK: Tasks for the person's computer
 
     public struct PcTask: Decodable, Sendable {

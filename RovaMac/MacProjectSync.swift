@@ -43,10 +43,60 @@ actor MacProjectSync {
     func start() {
         guard loop == nil else { return }
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let events = Self.folderEvents(root)
         loop = Task { [weak self] in
+            var stamp = -1
             while !Task.isCancelled {
-                await self?.syncOnce()
-                try? await Task.sleep(for: .seconds(5))
+                guard let self else { return }
+                await self.syncOnce()
+                stamp = await self.waitForSomething(stamp: stamp, events: events)
+            }
+        }
+    }
+
+    /// Waits until another device changed something, a file in the folder changed, or a minute passed.
+    private func waitForSomething(stamp: Int, events: AsyncStream<Void>) async -> Int {
+        await withTaskGroup(of: Int?.self) { group in
+            group.addTask { [hub] in (try? await hub.waitForChange(since: stamp)) ?? stamp }
+            group.addTask {
+                for await _ in events { return nil }
+                return nil
+            }
+            group.addTask { try? await Task.sleep(for: .seconds(60)); return nil }
+            var next = stamp
+            if let first = await group.next() { next = first ?? stamp }
+            group.cancelAll()
+            // A change here is pushed right away; give the editor a moment to finish writing.
+            try? await Task.sleep(for: .milliseconds(600))
+            return next
+        }
+    }
+
+    /// One tick for every burst of file changes under the projects folder (FSEvents, 0.8 s latency).
+    private static func folderEvents(_ root: URL) -> AsyncStream<Void> {
+        AsyncStream { continuation in
+            final class Box { let continuation: AsyncStream<Void>.Continuation; init(_ c: AsyncStream<Void>.Continuation) { continuation = c } }
+            let box = Unmanaged.passRetained(Box(continuation))
+            var context = FSEventStreamContext(version: 0, info: box.toOpaque(), retain: nil, release: nil, copyDescription: nil)
+            let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+                guard let info else { return }
+                Unmanaged<Box>.fromOpaque(info).takeUnretainedValue().continuation.yield()
+            }
+            guard let stream = FSEventStreamCreate(nil, callback, &context, [root.path] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.8, FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents)) else {
+                box.release()
+                continuation.finish()
+                return
+            }
+            let queue = DispatchQueue(label: "wiqo.project-folder-events")
+            FSEventStreamSetDispatchQueue(stream, queue)
+            FSEventStreamStart(stream)
+            nonisolated(unsafe) let handle = stream
+            nonisolated(unsafe) let retained = box
+            continuation.onTermination = { _ in
+                FSEventStreamStop(handle)
+                FSEventStreamInvalidate(handle)
+                FSEventStreamRelease(handle)
+                retained.release()
             }
         }
     }

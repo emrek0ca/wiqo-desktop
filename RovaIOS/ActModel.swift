@@ -241,6 +241,32 @@ final class ActModel: ObservableObject {
         return saved.id
     }
 
+    // MARK: Conflict copies
+
+    /// Files a sync saved next to the hub's version when two devices changed the same file: "x - iPhone kopyası.css" → "x.css".
+    static func conflictOriginal(of path: String) -> String? {
+        guard let range = path.range(of: #" - [^/.]+ kopyası(?=\.[^./]+$|$)"#, options: .regularExpression) else { return nil }
+        return path.replacingCharacters(in: range, with: "")
+    }
+
+    func conflictCopies(_ id: String) -> [(copy: String, original: String)] {
+        (project(id)?.files.keys.sorted() ?? []).compactMap { path in Self.conflictOriginal(of: path).map { (path, $0) } }
+    }
+
+    /// Keeps the copy (it replaces the original) or drops it; either way the copy file goes away.
+    func resolveConflict(_ id: String, copy: String, useCopy: Bool) {
+        guard var p = project(id), let original = Self.conflictOriginal(of: copy), let content = p.files[copy] else { return }
+        let before = p.files
+        var files = before
+        if useCopy { files[original] = content }
+        files.removeValue(forKey: copy)
+        p.replica.files = files
+        let summary = useCopy ? "Çakışmada kopya seçildi: \(original)" : "Çakışma kopyası silindi: \(copy)"
+        p.history = Array(([ActHistoryEntry(id: UUID(), summary: summary, date: Date(), verified: true, source: "Çakışma", changes: diff(before, files))] + p.history).prefix(30))
+        store(p)
+        if p.mode == .devices { Task { await sync(id) } }
+    }
+
     // MARK: Undo, delete, privacy
 
     func canUndo(_ id: String) -> Bool { (project(id)?.history.count ?? 0) >= 2 }
@@ -313,6 +339,22 @@ final class ActModel: ObservableObject {
             for p in projects where p.mode == .devices { await sync(p.id) }
         } catch {
             syncNote = (error as? LocalizedError)?.errorDescription
+        }
+    }
+
+    /// While the Act tab is on screen: wakes up the moment another device changes a project.
+    func watchChanges() async {
+        var stamp = -1
+        while !Task.isCancelled {
+            guard RovaBackendClient.isAuthenticated else { try? await Task.sleep(for: .seconds(10)); continue }
+            do {
+                let next = try await hub.waitForChange(since: stamp)
+                if next != stamp && stamp != -1 { await syncAll() }
+                stamp = next
+            } catch {
+                if Task.isCancelled { return }
+                try? await Task.sleep(for: .seconds(8))
+            }
         }
     }
 

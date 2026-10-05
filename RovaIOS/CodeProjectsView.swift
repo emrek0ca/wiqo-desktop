@@ -28,6 +28,7 @@ struct CodeProjectDetailView: View {
                         Text("Dosyaların sunucuda yalnız şifreli durur; anahtar sadece cihazlarında.").font(.footnote).foregroundStyle(.secondary)
                     }
                 } header: { Text("Gizlilik") }
+                conflictSection(project)
                 filesSection(project)
                 historySection(project)
             } else {
@@ -59,6 +60,26 @@ struct CodeProjectDetailView: View {
             Text("Paylaşım")
         } footer: {
             Text("Dosya AirDrop, Mesajlar veya Dosyalar ile gönderilir; hiçbir şey internette yayınlanmaz.")
+        }
+    }
+
+    /// Two devices changed the same file: the hub's version stayed, this device's is saved beside it. Choose one.
+    @ViewBuilder private func conflictSection(_ project: ActLocalProject) -> some View {
+        let copies = model.conflictCopies(project.id)
+        if !copies.isEmpty {
+            Section {
+                ForEach(copies, id: \.copy) { pair in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(pair.original).font(.subheadline.weight(.medium))
+                        Text("Başka bir cihazdaki sürüm yerinde; bu cihazın sürümü \"\(pair.copy)\" olarak yanına kaydedildi.").font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            Button("Kopyayı kullan") { model.resolveConflict(project.id, copy: pair.copy, useCopy: true) }.buttonStyle(.borderedProminent).controlSize(.small)
+                            Button("Kopyayı sil") { model.resolveConflict(project.id, copy: pair.copy, useCopy: false) }.buttonStyle(.bordered).controlSize(.small)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            } header: { Text("Çakışmalar") } footer: { Text("İkisini birleştirmek için iki dosyayı bir editörde aç (Mac'teki klasörde yan yana durur).") }
         }
     }
 

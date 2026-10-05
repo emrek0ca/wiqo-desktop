@@ -94,6 +94,7 @@ struct ActView: View {
         .task {
             model.reload()
             await model.syncAll()
+            await model.watchChanges()
         }
     }
 
