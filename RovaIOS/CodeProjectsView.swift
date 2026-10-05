@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "Proje ayrıntıları": what the project screen's menu opens - share link, files, history, delete.
+/// "Proje ayrıntıları": what the project screen's menu opens - share as a file, files, history.
 /// Changing the project happens on the project screen (Act tab), not here.
 struct CodeProjectDetailView: View {
     let projectID: Int
@@ -10,6 +10,7 @@ struct CodeProjectDetailView: View {
     @State private var busy = false
     @State private var notice: String?
     @State private var openFile: OpenFile?
+    @State private var exportURL: URL?
 
     private struct OpenFile: Identifiable {
         let path: String
@@ -20,7 +21,7 @@ struct CodeProjectDetailView: View {
     var body: some View {
         List {
             if let detail {
-                if detail.project.kind == "web" { shareSection(detail.project) }
+                shareSection(detail)
                 filesSection(detail.files)
                 historySection(detail.history)
             } else {
@@ -49,21 +50,20 @@ struct CodeProjectDetailView: View {
         }
     }
 
-    private func shareSection(_ project: RovaBackendClient.CodeProject) -> some View {
+    /// Sharing is a file, not a link: the page as one HTML file (or the program's files) goes through the share sheet.
+    private func shareSection(_ detail: RovaBackendClient.CodeProjectDetail) -> some View {
         Section {
-            if let share = project.share, let url = URL(string: share.url) {
-                ShareLink(item: url) { Label("Bağlantıyı paylaş", systemImage: "square.and.arrow.up") }
-                Text(share.url).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                Button("Paylaşımı kapat", role: .destructive) { Task { await setShare(false) } }
+            if let url = exportURL {
+                ShareLink(item: url) { Label(detail.project.kind == "web" ? "Sayfayı HTML dosyası olarak paylaş" : "Programı dosya olarak paylaş", systemImage: "square.and.arrow.up") }
             } else {
-                Button { Task { await setShare(true) } } label: { Label("Bağlantıyla paylaş (7 gün)", systemImage: "link") }
+                Button { Task { await prepareExport(detail.project) } } label: { Label("Paylaşım dosyasını hazırla", systemImage: "square.and.arrow.up") }
+                    .disabled(busy)
             }
         } header: {
             Text("Paylaşım")
         } footer: {
-            Text("Bağlantıyı açan herkes sayfayı çalışır halde görür; hesabına veya verilerine erişemez.")
+            Text("Dosya AirDrop, Mesajlar veya Dosyalar ile gönderilir; hiçbir şey internette yayınlanmaz.")
         }
-        .disabled(busy)
     }
 
     private func filesSection(_ files: [RovaBackendClient.CodeProjectFile]) -> some View {
@@ -111,15 +111,26 @@ struct CodeProjectDetailView: View {
         }
     }
 
-    private func setShare(_ enabled: Bool) async {
+    /// Writes the project to a temporary file from the local copy on this phone (so it works offline too).
+    private func prepareExport(_ project: RovaBackendClient.CodeProject) async {
         busy = true
         defer { busy = false }
+        guard let local = await ActProjectStore.pull(projectID) else { notice = "Dosya hazırlanamadı."; return }
+        let safe = project.name.replacingOccurrences(of: "/", with: "-")
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("wiqo-export-\(UUID().uuidString)", isDirectory: true)
         do {
-            _ = try await RovaBackendClient.shareCodeProject(id: projectID, enabled: enabled)
-            await load()
-        } catch {
-            notice = "Paylaşım ayarı değiştirilemedi."
-        }
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            if project.kind == "web", let bundle = local.bundle {
+                let url = dir.appendingPathComponent("\(safe).html")
+                try bundle.write(to: url, atomically: true, encoding: .utf8)
+                exportURL = url
+            } else if let entry = local.files.first(where: { $0.path == "main.py" }) ?? local.files.first {
+                let url = dir.appendingPathComponent(local.files.count == 1 ? URL(fileURLWithPath: entry.path).lastPathComponent : "\(safe).py")
+                try (local.files.count == 1 ? entry.content : local.files.map { "# --- \($0.path) ---\n\($0.content)" }.joined(separator: "\n\n")).write(to: url, atomically: true, encoding: .utf8)
+                exportURL = url
+            } else { notice = "Projede dosya yok." }
+        } catch { notice = "Dosya hazırlanamadı." }
     }
 
     private func show(_ file: RovaBackendClient.CodeProjectFile) async {

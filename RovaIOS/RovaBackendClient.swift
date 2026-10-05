@@ -510,14 +510,12 @@ enum RovaBackendClient {
 
     /// "Kod projelerim": persistent web/Python projects built by describing them in chat (backend codeprojects/).
     struct CodeProject: Decodable, Identifiable, Sendable {
-        struct Share: Decodable, Sendable { let url: String; let expiresAt: String }
         let id: Int
         let name: String
         let kind: String
         let version: Int
         let updatedAt: String
         let fileCount: Int?
-        let share: Share?
     }
 
     struct CodeProjectFile: Decodable, Identifiable, Sendable {
@@ -617,6 +615,22 @@ enum RovaBackendClient {
         try await authorizedGet("code-projects/\(id)/snapshot", as: CodeProjectSnapshot.self)
     }
 
+    /// Work handed from the phone to the paired computer (open the folder, an editor, the page, or run Python there).
+    struct CodeProjectPcTask: Decodable, Sendable {
+        let id: Int
+        let status: String
+        let output: String
+        var finished: Bool { status == "done" || status == "failed" }
+    }
+
+    static func startCodeProjectPcTask(projectId: Int, action: String) async throws -> CodeProjectPcTask {
+        try await authorizedPost("code-projects/\(projectId)/pc-tasks", body: ["action": action], as: CodeProjectPcTask.self)
+    }
+
+    static func fetchCodeProjectPcTask(id: Int) async throws -> CodeProjectPcTask {
+        try await authorizedGet("code-projects/pc-tasks/\(id)", as: CodeProjectPcTask.self)
+    }
+
     /// Opening a project makes it the one the backend treats as current.
     static func openCodeProject(id: Int) async {
         struct Response: Decodable { let ok: Bool }
@@ -649,11 +663,6 @@ enum RovaBackendClient {
 
     static func runCodeProject(id: Int) async throws -> CodeRunResult {
         try await authorizedPost("code-projects/\(id)/run", body: [:], as: CodeRunResult.self)
-    }
-
-    static func shareCodeProject(id: Int, enabled: Bool) async throws -> CodeProject {
-        struct Response: Decodable { let project: CodeProject }
-        return try await authorizedPost("code-projects/\(id)/share", body: ["enabled": enabled], as: Response.self).project
     }
 
     static func deleteCodeProject(id: Int) async throws {

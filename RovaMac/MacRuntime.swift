@@ -49,7 +49,7 @@ final class MacRuntime: ObservableObject {
     /// "Wiqo Projeleri" folder sync with the account's other devices (see MacProjectSync).
     @Published private(set) var projectSyncStatus = "Senkron kapalı"
     private var projectSyncStatusTask: Task<Void, Never>?
-    private lazy var projectSync = MacProjectSync(apiBase: MacBackendChannel.apiBaseURL) { [weak self] in
+    private lazy var projectSync = MacProjectSync(apiBase: MacBackendChannel.apiBaseURL, allowRun: { UserDefaults.standard.bool(forKey: MacStorage.runProjectsKey) }) { [weak self] in
         await self?.backendChannel.accessTokenForFileTransfer()
     }
     @Published private(set) var automations: [MacAutomation] = []

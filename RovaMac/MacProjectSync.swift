@@ -1,3 +1,4 @@
+import AppKit
 import CryptoKit
 import Foundation
 
@@ -55,15 +56,17 @@ actor MacProjectSync {
     private let apiBase: URL
     private let device: String
     private let token: @Sendable () async -> String?
+    private let allowRun: @Sendable () -> Bool
     private var loop: Task<Void, Never>?
     private(set) var status = "Senkron kapalı"
 
     init(root: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Wiqo Projeleri", isDirectory: true),
-         apiBase: URL, device: String = "Mac", token: @escaping @Sendable () async -> String?) {
+         apiBase: URL, device: String = "Mac", allowRun: @escaping @Sendable () -> Bool = { false }, token: @escaping @Sendable () async -> String?) {
         self.root = root
         self.apiBase = apiBase
         self.device = device
         self.token = token
+        self.allowRun = allowRun
     }
 
     var folder: URL { root }
@@ -74,7 +77,7 @@ actor MacProjectSync {
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.syncOnce()
-                try? await Task.sleep(for: .seconds(8))
+                try? await Task.sleep(for: .seconds(5))
             }
         }
     }
@@ -109,6 +112,7 @@ actor MacProjectSync {
                 conflicts += outcome.conflicts
             }
             let imported = try await importNewFolders(known: Set(folders.values.map(\.path)), token: accessToken)
+            await handlePcTasks(folders: folders, token: accessToken)
             status = "Eşit · \(remote.count + imported) proje" + (pushed + pulled + imported > 0 ? " · son: ↑\(pushed + imported) ↓\(pulled)" : "") + (conflicts > 0 ? " · \(conflicts) çakışma kopyası" : "")
         } catch {
             status = "Senkron hatası: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
@@ -193,6 +197,96 @@ actor MacProjectSync {
             }
         }
         return outcome
+    }
+
+    // MARK: - Tasks handed over from the phone
+
+    private struct PcTask: Decodable { let id: Int; let projectId: Int; let action: String }
+
+    /// Picks up what the phone handed to this Mac and answers with the outcome. Never throws: a failure
+    /// is the task's answer, not a sync error.
+    private func handlePcTasks(folders: [Int: URL], token: String) async {
+        guard let tasks: [PcTask] = try? await get("code-projects/pc-tasks/pending", token: token, key: "tasks") else { return }
+        for task in tasks {
+            let (ok, output) = await perform(task, folder: folders[task.projectId])
+            _ = try? await post("code-projects/pc-tasks/\(task.id)/result", body: ["ok": ok, "output": output], token: token, allowStatus: [409])
+        }
+    }
+
+    private func perform(_ task: PcTask, folder: URL?) async -> (Bool, String) {
+        guard let folder, FileManager.default.fileExists(atPath: folder.path) else { return (false, "Proje klasörü bu Mac'te yok; senkron bitince tekrar dene.") }
+        switch task.action {
+        case "open_folder":
+            await MainActor.run { _ = NSWorkspace.shared.open(folder) }
+            return (true, "Klasör Mac'te açıldı: \(folder.path)")
+        case "open_editor":
+            let opened = await MainActor.run { () -> Bool in
+                for name in ["Visual Studio Code", "Cursor", "Xcode", "Sublime Text", "TextEdit"] {
+                    if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.editorBundles[name] ?? "") {
+                        NSWorkspace.shared.open([folder], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+                        return true
+                    }
+                }
+                return false
+            }
+            if !opened { await MainActor.run { _ = NSWorkspace.shared.open(folder) } }
+            return (true, opened ? "Klasör editörde açıldı." : "Editör bulunamadı; klasör Finder'da açıldı.")
+        case "open_preview":
+            guard let token = await self.token(), let html = try? await bundleHTML(projectId: task.projectId, token: token) else { return (false, "Önizleme hazırlanamadı.") }
+            let page = folder.appendingPathComponent(".wiqo-preview.html")
+            do { try html.write(to: page, atomically: true, encoding: .utf8) } catch { return (false, "Önizleme dosyası yazılamadı.") }
+            await MainActor.run { _ = NSWorkspace.shared.open(page) }
+            return (true, "Sayfa Mac'in tarayıcısında açıldı.")
+        case "run":
+            guard allowRun() else { return (false, "Mac'te çalıştırma kapalı. Mac'te Wiqo Ayarları > Projeler'den 'Telefondan gelen Python projelerini bu Mac'te çalıştır'ı aç.") }
+            return await runPython(in: folder)
+        default:
+            return (false, "Bilinmeyen görev.")
+        }
+    }
+
+    private static let editorBundles = [
+        "Visual Studio Code": "com.microsoft.VSCode", "Cursor": "com.todesktop.230313mzl4w4u92", "Xcode": "com.apple.dt.Xcode",
+        "Sublime Text": "com.sublimetext.4", "TextEdit": "com.apple.TextEdit"
+    ]
+
+    private func bundleHTML(projectId: Int, token: String) async throws -> String {
+        struct Bundle: Decodable { let html: String }
+        let bundle: Bundle = try await get("code-projects/\(projectId)/bundle", token: token)
+        return bundle.html
+    }
+
+    /// Runs the project's `main.py` with this Mac's Python (30 s limit, output capped). Only when the person allowed it.
+    private func runPython(in folder: URL) async -> (Bool, String) {
+        let entry = FileManager.default.fileExists(atPath: folder.appendingPathComponent("main.py").path) ? "main.py"
+            : ((try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.first { $0.hasSuffix(".py") })
+        guard let entry else { return (false, "Projede çalıştırılacak .py dosyası yok.") }
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                process.arguments = ["python3", entry]
+                process.currentDirectoryURL = folder
+                process.environment = ["PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin", "HOME": NSHomeDirectory(), "PYTHONIOENCODING": "utf-8"]
+                let out = Pipe()
+                process.standardOutput = out
+                process.standardError = out
+                process.standardInput = FileHandle.nullDevice
+                do { try process.run() } catch {
+                    continuation.resume(returning: (false, "Python başlatılamadı: \(error.localizedDescription)"))
+                    return
+                }
+                var timedOut = false
+                let timer = DispatchWorkItem { timedOut = true; process.terminate() }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timer)
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                timer.cancel()
+                let text = String(decoding: data.prefix(8_000), as: UTF8.self)
+                if timedOut { continuation.resume(returning: (false, text + "\nProgram 30 saniyede bitmedi; durduruldu.")) }
+                else { continuation.resume(returning: (process.terminationStatus == 0, text.isEmpty ? "(çıktı yok)" : text)) }
+            }
+        }
     }
 
     // MARK: - New folders on the Mac become projects

@@ -283,6 +283,7 @@ struct MacSettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// Privacy permission states, computed off the main thread on appear/refresh - never in `body`.
     @State private var privacyPermissions: [MacPermission] = []
+    @AppStorage(MacStorage.runProjectsKey) private var runProjects = false
 
     var body: some View {
         TabView {
@@ -311,6 +312,7 @@ struct MacSettingsView: View {
             Section("Projeler") {
                 LabeledContent("Senkron", value: runtime.projectSyncStatus)
                 Button("Wiqo Projeleri klasörünü aç") { runtime.openProjectsFolder() }
+                Toggle("Telefondan gelen Python projelerini bu Mac'te çalıştır", isOn: $runProjects)
                 Text("Act projelerin bu klasörde gerçek dosyalar olarak durur; istediğin editörde düzenle, değişiklikler telefona da gider.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

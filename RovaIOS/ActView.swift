@@ -304,7 +304,7 @@ struct ActView: View {
             // Offline: the copies on this phone are the list.
             if projects.isEmpty {
                 projects = ActProjectStore.all().map {
-                    RovaBackendClient.CodeProject(id: $0.id, name: $0.name, kind: $0.kind, version: $0.version, updatedAt: "", fileCount: $0.files.count, share: nil)
+                    RovaBackendClient.CodeProject(id: $0.id, name: $0.name, kind: $0.kind, version: $0.version, updatedAt: "", fileCount: $0.files.count)
                 }
                 if projects.isEmpty { notice = "Projeler yüklenemedi." }
                 else { notice = "Çevrimdışı: bu telefondaki kopyalar gösteriliyor." }
@@ -422,7 +422,6 @@ private struct ProjectRow: View {
     private var caption: String {
         var parts = [project.kind == "web" ? "Web" : "Python", "v\(project.version)"]
         if let when = Self.relative(project.updatedAt) { parts.append(when) }
-        if project.share != nil { parts.append("paylaşılıyor") }
         return parts.joined(separator: " · ")
     }
 
@@ -475,6 +474,8 @@ struct CodeProjectWorkspaceView: View {
     @FocusState private var focused: Bool
 
     @State private var localKind: String?
+    @State private var pcStatus: String?
+    @State private var pcOutput: String?
     @State private var localName: String?
     private var isWeb: Bool { (detail?.project.kind ?? localKind) != "python" }
     private var canSend: Bool { !working && activeJobID == nil && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 }
@@ -565,6 +566,14 @@ struct CodeProjectWorkspaceView: View {
                 Button { Task { await run() } } label: { Label(runResult == nil ? "Çalıştır" : "Tekrar çalıştır", systemImage: "play.fill").frame(maxWidth: .infinity) }
                     .buttonStyle(.wiqoPill(.accent))
                     .disabled(working)
+                if let pcOutput, !pcOutput.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Mac çıktısı").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(pcOutput).font(.system(.footnote, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(14)
+                    .wiqoCard()
+                }
                 if let runResult {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Çıktı").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -615,6 +624,16 @@ struct CodeProjectWorkspaceView: View {
                     .font(.footnote)
                     .foregroundStyle(.orange)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let pcStatus {
+                HStack(spacing: 8) {
+                    Image(systemName: "desktopcomputer").foregroundStyle(.secondary)
+                    Text(pcStatus).font(.footnote).lineLimit(3)
+                    Spacer(minLength: 4)
+                    Button { self.pcStatus = nil; pcOutput = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }.buttonStyle(.plain)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             if let latest { changeStrip(latest) }
             HStack(alignment: .bottom, spacing: 10) {
@@ -674,7 +693,16 @@ struct CodeProjectWorkspaceView: View {
             if isWeb {
                 Button { reloadToken += 1 } label: { Label("Sayfayı yenile", systemImage: "arrow.clockwise") }
             }
-            Button { showingDetails = true } label: { Label("Dosyalar, geçmiş, paylaşım", systemImage: "folder") }
+            Section("Mac'te") {
+                if isWeb {
+                    Button { Task { await handOff("open_preview", "Mac'te önizleme açılıyor…") } } label: { Label("Mac'te önizle", systemImage: "macwindow") }
+                } else {
+                    Button { Task { await handOff("run", "Mac'te çalıştırılıyor…") } } label: { Label("Mac'te çalıştır", systemImage: "play.rectangle") }
+                }
+                Button { Task { await handOff("open_editor", "Editörde açılıyor…") } } label: { Label("Mac'te editörde aç", systemImage: "chevron.left.forwardslash.chevron.right") }
+                Button { Task { await handOff("open_folder", "Klasör açılıyor…") } } label: { Label("Klasörü Mac'te aç", systemImage: "folder") }
+            }
+            Button { showingDetails = true } label: { Label("Dosyalar, geçmiş, dosya olarak paylaş", systemImage: "doc.on.doc") }
             Divider()
             Button(role: .destructive) { confirmingDelete = true } label: { Label("Projeyi sil", systemImage: "trash") }
         } label: {
@@ -798,6 +826,27 @@ struct CodeProjectWorkspaceView: View {
         defer { working = false }
         do { runResult = try await RovaBackendClient.runCodeProject(id: projectID) }
         catch { notice = "Program çalıştırılamadı." }
+    }
+
+    /// Hands one of the fixed actions to the paired Mac and follows it to its answer.
+    private func handOff(_ action: String, _ message: String) async {
+        pcStatus = message
+        pcOutput = nil
+        do {
+            let task = try await RovaBackendClient.startCodeProjectPcTask(projectId: projectID, action: action)
+            for _ in 0..<40 {
+                try? await Task.sleep(for: .seconds(2))
+                let current = try await RovaBackendClient.fetchCodeProjectPcTask(id: task.id)
+                if current.finished {
+                    pcStatus = current.status == "done" ? (action == "run" ? "Mac çalıştırdı." : current.output) : "Mac: \(current.output)"
+                    if action == "run" { pcOutput = current.output }
+                    return
+                }
+            }
+            pcStatus = "Mac yanıt vermedi; açık ve internete bağlı mı?"
+        } catch {
+            pcStatus = (error as? RovaBackendError)?.errorDescription ?? "Mac'e iletilemedi."
+        }
     }
 
     private func deleteProject() async {

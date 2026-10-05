@@ -13,6 +13,7 @@ enum MacStorage {
     static let deviceIDKey = "rova.mac.device-id" + flavor
     static let pairedNameKey = "rova.mac.paired-name" + flavor
     static let pairedIDKey = "rova.mac.paired-id" + flavor
+    static let runProjectsKey = "rova.mac.projects.run" + flavor
     static let welcomeCompletedKey = "rova.mac.welcome.completed" + flavor
 
     static let pairedTokenAccount = "paired-device-token" + flavor
