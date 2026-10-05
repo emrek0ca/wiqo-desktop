@@ -124,9 +124,45 @@ enum WiqoHTMLDocument {
 
 /// The preview is non-persistent and network-disabled. It presents generated HTML; it is not a
 /// second browser and not an escape hatch from the execution sandbox.
+/// What a code project's page keeps between visits (window.wiqoStore): one JSON blob per project,
+/// on this device only. The page gets it at load time and posts every `set` back.
+@MainActor
+final class WiqoProjectDataBridge: NSObject, WKScriptMessageHandler {
+    static let messageName = "wiqoStore"
+    private static let maxBytes = 256 * 1024
+    private let key: String
+
+    init(key: String) { self.key = key }
+
+    private static func defaultsKey(_ key: String) -> String { "wiqo.projectdata.\(key)" }
+
+    static func load(_ key: String) -> [String: Any] {
+        guard let data = UserDefaults.standard.data(forKey: defaultsKey(key)),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+        return object
+    }
+
+    static func script(for key: String) -> WKUserScript {
+        let data = (try? JSONSerialization.data(withJSONObject: load(key))) ?? Data("{}".utf8)
+        let json = String(decoding: data, as: UTF8.self).replacingOccurrences(of: "</", with: "<\\/")
+        return WKUserScript(source: "window.__wiqoData = \(json);", injectionTime: .atDocumentStart, forMainFrameOnly: true)
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any], let name = body["key"] as? String, name.count <= 120 else { return }
+        var stored = Self.load(key)
+        stored[name] = body["value"] ?? NSNull()
+        guard JSONSerialization.isValidJSONObject(stored),
+              let data = try? JSONSerialization.data(withJSONObject: stored), data.count <= Self.maxBytes else { return }
+        UserDefaults.standard.set(data, forKey: Self.defaultsKey(key))
+    }
+}
+
 struct WiqoHTMLWebView: UIViewRepresentable {
     let html: String
     var isInteractive = true
+    /// A code project's id: the page then keeps its data (window.wiqoStore) on this device.
+    var projectDataKey: String? = nil
     /// Changing this reloads the same HTML from scratch (the "yenile" action).
     var reloadToken = 0
 
@@ -149,6 +185,10 @@ struct WiqoHTMLWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        if let projectDataKey {
+            configuration.userContentController.addUserScript(WiqoProjectDataBridge.script(for: projectDataKey))
+            configuration.userContentController.add(WiqoProjectDataBridge(key: projectDataKey), name: WiqoProjectDataBridge.messageName)
+        }
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.isOpaque = false

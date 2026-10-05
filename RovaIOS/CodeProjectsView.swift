@@ -118,7 +118,7 @@ struct CodeProjectDetailView: View {
         }
         .sheet(isPresented: Binding(get: { previewHTML != nil }, set: { if !$0 { previewHTML = nil } })) {
             NavigationStack {
-                WiqoHTMLWebView(html: WiqoHTMLDocument.wrap(previewHTML ?? "", viewportWidth: WiqoPreviewDevice.phone.viewportWidth, reduceMotion: reduceMotion))
+                WiqoHTMLWebView(html: WiqoHTMLDocument.wrap(previewHTML ?? "", viewportWidth: WiqoPreviewDevice.phone.viewportWidth, reduceMotion: reduceMotion), projectDataKey: String(projectID))
                     .navigationTitle(detail?.project.name ?? "Önizleme")
                     .navigationBarTitleDisplayMode(.inline)
             }
@@ -342,7 +342,7 @@ struct CodeChangeCard: View {
         .wiqoCard()
         .sheet(isPresented: Binding(get: { previewHTML != nil }, set: { if !$0 { previewHTML = nil } })) {
             NavigationStack {
-                WiqoHTMLWebView(html: WiqoHTMLDocument.wrap(previewHTML ?? "", viewportWidth: WiqoPreviewDevice.phone.viewportWidth, reduceMotion: reduceMotion))
+                WiqoHTMLWebView(html: WiqoHTMLDocument.wrap(previewHTML ?? "", viewportWidth: WiqoPreviewDevice.phone.viewportWidth, reduceMotion: reduceMotion), projectDataKey: widget.id.map { String($0) })
                     .navigationTitle(widget.title ?? "Önizleme")
                     .navigationBarTitleDisplayMode(.inline)
             }
