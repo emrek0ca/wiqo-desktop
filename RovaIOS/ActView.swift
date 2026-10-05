@@ -1,4 +1,9 @@
+import CryptoKit
 import SwiftUI
+
+private func actRequestFingerprint(_ text: String) -> String {
+    SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+}
 
 /// The "Act" tab: where apps, games, pages and programs are made. A description creates a project;
 /// every project is a row in the list; opening one keeps all further changes on that project.
@@ -7,6 +12,8 @@ struct ActView: View {
     @State private var loaded = false
     @State private var draft = ""
     @State private var creating = false
+    @State private var activeJobID: Int?
+    @State private var jobProgress: String?
     @State private var notice: String?
     @State private var opened: OpenedProject?
     @State private var pendingDelete: RovaBackendClient.CodeProject?
@@ -22,7 +29,7 @@ struct ActView: View {
         ("Python", "Python ile 1'den 100'e kadar asal sayıları yazdıran bir program yap")
     ]
 
-    private var canCreate: Bool { !creating && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3 }
+    private var canCreate: Bool { !creating && activeJobID == nil && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3 }
 
     var body: some View {
         Group {
@@ -52,7 +59,14 @@ struct ActView: View {
         } message: { _ in
             Text("Dosyalar ve geçmiş silinir; geri alınamaz.")
         }
-        .task { await load() }
+        .task {
+            await load()
+            if let id = UserDefaults.standard.object(forKey: createJobStorageKey) as? Int {
+                activeJobID = id
+                creating = true
+                await watchCreateJob(id)
+            }
+        }
         .refreshable { await load() }
     }
 
@@ -98,12 +112,20 @@ struct ActView: View {
             Button { Task { await create() } } label: {
                 HStack(spacing: 8) {
                     if creating { ProgressView().controlSize(.small).tint(Color(.systemBackground)) }
-                    Text(creating ? "Hazırlanıyor… genelde 10–30 sn" : "Oluştur")
+                    Text(creating ? "Hazırlanıyor…" : "Oluştur")
                 }
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.wiqoPill(.accent))
             .disabled(!canCreate)
+
+            if let jobProgress {
+                Text(jobProgress).font(.footnote).foregroundStyle(.secondary)
+            }
+            if let activeJobID {
+                Button("Görevi durdur") { Task { await cancelCreateJob(activeJobID) } }
+                    .font(.footnote)
+            }
 
             if let notice {
                 Label(notice, systemImage: "exclamationmark.circle")
@@ -185,14 +207,61 @@ struct ActView: View {
         composerFocused = false
         defer { creating = false }
         do {
-            let result = try await RovaBackendClient.createCodeProject(request: request)
-            draft = ""
-            WiqoHaptics.selection()
-            await load()
-            opened = OpenedProject(id: result.project.id)
+            let fingerprint = actRequestFingerprint(request)
+            let key = UserDefaults.standard.string(forKey: "\(createRequestStorageKey)-hash") == fingerprint
+                ? (UserDefaults.standard.string(forKey: createRequestStorageKey) ?? UUID().uuidString) : UUID().uuidString
+            UserDefaults.standard.set(key, forKey: createRequestStorageKey)
+            UserDefaults.standard.set(fingerprint, forKey: "\(createRequestStorageKey)-hash")
+            let id = try await RovaBackendClient.startCodeProjectJob(operation: "create", request: request, requestKey: key)
+            UserDefaults.standard.set(id, forKey: createJobStorageKey)
+            UserDefaults.standard.removeObject(forKey: createRequestStorageKey)
+            UserDefaults.standard.removeObject(forKey: "\(createRequestStorageKey)-hash")
+            activeJobID = id
+            await watchCreateJob(id)
         } catch {
             notice = (error as? RovaBackendError)?.errorDescription ?? "Proje oluşturulamadı; biraz sonra tekrar dene."
         }
+    }
+
+    private var createJobStorageKey: String { "act-create-job-\(RovaBackendClient.currentUserID ?? "anonymous")" }
+    private var createRequestStorageKey: String { "act-create-request-\(RovaBackendClient.currentUserID ?? "anonymous")" }
+
+    private func watchCreateJob(_ id: Int) async {
+        for _ in 0..<150 {
+            if Task.isCancelled || activeJobID != id { return }
+            do {
+                let job = try await RovaBackendClient.fetchCodeProjectJob(id: id)
+                jobProgress = job.progress
+                if job.finished {
+                    UserDefaults.standard.removeObject(forKey: createJobStorageKey)
+                    activeJobID = nil
+                    jobProgress = nil
+                    creating = false
+                    if job.result?.ok == true, let projectId = job.result?.projectId {
+                        draft = ""
+                        WiqoHaptics.selection()
+                        await load()
+                        opened = OpenedProject(id: projectId)
+                    } else {
+                        notice = job.result?.problem ?? job.error ?? "Proje tamamlanamadı."
+                    }
+                    return
+                }
+            } catch { jobProgress = "Bağlantı bekleniyor…" }
+            try? await Task.sleep(for: .seconds(2))
+        }
+        jobProgress = "Görev sürüyor; daha sonra buradan devam edebilirsin."
+    }
+
+    private func cancelCreateJob(_ id: Int) async {
+        do {
+            try await RovaBackendClient.cancelCodeProjectJob(id: id)
+            UserDefaults.standard.removeObject(forKey: createJobStorageKey)
+            activeJobID = nil
+            creating = false
+            jobProgress = nil
+            notice = "Görev durduruldu."
+        } catch { notice = "Görev şu anda durdurulamadı; durumunu tekrar kontrol et." }
     }
 
     private func delete(_ project: RovaBackendClient.CodeProject) async {
@@ -281,6 +350,8 @@ struct CodeProjectWorkspaceView: View {
     @State private var runResult: RovaBackendClient.CodeRunResult?
     @State private var draft = ""
     @State private var working = false
+    @State private var activeJobID: Int?
+    @State private var jobProgress: String?
     @State private var notice: String?
     @State private var warning: String?
     @State private var reloadToken = 0
@@ -289,7 +360,7 @@ struct CodeProjectWorkspaceView: View {
     @FocusState private var focused: Bool
 
     private var isWeb: Bool { detail?.project.kind != "python" }
-    private var canSend: Bool { !working && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 }
+    private var canSend: Bool { !working && activeJobID == nil && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 }
     private var latest: RovaBackendClient.CodeProjectVersion? { detail?.history.first }
 
     var body: some View {
@@ -333,6 +404,11 @@ struct CodeProjectWorkspaceView: View {
         .task {
             await RovaBackendClient.openCodeProject(id: projectID)
             await load()
+            if let id = UserDefaults.standard.object(forKey: editJobStorageKey) as? Int {
+                activeJobID = id
+                working = true
+                await watchEditJob(id)
+            }
         }
     }
 
@@ -403,11 +479,15 @@ struct CodeProjectWorkspaceView: View {
     private var workingOverlay: some View {
         VStack(spacing: 10) {
             ProgressView()
-            Text("Değişiklik hazırlanıyor")
+            Text(jobProgress ?? "Değişiklik hazırlanıyor")
                 .font(.subheadline.weight(.medium))
-            Text("Yazılıyor, denenip doğrulanıyor; genelde 10–30 sn.")
+            Text("Yazılıyor, denenip doğrulanıyor.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let activeJobID {
+                Button("Görevi durdur") { Task { await cancelEditJob(activeJobID) } }
+                    .font(.footnote)
+            }
         }
         .padding(22)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -520,15 +600,61 @@ struct CodeProjectWorkspaceView: View {
         focused = false
         defer { working = false }
         do {
-            let result = try await RovaBackendClient.editCodeProject(id: projectID, request: request)
-            draft = ""
-            warning = result.verified ? nil : (result.problem ?? "Değişiklik doğrulanamadı.")
-            WiqoHaptics.selection()
-            runResult = nil
-            await load()
+            let fingerprint = actRequestFingerprint(request)
+            let key = UserDefaults.standard.string(forKey: "\(editRequestStorageKey)-hash") == fingerprint
+                ? (UserDefaults.standard.string(forKey: editRequestStorageKey) ?? UUID().uuidString) : UUID().uuidString
+            UserDefaults.standard.set(key, forKey: editRequestStorageKey)
+            UserDefaults.standard.set(fingerprint, forKey: "\(editRequestStorageKey)-hash")
+            let id = try await RovaBackendClient.startCodeProjectJob(operation: "edit", request: request, projectId: projectID, requestKey: key)
+            UserDefaults.standard.set(id, forKey: editJobStorageKey)
+            UserDefaults.standard.removeObject(forKey: editRequestStorageKey)
+            UserDefaults.standard.removeObject(forKey: "\(editRequestStorageKey)-hash")
+            activeJobID = id
+            await watchEditJob(id)
         } catch {
             notice = (error as? RovaBackendError)?.errorDescription ?? "Değişiklik uygulanamadı; proje değişmedi."
         }
+    }
+
+    private var editJobStorageKey: String { "act-edit-job-\(RovaBackendClient.currentUserID ?? "anonymous")-\(projectID)" }
+    private var editRequestStorageKey: String { "act-edit-request-\(RovaBackendClient.currentUserID ?? "anonymous")-\(projectID)" }
+
+    private func watchEditJob(_ id: Int) async {
+        for _ in 0..<150 {
+            if Task.isCancelled || activeJobID != id { return }
+            do {
+                let job = try await RovaBackendClient.fetchCodeProjectJob(id: id)
+                jobProgress = job.progress
+                if job.finished {
+                    UserDefaults.standard.removeObject(forKey: editJobStorageKey)
+                    activeJobID = nil
+                    jobProgress = nil
+                    working = false
+                    if job.result?.ok == true {
+                        draft = ""
+                        WiqoHaptics.selection()
+                        runResult = nil
+                        await load()
+                    } else {
+                        notice = job.result?.problem ?? job.error ?? "Değişiklik uygulanamadı; proje değişmedi."
+                    }
+                    return
+                }
+            } catch { jobProgress = "Bağlantı bekleniyor…" }
+            try? await Task.sleep(for: .seconds(2))
+        }
+        jobProgress = "Görev sürüyor; projeyi yeniden açınca durumu görebilirsin."
+    }
+
+    private func cancelEditJob(_ id: Int) async {
+        do {
+            try await RovaBackendClient.cancelCodeProjectJob(id: id)
+            UserDefaults.standard.removeObject(forKey: editJobStorageKey)
+            activeJobID = nil
+            working = false
+            jobProgress = nil
+            notice = "Görev durduruldu; proje değişmedi."
+        } catch { notice = "Görev şu anda durdurulamadı; durumunu tekrar kontrol et." }
     }
 
     private func undo() async {

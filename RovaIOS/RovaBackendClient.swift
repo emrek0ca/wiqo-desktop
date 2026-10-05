@@ -557,6 +557,39 @@ enum RovaBackendClient {
         let problem: String?
     }
 
+    struct CodeProjectJob: Decodable, Sendable {
+        struct Result: Decodable, Sendable {
+            let ok: Bool
+            let projectId: Int?
+            let version: Int?
+            let summary: String?
+            let verified: Bool?
+            let problem: String?
+        }
+        let taskId: Int
+        let status: String
+        let progress: String?
+        let error: String?
+        let result: Result?
+        var finished: Bool { ["done", "failed", "cancelled", "unknown"].contains(status) }
+    }
+
+    static func startCodeProjectJob(operation: String, request: String, projectId: Int? = nil, requestKey: String) async throws -> Int {
+        struct Response: Decodable { let taskId: Int }
+        var body: [String: Any] = ["operation": operation, "request": request, "requestKey": requestKey]
+        if let projectId { body["projectId"] = projectId }
+        return try await authorizedPost("code-projects/jobs", body: body, as: Response.self).taskId
+    }
+
+    static func fetchCodeProjectJob(id: Int) async throws -> CodeProjectJob {
+        try await authorizedGet("code-projects/jobs/\(id)", as: CodeProjectJob.self)
+    }
+
+    static func cancelCodeProjectJob(id: Int) async throws {
+        struct Response: Decodable { let ok: Bool }
+        _ = try await authorizedPost("code-projects/jobs/\(id)/cancel", body: [:], as: Response.self)
+    }
+
     /// A new project from a description (writer + checks run on the backend; up to ~2 minutes).
     static func createCodeProject(request: String) async throws -> CodeProjectEditResult {
         try await authorizedPost("code-projects", body: ["request": request], as: CodeProjectEditResult.self, timeout: 180)
