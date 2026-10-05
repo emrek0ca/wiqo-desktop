@@ -146,7 +146,7 @@ public enum ActQuickEdits {
     }
 
     private static let darkPalette = ["--bg": "#0e1014", "--surface": "#1a1d24", "--fg": "#f2f4f8", "--muted": "#9aa3b2", "--border": "#2c313b"]
-    private static let lightPalette = ["--bg": "#f5f6f8", "--surface": "#ffffff", "--fg": "#14161a", "--muted": "#6b7280", "--border": "#e2e4e9"]
+    private static let lightPalette = ["--bg": "#f5f6f8", "--surface": "#ffffff", "--fg": "#14161a", "--muted": "#5c6573", "--border": "#e2e4e9"]
 
     private static func setPalette(dark: Bool, in files: [String: String]) -> [String: String]? {
         setVariables(dark ? darkPalette : lightPalette, in: files)
@@ -156,7 +156,7 @@ public enum ActQuickEdits {
         var values = ["--bg": hex]
         // Text must stay readable on the new background.
         values["--fg"] = luminance(hex) < 0.45 ? "#f2f4f8" : "#14161a"
-        values["--muted"] = luminance(hex) < 0.45 ? "#b4bcc9" : "#6b7280"
+        values["--muted"] = luminance(hex) < 0.45 ? "#b4bcc9" : "#5c6573"
         return setVariables(values, in: files)
     }
 

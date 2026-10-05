@@ -211,6 +211,8 @@ struct WiqoHTMLWebView: UIViewRepresentable {
 /// WebKit itself did not answer (timeout, process gone), so the change is saved unverified.
 enum ActVerification {
     case passed
+    /// Opens and works, with design notes (small tap targets, low contrast).
+    case passedWithNotes([String])
     case problems([String])
     case unavailable
 }
@@ -277,7 +279,16 @@ final class ActWebVerifier: NSObject, WKNavigationDelegate {
             (()=>{const d=document.documentElement,b=document.body;
             const width=Math.max(d?.scrollWidth||0,b?.scrollWidth||0);
             const text=(b?.innerText||'').trim();
-            return {width:width,textLength:text.length,errors:(window.__actErrors||[]).slice(0,5)};})()
+            const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0};
+            const small=[...document.querySelectorAll('button,a[href],select,input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea')].filter(visible).filter(e=>{const r=e.getBoundingClientRect();return r.height<40||r.width<40}).length;
+            const rgb=c=>{const m=(c||'').match(/rgba?\\(([^)]+)\\)/);if(!m)return null;const p=m[1].split(',').map(x=>parseFloat(x));return {r:p[0],g:p[1],b:p[2],a:p.length>3?p[3]:1}};
+            const lin=v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)};
+            const lum=c=>0.2126*lin(c.r)+0.7152*lin(c.g)+0.0722*lin(c.b);
+            const bgOf=e=>{for(let n=e;n;n=n.parentElement){const c=rgb(getComputedStyle(n).backgroundColor);if(c&&c.a>0.5)return c}return {r:255,g:255,b:255,a:1}};
+            const ratio=e=>{const f=rgb(getComputedStyle(e).color);if(!f)return 21;const a=lum(f),c=lum(bgOf(e));return (Math.max(a,c)+0.05)/(Math.min(a,c)+0.05)};
+            const sample=[b,...document.querySelectorAll('h1,h2,p,button,label')].filter(e=>e&&visible(e)&&(e.innerText||'').trim()).slice(0,14);
+            const low=sample.filter(e=>ratio(e)<(e===b||e.tagName==='P'?4.5:3)).length;
+            return {width:width,textLength:text.length,errors:(window.__actErrors||[]).slice(0,5),small:small,low:low};})()
             """
             guard let result = try await page.evaluateJavaScript(check) as? [String: Any] else {
                 return .unavailable
@@ -285,7 +296,11 @@ final class ActWebVerifier: NSObject, WKNavigationDelegate {
             var problems = (result["errors"] as? [String] ?? []).prefix(5).map { String($0.prefix(160)) }
             if (result["textLength"] as? Int ?? 0) == 0 { problems.append("Sayfa boş görünüyor.") }
             if (result["width"] as? Int ?? 0) > 410 { problems.append("Sayfa telefon ekranından yatay taşıyor.") }
-            return problems.isEmpty ? .passed : .problems(Array(problems.prefix(5)))
+            if !problems.isEmpty { return .problems(Array(problems.prefix(5))) }
+            var notes: [String] = []
+            if let small = result["small"] as? Int, small > 0 { notes.append("\(small) düğme/giriş 40 pt'ten küçük; dokunması zor") }
+            if let low = result["low"] as? Int, low > 0 { notes.append("\(low) yerde yazı ile zemin arasındaki kontrast düşük") }
+            return notes.isEmpty ? .passed : .passedWithNotes(notes)
         } catch {
             return .unavailable
         }

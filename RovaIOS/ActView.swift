@@ -565,9 +565,20 @@ struct CodeProjectWorkspaceView: View {
                     Text("Telefonda denenemedi; çalışmıyorsa geri al.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                } else if let notes = entry.notes, !notes.isEmpty {
+                    Text("Tasarım notu: \(notes.joined(separator: "; "))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
             }
             Spacer(minLength: 6)
+            if let notes = entry.notes, !notes.isEmpty, entry.verified {
+                Button { draft = "Tasarım sorunlarını düzelt, başka bir şey değiştirme: " + notes.joined(separator: "; "); focused = true } label: { Label("Düzelt", systemImage: "wand.and.stars").font(.footnote.weight(.medium)) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(WiqoTheme.ink)
+                    .disabled(model.job != nil)
+            }
             Button { undo() } label: { Label("Geri al", systemImage: "arrow.uturn.backward").font(.footnote.weight(.medium)) }
                 .buttonStyle(.plain)
                 .foregroundStyle(WiqoTheme.ink)

@@ -26,6 +26,8 @@ struct ActHistoryEntry: Codable, Identifiable, Sendable {
     /// "Wiqo", "Geri alma", "Başka cihaz"
     let source: String
     let changes: [ActHistoryChange]
+    /// Design notes from trying the page on this phone (small tap targets, low contrast); nil when none.
+    var notes: [String]? = nil
 }
 
 /// One Act project as it lives on this phone: the full copy (files), the hub bookkeeping (`replica`)

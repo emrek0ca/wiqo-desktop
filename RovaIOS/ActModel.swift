@@ -80,6 +80,28 @@ final class ActModel: ObservableObject {
 
     func recordConsent() { UserDefaults.standard.set(true, forKey: Self.consentKey) }
 
+    // MARK: Project note
+
+    private static let memoryFile = "PROJE.md"
+
+    /// PROJE.md is the project's memory: what it is for and what has been decided. The device keeps it
+    /// (one line per change); the writer is shown it first so a request fits what the project already is.
+    /// It is an ordinary file, so it syncs and the person can read and edit it.
+    private static func remember(_ files: [String: String], name: String, kind: String, goal: String?, line: String) -> [String: String] {
+        var result = files
+        let entry = "- \(line.replacingOccurrences(of: "\n", with: " ").prefix(140))"
+        if let note = files[memoryFile] {
+            var lines = note.components(separatedBy: "\n")
+            lines.append(entry)
+            let bullets = lines.indices.filter { lines[$0].hasPrefix("- ") }
+            if bullets.count > 25 { for index in bullets.prefix(bullets.count - 25).reversed() { lines.remove(at: index) } }
+            result[memoryFile] = lines.joined(separator: "\n")
+        } else {
+            result[memoryFile] = "# \(name)\n\nAmaç: \(goal ?? name)\nTür: \(kind == "python" ? "Python programı" : "Web uygulaması")\n\n## Kararlar ve değişiklikler\n\(entry)"
+        }
+        return result
+    }
+
     // MARK: Create and change
 
     /// A new project from a description. Returns its id.
@@ -121,6 +143,7 @@ final class ActModel: ObservableObject {
         let before = p.files
         var files = before
         for (path, content) in result.files { files[path] = content }
+        files = Self.remember(files, name: p.name, kind: p.kind, goal: nil, line: result.summary)
         p.replica.files = files
         p.history = Array(([ActHistoryEntry(id: UUID(), summary: result.summary, date: Date(), verified: true, source: "Hızlı düzenleme", changes: diff(before, files))] + p.history).prefix(30))
         notice = nil
@@ -180,6 +203,7 @@ final class ActModel: ObservableObject {
         }
         var verified = true
         var warning: String?
+        var notes: [String]?
         if result.needsDeviceCheck && result.kind != "python" {
             job?.stage = .verifying
             job?.message = "Sayfa bu telefonun tarayıcısında açılıp deneniyor."
@@ -187,6 +211,7 @@ final class ActModel: ObservableObject {
             guard let page = ActBundler.bundleWeb(list).map(ActBundler.ensureViewport) else { throw ActError("Projede açılacak bir sayfa yok.") }
             switch await ActWebVerifier().verify(page) {
             case .passed: break
+            case .passedWithNotes(let found): notes = found
             case .problems(let problems): throw ActError(problems.first ?? "Sayfa doğrulanamadı; proje değişmedi.")
             case .unavailable:
                 verified = false
@@ -195,7 +220,9 @@ final class ActModel: ObservableObject {
         }
         job?.stage = .saving
         job?.message = ""
-        let entry = ActHistoryEntry(id: UUID(), summary: result.summary.isEmpty ? String(request.prefix(80)) : result.summary, date: Date(), verified: verified, source: "Wiqo", changes: diff(before, files))
+        let summaryLine = result.summary.isEmpty ? String(request.prefix(80)) : result.summary
+        files = Self.remember(files, name: project?.name ?? result.name, kind: result.kind, goal: project == nil ? request : nil, line: summaryLine)
+        let entry = ActHistoryEntry(id: UUID(), summary: result.summary.isEmpty ? String(request.prefix(80)) : result.summary, date: Date(), verified: verified, source: "Wiqo", changes: diff(before, files), notes: notes)
         var saved: ActLocalProject
         if var existing = project {
             existing.replica.files = files
