@@ -578,7 +578,10 @@ enum RovaBackendClient {
         struct Response: Decodable { let taskId: Int }
         var body: [String: Any] = ["operation": operation, "request": request, "requestKey": requestKey]
         if let projectId { body["projectId"] = projectId }
-        return try await authorizedPost("code-projects/jobs", body: body, as: Response.self).taskId
+        return try await authorizedPost(
+            "code-projects/jobs", body: body, as: Response.self,
+            missingRouteMessage: "Act görevleri bu sunucu sürümünde henüz desteklenmiyor. Biraz sonra tekrar dene."
+        ).taskId
     }
 
     static func fetchCodeProjectJob(id: Int) async throws -> CodeProjectJob {
@@ -2209,7 +2212,7 @@ enum RovaBackendClient {
         return try decode(T.self, from: data, response: response)
     }
 
-    private static func authorizedPost<T: Decodable>(_ path: String, body: [String: Any], as type: T.Type, timeout: TimeInterval? = nil) async throws -> T {
+    private static func authorizedPost<T: Decodable>(_ path: String, body: [String: Any], as type: T.Type, timeout: TimeInterval? = nil, missingRouteMessage: String? = nil) async throws -> T {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
         if let timeout { request.timeoutInterval = timeout }
@@ -2219,6 +2222,9 @@ enum RovaBackendClient {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
+        if response.statusCode == 404, let missingRouteMessage, serverErrorMessage(from: data) == nil {
+            throw RovaBackendError.network(missingRouteMessage)
+        }
         return try decode(T.self, from: data, response: response)
     }
 
