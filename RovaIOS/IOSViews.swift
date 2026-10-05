@@ -494,13 +494,32 @@ struct WiqoHomeView: View {
     @State private var draftPrompt: String?
     @State private var pendingActivity: ActivitySheetRoute?
 
+    private enum HomeMode: Hashable { case chat, act }
+    @State private var mode: HomeMode = .chat
+
     var body: some View {
         NavigationStack {
-            CopilotView(model: model, authSession: authSession, subscriptionStore: subscriptionStore, conversationID: conversationID, draftPrompt: draftPrompt)
-                .id(conversationID)
+            Group {
+                if mode == .chat {
+                    CopilotView(model: model, authSession: authSession, subscriptionStore: subscriptionStore, conversationID: conversationID, draftPrompt: draftPrompt)
+                        .id(conversationID)
+                } else {
+                    ActView()
+                }
+            }
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.hidden, for: .navigationBar)
+                .toolbarBackground(mode == .chat ? .hidden : .automatic, for: .navigationBar)
                 .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        WiqoPillTabs<HomeMode>(
+                            options: [
+                                WiqoPillTabs<HomeMode>.Option(value: .chat, title: "Chat"),
+                                WiqoPillTabs<HomeMode>.Option(value: .act, title: "Act")
+                            ],
+                            selection: $mode
+                        )
+                    }
+                    if mode == .chat {
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
                             dismissKeyboard()
@@ -536,6 +555,7 @@ struct WiqoHomeView: View {
                             }
                             .accessibilityLabel("Yeni sohbet")
                         }
+                    }
                     }
                 }
         }
@@ -1272,12 +1292,6 @@ struct SettingsView: View {
                 NamedAgentsView()
             } label: {
                 WiqoRow(systemImage: "person.2.circle", title: "Ajanlarım", subtitle: "Rol, rutin ve hafıza", showsDivider: true) { EmptyView() }
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-            NavigationLink {
-                CodeProjectsView()
-            } label: {
-                WiqoRow(systemImage: "chevron.left.forwardslash.chevron.right", title: "Kod projelerim", subtitle: "Sohbette yazdırdığın uygulama ve programlar", showsDivider: true) { EmptyView() }
             }
             .buttonStyle(WiqoRowButtonStyle())
             if let taskAutomationError {

@@ -548,6 +548,31 @@ enum RovaBackendClient {
         let durationMs: Int
     }
 
+    /// What a create/edit from the Act tab returns: the project as it is now and how the change went.
+    struct CodeProjectEditResult: Decodable, Sendable {
+        let project: CodeProject
+        let version: Int
+        let summary: String
+        let verified: Bool
+        let problem: String?
+    }
+
+    /// A new project from a description (writer + checks run on the backend; up to ~2 minutes).
+    static func createCodeProject(request: String) async throws -> CodeProjectEditResult {
+        try await authorizedPost("code-projects", body: ["request": request], as: CodeProjectEditResult.self, timeout: 180)
+    }
+
+    /// One change to this project; it can only ever touch this project.
+    static func editCodeProject(id: Int, request: String) async throws -> CodeProjectEditResult {
+        try await authorizedPost("code-projects/\(id)/edit", body: ["request": request], as: CodeProjectEditResult.self, timeout: 180)
+    }
+
+    /// Opening a project makes it the one the backend treats as current.
+    static func openCodeProject(id: Int) async {
+        struct Response: Decodable { let ok: Bool }
+        _ = try? await authorizedPost("code-projects/\(id)/open", body: [:], as: Response.self)
+    }
+
     static func fetchCodeProjects() async throws -> [CodeProject] {
         struct Response: Decodable { let projects: [CodeProject] }
         return try await authorizedGet("code-projects", as: Response.self).projects
@@ -2151,9 +2176,10 @@ enum RovaBackendClient {
         return try decode(T.self, from: data, response: response)
     }
 
-    private static func authorizedPost<T: Decodable>(_ path: String, body: [String: Any], as type: T.Type) async throws -> T {
+    private static func authorizedPost<T: Decodable>(_ path: String, body: [String: Any], as type: T.Type, timeout: TimeInterval? = nil) async throws -> T {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
+        if let timeout { request.timeoutInterval = timeout }
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
