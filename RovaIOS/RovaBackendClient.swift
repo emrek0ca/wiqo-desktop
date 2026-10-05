@@ -508,7 +508,8 @@ enum RovaBackendClient {
         let createdAt: String
     }
 
-    /// "Kod projelerim": persistent web/Python projects built by describing them in chat (backend codeprojects/).
+    /// The first version of Act kept projects on the server in plaintext. Only what the one-time move to
+    /// sealed projects needs is left (see ActModel.migrateLegacyIfNeeded): list, read, delete.
     struct CodeProject: Decodable, Identifiable, Sendable {
         let id: Int
         let name: String
@@ -518,91 +519,6 @@ enum RovaBackendClient {
         let fileCount: Int?
     }
 
-    struct CodeProjectFile: Decodable, Identifiable, Sendable {
-        let path: String
-        let bytes: Int
-        var id: String { path }
-    }
-
-    struct CodeProjectVersion: Decodable, Identifiable, Sendable {
-        let version: Int
-        let summary: String
-        let verified: Bool
-        let createdAt: String
-        var id: Int { version }
-    }
-
-    struct CodeProjectDetail: Decodable, Sendable {
-        let project: CodeProject
-        let files: [CodeProjectFile]
-        let history: [CodeProjectVersion]
-    }
-
-    struct CodeRunResult: Decodable, Sendable {
-        let exitCode: Int
-        let timedOut: Bool
-        let stdout: String
-        let stderr: String
-        let durationMs: Int
-    }
-
-    struct CodeProjectJob: Decodable, Sendable {
-        struct Verification: Decodable, Sendable { let candidateId: String }
-        struct Result: Decodable, Sendable {
-            /// Absent while a job is still being finished; never read as success unless it is `true`.
-            let ok: Bool?
-            var succeeded: Bool { ok == true }
-            let projectId: Int?
-            let version: Int?
-            let summary: String?
-            let verified: Bool?
-            let problem: String?
-        }
-        let taskId: Int
-        let status: String
-        let progress: String?
-        let error: String?
-        let result: Result?
-        let verification: Verification?
-        var finished: Bool { ["done", "failed", "cancelled", "unknown"].contains(status) }
-    }
-
-    static func startCodeProjectJob(operation: String, request: String, projectId: Int? = nil, requestKey: String) async throws -> Int {
-        struct Response: Decodable { let taskId: Int }
-        var body: [String: Any] = ["operation": operation, "request": request, "requestKey": requestKey]
-        if let projectId { body["projectId"] = projectId }
-        return try await authorizedPost(
-            "code-projects/jobs", body: body, as: Response.self,
-            missingRouteMessage: "Act görevleri bu sunucu sürümünde henüz desteklenmiyor. Biraz sonra tekrar dene."
-        ).taskId
-    }
-
-    static func fetchCodeProjectJob(id: Int) async throws -> CodeProjectJob {
-        try await authorizedGet("code-projects/jobs/\(id)", as: CodeProjectJob.self)
-    }
-
-    struct CodeProjectCandidate: Decodable, Sendable {
-        let candidateId: String
-        let html: String
-    }
-
-    static func fetchCodeProjectCandidate(id: Int) async throws -> CodeProjectCandidate {
-        try await authorizedGet("code-projects/jobs/\(id)/candidate", as: CodeProjectCandidate.self)
-    }
-
-    /// `skipped`: the phone could not try the page at all; the backend then saves the change as "not verified".
-    static func reportCodeProjectVerification(id: Int, candidateId: String, problems: [String], skipped: Bool = false) async throws {
-        struct Response: Decodable { let ok: Bool }
-        _ = try await authorizedPost("code-projects/jobs/\(id)/verification", body: [
-            "candidateId": candidateId, "passed": problems.isEmpty && !skipped, "problems": problems, "skipped": skipped
-        ], as: Response.self)
-    }
-
-    static func cancelCodeProjectJob(id: Int) async throws {
-        struct Response: Decodable { let ok: Bool }
-        _ = try await authorizedPost("code-projects/jobs/\(id)/cancel", body: [:], as: Response.self)
-    }
-
     struct CodeProjectSnapshot: Decodable, Sendable {
         struct Header: Decodable, Sendable { let id: Int; let name: String; let kind: String; let version: Int }
         struct File: Decodable, Sendable { let path: String; let content: String }
@@ -610,59 +526,13 @@ enum RovaBackendClient {
         let files: [File]
     }
 
-    /// Every file of a project at its current version: what a device keeps as its full local copy.
-    static func fetchCodeProjectSnapshot(id: Int) async throws -> CodeProjectSnapshot {
-        try await authorizedGet("code-projects/\(id)/snapshot", as: CodeProjectSnapshot.self)
-    }
-
-    /// Work handed from the phone to the paired computer (open the folder, an editor, the page, or run Python there).
-    struct CodeProjectPcTask: Decodable, Sendable {
-        let id: Int
-        let status: String
-        let output: String
-        var finished: Bool { status == "done" || status == "failed" }
-    }
-
-    static func startCodeProjectPcTask(projectId: Int, action: String) async throws -> CodeProjectPcTask {
-        try await authorizedPost("code-projects/\(projectId)/pc-tasks", body: ["action": action], as: CodeProjectPcTask.self)
-    }
-
-    static func fetchCodeProjectPcTask(id: Int) async throws -> CodeProjectPcTask {
-        try await authorizedGet("code-projects/pc-tasks/\(id)", as: CodeProjectPcTask.self)
-    }
-
-    /// Opening a project makes it the one the backend treats as current.
-    static func openCodeProject(id: Int) async {
-        struct Response: Decodable { let ok: Bool }
-        _ = try? await authorizedPost("code-projects/\(id)/open", body: [:], as: Response.self)
-    }
-
     static func fetchCodeProjects() async throws -> [CodeProject] {
         struct Response: Decodable { let projects: [CodeProject] }
         return try await authorizedGet("code-projects", as: Response.self).projects
     }
 
-    static func fetchCodeProject(id: Int) async throws -> CodeProjectDetail {
-        try await authorizedGet("code-projects/\(id)", as: CodeProjectDetail.self)
-    }
-
-    static func fetchCodeFile(id: Int, path: String) async throws -> String {
-        struct Response: Decodable { let content: String }
-        return try await authorizedPost("code-projects/\(id)/file", body: ["path": path], as: Response.self).content
-    }
-
-    static func fetchCodeProjectBundle(id: Int) async throws -> String {
-        struct Response: Decodable { let html: String }
-        return try await authorizedGet("code-projects/\(id)/bundle", as: Response.self).html
-    }
-
-    static func undoCodeProject(id: Int) async throws {
-        struct Response: Decodable { let version: Int }
-        _ = try await authorizedPost("code-projects/\(id)/undo", body: [:], as: Response.self)
-    }
-
-    static func runCodeProject(id: Int) async throws -> CodeRunResult {
-        try await authorizedPost("code-projects/\(id)/run", body: [:], as: CodeRunResult.self)
+    static func fetchCodeProjectSnapshot(id: Int) async throws -> CodeProjectSnapshot {
+        try await authorizedGet("code-projects/\(id)/snapshot", as: CodeProjectSnapshot.self)
     }
 
     static func deleteCodeProject(id: Int) async throws {
