@@ -47,6 +47,10 @@ struct MacMenuView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Button { runtime.openProjectsFolder() } label: {
+                Label("Wiqo Projeleri", systemImage: "folder")
+            }
+            Text(runtime.projectSyncStatus).font(.caption).foregroundStyle(.secondary)
             SettingsLink {
                 Label("Ayarları Aç", systemImage: "gearshape")
             }
@@ -304,6 +308,13 @@ struct MacSettingsView: View {
 
     private var generalTab: some View {
         Form {
+            Section("Projeler") {
+                LabeledContent("Senkron", value: runtime.projectSyncStatus)
+                Button("Wiqo Projeleri klasörünü aç") { runtime.openProjectsFolder() }
+                Text("Act projelerin bu klasörde gerçek dosyalar olarak durur; istediğin editörde düzenle, değişiklikler telefona da gider.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("Wiqo") {
                 Toggle("Girişte aç", isOn: Binding(
                     get: { runtime.launchAtLogin },

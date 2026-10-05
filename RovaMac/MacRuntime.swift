@@ -46,6 +46,12 @@ final class MacRuntime: ObservableObject {
     @Published private(set) var localIPAddress = MacNetwork.unavailableAddress
     @Published private(set) var certificateFingerprint = ""
     @Published var launchAtLogin = false
+    /// "Wiqo Projeleri" folder sync with the account's other devices (see MacProjectSync).
+    @Published private(set) var projectSyncStatus = "Senkron kapalı"
+    private var projectSyncStatusTask: Task<Void, Never>?
+    private lazy var projectSync = MacProjectSync(apiBase: MacBackendChannel.apiBaseURL) { [weak self] in
+        await self?.backendChannel.accessTokenForFileTransfer()
+    }
     @Published private(set) var automations: [MacAutomation] = []
     @Published private(set) var isLoadingAutomations = false
     @Published private(set) var automationsError: String?
@@ -172,6 +178,23 @@ final class MacRuntime: ObservableObject {
         startupDetail = "Wiqo hesabına bağlanıyor…"
         _ = await backendChannel.connectWithStoredTokenIfAvailable()
         startupDetail = nil
+        await projectSync.start()
+        projectSyncStatusTask?.cancel()
+        projectSyncStatusTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                if let self { self.projectSyncStatus = await self.projectSync.status }
+                try? await Task.sleep(for: .seconds(4))
+            }
+        }
+    }
+
+    /// Opens the folder that holds the synced projects in Finder.
+    func openProjectsFolder() {
+        Task { @MainActor in
+            let folder = await projectSync.folder
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(folder)
+        }
     }
 
     private func fail(_ message: String) {
@@ -181,6 +204,9 @@ final class MacRuntime: ObservableObject {
     }
 
     func stop() {
+        projectSyncStatusTask?.cancel()
+        projectSyncStatusTask = nil
+        Task { await projectSync.stop() }
         Task { await engine.shutdownBrowserWorker() }
         startTask?.cancel()
         startTask = nil
