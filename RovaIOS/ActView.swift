@@ -5,13 +5,64 @@ private func actRequestFingerprint(_ text: String) -> String {
     SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
 }
 
+/// Tries the candidate page in the phone's own WebKit and reports the answer. Never throws: if the answer
+/// cannot be delivered, the backend saves the change unverified once its grace period is over.
 @MainActor
-private func verifyActCandidate(taskID: Int, candidateID: String) async throws {
-    let candidate = try await RovaBackendClient.fetchCodeProjectCandidate(id: taskID)
-    guard candidate.candidateId == candidateID else { return }
-    let verifier = ActWebVerifier()
-    let problems = await verifier.verify(candidate.html)
-    try await RovaBackendClient.reportCodeProjectVerification(id: taskID, candidateId: candidateID, problems: problems)
+private func verifyActCandidate(taskID: Int, candidateID: String) async {
+    do {
+        let candidate = try await RovaBackendClient.fetchCodeProjectCandidate(id: taskID)
+        guard candidate.candidateId == candidateID else { return }
+        switch await ActWebVerifier().verify(candidate.html) {
+        case .passed:
+            try await RovaBackendClient.reportCodeProjectVerification(id: taskID, candidateId: candidateID, problems: [])
+        case .problems(let list):
+            try await RovaBackendClient.reportCodeProjectVerification(id: taskID, candidateId: candidateID, problems: list)
+        case .unavailable:
+            try await RovaBackendClient.reportCodeProjectVerification(id: taskID, candidateId: candidateID, problems: [], skipped: true)
+        }
+    } catch {
+        // Left to the backend's grace period.
+    }
+}
+
+enum ActJobOutcome {
+    case finished(RovaBackendClient.CodeProjectJob)
+    case failed(String)
+    case stillRunning
+}
+
+/// Follows one Act job to its end: shows the job's real progress, tries the page on this phone when the
+/// backend asks, and says what went wrong instead of waiting silently. Server errors are retried for
+/// about 30 seconds before the job is reported as unreachable.
+@MainActor
+private func watchActJob(id: Int, progress: (String) -> Void, isCurrent: () -> Bool) async -> ActJobOutcome {
+    var tried: Set<String> = []
+    var failures = 0
+    for _ in 0..<130 {
+        if Task.isCancelled || !isCurrent() { return .stillRunning }
+        do {
+            let job = try await RovaBackendClient.fetchCodeProjectJob(id: id)
+            failures = 0
+            if job.finished { return .finished(job) }
+            if job.status == "waiting_device", let candidate = job.verification {
+                progress("Telefonda deneniyor…")
+                if tried.insert(candidate.candidateId).inserted {
+                    await verifyActCandidate(taskID: id, candidateID: candidate.candidateId)
+                    continue
+                }
+            } else {
+                progress(job.progress ?? "Hazırlanıyor…")
+            }
+        } catch {
+            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            if message.contains("bulunamadı") { return .failed("Görev bulunamadı; listeyi yenileyip tekrar dene.") }
+            failures += 1
+            if failures >= 15 { return .failed("Sunucuya ulaşılamadı: \(message)") }
+            if failures >= 3 { progress("Bağlantı zayıf, yeniden deneniyor…") }
+        }
+        try? await Task.sleep(for: .seconds(2))
+    }
+    return .stillRunning
 }
 
 /// The "Act" tab: where apps, games, pages and programs are made. A description creates a project;
@@ -231,35 +282,30 @@ struct ActView: View {
     private var createRequestStorageKey: String { "act-create-request-\(RovaBackendClient.currentUserID ?? "anonymous")" }
 
     private func watchCreateJob(_ id: Int) async {
-        for _ in 0..<150 {
-            if Task.isCancelled || activeJobID != id { return }
-            do {
-                let job = try await RovaBackendClient.fetchCodeProjectJob(id: id)
-                jobProgress = job.progress
-                if job.status == "waiting_device", let candidate = job.verification {
-                    jobProgress = "Telefon tarayıcısında doğrulanıyor…"
-                    try await verifyActCandidate(taskID: id, candidateID: candidate.candidateId)
-                    continue
-                }
-                if job.finished {
-                    UserDefaults.standard.removeObject(forKey: createJobStorageKey)
-                    activeJobID = nil
-                    jobProgress = nil
-                    creating = false
-                    if job.result?.ok == true, let projectId = job.result?.projectId {
-                        draft = ""
-                        WiqoHaptics.selection()
-                        await load()
-                        opened = OpenedProject(id: projectId)
-                    } else {
-                        notice = job.result?.problem ?? job.error ?? "Proje tamamlanamadı."
-                    }
-                    return
-                }
-            } catch { jobProgress = "Bağlantı bekleniyor…" }
-            try? await Task.sleep(for: .seconds(2))
+        let outcome = await watchActJob(id: id, progress: { jobProgress = $0 }, isCurrent: { activeJobID == id })
+        switch outcome {
+        case .finished(let job):
+            UserDefaults.standard.removeObject(forKey: createJobStorageKey)
+            activeJobID = nil
+            jobProgress = nil
+            creating = false
+            if job.result?.succeeded == true, let projectId = job.result?.projectId {
+                draft = ""
+                WiqoHaptics.selection()
+                await load()
+                opened = OpenedProject(id: projectId)
+            } else {
+                notice = job.result?.problem ?? job.error ?? "Proje tamamlanamadı."
+            }
+        case .failed(let message):
+            UserDefaults.standard.removeObject(forKey: createJobStorageKey)
+            activeJobID = nil
+            jobProgress = nil
+            creating = false
+            notice = message
+        case .stillRunning:
+            if activeJobID == id { jobProgress = "Görev sürüyor; biraz sonra listeyi yenile." }
         }
-        jobProgress = "Görev sürüyor; daha sonra buradan devam edebilirsin."
     }
 
     private func cancelCreateJob(_ id: Int) async {
@@ -629,35 +675,31 @@ struct CodeProjectWorkspaceView: View {
     private var editRequestStorageKey: String { "act-edit-request-\(RovaBackendClient.currentUserID ?? "anonymous")-\(projectID)" }
 
     private func watchEditJob(_ id: Int) async {
-        for _ in 0..<150 {
-            if Task.isCancelled || activeJobID != id { return }
-            do {
-                let job = try await RovaBackendClient.fetchCodeProjectJob(id: id)
-                jobProgress = job.progress
-                if job.status == "waiting_device", let candidate = job.verification {
-                    jobProgress = "Telefon tarayıcısında doğrulanıyor…"
-                    try await verifyActCandidate(taskID: id, candidateID: candidate.candidateId)
-                    continue
-                }
-                if job.finished {
-                    UserDefaults.standard.removeObject(forKey: editJobStorageKey)
-                    activeJobID = nil
-                    jobProgress = nil
-                    working = false
-                    if job.result?.ok == true {
-                        draft = ""
-                        WiqoHaptics.selection()
-                        runResult = nil
-                        await load()
-                    } else {
-                        notice = job.result?.problem ?? job.error ?? "Değişiklik uygulanamadı; proje değişmedi."
-                    }
-                    return
-                }
-            } catch { jobProgress = "Bağlantı bekleniyor…" }
-            try? await Task.sleep(for: .seconds(2))
+        let outcome = await watchActJob(id: id, progress: { jobProgress = $0 }, isCurrent: { activeJobID == id })
+        switch outcome {
+        case .finished(let job):
+            UserDefaults.standard.removeObject(forKey: editJobStorageKey)
+            activeJobID = nil
+            jobProgress = nil
+            working = false
+            if job.result?.succeeded == true {
+                draft = ""
+                WiqoHaptics.selection()
+                runResult = nil
+                warning = job.result?.verified == false ? job.result?.problem : nil
+                await load()
+            } else {
+                notice = job.result?.problem ?? job.error ?? "Değişiklik uygulanamadı; proje değişmedi."
+            }
+        case .failed(let message):
+            UserDefaults.standard.removeObject(forKey: editJobStorageKey)
+            activeJobID = nil
+            jobProgress = nil
+            working = false
+            notice = message
+        case .stillRunning:
+            if activeJobID == id { jobProgress = "Görev sürüyor; projeyi yeniden açınca durumu görürsün." }
         }
-        jobProgress = "Görev sürüyor; projeyi yeniden açınca durumu görebilirsin."
     }
 
     private func cancelEditJob(_ id: Int) async {

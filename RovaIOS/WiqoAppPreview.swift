@@ -207,6 +207,14 @@ struct WiqoHTMLWebView: UIViewRepresentable {
 
 /// Runs an Act candidate in an isolated phone-sized WebKit page before the backend publishes it.
 /// No project store bridge or persistent website data is attached to this page.
+/// What the phone found when it tried a candidate page. `unavailable` is not a verdict on the page:
+/// WebKit itself did not answer (timeout, process gone), so the change is saved unverified.
+enum ActVerification {
+    case passed
+    case problems([String])
+    case unavailable
+}
+
 @MainActor
 final class ActWebVerifier: NSObject, WKNavigationDelegate {
     private var webView: WKWebView?
@@ -231,7 +239,7 @@ final class ActWebVerifier: NSObject, WKNavigationDelegate {
         decisionHandler(navigationAction.navigationType == .other && (scheme == nil || scheme == "about") ? .allow : .cancel)
     }
 
-    func verify(_ html: String) async -> [String] {
+    func verify(_ html: String) async -> ActVerification {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         let script = """
@@ -272,14 +280,14 @@ final class ActWebVerifier: NSObject, WKNavigationDelegate {
             return {width:width,textLength:text.length,errors:(window.__actErrors||[]).slice(0,5)};})()
             """
             guard let result = try await page.evaluateJavaScript(check) as? [String: Any] else {
-                return ["Sayfa sonucu okunamadı."]
+                return .unavailable
             }
             var problems = (result["errors"] as? [String] ?? []).prefix(5).map { String($0.prefix(160)) }
             if (result["textLength"] as? Int ?? 0) == 0 { problems.append("Sayfa boş görünüyor.") }
             if (result["width"] as? Int ?? 0) > 410 { problems.append("Sayfa telefon ekranından yatay taşıyor.") }
-            return Array(problems.prefix(5))
+            return problems.isEmpty ? .passed : .problems(Array(problems.prefix(5)))
         } catch {
-            return ["Telefon tarayıcısı sayfayı açamadı veya zaman aşımına uğradı."]
+            return .unavailable
         }
     }
 }

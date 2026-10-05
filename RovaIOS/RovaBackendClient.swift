@@ -560,7 +560,9 @@ enum RovaBackendClient {
     struct CodeProjectJob: Decodable, Sendable {
         struct Verification: Decodable, Sendable { let candidateId: String }
         struct Result: Decodable, Sendable {
-            let ok: Bool
+            /// Absent while a job is still being finished; never read as success unless it is `true`.
+            let ok: Bool?
+            var succeeded: Bool { ok == true }
             let projectId: Int?
             let version: Int?
             let summary: String?
@@ -599,10 +601,11 @@ enum RovaBackendClient {
         try await authorizedGet("code-projects/jobs/\(id)/candidate", as: CodeProjectCandidate.self)
     }
 
-    static func reportCodeProjectVerification(id: Int, candidateId: String, problems: [String]) async throws {
+    /// `skipped`: the phone could not try the page at all; the backend then saves the change as "not verified".
+    static func reportCodeProjectVerification(id: Int, candidateId: String, problems: [String], skipped: Bool = false) async throws {
         struct Response: Decodable { let ok: Bool }
         _ = try await authorizedPost("code-projects/jobs/\(id)/verification", body: [
-            "candidateId": candidateId, "passed": problems.isEmpty, "problems": problems
+            "candidateId": candidateId, "passed": problems.isEmpty && !skipped, "problems": problems, "skipped": skipped
         ], as: Response.self)
     }
 
