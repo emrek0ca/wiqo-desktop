@@ -74,13 +74,8 @@ struct ActView: View {
 
     private var composerCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Ne yapalım?")
-                    .font(.title2.weight(.semibold))
-                Text("Uygulama, oyun, web sayfası veya Python programı anlat; Wiqo yazsın, denesin, telefonda aç.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            Text("Ne yapalım?")
+                .font(.title2.weight(.semibold))
 
             TextField("Örn. günlük su takibi uygulaması", text: $draft, axis: .vertical)
                 .lineLimit(2...5)
