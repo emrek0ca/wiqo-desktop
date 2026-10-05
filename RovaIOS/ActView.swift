@@ -5,6 +5,15 @@ private func actRequestFingerprint(_ text: String) -> String {
     SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
 }
 
+@MainActor
+private func verifyActCandidate(taskID: Int, candidateID: String) async throws {
+    let candidate = try await RovaBackendClient.fetchCodeProjectCandidate(id: taskID)
+    guard candidate.candidateId == candidateID else { return }
+    let verifier = ActWebVerifier()
+    let problems = await verifier.verify(candidate.html)
+    try await RovaBackendClient.reportCodeProjectVerification(id: taskID, candidateId: candidateID, problems: problems)
+}
+
 /// The "Act" tab: where apps, games, pages and programs are made. A description creates a project;
 /// every project is a row in the list; opening one keeps all further changes on that project.
 struct ActView: View {
@@ -227,6 +236,11 @@ struct ActView: View {
             do {
                 let job = try await RovaBackendClient.fetchCodeProjectJob(id: id)
                 jobProgress = job.progress
+                if job.status == "waiting_device", let candidate = job.verification {
+                    jobProgress = "Telefon tarayıcısında doğrulanıyor…"
+                    try await verifyActCandidate(taskID: id, candidateID: candidate.candidateId)
+                    continue
+                }
                 if job.finished {
                     UserDefaults.standard.removeObject(forKey: createJobStorageKey)
                     activeJobID = nil
@@ -620,6 +634,11 @@ struct CodeProjectWorkspaceView: View {
             do {
                 let job = try await RovaBackendClient.fetchCodeProjectJob(id: id)
                 jobProgress = job.progress
+                if job.status == "waiting_device", let candidate = job.verification {
+                    jobProgress = "Telefon tarayıcısında doğrulanıyor…"
+                    try await verifyActCandidate(taskID: id, candidateID: candidate.candidateId)
+                    continue
+                }
                 if job.finished {
                     UserDefaults.standard.removeObject(forKey: editJobStorageKey)
                     activeJobID = nil

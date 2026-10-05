@@ -558,6 +558,7 @@ enum RovaBackendClient {
     }
 
     struct CodeProjectJob: Decodable, Sendable {
+        struct Verification: Decodable, Sendable { let candidateId: String }
         struct Result: Decodable, Sendable {
             let ok: Bool
             let projectId: Int?
@@ -571,6 +572,7 @@ enum RovaBackendClient {
         let progress: String?
         let error: String?
         let result: Result?
+        let verification: Verification?
         var finished: Bool { ["done", "failed", "cancelled", "unknown"].contains(status) }
     }
 
@@ -586,6 +588,22 @@ enum RovaBackendClient {
 
     static func fetchCodeProjectJob(id: Int) async throws -> CodeProjectJob {
         try await authorizedGet("code-projects/jobs/\(id)", as: CodeProjectJob.self)
+    }
+
+    struct CodeProjectCandidate: Decodable, Sendable {
+        let candidateId: String
+        let html: String
+    }
+
+    static func fetchCodeProjectCandidate(id: Int) async throws -> CodeProjectCandidate {
+        try await authorizedGet("code-projects/jobs/\(id)/candidate", as: CodeProjectCandidate.self)
+    }
+
+    static func reportCodeProjectVerification(id: Int, candidateId: String, problems: [String]) async throws {
+        struct Response: Decodable { let ok: Bool }
+        _ = try await authorizedPost("code-projects/jobs/\(id)/verification", body: [
+            "candidateId": candidateId, "passed": problems.isEmpty, "problems": problems
+        ], as: Response.self)
     }
 
     static func cancelCodeProjectJob(id: Int) async throws {

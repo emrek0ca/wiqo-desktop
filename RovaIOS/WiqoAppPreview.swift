@@ -205,6 +205,85 @@ struct WiqoHTMLWebView: UIViewRepresentable {
     }
 }
 
+/// Runs an Act candidate in an isolated phone-sized WebKit page before the backend publishes it.
+/// No project store bridge or persistent website data is attached to this page.
+@MainActor
+final class ActWebVerifier: NSObject, WKNavigationDelegate {
+    private var webView: WKWebView?
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    private func finish(_ error: Error? = nil) {
+        guard let continuation else { return }
+        self.continuation = nil
+        if let error { continuation.resume(throwing: error) }
+        else { continuation.resume() }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finish() }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { finish(error) }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { finish(error) }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        finish(NSError(domain: "ActWebVerifier", code: 2))
+    }
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+        let scheme = navigationAction.request.url?.scheme
+        decisionHandler(navigationAction.navigationType == .other && (scheme == nil || scheme == "about") ? .allow : .cancel)
+    }
+
+    func verify(_ html: String) async -> [String] {
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .nonPersistent()
+        let script = """
+        window.__actErrors=[];
+        window.addEventListener('error',e=>window.__actErrors.push(String(e.message||'JavaScript hatası').slice(0,160)));
+        window.addEventListener('unhandledrejection',e=>window.__actErrors.push(String(e.reason||'İşlem hatası').slice(0,160)));
+        window.wiqoStore={get:(_,fallback)=>fallback,set:()=>{}};
+        """
+        config.userContentController.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        let page = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844), configuration: config)
+        page.navigationDelegate = self
+        webView = page
+        defer { page.stopLoading(); webView = nil; continuation = nil }
+        let policy = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'"
+        let meta = "<meta http-equiv=\"Content-Security-Policy\" content=\"\(policy)\">"
+        let safeHTML: String
+        if let head = html.range(of: "<head(?:\\s[^>]*)?>", options: [.regularExpression, .caseInsensitive]) {
+            var document = html
+            document.insert(contentsOf: meta, at: head.upperBound)
+            safeHTML = document
+        } else {
+            safeHTML = "<head>\(meta)</head>\(html)"
+        }
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                self.continuation = continuation
+                page.loadHTMLString(safeHTML, baseURL: nil)
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(15))
+                    self.finish(NSError(domain: "ActWebVerifier", code: 1))
+                }
+            }
+            try? await Task.sleep(for: .milliseconds(300))
+            let check = """
+            (()=>{const d=document.documentElement,b=document.body;
+            const width=Math.max(d?.scrollWidth||0,b?.scrollWidth||0);
+            const text=(b?.innerText||'').trim();
+            return {width:width,textLength:text.length,errors:(window.__actErrors||[]).slice(0,5)};})()
+            """
+            guard let result = try await page.evaluateJavaScript(check) as? [String: Any] else {
+                return ["Sayfa sonucu okunamadı."]
+            }
+            var problems = (result["errors"] as? [String] ?? []).prefix(5).map { String($0.prefix(160)) }
+            if (result["textLength"] as? Int ?? 0) == 0 { problems.append("Sayfa boş görünüyor.") }
+            if (result["width"] as? Int ?? 0) > 410 { problems.append("Sayfa telefon ekranından yatay taşıyor.") }
+            return Array(problems.prefix(5))
+        } catch {
+            return ["Telefon tarayıcısı sayfayı açamadı veya zaman aşımına uğradı."]
+        }
+    }
+}
+
 /// A finished HTML answer shown as the running app right inside the conversation. Tapping it opens
 /// the same page in the canvas at full size.
 struct WiqoAppPreviewCard: View {
