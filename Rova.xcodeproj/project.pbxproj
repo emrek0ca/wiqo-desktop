@@ -43,6 +43,7 @@
 		D50000000000000000000108 /* ActHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000106 /* ActHub.swift */; };
 		D5000000000000000000010A /* ActSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000109 /* ActSync.swift */; };
 		D5000000000000000000010B /* ActSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000109 /* ActSync.swift */; };
+		D50000000000000000000300 /* ActQuickEdits.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000301 /* ActQuickEdits.swift */; };
 		B004 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F004 /* KeychainStore.swift */; };
 		B005 /* CryptoSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F005 /* CryptoSupport.swift */; };
 		B006 /* QRPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F006 /* QRPairing.swift */; };
@@ -265,6 +266,7 @@
 		D50000000000000000000103 /* ActBundler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActBundler.swift; sourceTree = "<group>"; };
 		D50000000000000000000106 /* ActHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActHub.swift; sourceTree = "<group>"; };
 		D50000000000000000000109 /* ActSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActSync.swift; sourceTree = "<group>"; };
+		D50000000000000000000301 /* ActQuickEdits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActQuickEdits.swift; sourceTree = "<group>"; };
 		F004 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		F005 /* CryptoSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoSupport.swift; sourceTree = "<group>"; };
 		F006 /* QRPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRPairing.swift; sourceTree = "<group>"; };
@@ -366,6 +368,7 @@
 				D50000000000000000000103 /* ActBundler.swift */,
 				D50000000000000000000106 /* ActHub.swift */,
 				D50000000000000000000109 /* ActSync.swift */,
+				D50000000000000000000301 /* ActQuickEdits.swift */,
 				F004 /* KeychainStore.swift */,
 				F005 /* CryptoSupport.swift */,
 				F006 /* QRPairing.swift */,
@@ -804,6 +807,7 @@
 				D50000000000000000000105 /* ActBundler.swift in Sources */,
 				D50000000000000000000108 /* ActHub.swift in Sources */,
 				D5000000000000000000010B /* ActSync.swift in Sources */,
+				D50000000000000000000300 /* ActQuickEdits.swift in Sources */,
 				FF28DCC130573E6C0006FF82 /* KeychainStore.swift in Sources */,
 				FF28DCC230573E6C0006FF82 /* CryptoSupport.swift in Sources */,
 				FF28DCC330573E6C0006FF82 /* QRPairing.swift in Sources */,

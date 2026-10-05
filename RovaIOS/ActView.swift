@@ -614,6 +614,14 @@ struct CodeProjectWorkspaceView: View {
 
     private func requestSend() {
         focused = false
+        let request = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Design-value requests are done on the phone, instantly, without the writer.
+        if model.quickEdit(projectID, request: request) {
+            draft = ""
+            WiqoHaptics.selection()
+            reloadToken += 1
+            return
+        }
         if model.needsConsent(for: project) { showingConsent = true } else { startSend() }
     }
 

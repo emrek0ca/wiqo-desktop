@@ -113,6 +113,22 @@ final class ActModel: ObservableObject {
         }
     }
 
+    /// A request that is only a change to a few design values ("koyu tema", "ana renk mavi", "yazıyı büyüt")
+    /// is done right here: no writer, no tokens, nothing leaves the phone. Returns false when it needs the writer.
+    @discardableResult
+    func quickEdit(_ id: String, request: String) -> Bool {
+        guard job == nil, var p = project(id), p.isWeb, let result = ActQuickEdits.apply(request, to: p.files) else { return false }
+        let before = p.files
+        var files = before
+        for (path, content) in result.files { files[path] = content }
+        p.replica.files = files
+        p.history = Array(([ActHistoryEntry(id: UUID(), summary: result.summary, date: Date(), verified: true, source: "Hızlı düzenleme", changes: diff(before, files))] + p.history).prefix(30))
+        notice = nil
+        store(p)
+        if p.mode == .devices { Task { await sync(id) } }
+        return true
+    }
+
     func cancel() async {
         cancelRequested = true
         if let id = job?.writerJobID { try? await hub.cancelWriter(id) }
