@@ -10,9 +10,19 @@ import {
   WiqoLaunchFilm,
 } from './WiqoLaunch60';
 import { EDITS, VIDEO } from './WiqoLaunch60/config';
+import { WiqoAct25 } from './WiqoAct25';
+import { VIDEO as ACT_VIDEO } from './WiqoAct25/config';
 
 export const RemotionRoot: React.FC = () => (
   <>
+    <Composition
+      id="WiqoAct25"
+      component={WiqoAct25}
+      width={ACT_VIDEO.width}
+      height={ACT_VIDEO.height}
+      fps={ACT_VIDEO.fps}
+      durationInFrames={ACT_VIDEO.frames}
+    />
     <Composition
       id="WiqoComputerUseLaunch"
       component={WiqoComputerUseLaunch}
