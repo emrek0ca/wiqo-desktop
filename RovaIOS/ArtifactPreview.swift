@@ -44,38 +44,12 @@ private func svgAspectRatio(from data: Data) -> CGFloat {
     return (0.25...4.0).contains(ratio) ? CGFloat(ratio) : 12.0 / 7.0
 }
 
-/// Save and share under a generated picture: one tap to Photos, the system share sheet for the rest.
-private struct InlineImageActions: View {
-    let image: UIImage
-    let fileURL: URL
-    @State private var saved = false
-    @State private var failed = false
-
-    var body: some View {
-        HStack(spacing: 18) {
-            Button { Task { await save() } } label: {
-                Label(saved ? "Kaydedildi" : failed ? "Kaydedilemedi" : "Fotoğraflara kaydet", systemImage: saved ? "checkmark" : "square.and.arrow.down")
-            }
-            .disabled(saved)
-            ShareLink(item: fileURL) { Label("Paylaş", systemImage: "square.and.arrow.up") }
-            Spacer(minLength: 0)
-        }
-        .font(.footnote.weight(.medium))
-        .foregroundStyle(failed ? Color.red : Color.secondary)
-        .buttonStyle(.plain)
-        .padding(.horizontal, 4)
-    }
-
-    private func save() async {
+/// Saving a generated picture to Photos (add-only access).
+private enum InlineImageActions {
+    static func save(_ image: UIImage) async {
         let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-        guard status == .authorized || status == .limited else { failed = true; return }
-        do {
-            try await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.creationRequestForAsset(from: image) }
-            saved = true
-            failed = false
-        } catch {
-            failed = true
-        }
+        guard status == .authorized || status == .limited else { return }
+        try? await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.creationRequestForAsset(from: image) }
     }
 }
 
@@ -125,21 +99,21 @@ struct InlineArtifactPreview: View {
         switch ArtifactInlineKind(mimeType: artifact.mimeType) {
         case .image:
             if let uiImage = UIImage(contentsOfFile: url.path) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Button(action: onOpenFullscreen) {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxWidth: .infinity)
-                            // A very tall or very wide picture still reads as a picture, not a strip.
-                            .frame(maxHeight: 520)
-                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5))
-                            .shadow(color: .black.opacity(0.08), radius: 10, y: 4)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Görseli büyüt")
-                    InlineImageActions(image: uiImage, fileURL: url)
+                // The picture itself: no frame, no shadow, no buttons. Tap to enlarge, press and hold for save / share / copy.
+                Button(action: onOpenFullscreen) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .frame(maxHeight: 520)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Görseli büyüt")
+                .contextMenu {
+                    Button { Task { await InlineImageActions.save(uiImage) } } label: { Label("Fotoğraflara kaydet", systemImage: "square.and.arrow.down") }
+                    ShareLink(item: url) { Label("Paylaş", systemImage: "square.and.arrow.up") }
+                    Button { UIPasteboard.general.image = uiImage } label: { Label("Kopyala", systemImage: "doc.on.doc") }
                 }
             } else {
                 ArtifactFileRow(artifact: artifact, isBusy: false, action: onOpenFullscreen)

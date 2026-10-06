@@ -284,7 +284,7 @@ enum RovaBackendClient {
 
     struct CopilotResultWidget: Codable, Hashable, Sendable {
         enum Kind: String, Codable {
-            case created_resource, code_change, weather, sources, artifact, task_result, approval, error, list, table, map, unknown
+            case created_resource, code_change, weather, sources, artifact, task_result, approval, error, list, table, map, card, unknown
 
             init(from decoder: Decoder) throws {
                 let value = try decoder.singleValueContainer().decode(String.self)
@@ -413,6 +413,62 @@ enum RovaBackendClient {
         let near: String?
         let traffic: Bool?
         let url: String?
+        /// card: one small self-contained card; each kind uses only its own fields.
+        let kind: String?
+        let subtitle: String?
+        let seconds: Double?
+        let quotes: [CardQuote]?
+        let matches: [CardMatch]?
+        let sourceLang: String?
+        let targetLang: String?
+        let original: String?
+        let translated: String?
+        let expression: String?
+        let result: String?
+        let servings: Double?
+        let minutes: Double?
+        let ingredients: [String]?
+        let directions: [CardStep]?
+        let tripDays: [CardDay]?
+        let service: String?
+        let checklist: [String]?
+        let contactQuery: String?
+    }
+
+    struct CardQuote: Codable, Hashable, Sendable {
+        let symbol: String
+        let name: String
+        let price: Double
+        let changePercent: Double?
+        let unit: String?
+        let series: [Double]?
+    }
+
+    struct CardMatch: Codable, Hashable, Sendable {
+        let league: String?
+        let home: String
+        let away: String
+        let homeScore: Int?
+        let awayScore: Int?
+        let status: String
+        let when: String?
+    }
+
+    struct CardStep: Codable, Hashable, Sendable {
+        let text: String
+        let seconds: Double?
+    }
+
+    struct CardTripItem: Codable, Hashable, Sendable {
+        let time: String?
+        let title: String
+        let place: String?
+        let note: String?
+    }
+
+    struct CardDay: Codable, Hashable, Sendable {
+        let title: String
+        let items: [CardTripItem]
     }
 
     /// The handle a chat reply carries for a background agent task; the card polls the detail.

@@ -2743,6 +2743,8 @@ private struct CopilotResultWidgetView: View {
             ConnectorTableCard(widget: widget)
         case .map:
             WiqoMapCard(widget: widget)
+        case .card:
+            WiqoCardView(widget: widget)
         case .approval:
             // Pending confirmations are rendered by the existing execution card, which owns
             // the live confirmation ID and approve/reject actions. Rendering this projection

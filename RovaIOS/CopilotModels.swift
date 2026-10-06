@@ -110,6 +110,8 @@ extension RovaBackendClient.CopilotResultWidget {
             return "list:\(domain ?? "unknown")"
         case .table:
             return "table:\((title ?? "").lowercased())"
+        case .card:
+            return "card:\(kind ?? ""):\((title ?? "").lowercased())|\((query ?? contactQuery ?? original ?? expression ?? seconds.map { String(Int($0)) } ?? "").lowercased())"
         case .map:
             return "map:\(mode ?? ""):\((origin ?? "").lowercased())>\((destination ?? query ?? near ?? "").lowercased())"
         case .unknown:
@@ -171,6 +173,8 @@ enum CopilotWidgetCatalog {
             return "list:\(widget.domain ?? "unknown")"
         case .table:
             return "table:\((widget.title ?? "").lowercased())"
+        case .card:
+            return "card:\(widget.kind ?? ""):\((widget.title ?? "").lowercased())|\((widget.query ?? widget.contactQuery ?? widget.original ?? widget.expression ?? widget.seconds.map { String(Int($0)) } ?? "").lowercased())"
         case .map:
             return "map:\(widget.mode ?? ""):\((widget.origin ?? "").lowercased())>\((widget.destination ?? widget.query ?? widget.near ?? "").lowercased())"
         case .unknown:
