@@ -123,6 +123,7 @@
 		D30000000000000000000C11 /* CodeProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C10 /* CodeProjectsView.swift */; };
 		D50000000000000000000741 /* WiqoMapCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000740 /* WiqoMapCard.swift */; };
 		D50000000000000000000751 /* WiqoCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000750 /* WiqoCards.swift */; };
+		D50000000000000000000761 /* WiqoInlineApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000760 /* WiqoInlineApp.swift */; };
 		D30000000000000000000C13 /* ActView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C12 /* ActView.swift */; };
 		D30000000000000000000C15 /* ActProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C14 /* ActProjectStore.swift */; };
 		D30000000000000000000C17 /* MacProjectSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C16 /* MacProjectSync.swift */; };
@@ -265,6 +266,7 @@
 		D30000000000000000000C10 /* CodeProjectsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodeProjectsView.swift; sourceTree = "<group>"; };
 		D50000000000000000000740 /* WiqoMapCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoMapCard.swift; sourceTree = "<group>"; };
 		D50000000000000000000750 /* WiqoCards.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoCards.swift; sourceTree = "<group>"; };
+		D50000000000000000000760 /* WiqoInlineApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoInlineApp.swift; sourceTree = "<group>"; };
 		D30000000000000000000C12 /* ActView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActView.swift; sourceTree = "<group>"; };
 		D30000000000000000000C14 /* ActProjectStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActProjectStore.swift; sourceTree = "<group>"; };
 		D30000000000000000000C16 /* MacProjectSync.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacProjectSync.swift; sourceTree = "<group>"; };
@@ -460,6 +462,7 @@
 				D20000000000000000000034 /* CopilotMessageViews.swift */,
 				D30000000000000000000C10 /* CodeProjectsView.swift */,
 				D30000000000000000000C12 /* ActView.swift */,
+				D50000000000000000000760 /* WiqoInlineApp.swift */,
 				D50000000000000000000750 /* WiqoCards.swift */,
 				D50000000000000000000740 /* WiqoMapCard.swift */,
 				D50000000000000000000708 /* ActPageCapture.swift */,
@@ -816,6 +819,7 @@
 				D20000000000000000000033 /* CopilotMessageViews.swift in Sources */,
 				D30000000000000000000C11 /* CodeProjectsView.swift in Sources */,
 				D30000000000000000000C13 /* ActView.swift in Sources */,
+				D50000000000000000000761 /* WiqoInlineApp.swift in Sources */,
 				D50000000000000000000751 /* WiqoCards.swift in Sources */,
 				D50000000000000000000741 /* WiqoMapCard.swift in Sources */,
 				D50000000000000000000707 /* ActPageCapture.swift in Sources */,

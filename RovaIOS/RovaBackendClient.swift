@@ -284,7 +284,7 @@ enum RovaBackendClient {
 
     struct CopilotResultWidget: Codable, Hashable, Sendable {
         enum Kind: String, Codable {
-            case created_resource, code_change, weather, sources, artifact, task_result, approval, error, list, table, map, card, unknown
+            case created_resource, code_change, weather, sources, artifact, task_result, approval, error, list, table, map, card, inline_app, unknown
 
             init(from decoder: Decoder) throws {
                 let value = try decoder.singleValueContainer().decode(String.self)
@@ -433,6 +433,9 @@ enum RovaBackendClient {
         let service: String?
         let checklist: [String]?
         let contactQuery: String?
+        /// inline_app: one self-contained HTML document the phone runs in an isolated sandbox, and its preferred height.
+        let html: String?
+        let height: Double?
     }
 
     struct CardQuote: Codable, Hashable, Sendable {
