@@ -2111,6 +2111,16 @@ enum RovaBackendClient {
         try await authorizedPost("projects/\(id)/retry", body: [:], as: ProjectDetail.self)
     }
 
+    struct DeferredTaskDetail: Decodable, Sendable {
+        let status: String
+        let message: String
+        let finished: Bool
+    }
+
+    static func fetchDeferredTask(id: Int) async throws -> DeferredTaskDetail {
+        try await authorizedGet("devices/pending-tasks/\(id)", as: DeferredTaskDetail.self)
+    }
+
     static func cancelDeferredTask(id: Int) async throws -> DeferredCancellationResponse {
         let data = try await authorizedMutate("devices/pending-tasks/\(id)", method: "DELETE")
         return try JSONDecoder().decode(DeferredCancellationResponse.self, from: data)

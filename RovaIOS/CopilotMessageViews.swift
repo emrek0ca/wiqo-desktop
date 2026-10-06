@@ -93,6 +93,9 @@ struct CopyReplyButton: View {
 /// then the user can cancel it here.
 struct DeferredTaskRow: View {
     let task: RovaBackendClient.DeferredTask
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var detail: RovaBackendClient.DeferredTaskDetail?
+    @State private var refreshError: String?
     @State private var state: RowState = .waiting
 
     private enum RowState: Equatable {
@@ -111,6 +114,10 @@ struct DeferredTaskRow: View {
                 Text(title)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
+                if let message = detail?.message, detail?.finished == true {
+                    Text(message).font(.caption).textSelection(.enabled)
+                }
+                if let refreshError { Text(refreshError).font(.caption2).foregroundStyle(.secondary) }
                 if case .failed(let message) = state {
                     Text(message)
                         .font(.caption2)
@@ -118,7 +125,7 @@ struct DeferredTaskRow: View {
                 }
             }
             Spacer(minLength: 8)
-            if state == .waiting || state == .cancelling || isFailed {
+            if detail?.finished != true && (state == .waiting || state == .cancelling || isFailed) {
                 Button("İptal") { Task { await cancel() } }
                     .font(.caption.weight(.semibold))
                     .buttonStyle(.plain)
@@ -129,7 +136,25 @@ struct DeferredTaskRow: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: WiqoTheme.controlRadius, style: .continuous))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+        .task(id: "\(task.id)-\(scenePhase)") {
+            guard scenePhase == .active else { return }
+            var failures = 0
+            while !Task.isCancelled {
+                do {
+                    let latest = try await RovaBackendClient.fetchDeferredTask(id: task.id)
+                    guard !Task.isCancelled else { return }
+                    detail = latest; refreshError = nil; failures = 0
+                    if latest.finished { return }
+                } catch {
+                    if Task.isCancelled { return }
+                    failures += 1
+                    refreshError = "Durum yenilenemedi; bağlantı gelince yeniden denenecek."
+                }
+                let seconds = failures > 0 ? min(60, 5 * (1 << min(failures, 4))) : (detail?.status == "waiting_for_pc" ? 30 : 5)
+                do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
+            }
+        }
     }
 
     private var isFailed: Bool {
@@ -138,15 +163,19 @@ struct DeferredTaskRow: View {
     }
 
     private var title: String {
-        switch state {
+        if let detail, detail.finished {
+            return detail.status == "completed" ? "PC işi tamamlandı" : detail.status == "cancelled" ? "PC işi iptal edildi" : detail.status == "unknown" ? "PC sonucu doğrulanamadı" : "PC işi tamamlanamadı"
+        }
+        return switch state {
         case .cancelled(outcomeUnknown: false): "PC işi iptal edildi"
         case .cancelled(outcomeUnknown: true): "Kuyruktan alındı; PC sonucu belirsiz. Etkinlik'i kontrol et."
-        default: task.status == "dispatched" ? "PC'de çalışıyor · bitince bildirim gelecek" : "PC açılınca yapılacak · bitince bildirim gelecek"
+        default: (detail?.status ?? task.status) != "waiting_for_pc" ? "PC'de çalışıyor · bitince bildirim gelecek" : "PC açılınca yapılacak · bitince bildirim gelecek"
         }
     }
 
     private var icon: String {
-        switch state {
+        if let detail, detail.finished { return detail.status == "completed" ? "checkmark.circle" : "exclamationmark.circle" }
+        return switch state {
         case .cancelled(outcomeUnknown: true), .failed: "exclamationmark.circle"
         case .cancelled(outcomeUnknown: false): "xmark.circle"
         default: "clock.arrow.circlepath"
