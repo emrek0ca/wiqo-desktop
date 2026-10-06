@@ -118,7 +118,27 @@ struct ActView: View {
         }
     }
 
+    /// Wide room (a phone held sideways, a split view, a folded-open device): the list on the left, a new project on the right.
+    private static let wideWidth: CGFloat = 620
+
     private var projectList: some View {
+        GeometryReader { geo in
+            if geo.size.width >= Self.wideWidth { wideHome(geo.size) } else { narrowHome }
+        }
+        .background(Color(.systemBackground))
+        .wiqoConfirmation(item: $pendingDelete, title: { _ in "Proje silinsin mi?" }) { project in
+            Button("Sil", role: .destructive) { Task { await model.delete(project.id) } }
+        } message: { project in
+            Text("\"\(project.name)\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.")
+        }
+        .sheet(isPresented: $showingPrivacy) { ActPrivacySheet() }
+        .fileImporter(isPresented: $showingImporter, allowedContentTypes: Self.importTypes, allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { importFiles(urls) }
+        }
+        .writerConsent(isPresented: $showingConsent, deviceOnly: mode == .deviceOnly) { startCreate() }
+    }
+
+    private var narrowHome: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
@@ -138,18 +158,41 @@ struct ActView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
-        .background(Color(.systemBackground))
-        .wiqoConfirmation(item: $pendingDelete, title: { _ in "Proje silinsin mi?" }) { project in
-            Button("Sil", role: .destructive) { Task { await model.delete(project.id) } }
-        } message: { project in
-            Text("\"\(project.name)\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.")
-        }
-        .sheet(isPresented: $showingPrivacy) { ActPrivacySheet() }
-        .fileImporter(isPresented: $showingImporter, allowedContentTypes: Self.importTypes, allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result { importFiles(urls) }
-        }
-        .writerConsent(isPresented: $showingConsent, deviceOnly: mode == .deviceOnly) { startCreate() }
         .refreshable { await model.syncAll() }
+    }
+
+    private func wideHome(_ size: CGSize) -> some View {
+        HStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    header
+                    if let note = model.syncNote {
+                        Label(note, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
+                    }
+                    if model.projects.isEmpty {
+                        Text("Henüz proje yok. Sağdan başla.").font(.subheadline).foregroundStyle(.secondary).padding(.top, 8)
+                    } else {
+                        if model.projects.count >= 6 { searchField }
+                        rows
+                    }
+                }
+                .padding(.horizontal, RovaDesign.screenPadding)
+                .padding(.top, 6)
+                .padding(.bottom, 12)
+            }
+            .refreshable { await model.syncAll() }
+            .frame(width: min(max(size.width * 0.42, 280), 420))
+            Divider()
+            VStack(spacing: 0) {
+                ScrollView {
+                    emptyState
+                        .padding(.horizontal, RovaDesign.screenPadding)
+                        .padding(.bottom, 12)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                bottomBar
+            }
+        }
     }
 
     // MARK: - Üst
@@ -491,29 +534,28 @@ struct CodeProjectWorkspaceView: View {
     private var canSend: Bool { model.job == nil && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 }
     private var isWeb: Bool { project?.isWeb ?? true }
 
+    /// Wide room (a phone held sideways, a split view, a folded-open device): preview on the left, code and the input on the right.
+    private static let wideWidth: CGFloat = 620
+
     var body: some View {
-        VStack(spacing: 0) {
-            if embedded {
-                HStack(spacing: 10) {
-                    Button { onBack?() } label: { Label("Projeler", systemImage: "chevron.left") }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(WiqoTheme.ink)
-                    Text(project?.name ?? "Proje")
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    Image(systemName: project?.mode.systemImage ?? "lock.icloud").font(.caption).foregroundStyle(.secondary)
-                    Spacer(minLength: 4)
-                    menu
+        GeometryReader { geo in
+            let wide = geo.size.width >= Self.wideWidth
+            // A phone held sideways has little height: the extra status lines give way to the code.
+            let short = geo.size.height < 420
+            VStack(spacing: 0) {
+                if embedded && !wide { workspaceHeader(short: false) }
+                if wide {
+                    splitBody(width: geo.size.width, short: short)
+                } else {
+                    tabBar(wide: false, short: false)
+                    content
+                    if !(tab == .code && editing) {
+                        Divider()
+                        footer(showConsole: isWeb && tab == .preview, short: false)
+                    }
                 }
-                .padding(.horizontal, 16)
-                .frame(height: 44)
             }
-            tabBar
-            content
-            if !(tab == .code && editing) {
-                Divider()
-                footer
-            }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
         .background(Color(.systemBackground))
         .navigationTitle(embedded ? "" : (project?.name ?? "Proje"))
@@ -550,19 +592,93 @@ struct CodeProjectWorkspaceView: View {
         .onChange(of: reloadToken) { _, _ in console.removeAll() }
     }
 
+    private func workspaceHeader(short: Bool) -> some View {
+        HStack(spacing: 10) {
+            Button { onBack?() } label: { Label("Projeler", systemImage: "chevron.left") }
+                .buttonStyle(.plain)
+                .foregroundStyle(WiqoTheme.ink)
+            Text(project?.name ?? "Proje")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+            Image(systemName: project?.mode.systemImage ?? "lock.icloud").font(.caption).foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            menu
+        }
+        .padding(.horizontal, 16)
+        .frame(height: short ? 34 : 44)
+    }
+
+    /// The preview stays on the left the whole time; the right side is for the code, the history and the input.
+    private func splitBody(width: CGFloat, short: Bool) -> some View {
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                if embedded { workspaceHeader(short: short) }
+                if isWeb { previewBar }
+                stage
+                if isWeb { consoleStrip.padding(.horizontal, 12).padding(.bottom, 6) }
+            }
+            .frame(width: min(max(width * 0.42, 300), 480))
+            Divider()
+            VStack(spacing: 0) {
+                tabBar(wide: true, short: short)
+                Group {
+                    switch tab {
+                    case .history: historyStage
+                    default: codeStage
+                    }
+                }
+                if !(tab != .history && editing) {
+                    Divider()
+                    footer(showConsole: false, short: short)
+                }
+            }
+        }
+    }
+
     // MARK: Sekmeler
 
-    private var tabBar: some View {
-        WiqoPillTabs<WorkspaceTab>(
-            options: [
-                WiqoPillTabs<WorkspaceTab>.Option(value: .preview, title: isWeb ? "Önizleme" : "Çıktı", systemImage: isWeb ? "iphone" : "play.rectangle"),
-                WiqoPillTabs<WorkspaceTab>.Option(value: .code, title: "Kod", systemImage: "chevron.left.forwardslash.chevron.right"),
-                WiqoPillTabs<WorkspaceTab>.Option(value: .history, title: "Geçmiş", systemImage: "clock.arrow.circlepath")
-            ],
-            selection: $tab
-        )
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+    @ViewBuilder private func tabBar(wide: Bool, short: Bool) -> some View {
+        if wide && short {
+            // Little height: two small buttons instead of the sliding pill.
+            HStack(spacing: 6) {
+                ForEach([(WorkspaceTab.code, "Kod", "chevron.left.forwardslash.chevron.right"), (.history, "Geçmiş", "clock.arrow.circlepath")], id: \.1) { item in
+                    let selected = (tab == .history ? WorkspaceTab.history : .code) == item.0
+                    Button { tab = item.0 } label: {
+                        Label(item.1, systemImage: item.2)
+                            .font(.footnote.weight(.medium))
+                            .padding(.horizontal, 12)
+                            .frame(height: 28)
+                            .background(selected ? WiqoTheme.ink : WiqoTheme.inset, in: Capsule())
+                            .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 5)
+        } else if wide {
+            WiqoPillTabs<WorkspaceTab>(
+                options: [
+                    WiqoPillTabs<WorkspaceTab>.Option(value: .code, title: "Kod", systemImage: "chevron.left.forwardslash.chevron.right"),
+                    WiqoPillTabs<WorkspaceTab>.Option(value: .history, title: "Geçmiş", systemImage: "clock.arrow.circlepath")
+                ],
+                selection: Binding(get: { tab == .history ? .history : .code }, set: { tab = $0 })
+            )
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+        } else {
+            WiqoPillTabs<WorkspaceTab>(
+                options: [
+                    WiqoPillTabs<WorkspaceTab>.Option(value: .preview, title: isWeb ? "Önizleme" : "Çıktı", systemImage: isWeb ? "iphone" : "play.rectangle"),
+                    WiqoPillTabs<WorkspaceTab>.Option(value: .code, title: "Kod", systemImage: "chevron.left.forwardslash.chevron.right"),
+                    WiqoPillTabs<WorkspaceTab>.Option(value: .history, title: "Geçmiş", systemImage: "clock.arrow.circlepath")
+                ],
+                selection: $tab
+            )
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -1004,7 +1120,7 @@ struct CodeProjectWorkspaceView: View {
 
     // MARK: Alt bölüm
 
-    private var footer: some View {
+    private func footer(showConsole: Bool, short: Bool) -> some View {
         VStack(spacing: 10) {
             if let notice = model.notice {
                 Label(notice, systemImage: "exclamationmark.circle")
@@ -1039,8 +1155,8 @@ struct CodeProjectWorkspaceView: View {
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
-            if isWeb && tab == .preview { consoleStrip }
-            if let latest = project?.history.first { changeStrip(latest) }
+            if showConsole { consoleStrip }
+            if !short, let latest = project?.history.first { changeStrip(latest) }
             ActComposerBar(
                 text: $draft,
                 placeholder: "Ne değiştirelim?",

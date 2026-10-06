@@ -577,7 +577,10 @@ struct WiqoHomeView: View {
                 }
             }
         }
-        .onChange(of: mode) { _, _ in dismissKeyboard() }
+        .onChange(of: mode) { _, new in
+            dismissKeyboard()
+            WiqoOrientation.allowLandscape(new == .act)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .wiqoOpenAct)) { _ in
             mode = .act
         }

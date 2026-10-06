@@ -192,8 +192,26 @@ final class RovaPushCoordinator {
 }
 
 @MainActor
+/// The app stays upright everywhere except the Act tab, where the phone may be held sideways: preview and code side by side.
+enum WiqoOrientation {
+    nonisolated(unsafe) fileprivate static var mask: UIInterfaceOrientationMask = .portrait
+
+    @MainActor
+    static func allowLandscape(_ allowed: Bool) {
+        mask = allowed ? .allButUpsideDown : .portrait
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { return }
+        scene.windows.first?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        // Leaving Act while the phone is sideways turns the app back upright.
+        if !allowed { scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { _ in } }
+    }
+}
+
 final class RovaAppDelegate: NSObject, UIApplicationDelegate {
     private let notificationDelegate = RovaNotificationDelegate()
+
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        WiqoOrientation.mask
+    }
 
     func application(
         _ application: UIApplication,
