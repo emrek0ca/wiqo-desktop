@@ -458,18 +458,18 @@ actor MacCommandEngine {
                 return (nil, "Geçersiz dosya isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya isteği geçersiz."))
             }
             let error = await Task.detached(priority: .userInitiated) { MacSystem.saveTextFile(file) }.value
-            return (nil, error == nil ? "\(file.filename) masaüstüne kaydedildi." : error!.message, error)
+            if let error { return (nil, error.message, error) }
+            return await Task.detached { MacSystem.verifiedDesktopFileResult(filename: file.filename, expectedContent: file.content) }.value
         case .saveArtifact:
             guard case .artifactFile(let artifact) = request.payload else {
                 return (nil, "Geçersiz artifact isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Artifact isteği geçersiz."))
             }
-            guard let tokenData = try? RovaKeychainStore.load(account: MacStorage.backendAccountTokenAccount),
-                  let token = String(data: tokenData, encoding: .utf8),
-                  !token.isEmpty else {
+            guard let token = await fileTransferToken?(), !token.isEmpty else {
                 return (nil, "Backend oturumu bulunamadı.", RovaError(code: "BACKEND_AUTH_REQUIRED", message: "Artifact indirmek için Mac backend oturumu gerekli."))
             }
             let error = await MacSystem.saveArtifact(artifact, token: token)
-            return (nil, error == nil ? "\(artifact.filename) masaüstüne kaydedildi." : error!.message, error)
+            if let error { return (nil, error.message, error) }
+            return await Task.detached { MacSystem.verifiedDesktopFileResult(filename: artifact.filename, expectedBytes: artifact.byteCount, expectedSHA256: artifact.sha256) }.value
         case .readDocument:
             guard case .fileName(let filename) = request.payload else {
                 return (nil, "Geçersiz belge okuma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Belge adı geçersiz."))
@@ -481,7 +481,8 @@ actor MacCommandEngine {
                 return (nil, "Geçersiz belge düzenleme isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Belge düzenleme isteği geçersiz."))
             }
             let error = await Task.detached(priority: .userInitiated) { MacSystem.editDocument(document) }.value
-            return (nil, error == nil ? "\(document.filename) güncellendi." : error!.message, error)
+            if let error { return (nil, error.message, error) }
+            return await Task.detached { MacSystem.verifiedDesktopFileResult(filename: DocumentEngine.filenameWithExtension(document.filename, format: document.format)) }.value
         case .sendMessage:
             guard case .message(let message) = request.payload else {
                 return (nil, "Geçersiz mesaj isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Mesaj isteği geçersiz."))
@@ -587,7 +588,8 @@ actor MacCommandEngine {
                 return (nil, "Geçersiz dosya yazma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolu veya içeriği geçersiz.", category: "tool_failure"))
             }
             let error = await Task.detached(priority: .userInitiated) { MacSystem.writeFile(payload) }.value
-            return (nil, error == nil ? "Dosya yazıldı." : error!.message, error)
+            if let error { return (nil, error.message, error) }
+            return await Task.detached { MacSystem.verifiedFileResult(path: payload.path, expectedContent: payload.content) }.value
         case .moveFile:
             guard case .fileOperation(let payload) = request.payload else {
                 return (nil, "Geçersiz dosya taşıma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolları geçersiz.", category: "tool_failure"))

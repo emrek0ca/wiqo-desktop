@@ -49,7 +49,7 @@ struct SubscriptionInfo: Codable, Equatable {
         label: "Free",
         source: "none",
         expiresAt: nil,
-        pcAllowed: false,
+        pcAllowed: true,
         usage: Usage(messages: UsageCounter(used: 0, limit: 10), images: UsageCounter(used: 0, limit: 1)),
         resetsAt: nil
     )

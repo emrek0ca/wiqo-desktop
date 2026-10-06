@@ -1934,6 +1934,10 @@ struct CopilotView: View {
                         bubble.executedStepIDs.insert(step.id)
                         bubble.failedSteps[step.id] = result.error?.message ?? result.message
                         bubble.stepResults[step.id] = result
+                if let evidence = DeviceOutcomeNarrator.fileWidget(step: step, result: result),
+                   !bubble.widgets.contains(where: { $0.widgetId == evidence.widgetId }) {
+                    bubble.widgets.append(evidence)
+                }
                     }
                     break
                 }
@@ -1996,6 +2000,10 @@ struct CopilotView: View {
                 bubble.inFlightStepIDs.remove(step.id)
                 bubble.executedStepIDs.insert(step.id)
                 bubble.stepResults[step.id] = result
+                if let evidence = DeviceOutcomeNarrator.fileWidget(step: step, result: result),
+                   !bubble.widgets.contains(where: { $0.widgetId == evidence.widgetId }) {
+                    bubble.widgets.append(evidence)
+                }
                 if result.status != .completed {
                     bubble.failedSteps[step.id] = result.error?.message ?? result.message
                 }

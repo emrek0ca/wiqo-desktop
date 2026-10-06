@@ -27,7 +27,7 @@ struct PaywallView: View {
                     planCard(
                         title: "Free",
                         price: "Ücretsiz",
-                        features: ["Günde 10 mesaj", "Günde 1 görsel", "PC bağlantısı yok"],
+                        features: ["Günde 10 mesaj", "Günde 1 görsel", "Mac bağlantısı"],
                         isCurrent: currentTier == "free"
                     )
                     proCard
@@ -69,7 +69,7 @@ struct PaywallView: View {
         VStack(spacing: 6) {
             Text("Wiqo'yu yükselt")
                 .font(.title2.weight(.bold))
-            Text("Daha fazla mesaj, görsel ve PC bağlantısı için bir plan seç.")
+            Text("Daha fazla mesaj ve görsel için bir plan seç.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

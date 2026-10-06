@@ -172,6 +172,34 @@ except Exception:
         }
     }
 
+    static func verifiedDesktopFileResult(filename: String, expectedContent: String? = nil, expectedBytes: Int64? = nil, expectedSHA256: String? = nil) -> (data: CommandData?, message: String, error: RovaError?) {
+        guard let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first else {
+            let error = RovaError(code: "DESKTOP_UNAVAILABLE", message: "Masaüstü klasörüne erişilemedi.")
+            return (nil, error.message, error)
+        }
+        return verifiedFileResult(path: desktop.appendingPathComponent(filename).path, expectedContent: expectedContent, expectedBytes: expectedBytes, expectedSHA256: expectedSHA256)
+    }
+
+    /// Read back the committed file before reporting success. Evidence contains metadata only.
+    static func verifiedFileResult(path: String, expectedContent: String? = nil, expectedBytes: Int64? = nil, expectedSHA256: String? = nil) -> (data: CommandData?, message: String, error: RovaError?) {
+        let failure = RovaError(code: "FILE_VERIFICATION_FAILED", message: "İşlem uygulandı ancak dosya sonucu doğrulanamadı; otomatik tekrar yapılmadı.", category: "tool_failure")
+        guard let url = resolvedLocalURL(path), isRegularFile(url),
+              let attributes = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+              let size = attributes.fileSize,
+              expectedBytes == nil || Int64(size) == expectedBytes else {
+            return (nil, failure.message, failure)
+        }
+        if expectedContent != nil || expectedSHA256 != nil {
+            guard let bytes = try? Data(contentsOf: url, options: .mappedIfSafe),
+                  expectedContent == nil || bytes == Data(expectedContent!.utf8),
+                  expectedSHA256 == nil || RovaCrypto.sha256Hex(bytes) == expectedSHA256!.lowercased() else {
+                return (nil, failure.message, failure)
+            }
+        }
+        let entry = FileSystemEntry(path: url.path, name: url.lastPathComponent, byteCount: Int64(size), modifiedAt: attributes.contentModificationDate, isDirectory: false, fileType: url.pathExtension)
+        return (.files([entry]), "Doğrulandı: \(url.path) · \(size) bayt", nil)
+    }
+
     static func readDocument(_ filename: String) -> (data: CommandData?, error: RovaError?) {
         let outcome = DocumentEngine.read(filename: filename)
         return (outcome.data.map(CommandData.documentContent), outcome.error)
@@ -422,25 +450,23 @@ except Exception:
 
     private static let backupsKeptPerFile = 10
 
-    /// Copies `file` to `Backups/<name>.<yyyyMMdd-HHmmss>.<ext>` and trims older copies of it.
-    /// Failing to back up stops the overwrite: a replaced file must stay recoverable.
-    private static func backUp(_ file: URL) -> RovaError? {
+    /// Each source path owns its retention group; unrelated files cannot evict its history.
+    /// Failure stops the overwrite. Existing legacy backups are left untouched.
+    static func backUp(_ file: URL) -> RovaError? {
         let manager = FileManager.default
         do {
-            try manager.createDirectory(at: backupFolder, withIntermediateDirectories: true)
-            let stamp = DateFormatter()
-            stamp.locale = Locale(identifier: "en_US_POSIX")
-            stamp.dateFormat = "yyyyMMdd-HHmmss"
-            let base = file.deletingPathExtension().lastPathComponent
-            let ext = file.pathExtension
-            let name = "\(base).\(stamp.string(from: Date()))" + (ext.isEmpty ? "" : ".\(ext)")
-            try manager.copyItem(at: file, to: backupFolder.appendingPathComponent(name))
-            let siblings = ((try? manager.contentsOfDirectory(atPath: backupFolder.path)) ?? [])
-                .filter { $0.hasPrefix("\(base).") && $0.hasSuffix(ext.isEmpty ? "" : ".\(ext)") }
-                .sorted()
-            for old in siblings.dropLast(backupsKeptPerFile) {
-                try? manager.removeItem(at: backupFolder.appendingPathComponent(old))
-            }
+            let identity = RovaCrypto.sha256Hex(Data(file.standardizedFileURL.path.utf8))
+            let directory = backupFolder.appendingPathComponent(identity, isDirectory: true)
+            try manager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            let name = "\(stamp)-\(UUID().uuidString)-\(file.lastPathComponent.prefix(80))"
+            let target = directory.appendingPathComponent(name)
+            try manager.copyItem(at: file, to: target)
+            try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+            let siblings = try manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.creationDateKey])
+                .filter { $0 != target }
+                .sorted { ((try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) < ((try? $1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) }
+            for old in siblings.dropLast(backupsKeptPerFile - 1) { try? manager.removeItem(at: old) }
             return nil
         } catch {
             return localFileError(code: "BACKUP_FAILED", fallback: "Eski sürümün yedeği alınamadı, dosya değiştirilmedi.", error: error)

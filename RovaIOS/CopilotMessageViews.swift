@@ -169,7 +169,12 @@ struct DeferredTaskRow: View {
         return switch state {
         case .cancelled(outcomeUnknown: false): "PC işi iptal edildi"
         case .cancelled(outcomeUnknown: true): "Kuyruktan alındı; PC sonucu belirsiz. Etkinlik'i kontrol et."
-        default: (detail?.status ?? task.status) != "waiting_for_pc" ? "PC'de çalışıyor · bitince bildirim gelecek" : "PC açılınca yapılacak · bitince bildirim gelecek"
+        default:
+            switch detail?.status ?? task.status {
+            case "waiting_for_pc": "Kuyruğa alındı · Mac’e ulaşılamıyor; bağlanınca devam edecek"
+            case "dispatched", "pending", "queued": "Mac işi sırada · sonuç burada görünecek"
+            default: "Mac işi yürütülüyor · sonuç burada görünecek"
+            }
         }
     }
 

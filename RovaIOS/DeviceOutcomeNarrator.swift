@@ -23,6 +23,20 @@ enum DeviceOutcomeNarrator {
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
+    /// File evidence renders locally, without paying for another model turn.
+    static func fileWidget(step: PlannedCommand, result: CommandResult) -> RovaBackendClient.CopilotResultWidget? {
+        guard [.saveTextFile, .writeFile, .saveArtifact, .editDocument].contains(step.type),
+              result.status == .completed, result.error == nil,
+              case .files(let files) = result.data, !files.isEmpty else { return nil }
+        let object: [String: Any] = [
+            "type": "list", "domain": "files", "title": "Doğrulanan dosya",
+            "widgetId": "file-evidence-\(step.id.uuidString)", "total": files.count,
+            "items": files.map { file in ["id": file.path, "title": file.name, "subtitle": file.path, "meta": "\(file.byteCount) bayt"] }
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
+        return try? JSONDecoder().decode(RovaBackendClient.CopilotResultWidget.self, from: data)
+    }
+
     private static func successLine(step: PlannedCommand, result: CommandResult) -> String {
         switch (step.type, step.payload) {
         case (.setVolume, .volume(let level)):

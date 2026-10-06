@@ -2,6 +2,28 @@ import XCTest
 @testable import RovaMac
 
 final class MacCommandEngineTests: XCTestCase {
+    func testCommittedFileEvidenceRejectsMissingAndMismatchedContent() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-evidence-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("report.txt")
+        try Data("proof".utf8).write(to: file)
+        let success = MacSystem.verifiedFileResult(path: file.path, expectedContent: "proof", expectedBytes: 5)
+        XCTAssertNil(success.error)
+        guard case .files(let files) = success.data else { return XCTFail("Missing file evidence") }
+        XCTAssertEqual(files.first?.byteCount, 5)
+        XCTAssertEqual(files.first?.path, file.resolvingSymlinksInPath().path)
+        XCTAssertEqual(MacSystem.verifiedFileResult(path: file.path, expectedContent: "other").error?.code, "FILE_VERIFICATION_FAILED")
+        XCTAssertEqual(MacSystem.verifiedFileResult(path: file.path, expectedBytes: 6).error?.code, "FILE_VERIFICATION_FAILED")
+        try FileManager.default.removeItem(at: file)
+        XCTAssertEqual(MacSystem.verifiedFileResult(path: file.path).error?.code, "FILE_VERIFICATION_FAILED")
+    }
+
+    func testDocumentFilenameEvidenceMatchesOutputExtension() {
+        XCTAssertEqual(DocumentEngine.filenameWithExtension("report", format: .pdf), "report.pdf")
+        XCTAssertEqual(DocumentEngine.filenameWithExtension("report.PDF", format: .pdf), "report.PDF")
+    }
+
     @MainActor
     func testBackendRelayUsesCanonicalProductionHost() {
         let endpoint = MacBackendChannel.endpoint

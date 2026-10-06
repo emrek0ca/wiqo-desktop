@@ -296,10 +296,18 @@ enum DocumentEngine {
         if FileManager.default.fileExists(atPath: destination.path), !overwrite {
             throw failure("FILE_EXISTS", "Aynı adlı dosya zaten var; üzerine yazılmadı.")
         }
+        let expected = try Data(contentsOf: source, options: .mappedIfSafe)
+        guard !expected.isEmpty, Int64(expected.count) <= maxFileBytes else {
+            throw failure("DOCUMENT_WRITE_FAILED", "Belge çıktısı boş veya desteklenen boyut sınırının dışında.")
+        }
         if FileManager.default.fileExists(atPath: destination.path) {
+            if let error = MacSystem.backUp(destination) { throw DocumentFailure(error: error) }
             _ = try FileManager.default.replaceItemAt(destination, withItemAt: source)
         } else {
             try FileManager.default.moveItem(at: source, to: destination)
+        }
+        guard try Data(contentsOf: destination, options: .mappedIfSafe) == expected else {
+            throw failure("FILE_VERIFICATION_FAILED", "Belge yazıldı ancak içerik doğrulanamadı; otomatik tekrar yapılmadı.")
         }
     }
 
@@ -382,7 +390,7 @@ enum DocumentEngine {
         }
     }
 
-    private static func filenameWithExtension(_ filename: String, format: DocumentFormat) -> String {
+    static func filenameWithExtension(_ filename: String, format: DocumentFormat) -> String {
         let suffix = ".\(format.rawValue)"
         return filename.lowercased().hasSuffix(suffix) ? filename : filename + suffix
     }
