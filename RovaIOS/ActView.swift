@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// One progress card for creating and for changing: the steps in order, the current one marked,
 /// the job's own message under it, and a way to stop.
@@ -60,8 +61,15 @@ private extension View {
     }
 }
 
-/// The "Act" tab: where apps, games, pages and programs are made. A description creates a project;
-/// every project is a row in the list; opening one keeps all further changes on that project.
+/// Pinned projects stay at the top of the list (a convenience of this phone, not synced).
+private enum ActPins {
+    private static let key = "act.pinned.projects"
+    static func load() -> Set<String> { Set(UserDefaults.standard.stringArray(forKey: key) ?? []) }
+    static func save(_ ids: Set<String>) { UserDefaults.standard.set(Array(ids), forKey: key) }
+}
+
+/// The "Act" tab: the project list on top, one input at the bottom. A description creates a project; opening one
+/// keeps all further changes on that project.
 struct ActView: View {
     @ObservedObject private var model = ActModel.shared
     @State private var draft = ""
@@ -70,6 +78,9 @@ struct ActView: View {
     @State private var pendingDelete: ActLocalProject?
     @State private var showingPrivacy = false
     @State private var showingConsent = false
+    @State private var showingImporter = false
+    @State private var query = ""
+    @State private var pinned = ActPins.load()
     @FocusState private var composerFocused: Bool
 
     private static let suggestions: [(title: String, prompt: String)] = [
@@ -80,13 +91,22 @@ struct ActView: View {
         ("Python", "Python ile 1'den 100'e kadar asal sayıları yazdıran bir program yap")
     ]
 
+    private static let importTypes = ["html", "htm", "css", "js", "json", "txt", "md", "py", "svg", "csv"].compactMap { UTType(filenameExtension: $0) }
+
     private var creating: Bool { model.job != nil && model.job?.projectID == nil }
     private var canCreate: Bool { model.job == nil && draft.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3 }
+
+    /// Pinned first, then the most recently changed; narrowed by the search text.
+    private var visibleProjects: [ActLocalProject] {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        let filtered = needle.isEmpty ? model.projects : model.projects.filter { $0.name.range(of: needle, options: .caseInsensitive) != nil }
+        return filtered.filter { pinned.contains($0.id) } + filtered.filter { !pinned.contains($0.id) }
+    }
 
     var body: some View {
         Group {
             if let openedID, model.project(openedID) != nil {
-                CodeProjectWorkspaceView(projectID: openedID, embedded: true, onBack: { self.openedID = nil })
+                CodeProjectWorkspaceView(projectID: openedID, embedded: true, onBack: { self.openedID = nil }, onOpen: { self.openedID = $0 })
             } else {
                 projectList
             }
@@ -100,15 +120,24 @@ struct ActView: View {
 
     private var projectList: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                composerCard
-                projectsSection
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                if let note = model.syncNote {
+                    Label(note, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
+                }
+                if model.projects.isEmpty {
+                    emptyState
+                } else {
+                    if model.projects.count >= 6 { searchField }
+                    rows
+                }
             }
             .padding(.horizontal, RovaDesign.screenPadding)
-            .padding(.top, 8)
-            .padding(.bottom, 28)
+            .padding(.top, 6)
+            .padding(.bottom, 16)
         }
         .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
         .background(Color(.systemBackground))
         .wiqoConfirmation(item: $pendingDelete, title: { _ in "Proje silinsin mi?" }) { project in
             Button("Sil", role: .destructive) { Task { await model.delete(project.id) } }
@@ -116,65 +145,101 @@ struct ActView: View {
             Text("\"\(project.name)\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.")
         }
         .sheet(isPresented: $showingPrivacy) { ActPrivacySheet() }
+        .fileImporter(isPresented: $showingImporter, allowedContentTypes: Self.importTypes, allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { importFiles(urls) }
+        }
         .writerConsent(isPresented: $showingConsent, deviceOnly: mode == .deviceOnly) { startCreate() }
         .refreshable { await model.syncAll() }
     }
 
-    // MARK: - Yeni proje
+    // MARK: - Üst
 
-    private var composerCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Ne yapalım?")
-                .font(.title2.weight(.semibold))
-
-            TextField("Örn. günlük su takibi uygulaması", text: $draft, axis: .vertical)
-                .lineLimit(2...5)
-                .focused($composerFocused)
-                .disabled(model.job != nil)
-                .padding(12)
-                .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            if draft.isEmpty && model.job == nil {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Self.suggestions, id: \.title) { suggestion in
-                            Button {
-                                draft = suggestion.prompt
-                                composerFocused = true
-                            } label: {
-                                Text(suggestion.title)
-                                    .font(.footnote.weight(.medium))
-                                    .padding(.horizontal, 12)
-                                    .frame(height: 32)
-                                    .background(WiqoTheme.inset, in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("Projeler").font(.title2.weight(.bold))
+            Spacer()
+            Menu {
+                Button { showingImporter = true } label: { Label("Dosyalardan aç", systemImage: "square.and.arrow.down") }
+                Button { showingPrivacy = true } label: { Label("Gizlilik ve anahtar", systemImage: "lock.shield") }
+            } label: {
+                Image(systemName: "ellipsis.circle").font(.system(size: 20)).foregroundStyle(WiqoTheme.ink)
             }
+            .accessibilityLabel("Daha fazla")
+        }
+    }
 
-            HStack(spacing: 10) {
-                Menu {
-                    ForEach([ActPrivacyMode.devices, .deviceOnly], id: \.self) { option in
-                        Button { mode = option } label: { Label(option.title, systemImage: mode == option ? "checkmark" : option.systemImage) }
-                    }
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Proje ara", text: $query).textInputAutocapitalization(.never).autocorrectionDisabled()
+            if !query.isEmpty {
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 38)
+        .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Ne yapmak istersin?").font(.title3.weight(.semibold))
+            Text("Aşağıya yaz, konuşarak anlat ya da birini seç.").font(.subheadline).foregroundStyle(.secondary)
+                .padding(.bottom, 10)
+            ForEach(Self.suggestions, id: \.title) { suggestion in
+                Button {
+                    draft = suggestion.prompt
+                    composerFocused = true
                 } label: {
-                    Label(mode.title, systemImage: mode.systemImage)
-                        .font(.footnote.weight(.medium))
-                        .padding(.horizontal, 12)
-                        .frame(height: 34)
-                        .background(WiqoTheme.inset, in: Capsule())
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(suggestion.title).font(.body.weight(.medium)).foregroundStyle(.primary)
+                            Text(suggestion.prompt).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "arrow.up.left").font(.system(size: 12, weight: .semibold)).foregroundStyle(.tertiary)
+                    }
+                    .padding(.vertical, 11)
+                    .contentShape(Rectangle())
                 }
-                .disabled(model.job != nil)
-                Spacer(minLength: 0)
-                Button { requestCreate() } label: {
-                    Text(creating ? "Hazırlanıyor…" : "Oluştur").frame(minWidth: 96)
-                }
-                .buttonStyle(.wiqoPill(.accent))
-                .disabled(!canCreate)
+                .buttonStyle(.plain)
+                Divider()
             }
+        }
+        .padding(.top, 18)
+    }
 
+    // MARK: - Liste
+
+    private var rows: some View {
+        let list = visibleProjects
+        return VStack(spacing: 0) {
+            ForEach(list) { project in
+                Button { openedID = project.id } label: { ProjectRow(project: project, pinned: pinned.contains(project.id)) }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button { openedID = project.id } label: { Label("Aç", systemImage: "arrow.up.right.square") }
+                        Button { togglePin(project.id) } label: { Label(pinned.contains(project.id) ? "Sabitlemeyi kaldır" : "Üste sabitle", systemImage: pinned.contains(project.id) ? "pin.slash" : "pin") }
+                        Button { if let id = model.duplicate(project.id) { openedID = id } } label: { Label("Kopya oluştur", systemImage: "plus.square.on.square") }
+                        Divider()
+                        Button(role: .destructive) { pendingDelete = project } label: { Label("Sil", systemImage: "trash") }
+                    }
+                if project.id != list.last?.id { Divider().padding(.leading, 56) }
+            }
+            if list.isEmpty { Text("Sonuç yok.").font(.footnote).foregroundStyle(.secondary).padding(.top, 20).frame(maxWidth: .infinity) }
+        }
+    }
+
+    private func togglePin(_ id: String) {
+        if pinned.contains(id) { pinned.remove(id) } else { pinned.insert(id) }
+        ActPins.save(pinned)
+        WiqoHaptics.selection()
+    }
+
+    // MARK: - Alt: yeni proje
+
+    private var bottomBar: some View {
+        VStack(spacing: 8) {
             if let job = model.job, job.projectID == nil {
                 ActJobCard(job: job) { Task { await model.cancel() } }
             }
@@ -182,11 +247,34 @@ struct ActView: View {
                 Label(notice, systemImage: "exclamationmark.circle")
                     .font(.footnote)
                     .foregroundStyle(WiqoTheme.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+            }
+            ActComposerBar(
+                text: $draft,
+                placeholder: "Ne yapalım?",
+                busy: creating,
+                canSend: canCreate,
+                focus: $composerFocused,
+                onSend: requestCreate
+            ) {
+                Menu {
+                    Section("Bu proje nerede dursun?") {
+                        ForEach([ActPrivacyMode.devices, .deviceOnly], id: \.self) { option in
+                            Button { mode = option } label: { Label(option.title, systemImage: mode == option ? "checkmark" : option.systemImage) }
+                        }
+                    }
+                } label: {
+                    Image(systemName: mode.systemImage).font(.system(size: 16, weight: .medium)).foregroundStyle(.secondary).frame(width: 34, height: 34)
+                }
+                .disabled(model.job != nil)
+                .accessibilityLabel("Gizlilik: \(mode.title)")
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .wiqoCard(radius: 20)
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .padding(.bottom, 6)
+        .background(Color(.systemBackground))
     }
 
     private func requestCreate() {
@@ -206,113 +294,56 @@ struct ActView: View {
         }
     }
 
-    // MARK: - Liste
-
-    @ViewBuilder private var projectsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Projelerim").font(.headline)
-                if !model.projects.isEmpty {
-                    Text("\(model.projects.count)")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(WiqoTheme.inset, in: Capsule())
-                }
-                Spacer()
-                Button { showingPrivacy = true } label: { Label("Gizlilik", systemImage: "lock.shield").font(.footnote.weight(.medium)) }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(WiqoTheme.ink)
-            }
-            .padding(.horizontal, 4)
-
-            if let note = model.syncNote {
-                Label(note, systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 4)
-            }
-
-            if model.projects.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "square.stack.3d.up")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.secondary)
-                    Text("Henüz proje yok")
-                        .font(.subheadline.weight(.medium))
-                    Text("Yukarıya ne istediğini yaz; projen burada listelenir.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 28)
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(model.projects) { project in
-                        Button { openedID = project.id } label: { ProjectRow(project: project) }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button { openedID = project.id } label: { Label("Aç", systemImage: "arrow.up.right.square") }
-                                Button(role: .destructive) { pendingDelete = project } label: { Label("Sil", systemImage: "trash") }
-                            }
-                    }
-                }
-            }
+    /// Text files from the Files app become a new project; anything the hub could not take is counted, not hidden.
+    private func importFiles(_ urls: [URL]) {
+        var files: [String: String] = [:]
+        var skipped = 0
+        for url in urls {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            let name = url.lastPathComponent
+            guard files.count < ActSync.maxFiles, let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8),
+                  ActSync.isSyncable(path: name, content: text) else { skipped += 1; continue }
+            files[name] = text
+        }
+        let base = urls.first?.deletingPathExtension().lastPathComponent ?? "Proje"
+        if let id = model.importProject(name: base, files: files, mode: mode) {
+            openedID = id
+            model.notice = skipped > 0 ? "\(skipped) dosya alınamadı (metin olmalı, en çok 100 KB)." : nil
+        } else {
+            model.notice = "Dosyalar alınamadı. Türler: html, css, js, json, txt, md, py, svg, csv; en çok 100 KB."
         }
     }
 }
 
+/// One project: a name and a quiet line under it. No cards, no chips; the list reads like a list.
 private struct ProjectRow: View {
     let project: ActLocalProject
+    let pinned: Bool
 
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: project.isWeb ? "safari" : "terminal")
-                .font(.system(size: 17, weight: .medium))
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(WiqoTheme.ink)
-                .frame(width: 40, height: 40)
+                .frame(width: 42, height: 42)
                 .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(project.name)
                     .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(caption)
-                    .font(.caption)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                if let summary = project.history.first?.summary, !summary.isEmpty {
-                    Text(summary)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                if !fileKinds.isEmpty {
-                    HStack(spacing: 4) {
-                        ForEach(fileKinds, id: \.self) { kind in
-                            Text(kind)
-                                .font(.custom("JetBrainsMono-Regular", size: 10, relativeTo: .caption2))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(WiqoTheme.inset, in: Capsule())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
             }
             Spacer(minLength: 8)
-            Image(systemName: project.mode.systemImage)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.tertiary)
+            if pinned { Image(systemName: "pin.fill").font(.system(size: 11)).foregroundStyle(.tertiary) }
+            if project.mode == .deviceOnly { Image(systemName: "iphone").font(.system(size: 12)).foregroundStyle(.tertiary) }
         }
-        .padding(14)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .wiqoCard()
         .contentShape(Rectangle())
     }
 
@@ -323,18 +354,12 @@ private struct ProjectRow: View {
         return formatter
     }()
 
-    private var fileKinds: [String] {
-        Array(Set(project.files.keys.map { ($0 as NSString).pathExtension.lowercased() }.filter { !$0.isEmpty })).sorted().prefix(4).map { $0 }
-    }
-
     private var caption: String {
-        [project.isWeb ? "Web" : "Python", "v\(project.versionNumber)", Self.relativeFormatter.localizedString(for: project.updatedAt, relativeTo: Date())].joined(separator: " · ")
+        [project.isWeb ? "Web" : "Python", Self.relativeFormatter.localizedString(for: project.updatedAt, relativeTo: Date())].joined(separator: " · ")
     }
 }
 
-// MARK: - Gizlilik
-
-/// What stays where, the recovery code, and entering another device's code.
+/// What stays where, in three lines; the recovery code; entering another device's code.
 private struct ActPrivacySheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var model = ActModel.shared
@@ -346,10 +371,10 @@ private struct ActPrivacySheet: View {
         NavigationStack {
             List {
                 Section {
-                    Label("Projelerin bu telefonda tam kopya olarak durur; önizleme ve çalıştırma burada olur.", systemImage: "iphone")
-                    Label("Bağlı cihazların arasında şifreli senkronlanır. Anahtar yalnız cihazlarında; sunucu dosya adlarını ve içeriği okuyamaz.", systemImage: "lock.icloud")
-                    Label("Yazar modele yalnız bir istek yazılırken, o isteğin dosyaları gider ve saklanmaz. Yalnız bu cihaz projelerinde her seferinde sorulur.", systemImage: "text.badge.checkmark")
-                } header: { Text("Nasıl çalışır") }
+                    row("lock.icloud", "Şifreli senkron", "Projelerin cihazların arasında şifreli gider; anahtar yalnız sende, sunucu içeriği okuyamaz.")
+                    row("iphone", "Yalnız bu cihaz", "Seçtiğin projeler hiçbir yere gönderilmez.")
+                    row("text.badge.checkmark", "Yazar model", "Bir istek yazılırken o isteğin dosyaları gider, saklanmaz.")
+                }
 
                 Section {
                     if revealed {
@@ -359,34 +384,46 @@ private struct ActPrivacySheet: View {
                         Button("Kurtarma kodunu göster") { revealed = true }
                     }
                 } header: { Text("Kurtarma kodu") } footer: {
-                    Text("Yeni bir cihaza geçerken veya Windows'ta projelerini açarken gerekir. Güvenli bir yere yaz; kaybedersen şifreli projeler açılamaz.")
+                    Text("Yeni cihaza geçerken gerekir. Güvenli bir yere yaz; kaybedersen şifreli projeler açılamaz.")
                 }
 
                 Section {
-                    TextField("Başka cihazdaki kod", text: $code)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                        .font(.system(.callout, design: .monospaced))
-                    Button("Kodu kullan") {
-                        if model.useRecoveryCode(code) {
-                            message = "Anahtar değişti; projeler yeniden eşitleniyor."
-                            code = ""
-                            Task { await model.syncAll() }
-                        } else {
-                            message = "Kod geçersiz; 55 karakteri kontrol et."
+                    DisclosureGroup("Başka cihazın anahtarını gir") {
+                        TextField("Kod", text: $code)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                            .font(.system(.callout, design: .monospaced))
+                        Button("Kullan") {
+                            if model.useRecoveryCode(code) {
+                                message = "Anahtar değişti; projeler yeniden eşitleniyor."
+                                code = ""
+                                Task { await model.syncAll() }
+                            } else {
+                                message = "Kod geçersiz; 55 karakteri kontrol et."
+                            }
                         }
+                        .disabled(code.count < 20)
                     }
-                    .disabled(code.count < 20)
-                } header: { Text("Başka bir cihazın anahtarı") } footer: {
-                    Text("Mac'e anahtar, telefon ve Mac aynı ağda bağlandığında kendiliğinden gider.")
-                }
+                } footer: { Text("Mac'e anahtar, telefon ve Mac aynı ağdayken kendiliğinden gider.") }
 
-                if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
+                if let message { Section { Text(message).font(.footnote).foregroundStyle(.secondary) } }
             }
             .navigationTitle("Gizlilik")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Bitti") { dismiss() } } }
         }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func row(_ icon: String, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon).font(.system(size: 16)).foregroundStyle(WiqoTheme.ink).frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold))
+                Text(detail).font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 
@@ -398,6 +435,7 @@ struct CodeProjectWorkspaceView: View {
     let projectID: String
     var embedded = false
     var onBack: (() -> Void)? = nil
+    var onOpen: ((String) -> Void)? = nil
 
     @ObservedObject private var model = ActModel.shared
     @Environment(\.dismiss) private var dismiss
@@ -425,6 +463,8 @@ struct CodeProjectWorkspaceView: View {
     @State private var renamingFile: String?
     @State private var fileNameField = ""
     @State private var pendingFileDelete: String?
+    @State private var showingStyle = false
+    @State private var showingFullScreen = false
     @FocusState private var focused: Bool
 
     private enum WorkspaceTab: Hashable { case preview, code, history }
@@ -434,6 +474,14 @@ struct CodeProjectWorkspaceView: View {
         let level: String
         let text: String
     }
+
+    private static let starters: [(title: String, icon: String, prompt: String)] = [
+        ("Mobilde daha iyi göster", "iphone", "Sayfayı telefon ekranına göre düzenle: boşlukları, hizayı ve dokunma alanlarını iyileştir"),
+        ("Daha sade yap", "minus.circle", "Tasarımı daha sade ve düzenli yap; gereksiz süsleri ve kalabalığı kaldır"),
+        ("Hataları ara ve düzelt", "ladybug", "Kodu gözden geçir, çalışmayan veya hatalı yerleri bul ve düzelt"),
+        ("Erişilebilirliği artır", "accessibility", "Kontrastı, yazı okunurluğunu ve buton boyutlarını erişilebilirlik için iyileştir"),
+        ("Kısa açıklama ekle", "text.alignleft", "Sayfanın en üstüne ne işe yaradığını anlatan kısa bir açıklama ekle")
+    ]
 
     private var project: ActLocalProject? { model.project(projectID) }
     private var working: Bool { model.job?.projectID == projectID }
@@ -469,6 +517,8 @@ struct CodeProjectWorkspaceView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { if !embedded { ToolbarItem(placement: .topBarTrailing) { menu } } }
         .sheet(isPresented: $showingDetails) { NavigationStack { CodeProjectDetailView(projectID: projectID) } }
+        .sheet(isPresented: $showingStyle) { ActStylePanel(projectID: projectID) }
+        .fullScreenCover(isPresented: $showingFullScreen) { fullScreenPreview }
         .wiqoConfirmation("Proje silinsin mi?", isPresented: $confirmingDelete) {
             Button("Sil", role: .destructive) { Task { await deleteProject() } }
         } message: {
@@ -537,6 +587,14 @@ struct CodeProjectWorkspaceView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
+            Button { showingStyle = true } label: { Image(systemName: "paintpalette").font(.system(size: 14, weight: .medium)) }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Görünüm")
+            Button { showingFullScreen = true } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 14, weight: .medium)) }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Tam ekran")
             Button { reloadToken += 1 } label: { Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .medium)) }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -544,6 +602,27 @@ struct CodeProjectWorkspaceView: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 2)
+    }
+
+    /// The page on the whole screen, as a person would use it.
+    private var fullScreenPreview: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.white.ignoresSafeArea()
+            if let project, let page = project.bundle {
+                WiqoHTMLWebView(
+                    html: WiqoHTMLDocument.wrap(page, viewportWidth: previewDevice.viewportWidth, reduceMotion: reduceMotion),
+                    projectDataKey: project.id,
+                    reloadToken: reloadToken
+                )
+                .ignoresSafeArea(edges: .bottom)
+            }
+            Button { showingFullScreen = false } label: {
+                Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundStyle(.primary)
+                    .frame(width: 36, height: 36).background(.regularMaterial, in: Circle())
+            }
+            .padding(12)
+            .accessibilityLabel("Kapat")
+        }
     }
 
     /// The files of the project, one chip per file, read like an editor (line numbers, syntax colours) and editable by hand.
@@ -904,28 +983,33 @@ struct CodeProjectWorkspaceView: View {
             }
             if isWeb && tab == .preview { consoleStrip }
             if let latest = project?.history.first { changeStrip(latest) }
-            HStack(alignment: .bottom, spacing: 10) {
-                TextField("Ne değiştirelim?", text: $draft, axis: .vertical)
-                    .lineLimit(1...4)
-                    .focused($focused)
-                    .disabled(model.job != nil)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                Button { requestSend() } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color(.systemBackground))
-                        .frame(width: 38, height: 38)
-                        .background(canSend ? WiqoTheme.ink : WiqoTheme.ink.opacity(0.25), in: Circle())
+            ActComposerBar(
+                text: $draft,
+                placeholder: "Ne değiştirelim?",
+                busy: model.job != nil,
+                canSend: canSend,
+                focus: $focused,
+                onSend: requestSend
+            ) {
+                Menu {
+                    if isWeb {
+                        Button { showingStyle = true } label: { Label("Görünüm (anında)", systemImage: "paintpalette") }
+                    }
+                    Section("Hazır istekler") {
+                        ForEach(Self.starters, id: \.title) { starter in
+                            Button { draft = starter.prompt; focused = true } label: { Label(starter.title, systemImage: starter.icon) }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "plus").font(.system(size: 18, weight: .semibold)).foregroundStyle(.primary).frame(width: 34, height: 34)
                 }
-                .disabled(!canSend)
-                .accessibilityLabel("Değişikliği uygula")
+                .disabled(model.job != nil)
+                .accessibilityLabel("Daha fazla")
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 10)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
         .background(.bar)
     }
 
@@ -1040,7 +1124,8 @@ struct CodeProjectWorkspaceView: View {
                     }
                 }
             }
-            Button { showingDetails = true } label: { Label("Dosyalar, geçmiş, paylaş", systemImage: "doc.on.doc") }
+            Button { showingDetails = true } label: { Label("Paylaş ve ayrıntılar", systemImage: "square.and.arrow.up") }
+            Button { if let id = model.duplicate(projectID) { onOpen?(id) } } label: { Label("Kopya oluştur", systemImage: "plus.square.on.square") }
             Divider()
             Button(role: .destructive) { confirmingDelete = true } label: { Label("Projeyi sil", systemImage: "trash") }
         } label: {

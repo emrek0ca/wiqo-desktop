@@ -268,6 +268,40 @@ final class ActModel: ObservableObject {
         if p.mode == .devices { Task { await sync(id) } }
     }
 
+    // MARK: Import, copy
+
+    /// A project from files picked in the Files app (text files only). A single page not named index.html becomes index.html.
+    func importProject(name: String, files picked: [String: String], mode: ActPrivacyMode) -> String? {
+        var files = picked
+        guard !files.isEmpty else { return nil }
+        let pages = files.keys.filter { $0.lowercased().hasSuffix(".html") || $0.lowercased().hasSuffix(".htm") }
+        if pages.count == 1, !files.keys.contains("index.html"), let page = pages.first, let content = files.removeValue(forKey: page) { files["index.html"] = content }
+        let isPython = pages.isEmpty && files.keys.contains { $0.lowercased().hasSuffix(".py") }
+        let project = ActLocalProject(
+            id: UUID().uuidString, mode: mode,
+            replica: ActReplica(meta: ActProjectMeta(name: String(name.prefix(60)), kind: isPython ? "python" : "web"), files: files),
+            history: [ActHistoryEntry(id: UUID(), summary: "Dosyalardan içe aktarıldı", date: Date(), verified: true, source: "İçe aktarma", changes: diff([:], files))],
+            updatedAt: Date()
+        )
+        store(project)
+        if mode == .devices { Task { await sync(project.id) } }
+        return project.id
+    }
+
+    /// A separate copy to try things on; it syncs as its own project.
+    func duplicate(_ id: String) -> String? {
+        guard let source = project(id) else { return nil }
+        let copy = ActLocalProject(
+            id: UUID().uuidString, mode: source.mode,
+            replica: ActReplica(meta: ActProjectMeta(name: String(("\(source.name) kopyası").prefix(60)), kind: source.kind), files: source.files),
+            history: [ActHistoryEntry(id: UUID(), summary: "“\(source.name)” projesinin kopyası", date: Date(), verified: true, source: "Kopya", changes: diff([:], source.files))],
+            updatedAt: Date()
+        )
+        store(copy)
+        if copy.mode == .devices { Task { await sync(copy.id) } }
+        return copy.id
+    }
+
     // MARK: Manual edits
 
     /// Saves what was changed by hand in the code editor (edited, new, renamed or deleted files) as one history entry.

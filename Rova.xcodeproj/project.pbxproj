@@ -133,6 +133,8 @@
 		D30000000000000000000C0F /* MacSystem+Plan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C0E /* MacSystem+Plan.swift */; };
 		D30000000000000000000C11 /* CodeProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C10 /* CodeProjectsView.swift */; };
 		D50000000000000000000500 /* ActCodeEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000501 /* ActCodeEditor.swift */; };
+		D50000000000000000000502 /* ActComposerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000503 /* ActComposerBar.swift */; };
+		D50000000000000000000504 /* ActStylePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000505 /* ActStylePanel.swift */; };
 		D30000000000000000000C13 /* ActView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C12 /* ActView.swift */; };
 		D30000000000000000000C15 /* ActProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C14 /* ActProjectStore.swift */; };
 		D50000000000000000000200 /* ActModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000201 /* ActModel.swift */; };
@@ -253,6 +255,8 @@
 		D30000000000000000000C0E /* MacSystem+Plan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Plan.swift"; sourceTree = "<group>"; };
 		D30000000000000000000C10 /* CodeProjectsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodeProjectsView.swift; sourceTree = "<group>"; };
 		D50000000000000000000501 /* ActCodeEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActCodeEditor.swift; sourceTree = "<group>"; };
+		D50000000000000000000503 /* ActComposerBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActComposerBar.swift; sourceTree = "<group>"; };
+		D50000000000000000000505 /* ActStylePanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActStylePanel.swift; sourceTree = "<group>"; };
 		D30000000000000000000C12 /* ActView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActView.swift; sourceTree = "<group>"; };
 		D30000000000000000000C14 /* ActProjectStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActProjectStore.swift; sourceTree = "<group>"; };
 		D50000000000000000000201 /* ActModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActModel.swift; sourceTree = "<group>"; };
@@ -440,6 +444,8 @@
 				D20000000000000000000034 /* CopilotMessageViews.swift */,
 				D30000000000000000000C10 /* CodeProjectsView.swift */,
 				D30000000000000000000C12 /* ActView.swift */,
+				D50000000000000000000505 /* ActStylePanel.swift */,
+				D50000000000000000000503 /* ActComposerBar.swift */,
 				D50000000000000000000501 /* ActCodeEditor.swift */,
 				D30000000000000000000C14 /* ActProjectStore.swift */,
 				D50000000000000000000201 /* ActModel.swift */,
@@ -789,6 +795,8 @@
 				D20000000000000000000033 /* CopilotMessageViews.swift in Sources */,
 				D30000000000000000000C11 /* CodeProjectsView.swift in Sources */,
 				D30000000000000000000C13 /* ActView.swift in Sources */,
+				D50000000000000000000504 /* ActStylePanel.swift in Sources */,
+				D50000000000000000000502 /* ActComposerBar.swift in Sources */,
 				D50000000000000000000500 /* ActCodeEditor.swift in Sources */,
 				D30000000000000000000C15 /* ActProjectStore.swift in Sources */,
 				D50000000000000000000200 /* ActModel.swift in Sources */,
