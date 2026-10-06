@@ -45,7 +45,9 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Wiqo, aynı ağdaki PC’nizi bulup komut göndermek için yerel ağınızı kullanır.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Wiqo, hava durumu isteğinde yalnızca şehir adını belirlemek için konumunu bir kez kullanır. Koordinatların sunucuya gönderilmez.</string>
+	<string>Wiqo, hava durumu için şehir adını, haritada da rota ve yakındaki yerleri bulmak için konumunu kullanır. Koordinatlar sunucuya gönderilmez; harita sonuçları telefonda Apple Haritalar ile hesaplanır.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Wiqo, ürettiği görselleri istersen Fotoğraflar'a kaydetmek için erişim ister. Fotoğraflarını okumaz.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

@@ -24,8 +24,6 @@
 		6C369710154A1D68C1CCC4A7 /* AutomationTemplatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E027010A9289E389FE2FC646 /* AutomationTemplatesView.swift */; };
 		701B311C77C0CDA1CAFCAB78 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 06A62B7FB2C6453A366C1B38 /* Assets.xcassets */; };
 		7A591C26FAD5E71C69CA3830 /* ClipboardWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF3CBEDDCB158AA6FF7347F /* ClipboardWatcher.swift */; };
-		D50000000000000000000401 /* MacProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000400 /* MacProjectsView.swift */; };
-		D30000000000000000000C17 /* MacProjectSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C16 /* MacProjectSync.swift */; };
 		92543008EFD54FB88E87006F /* DeviceCapabilitiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A19CF80E5304FC2A06CD0CA /* DeviceCapabilitiesView.swift */; };
 		98D7CE60A345E6E8CBEE8D65 /* MacBackendChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3072ACE850F6012D34640ABF /* MacBackendChannel.swift */; };
 		9A799AC24B4407A68BB153AE /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E4E100FCB3F1A506A081F9 /* DesignSystem.swift */; };
@@ -36,22 +34,6 @@
 		B001 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001 /* Protocol.swift */; };
 		B002 /* Validation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F002 /* Validation.swift */; };
 		B003 /* Framing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F003 /* Framing.swift */; };
-		D50000000000000000000101 /* ActVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000100 /* ActVault.swift */; };
-		D50000000000000000000102 /* ActVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000100 /* ActVault.swift */; };
-		D50000000000000000000104 /* ActBundler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000103 /* ActBundler.swift */; };
-		D50000000000000000000105 /* ActBundler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000103 /* ActBundler.swift */; };
-		D50000000000000000000107 /* ActHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000106 /* ActHub.swift */; };
-		D50000000000000000000108 /* ActHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000106 /* ActHub.swift */; };
-		D5000000000000000000010A /* ActSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000109 /* ActSync.swift */; };
-		D50000000000000000000702 /* ActArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000701 /* ActArchive.swift */; };
-		D50000000000000000000703 /* ActArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000701 /* ActArchive.swift */; };
-		D50000000000000000000705 /* ActPackages.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000704 /* ActPackages.swift */; };
-		D50000000000000000000706 /* ActPackages.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000704 /* ActPackages.swift */; };
-		D50000000000000000000721 /* ActPackagesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000720 /* ActPackagesTests.swift */; };
-		D50000000000000000000722 /* ActArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000701 /* ActArchive.swift */; };
-		D50000000000000000000723 /* ActPackages.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000704 /* ActPackages.swift */; };
-		D5000000000000000000010B /* ActSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000109 /* ActSync.swift */; };
-		D50000000000000000000300 /* ActQuickEdits.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000301 /* ActQuickEdits.swift */; };
 		B004 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F004 /* KeychainStore.swift */; };
 		B005 /* CryptoSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F005 /* CryptoSupport.swift */; };
 		B006 /* QRPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F006 /* QRPairing.swift */; };
@@ -139,13 +121,32 @@
 		D30000000000000000000C0D /* TelegramChannelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C0C /* TelegramChannelView.swift */; };
 		D30000000000000000000C0F /* MacSystem+Plan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C0E /* MacSystem+Plan.swift */; };
 		D30000000000000000000C11 /* CodeProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C10 /* CodeProjectsView.swift */; };
-		D50000000000000000000500 /* ActCodeEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000501 /* ActCodeEditor.swift */; };
-		D50000000000000000000502 /* ActComposerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000503 /* ActComposerBar.swift */; };
-		D50000000000000000000707 /* ActPageCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000708 /* ActPageCapture.swift */; };
+		D50000000000000000000741 /* WiqoMapCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000740 /* WiqoMapCard.swift */; };
 		D30000000000000000000C13 /* ActView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C12 /* ActView.swift */; };
 		D30000000000000000000C15 /* ActProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C14 /* ActProjectStore.swift */; };
-		D50000000000000000000200 /* ActModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000201 /* ActModel.swift */; };
+		D30000000000000000000C17 /* MacProjectSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C16 /* MacProjectSync.swift */; };
 		D40000000000000000000001 /* DeviceOutcomeNarrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40000000000000000000002 /* DeviceOutcomeNarrator.swift */; };
+		D50000000000000000000101 /* ActVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000100 /* ActVault.swift */; };
+		D50000000000000000000102 /* ActVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000100 /* ActVault.swift */; };
+		D50000000000000000000104 /* ActBundler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000103 /* ActBundler.swift */; };
+		D50000000000000000000105 /* ActBundler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000103 /* ActBundler.swift */; };
+		D50000000000000000000107 /* ActHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000106 /* ActHub.swift */; };
+		D50000000000000000000108 /* ActHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000106 /* ActHub.swift */; };
+		D5000000000000000000010A /* ActSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000109 /* ActSync.swift */; };
+		D5000000000000000000010B /* ActSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000109 /* ActSync.swift */; };
+		D50000000000000000000200 /* ActModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000201 /* ActModel.swift */; };
+		D50000000000000000000300 /* ActQuickEdits.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000301 /* ActQuickEdits.swift */; };
+		D50000000000000000000401 /* MacProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000400 /* MacProjectsView.swift */; };
+		D50000000000000000000500 /* ActCodeEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000501 /* ActCodeEditor.swift */; };
+		D50000000000000000000502 /* ActComposerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000503 /* ActComposerBar.swift */; };
+		D50000000000000000000702 /* ActArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000701 /* ActArchive.swift */; };
+		D50000000000000000000703 /* ActArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000701 /* ActArchive.swift */; };
+		D50000000000000000000705 /* ActPackages.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000704 /* ActPackages.swift */; };
+		D50000000000000000000706 /* ActPackages.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000704 /* ActPackages.swift */; };
+		D50000000000000000000707 /* ActPageCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000708 /* ActPageCapture.swift */; };
+		D50000000000000000000721 /* ActPackagesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000720 /* ActPackagesTests.swift */; };
+		D50000000000000000000722 /* ActArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000701 /* ActArchive.swift */; };
+		D50000000000000000000723 /* ActPackages.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000704 /* ActPackages.swift */; };
 		E50000000000000000000001 /* LocalBrowserWorkerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E50000000000000000000002 /* LocalBrowserWorkerClient.swift */; };
 		E50000000000000000000003 /* RovaBrowserWorker in Resources */ = {isa = PBXBuildFile; fileRef = E50000000000000000000004 /* RovaBrowserWorker */; };
 		EE9F65B1C5A752BA29FF8E47 /* ProfileViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9455A32B68BDA0E97B92804B /* ProfileViews.swift */; };
@@ -261,30 +262,31 @@
 		D30000000000000000000C0C /* TelegramChannelView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TelegramChannelView.swift; sourceTree = "<group>"; };
 		D30000000000000000000C0E /* MacSystem+Plan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacSystem+Plan.swift"; sourceTree = "<group>"; };
 		D30000000000000000000C10 /* CodeProjectsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodeProjectsView.swift; sourceTree = "<group>"; };
-		D50000000000000000000501 /* ActCodeEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActCodeEditor.swift; sourceTree = "<group>"; };
-		D50000000000000000000503 /* ActComposerBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActComposerBar.swift; sourceTree = "<group>"; };
-		D50000000000000000000708 /* ActPageCapture.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActPageCapture.swift; sourceTree = "<group>"; };
+		D50000000000000000000740 /* WiqoMapCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoMapCard.swift; sourceTree = "<group>"; };
 		D30000000000000000000C12 /* ActView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActView.swift; sourceTree = "<group>"; };
 		D30000000000000000000C14 /* ActProjectStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActProjectStore.swift; sourceTree = "<group>"; };
-		D50000000000000000000201 /* ActModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActModel.swift; sourceTree = "<group>"; };
+		D30000000000000000000C16 /* MacProjectSync.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacProjectSync.swift; sourceTree = "<group>"; };
 		D40000000000000000000002 /* DeviceOutcomeNarrator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceOutcomeNarrator.swift; sourceTree = "<group>"; };
+		D50000000000000000000100 /* ActVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActVault.swift; sourceTree = "<group>"; };
+		D50000000000000000000103 /* ActBundler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActBundler.swift; sourceTree = "<group>"; };
+		D50000000000000000000106 /* ActHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActHub.swift; sourceTree = "<group>"; };
+		D50000000000000000000109 /* ActSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActSync.swift; sourceTree = "<group>"; };
+		D50000000000000000000201 /* ActModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActModel.swift; sourceTree = "<group>"; };
+		D50000000000000000000301 /* ActQuickEdits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActQuickEdits.swift; sourceTree = "<group>"; };
+		D50000000000000000000400 /* MacProjectsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacProjectsView.swift; sourceTree = "<group>"; };
+		D50000000000000000000501 /* ActCodeEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActCodeEditor.swift; sourceTree = "<group>"; };
+		D50000000000000000000503 /* ActComposerBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActComposerBar.swift; sourceTree = "<group>"; };
+		D50000000000000000000701 /* ActArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActArchive.swift; sourceTree = "<group>"; };
+		D50000000000000000000704 /* ActPackages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActPackages.swift; sourceTree = "<group>"; };
+		D50000000000000000000708 /* ActPageCapture.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActPageCapture.swift; sourceTree = "<group>"; };
+		D50000000000000000000720 /* ActPackagesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActPackagesTests.swift; sourceTree = "<group>"; };
 		E027010A9289E389FE2FC646 /* AutomationTemplatesView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AutomationTemplatesView.swift; sourceTree = "<group>"; };
 		E50000000000000000000002 /* LocalBrowserWorkerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBrowserWorkerClient.swift; sourceTree = "<group>"; };
 		E50000000000000000000004 /* RovaBrowserWorker */ = {isa = PBXFileReference; lastKnownFileType = folder; path = RovaBrowserWorker; sourceTree = "<group>"; };
 		EBF3CBEDDCB158AA6FF7347F /* ClipboardWatcher.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipboardWatcher.swift; sourceTree = "<group>"; };
-		D50000000000000000000400 /* MacProjectsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacProjectsView.swift; sourceTree = "<group>"; };
-		D30000000000000000000C16 /* MacProjectSync.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacProjectSync.swift; sourceTree = "<group>"; };
 		F001 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
 		F002 /* Validation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Validation.swift; sourceTree = "<group>"; };
 		F003 /* Framing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Framing.swift; sourceTree = "<group>"; };
-		D50000000000000000000100 /* ActVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActVault.swift; sourceTree = "<group>"; };
-		D50000000000000000000103 /* ActBundler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActBundler.swift; sourceTree = "<group>"; };
-		D50000000000000000000106 /* ActHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActHub.swift; sourceTree = "<group>"; };
-		D50000000000000000000701 /* ActArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActArchive.swift; sourceTree = "<group>"; };
-		D50000000000000000000704 /* ActPackages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActPackages.swift; sourceTree = "<group>"; };
-		D50000000000000000000720 /* ActPackagesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActPackagesTests.swift; sourceTree = "<group>"; };
-		D50000000000000000000109 /* ActSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActSync.swift; sourceTree = "<group>"; };
-		D50000000000000000000301 /* ActQuickEdits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActQuickEdits.swift; sourceTree = "<group>"; };
 		F004 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		F005 /* CryptoSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoSupport.swift; sourceTree = "<group>"; };
 		F006 /* QRPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRPairing.swift; sourceTree = "<group>"; };
@@ -456,6 +458,7 @@
 				D20000000000000000000034 /* CopilotMessageViews.swift */,
 				D30000000000000000000C10 /* CodeProjectsView.swift */,
 				D30000000000000000000C12 /* ActView.swift */,
+				D50000000000000000000740 /* WiqoMapCard.swift */,
 				D50000000000000000000708 /* ActPageCapture.swift */,
 				D50000000000000000000503 /* ActComposerBar.swift */,
 				D50000000000000000000501 /* ActCodeEditor.swift */,
@@ -810,6 +813,7 @@
 				D20000000000000000000033 /* CopilotMessageViews.swift in Sources */,
 				D30000000000000000000C11 /* CodeProjectsView.swift in Sources */,
 				D30000000000000000000C13 /* ActView.swift in Sources */,
+				D50000000000000000000741 /* WiqoMapCard.swift in Sources */,
 				D50000000000000000000707 /* ActPageCapture.swift in Sources */,
 				D50000000000000000000502 /* ActComposerBar.swift in Sources */,
 				D50000000000000000000500 /* ActCodeEditor.swift in Sources */,

@@ -1,3 +1,4 @@
+import Photos
 import PDFKit
 import SwiftUI
 import WebKit
@@ -41,6 +42,41 @@ private func svgAspectRatio(from data: Data) -> CGFloat {
           width > 0, height > 0 else { return 12.0 / 7.0 }
     let ratio = width / height
     return (0.25...4.0).contains(ratio) ? CGFloat(ratio) : 12.0 / 7.0
+}
+
+/// Save and share under a generated picture: one tap to Photos, the system share sheet for the rest.
+private struct InlineImageActions: View {
+    let image: UIImage
+    let fileURL: URL
+    @State private var saved = false
+    @State private var failed = false
+
+    var body: some View {
+        HStack(spacing: 18) {
+            Button { Task { await save() } } label: {
+                Label(saved ? "Kaydedildi" : failed ? "Kaydedilemedi" : "Fotoğraflara kaydet", systemImage: saved ? "checkmark" : "square.and.arrow.down")
+            }
+            .disabled(saved)
+            ShareLink(item: fileURL) { Label("Paylaş", systemImage: "square.and.arrow.up") }
+            Spacer(minLength: 0)
+        }
+        .font(.footnote.weight(.medium))
+        .foregroundStyle(failed ? Color.red : Color.secondary)
+        .buttonStyle(.plain)
+        .padding(.horizontal, 4)
+    }
+
+    private func save() async {
+        let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        guard status == .authorized || status == .limited else { failed = true; return }
+        do {
+            try await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.creationRequestForAsset(from: image) }
+            saved = true
+            failed = false
+        } catch {
+            failed = true
+        }
+    }
 }
 
 /// A picture, chart, or PDF shown right in the chat - downloaded once the bubble appears rather
@@ -89,15 +125,22 @@ struct InlineArtifactPreview: View {
         switch ArtifactInlineKind(mimeType: artifact.mimeType) {
         case .image:
             if let uiImage = UIImage(contentsOfFile: url.path) {
-                Button(action: onOpenFullscreen) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5))
+                VStack(alignment: .leading, spacing: 8) {
+                    Button(action: onOpenFullscreen) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: .infinity)
+                            // A very tall or very wide picture still reads as a picture, not a strip.
+                            .frame(maxHeight: 520)
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5))
+                            .shadow(color: .black.opacity(0.08), radius: 10, y: 4)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Görseli büyüt")
+                    InlineImageActions(image: uiImage, fileURL: url)
                 }
-                .buttonStyle(.plain)
             } else {
                 ArtifactFileRow(artifact: artifact, isBusy: false, action: onOpenFullscreen)
             }

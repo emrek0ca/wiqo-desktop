@@ -284,7 +284,7 @@ enum RovaBackendClient {
 
     struct CopilotResultWidget: Codable, Hashable, Sendable {
         enum Kind: String, Codable {
-            case created_resource, code_change, weather, sources, artifact, task_result, approval, error, list, table, unknown
+            case created_resource, code_change, weather, sources, artifact, task_result, approval, error, list, table, map, unknown
 
             init(from decoder: Decoder) throws {
                 let value = try decoder.singleValueContainer().decode(String.self)
@@ -404,6 +404,15 @@ enum RovaBackendClient {
         /// code_change: the project's version after this change, and whether the change was checked.
         let projectVersion: Int?
         let verified: Bool?
+        /// map: what to show (place, route, search, traffic); the phone resolves it with Apple Maps.
+        let mode: String?
+        let query: String?
+        let origin: String?
+        let destination: String?
+        let transport: String?
+        let near: String?
+        let traffic: Bool?
+        let url: String?
     }
 
     /// The handle a chat reply carries for a background agent task; the card polls the detail.
