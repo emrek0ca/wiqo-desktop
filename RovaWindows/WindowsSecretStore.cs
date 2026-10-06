@@ -8,6 +8,8 @@ internal static class WindowsSecretStore
 {
     private const string PairingFileName = "pairing-token.dpapi";
     private const string CredentialsFileName = "device-session.dpapi";
+    internal static void SaveActKey(byte[] key) => Save("act-key.dpapi", key.ToArray());
+    internal static byte[]? LoadActKey() => Load("act-key.dpapi");
     private const int CryptProtectUiForbidden = 0x1;
     private static readonly string DirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Wiqo");
 
@@ -42,7 +44,7 @@ internal static class WindowsSecretStore
     /// Unpairing: both the pairing token and the device session are removed from this profile.
     internal static void Clear()
     {
-        foreach (var name in new[] { PairingFileName, CredentialsFileName })
+        foreach (var name in new[] { PairingFileName, CredentialsFileName, "act-key.dpapi" })
         {
             try { File.Delete(Path.Combine(DirectoryPath, name)); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }

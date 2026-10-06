@@ -14,6 +14,7 @@ public partial class WiqoApp : Application
     private TrayIcon? tray;
     private PairingWindow? pairingWindow;
     private SettingsWindow? settingsWindow;
+    private ProjectsWindow? projectsWindow;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -36,7 +37,7 @@ public partial class WiqoApp : Application
 
         Log.Info($"Wiqo {typeof(WiqoApp).Assembly.GetName().Version} başladı.");
         host = new CompanionHost();
-        tray = new TrayIcon(host, ShowMain, ShowPairing, ShowSettings, Quit);
+        tray = new TrayIcon(host, ShowMain, ShowPairing, ShowSettings, ShowProjects, Quit);
         host.StateChanged += state => Dispatcher.BeginInvoke(() => OnStateChanged(state));
         host.Start();
 
@@ -87,6 +88,15 @@ public partial class WiqoApp : Application
         settingsWindow.Closed += (_, _) => settingsWindow = null;
         settingsWindow.Show();
         settingsWindow.Activate();
+    }
+
+    private void ShowProjects()
+    {
+        if (host is null) return;
+        if (projectsWindow is not null) { projectsWindow.Activate(); return; }
+        projectsWindow = new ProjectsWindow(host.Projects);
+        projectsWindow.Closed += (_, _) => projectsWindow = null;
+        projectsWindow.Show();
     }
 
     private async void Quit()

@@ -15,6 +15,9 @@ internal sealed class CompanionHost : IAsyncDisposable
     private Task? loop;
     private Timer? networkDebounce;
 
+    internal RovaWindows.Projects.WindowsProjectSync Projects { get; }
+    private Task? projectLoop;
+
     internal WindowsRuntime Runtime { get; }
     internal DeviceSessionClient Sessions { get; }
     internal ProtocolV2Client Client { get; }
@@ -26,6 +29,7 @@ internal sealed class CompanionHost : IAsyncDisposable
         Runtime = new WindowsRuntime(desktopController: new WindowsDesktopControlAdapter());
         Sessions = new DeviceSessionClient(http);
         Client = new ProtocolV2Client(Runtime, Sessions);
+        Projects = new(Sessions.BaseUri, ct => State == ConnectionState.Connected ? Client.AccessTokenAsync(ct) : Task.FromResult<string?>(null));
         Client.StateChanged += OnStateChanged;
         Client.Activity += message => Log.Info(message);
         Runtime.Settings.Changed += () => Client.Reconnect();
@@ -38,6 +42,11 @@ internal sealed class CompanionHost : IAsyncDisposable
 
     internal void Start()
     {
+        projectLoop ??= Task.Run(async () =>
+        {
+            try { await Projects.RunAsync(lifetime.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+        });
         if (DeviceSessionClient.LoadStoredCredentials() is { } credentials && IsPaired) StartLoop(credentials);
         else OnStateChanged(ConnectionState.NeedsPairing);
     }
@@ -126,6 +135,8 @@ internal sealed class CompanionHost : IAsyncDisposable
         networkDebounce?.Dispose();
         lifetime.Cancel();
         await StopLoopAsync().ConfigureAwait(false);
+        if (projectLoop is not null) { try { await projectLoop.ConfigureAwait(false); } catch (OperationCanceledException) { } }
+        Projects.Dispose();
         await Client.DisposeAsync().ConfigureAwait(false);
         await Runtime.DisposeAsync().ConfigureAwait(false);
         http.Dispose();

@@ -18,7 +18,7 @@ internal sealed class TrayIcon : IDisposable
     private readonly Icon baseIcon;
     private Icon? current;
 
-    internal TrayIcon(CompanionHost host, Action showMain, Action showPairing, Action showSettings, Action quit)
+    internal TrayIcon(CompanionHost host, Action showMain, Action showPairing, Action showSettings, Action showProjects, Action quit)
     {
         using (var stream = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/wiqo.ico"))!.Stream)
             baseIcon = new Icon(stream, SystemInformation.SmallIconSize);
@@ -37,6 +37,7 @@ internal sealed class TrayIcon : IDisposable
             new ToolStripSeparator(),
             new ToolStripMenuItem("Telefonu bağla…", null, (_, _) => showPairing()),
             new ToolStripMenuItem("Ayarlar…", null, (_, _) => showSettings()),
+            new ToolStripMenuItem("Act · Projeler…", null, (_, _) => showProjects()),
             agent,
             autoStart,
             new ToolStripMenuItem("Günlükleri aç", null, (_, _) => OpenLogs()),
