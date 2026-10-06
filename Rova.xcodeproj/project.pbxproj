@@ -43,8 +43,6 @@
 		D50000000000000000000107 /* ActHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000106 /* ActHub.swift */; };
 		D50000000000000000000108 /* ActHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000106 /* ActHub.swift */; };
 		D5000000000000000000010A /* ActSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000109 /* ActSync.swift */; };
-		D50000000000000000000602 /* ActLook.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000601 /* ActLook.swift */; };
-		D50000000000000000000603 /* ActLook.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000601 /* ActLook.swift */; };
 		D5000000000000000000010B /* ActSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000109 /* ActSync.swift */; };
 		D50000000000000000000300 /* ActQuickEdits.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000301 /* ActQuickEdits.swift */; };
 		B004 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F004 /* KeychainStore.swift */; };
@@ -136,7 +134,6 @@
 		D30000000000000000000C11 /* CodeProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C10 /* CodeProjectsView.swift */; };
 		D50000000000000000000500 /* ActCodeEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000501 /* ActCodeEditor.swift */; };
 		D50000000000000000000502 /* ActComposerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000503 /* ActComposerBar.swift */; };
-		D50000000000000000000504 /* ActStylePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000505 /* ActStylePanel.swift */; };
 		D30000000000000000000C13 /* ActView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C12 /* ActView.swift */; };
 		D30000000000000000000C15 /* ActProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C14 /* ActProjectStore.swift */; };
 		D50000000000000000000200 /* ActModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000201 /* ActModel.swift */; };
@@ -258,7 +255,6 @@
 		D30000000000000000000C10 /* CodeProjectsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodeProjectsView.swift; sourceTree = "<group>"; };
 		D50000000000000000000501 /* ActCodeEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActCodeEditor.swift; sourceTree = "<group>"; };
 		D50000000000000000000503 /* ActComposerBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActComposerBar.swift; sourceTree = "<group>"; };
-		D50000000000000000000505 /* ActStylePanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActStylePanel.swift; sourceTree = "<group>"; };
 		D30000000000000000000C12 /* ActView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActView.swift; sourceTree = "<group>"; };
 		D30000000000000000000C14 /* ActProjectStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActProjectStore.swift; sourceTree = "<group>"; };
 		D50000000000000000000201 /* ActModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActModel.swift; sourceTree = "<group>"; };
@@ -275,7 +271,6 @@
 		D50000000000000000000100 /* ActVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActVault.swift; sourceTree = "<group>"; };
 		D50000000000000000000103 /* ActBundler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActBundler.swift; sourceTree = "<group>"; };
 		D50000000000000000000106 /* ActHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActHub.swift; sourceTree = "<group>"; };
-		D50000000000000000000601 /* ActLook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActLook.swift; sourceTree = "<group>"; };
 		D50000000000000000000109 /* ActSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActSync.swift; sourceTree = "<group>"; };
 		D50000000000000000000301 /* ActQuickEdits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActQuickEdits.swift; sourceTree = "<group>"; };
 		F004 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
@@ -379,7 +374,6 @@
 				D50000000000000000000103 /* ActBundler.swift */,
 				D50000000000000000000106 /* ActHub.swift */,
 				D50000000000000000000109 /* ActSync.swift */,
-				D50000000000000000000601 /* ActLook.swift */,
 				D50000000000000000000301 /* ActQuickEdits.swift */,
 				F004 /* KeychainStore.swift */,
 				F005 /* CryptoSupport.swift */,
@@ -448,7 +442,6 @@
 				D20000000000000000000034 /* CopilotMessageViews.swift */,
 				D30000000000000000000C10 /* CodeProjectsView.swift */,
 				D30000000000000000000C12 /* ActView.swift */,
-				D50000000000000000000505 /* ActStylePanel.swift */,
 				D50000000000000000000503 /* ActComposerBar.swift */,
 				D50000000000000000000501 /* ActCodeEditor.swift */,
 				D30000000000000000000C14 /* ActProjectStore.swift */,
@@ -751,7 +744,6 @@
 				D50000000000000000000104 /* ActBundler.swift in Sources */,
 				D50000000000000000000107 /* ActHub.swift in Sources */,
 				D5000000000000000000010A /* ActSync.swift in Sources */,
-				D50000000000000000000602 /* ActLook.swift in Sources */,
 				B004 /* KeychainStore.swift in Sources */,
 				B005 /* CryptoSupport.swift in Sources */,
 				B006 /* QRPairing.swift in Sources */,
@@ -800,7 +792,6 @@
 				D20000000000000000000033 /* CopilotMessageViews.swift in Sources */,
 				D30000000000000000000C11 /* CodeProjectsView.swift in Sources */,
 				D30000000000000000000C13 /* ActView.swift in Sources */,
-				D50000000000000000000504 /* ActStylePanel.swift in Sources */,
 				D50000000000000000000502 /* ActComposerBar.swift in Sources */,
 				D50000000000000000000500 /* ActCodeEditor.swift in Sources */,
 				D30000000000000000000C15 /* ActProjectStore.swift in Sources */,
@@ -828,7 +819,6 @@
 				D50000000000000000000105 /* ActBundler.swift in Sources */,
 				D50000000000000000000108 /* ActHub.swift in Sources */,
 				D5000000000000000000010B /* ActSync.swift in Sources */,
-				D50000000000000000000603 /* ActLook.swift in Sources */,
 				D50000000000000000000300 /* ActQuickEdits.swift in Sources */,
 				FF28DCC130573E6C0006FF82 /* KeychainStore.swift in Sources */,
 				FF28DCC230573E6C0006FF82 /* CryptoSupport.swift in Sources */,

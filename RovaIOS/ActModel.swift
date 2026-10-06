@@ -302,35 +302,6 @@ final class ActModel: ObservableObject {
         return copy.id
     }
 
-    // MARK: Look
-
-    /// Sets how the project looks (`gorunum.json`). Taps in a row on the look panel become one history entry,
-    /// so the history is not flooded by someone trying colours.
-    func setLook(_ id: String, _ look: ActLook, summary: String) {
-        guard job == nil, var p = project(id) else { return }
-        let before = p.files
-        var files = before
-        if let content = look.fileContent() { files[ActLook.fileName] = content } else { files.removeValue(forKey: ActLook.fileName) }
-        guard files != before else { return }
-        p.replica.files = files
-        var history = p.history
-        var original = before
-        if let latest = history.first, latest.source == "Görünüm", Date().timeIntervalSince(latest.date) < 120 {
-            for change in latest.changes {
-                if let restored = change.before { original[change.path] = restored } else { original.removeValue(forKey: change.path) }
-            }
-            history.removeFirst()
-        }
-        let changes = diff(original, files)
-        if !changes.isEmpty {
-            history.insert(ActHistoryEntry(id: UUID(), summary: summary, date: Date(), verified: true, source: "Görünüm", changes: changes), at: 0)
-        }
-        p.history = Array(history.prefix(30))
-        notice = nil
-        store(p)
-        if p.mode == .devices { Task { await sync(id) } }
-    }
-
     // MARK: Manual edits
 
     /// Saves what was changed by hand in the code editor (edited, new, renamed or deleted files) as one history entry.
