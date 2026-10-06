@@ -26,6 +26,7 @@ actor MacProjectSync {
     private let flavor: String
     private let allowRun: @Sendable () -> Bool
     private var loop: Task<Void, Never>?
+    private var lastPassSucceeded = false
     private(set) var status = "Senkron kapalı"
 
     init(root: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Wiqo Projeleri", isDirectory: true),
@@ -49,7 +50,11 @@ actor MacProjectSync {
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.syncOnce()
-                stamp = await self.waitForSomething(stamp: stamp, events: events)
+                if await self.lastPassSucceeded {
+                    stamp = await self.waitForSomething(stamp: stamp, events: events)
+                } else {
+                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                }
             }
         }
     }
@@ -57,7 +62,10 @@ actor MacProjectSync {
     /// Waits until another device changed something, a file in the folder changed, or a minute passed.
     private func waitForSomething(stamp: Int, events: AsyncStream<Void>) async -> Int {
         await withTaskGroup(of: Int?.self) { group in
-            group.addTask { [hub] in (try? await hub.waitForChange(since: stamp)) ?? stamp }
+            group.addTask { [hub] in
+                do { return try await hub.waitForChange(since: stamp) }
+                catch { try? await Task.sleep(for: .seconds(30)); return stamp }
+            }
             group.addTask {
                 for await _ in events { return nil }
                 return nil
@@ -112,6 +120,7 @@ actor MacProjectSync {
     /// One full pass; safe to call at any time. Returns a short status line.
     @discardableResult
     func syncOnce() async -> String {
+        lastPassSucceeded = false
         guard let keys = ActKeyStore.load(flavor: flavor) else {
             status = "Proje anahtarı yok: iPhone'la aynı ağda bağlan ya da kurtarma kodunu gir"
             return status
@@ -139,7 +148,8 @@ actor MacProjectSync {
                 }
             }
             let imported = try await importNewFolders(known: Set(linked.values.map(\.path)), keys: keys)
-            await handlePcTasks(folders: linked)
+            await handlePcTasks(folders: linkedFolders())
+            lastPassSucceeded = true
             status = "Eşit · \(remote.count + imported) proje" + (pushed + pulled + imported > 0 ? " · son: ↑\(pushed + imported) ↓\(pulled)" : "")
                 + (copies > 0 ? " · \(copies) çakışma kopyası" : "")
                 + (foreign > 0 ? " · \(foreign) proje başka anahtarla şifreli" : "")
@@ -151,9 +161,13 @@ actor MacProjectSync {
 
     private func syncFolder(_ dir: URL, keys: ActKeys) async throws -> ActSyncReport {
         guard let link = readLink(dir) else { return ActSyncReport() }
-        let before = scan(dir)
+        let before = try scan(dir)
+        for path in link.base.keys where before[path] == nil {
+            if FileManager.default.fileExists(atPath: try safeTarget(path, in: dir).path) { throw SyncError.unsafeFile }
+        }
         var replica = ActReplica(hubId: link.hubId, version: link.version, meta: link.meta, files: before, base: link.base)
         let report = try await ActSync.syncOnce(&replica, hub: hub, keys: keys, device: device, summary: "\(device) düzenlemesi")
+        guard try scan(dir) == before else { throw SyncError.changedDuringSync }
         try write(replica, into: dir, previous: before)
         return report
     }
@@ -165,7 +179,7 @@ actor MacProjectSync {
         var imported = 0
         for dir in entries where !known.contains(dir.path) {
             guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true, readLink(dir) == nil, !dir.lastPathComponent.hasPrefix(".") else { continue }
-            let files = scan(dir)
+            let files = try scan(dir)
             guard files.keys.contains("index.html") || files.keys.contains("main.py") else { continue }
             let kind = files.keys.contains("index.html") ? "web" : "python"
             var replica = ActReplica(meta: ActProjectMeta(name: dir.lastPathComponent, kind: kind), files: files)
@@ -212,7 +226,8 @@ actor MacProjectSync {
             return (true, opened ? "Klasör editörde açıldı." : "Editör bulunamadı; klasör Finder'da açıldı.")
         case "open_preview":
             // Built here from the folder: the page never has to leave this Mac.
-            let files = scan(folder).sorted { $0.key < $1.key }.map { ActBundler.File(path: $0.key, content: $0.value) }
+            guard let scanned = try? scan(folder) else { return (false, "Proje dosyaları güvenle okunamadı.") }
+            let files = scanned.sorted { $0.key < $1.key }.map { ActBundler.File(path: $0.key, content: $0.value) }
             guard let page = ActBundler.bundleWeb(files).map(ActBundler.ensureViewport) else { return (false, "Bu projede önizlenecek bir sayfa (index.html) yok.") }
             let url = folder.appendingPathComponent(Self.previewName)
             do { try page.write(to: url, atomically: true, encoding: .utf8) } catch { return (false, "Önizleme dosyası yazılamadı.") }
@@ -233,28 +248,14 @@ actor MacProjectSync {
         guard let entry else { return (false, "Projede çalıştırılacak .py dosyası yok.") }
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = ["python3", entry]
-                process.currentDirectoryURL = folder
-                process.environment = ["PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin", "HOME": NSHomeDirectory(), "PYTHONIOENCODING": "utf-8"]
-                let out = Pipe()
-                process.standardOutput = out
-                process.standardError = out
-                process.standardInput = FileHandle.nullDevice
-                do { try process.run() } catch {
-                    continuation.resume(returning: (false, "Python başlatılamadı: \(error.localizedDescription)"))
-                    return
-                }
-                var timedOut = false
-                let timer = DispatchWorkItem { timedOut = true; process.terminate() }
-                DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timer)
-                let data = out.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                timer.cancel()
-                let text = String(decoding: data.prefix(8_000), as: UTF8.self)
-                if timedOut { continuation.resume(returning: (false, text + "\nProgram 30 saniyede bitmedi; durduruldu.")) }
-                else { continuation.resume(returning: (process.terminationStatus == 0, text.isEmpty ? "(çıktı yok)" : text)) }
+                let result = MacSystem.runProcess(
+                    executable: "/usr/bin/env", arguments: ["python3", entry], timeoutSeconds: 30,
+                    workingDirectory: folder,
+                    environment: ["PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin", "HOME": NSHomeDirectory(), "PYTHONIOENCODING": "utf-8"]
+                )
+                let text = String(decoding: (result.stdout + result.stderr).prefix(8_000), as: UTF8.self)
+                if result.timedOut { continuation.resume(returning: (false, text + "\nProgram 30 saniyede bitmedi; durduruldu.")) }
+                else { continuation.resume(returning: (result.exitCode == 0, text.isEmpty ? "(çıktı yok)" : text)) }
             }
         }
     }
@@ -269,8 +270,10 @@ actor MacProjectSync {
     }
 
     private func newFolder(for name: String) -> URL {
-        let cleaned = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-").trimmingCharacters(in: .whitespaces)
-        var candidate = root.appendingPathComponent(cleaned.isEmpty ? "Proje" : cleaned, isDirectory: true)
+        var cleaned = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-").trimmingCharacters(in: .whitespaces)
+        cleaned = String(cleaned.filter { !$0.isNewline && $0 != "\0" && $0 != "\\" }.prefix(100))
+        if cleaned.isEmpty || cleaned.hasPrefix(".") { cleaned = "Proje" }
+        var candidate = root.appendingPathComponent(cleaned, isDirectory: true)
         var index = 2
         while FileManager.default.fileExists(atPath: candidate.path) {
             candidate = root.appendingPathComponent("\(cleaned) \(index)", isDirectory: true)
@@ -284,31 +287,60 @@ actor MacProjectSync {
         return try? JSONDecoder().decode(Link.self, from: data)
     }
 
-    /// Text files of a project folder, relative path → content (dot files, big files and other types skipped).
-    private func scan(_ dir: URL) -> [String: String] {
-        guard let walker = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return [:] }
+    private enum SyncError: LocalizedError {
+        case unsafeFile, changedDuringSync
+        var errorDescription: String? {
+            switch self {
+            case .unsafeFile: "Projedeki dosya yolu, erişim veya boyut sınırı uygun değil; dosyalar korundu."
+            case .changedDuringSync: "Dosya senkron sırasında değişti; yeni düzenleme korunarak tekrar denenecek."
+            }
+        }
+    }
+
+    private func safeTarget(_ path: String, in dir: URL) throws -> URL {
+        guard ActSync.isSafePath(path), dir.standardizedFileURL.path == dir.resolvingSymlinksInPath().standardizedFileURL.path else { throw SyncError.unsafeFile }
+        let target = dir.appendingPathComponent(path).standardizedFileURL
+        guard target.path.hasPrefix(dir.standardizedFileURL.path + "/"),
+              target.path == target.resolvingSymlinksInPath().standardizedFileURL.path else { throw SyncError.unsafeFile }
+        return target
+    }
+
+    /// A partial scan must never look like deleted files to the sync engine.
+    private func scan(_ dir: URL) throws -> [String: String] {
+        guard dir.standardizedFileURL.path == dir.resolvingSymlinksInPath().standardizedFileURL.path else { throw SyncError.unsafeFile }
+        var scanFailed = false
+        guard let walker = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey], options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { _, _ in scanFailed = true; return false }) else { throw SyncError.unsafeFile }
+        let extensions: Set<String> = ["html", "htm", "css", "js", "json", "txt", "md", "py", "svg", "csv"]
         var files: [String: String] = [:]
         for case let url as URL in walker {
-            guard files.count < ActSync.maxFiles,
-                  let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]), values.isRegularFile == true,
-                  !url.path.contains("/node_modules/"),
-                  let content = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            if url.lastPathComponent == "node_modules" { walker.skipDescendants(); continue }
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard values.isSymbolicLink != true else { throw SyncError.unsafeFile }
+            guard values.isRegularFile == true, extensions.contains(url.pathExtension.lowercased()) else { continue }
             let relative = String(url.path.dropFirst(dir.path.count + 1))
-            if ActSync.isSyncable(path: relative, content: content) { files[relative] = content }
+            _ = try safeTarget(relative, in: dir)
+            guard files.count < ActSync.maxFiles, (values.fileSize ?? Int.max) <= ActSync.maxFileBytes else { throw SyncError.unsafeFile }
+            let content = try String(contentsOf: url, encoding: .utf8)
+            guard ActSync.isSyncable(path: relative, content: content) else { throw SyncError.unsafeFile }
+            files[relative] = content
         }
+        guard !scanFailed else { throw SyncError.unsafeFile }
         return files
     }
 
     /// Makes the folder match the replica: changed and new files written, files that were in step and are gone removed.
     private func write(_ replica: ActReplica, into dir: URL, previous: [String: String]?) throws {
         let fm = FileManager.default
+        for path in Set(replica.files.keys).union((previous ?? [:]).keys) { _ = try safeTarget(path, in: dir) }
+        let metadata = dir.appendingPathComponent(Self.metaName)
+        guard metadata.standardizedFileURL.path == metadata.resolvingSymlinksInPath().standardizedFileURL.path else { throw SyncError.unsafeFile }
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         for (path, content) in replica.files where previous?[path] != content {
-            let target = dir.appendingPathComponent(path)
+            let target = try safeTarget(path, in: dir)
             try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
             try content.write(to: target, atomically: true, encoding: .utf8)
         }
-        for path in (previous ?? [:]).keys where replica.files[path] == nil { try? fm.removeItem(at: dir.appendingPathComponent(path)) }
+        for path in (previous ?? [:]).keys where replica.files[path] == nil { try fm.removeItem(at: safeTarget(path, in: dir)) }
         guard let hubId = replica.hubId else { return }
         let link = Link(hubId: hubId, version: replica.version, meta: replica.meta, base: replica.base)
         try JSONEncoder().encode(link).write(to: dir.appendingPathComponent(Self.metaName), options: .atomic)

@@ -36,10 +36,16 @@ public enum ActSync {
     public static let maxFileBytes = 100 * 1024
     private static let textExtensions: Set<String> = ["html", "htm", "css", "js", "json", "txt", "md", "py", "svg", "csv"]
 
+    public static func isSafePath(_ path: String) -> Bool {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        return !path.isEmpty && !path.contains("\\") && !path.contains("\0") && parts.count <= 4
+            && parts.allSatisfy { !$0.isEmpty && !$0.hasPrefix(".") }
+    }
+
     /// Files the hub accepts (text, small, a few folders deep).
     public static func isSyncable(path: String, content: String) -> Bool {
         let ext = (path as NSString).pathExtension.lowercased()
-        return textExtensions.contains(ext) && content.utf8.count <= maxFileBytes && path.split(separator: "/").count <= 4
+        return isSafePath(path) && textExtensions.contains(ext) && content.utf8.count <= maxFileBytes && path.split(separator: "/").count <= 4
             && !path.split(separator: "/").contains { $0.hasPrefix(".") }
     }
 
@@ -101,7 +107,14 @@ public enum ActSync {
                 var copies: [String] = []
                 for change in local {
                     guard clashing.contains(keys.pathToken(change.path)), let mine = change.content else { continue }
-                    let copy = conflictCopyName(change.path, device: device)
+                    let original = conflictCopyName(change.path, device: device)
+                    var copy = original
+                    var index = 2
+                    while replica.files[copy] != nil || opened[copy] != nil {
+                        let ns = original as NSString
+                        copy = "\(ns.deletingPathExtension) \(index)" + (ns.pathExtension.isEmpty ? "" : ".\(ns.pathExtension)")
+                        index += 1
+                    }
                     replica.files[copy] = mine
                     copies.append(copy)
                 }
@@ -116,8 +129,10 @@ public enum ActSync {
             if hubVersion > replica.version {
                 for version in versions {
                     for change in version.changes {
-                        guard let blob = change.b, let envelope = keys.open(blob, as: ActFileEnvelope.self) else { continue }
+                        guard let blob = change.b, let envelope = keys.open(blob, as: ActFileEnvelope.self),
+                              isSafePath(envelope.path), change.p == keys.pathToken(envelope.path) else { throw ActVaultError.sealFailed }
                         if let content = envelope.content {
+                            guard isSyncable(path: envelope.path, content: content), change.h == keys.contentHash(envelope.path, content) else { throw ActVaultError.sealFailed }
                             replica.files[envelope.path] = content
                             replica.base[envelope.path] = keys.contentHash(envelope.path, content)
                         } else {
@@ -153,7 +168,9 @@ public enum ActSync {
     private static func open(_ files: [ActHub.SealedFile], keys: ActKeys) throws -> [String: String] {
         var result: [String: String] = [:]
         for file in files {
-            guard let blob = file.b, let envelope = keys.open(blob, as: ActFileEnvelope.self), let content = envelope.content else { continue }
+            guard let blob = file.b, let envelope = keys.open(blob, as: ActFileEnvelope.self), let content = envelope.content,
+                  isSyncable(path: envelope.path, content: content), file.p == keys.pathToken(envelope.path), file.h == keys.contentHash(envelope.path, content),
+                  result[envelope.path] == nil, result.count < maxFiles else { throw ActVaultError.sealFailed }
             result[envelope.path] = content
         }
         return result

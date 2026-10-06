@@ -83,6 +83,8 @@ final class MacBackendChannel: NSObject {
     private var openTimeoutTask: Task<Void, Never>?
     private var reconnectAttempt = 0
     private var currentToken: String?
+    private var sessionGeneration = UUID()
+    private var tokenRefreshedAt: Date?
     private var refreshInFlight: Task<(BackendSessionCredentials?, Bool), Never>?
     private var currentRefreshToken: String?
     private final class TerminalJobRecord {
@@ -111,6 +113,7 @@ final class MacBackendChannel: NSObject {
     private var terminalProfileJSON: Data?
     private var terminalProfileRequested = false
     func accessTokenForFileTransfer() async -> String? {
+        if let refreshed = tokenRefreshedAt, Date().timeIntervalSince(refreshed) < 600 { return currentToken }
         if let refresh = currentRefreshToken { _ = await refreshCredentials(refreshToken: refresh) }
         return currentToken
     }
@@ -175,6 +178,9 @@ final class MacBackendChannel: NSObject {
         guard !accessToken.isEmpty else { return }
         if accessToken == currentToken, refreshToken == currentRefreshToken, registrationSent { return }
         if accessToken == currentToken, task != nil { return }
+        sessionGeneration = UUID()
+        refreshInFlight?.cancel()
+        refreshInFlight = nil
         reconnectTask?.cancel()
         reconnectTask = nil
         heartbeatTask?.cancel()
@@ -187,6 +193,7 @@ final class MacBackendChannel: NSObject {
         session = nil
         registrationSent = false
         publishConnectionState()
+        tokenRefreshedAt = nil
         currentToken = accessToken
         currentRefreshToken = refreshToken
         reconnectAttempt = 0
@@ -201,11 +208,13 @@ final class MacBackendChannel: NSObject {
     }
 
     func disconnect() async {
+        sessionGeneration = UUID()
         refreshInFlight?.cancel()
         refreshInFlight = nil
         stopConnection()
         reconnectTask?.cancel()
         reconnectTask = nil
+        tokenRefreshedAt = nil
         currentToken = nil
         currentRefreshToken = nil
         do { try await tokenStore.delete() } catch { }
@@ -276,6 +285,7 @@ final class MacBackendChannel: NSObject {
     }
 
     private func refreshCredentials(refreshToken: String) async -> BackendSessionCredentials? {
+        let generation = sessionGeneration
         let refresh: Task<(BackendSessionCredentials?, Bool), Never>
         if let existing = refreshInFlight { refresh = existing }
         else {
@@ -296,10 +306,11 @@ final class MacBackendChannel: NSObject {
         }
         let (credentials, rejected) = await refresh.value
         // Another pairing/refresh may have replaced this session while HTTP was in flight.
-        guard currentRefreshToken == refreshToken else { return nil }
+        guard sessionGeneration == generation, currentRefreshToken == refreshToken else { return nil }
         refreshInFlight = nil
         if rejected { await disconnect(); return nil }
         if let credentials {
+            tokenRefreshedAt = Date()
             currentToken = credentials.accessToken
             currentRefreshToken = credentials.refreshToken
             try? await tokenStore.save(accessToken: credentials.accessToken, refreshToken: credentials.refreshToken, accountToken: nil)
@@ -1089,9 +1100,6 @@ final class MacBackendChannel: NSObject {
             self.reconnectTask = nil
             if let refreshToken = self.currentRefreshToken,
                let credentials = await self.refreshCredentials(refreshToken: refreshToken) {
-                self.currentToken = credentials.accessToken
-                self.currentRefreshToken = credentials.refreshToken
-                try? await self.tokenStore.save(accessToken: credentials.accessToken, refreshToken: credentials.refreshToken, accountToken: nil)
                 self.open(token: credentials.accessToken)
             } else {
                 if let token = self.currentToken { self.open(token: token) }
