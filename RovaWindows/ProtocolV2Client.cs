@@ -162,7 +162,7 @@ public sealed class ProtocolV2Client : IAsyncDisposable
 
     /// A fresh access token for HTTP calls (file transfer, artifact download): they outlive the
     /// 15-minute token when the socket has been up for a while.
-    private async Task<string?> AccessTokenAsync(CancellationToken cancellationToken) =>
+    public async Task<string?> AccessTokenAsync(CancellationToken cancellationToken) =>
         await RefreshAsync(cancellationToken).ConfigureAwait(false) == true ? credentials?.AccessToken : null;
 
     private Task SendRegistrationAsync(ClientWebSocket current, CancellationToken cancellationToken) => SendAsync(current, new
@@ -208,7 +208,11 @@ public sealed class ProtocolV2Client : IAsyncDisposable
             do
             {
                 result = await current.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
-                if (result.MessageType == WebSocketMessageType.Close) return;
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    if ((int?)result.CloseStatus is 4001 or 4003) credentialsIssuedAt = DateTimeOffset.MinValue;
+                    return;
+                }
                 if (result.MessageType != WebSocketMessageType.Text || message.Length + result.Count > MaxFrameBytes)
                 {
                     await current.CloseAsync(WebSocketCloseStatus.MessageTooBig, "Invalid frame", cancellationToken).ConfigureAwait(false);

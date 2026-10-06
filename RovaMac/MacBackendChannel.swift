@@ -83,6 +83,7 @@ final class MacBackendChannel: NSObject {
     private var openTimeoutTask: Task<Void, Never>?
     private var reconnectAttempt = 0
     private var currentToken: String?
+    private var refreshInFlight: Task<(BackendSessionCredentials?, Bool), Never>?
     private var currentRefreshToken: String?
     private final class TerminalJobRecord {
         let id: String
@@ -110,13 +111,7 @@ final class MacBackendChannel: NSObject {
     private var terminalProfileJSON: Data?
     private var terminalProfileRequested = false
     func accessTokenForFileTransfer() async -> String? {
-        if let refresh = currentRefreshToken,
-           let credentials = await refreshCredentials(refreshToken: refresh),
-           currentRefreshToken == refresh {
-            currentRefreshToken = credentials.refreshToken
-            try? await tokenStore.save(accessToken: credentials.accessToken, refreshToken: credentials.refreshToken, accountToken: nil)
-            return credentials.accessToken
-        }
+        if let refresh = currentRefreshToken { _ = await refreshCredentials(refreshToken: refresh) }
         return currentToken
     }
     private var registrationSent = false
@@ -206,6 +201,8 @@ final class MacBackendChannel: NSObject {
     }
 
     func disconnect() async {
+        refreshInFlight?.cancel()
+        refreshInFlight = nil
         stopConnection()
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -279,20 +276,34 @@ final class MacBackendChannel: NSObject {
     }
 
     private func refreshCredentials(refreshToken: String) async -> BackendSessionCredentials? {
-        guard let body = try? JSONSerialization.data(withJSONObject: [
-            "deviceId": deviceInfo().id.uuidString,
-            "refreshToken": refreshToken
-        ]) else { return nil }
-        var request = URLRequest(url: Self.apiBaseURL.appendingPathComponent("device-sessions/refresh"))
-        request.httpMethod = "POST"
-        request.httpBody = body
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode),
-              let credentials = try? JSONDecoder().decode(BackendSessionCredentials.self, from: data),
-              !credentials.accessToken.isEmpty,
-              !credentials.refreshToken.isEmpty else { return nil }
+        let refresh: Task<(BackendSessionCredentials?, Bool), Never>
+        if let existing = refreshInFlight { refresh = existing }
+        else {
+            let deviceID = deviceInfo().id.uuidString
+            refresh = Task {
+                var request = URLRequest(url: Self.apiBaseURL.appendingPathComponent("device-sessions/refresh"), timeoutInterval: 20)
+                request.httpMethod = "POST"
+                request.httpBody = try? JSONSerialization.data(withJSONObject: ["deviceId": deviceID, "refreshToken": refreshToken])
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                guard let (data, response) = try? await URLSession.shared.data(for: request), let http = response as? HTTPURLResponse else { return (nil, false) }
+                if [400, 401, 403].contains(http.statusCode) { return (nil, true) }
+                guard (200..<300).contains(http.statusCode),
+                      let credentials = try? JSONDecoder().decode(BackendSessionCredentials.self, from: data),
+                      !credentials.accessToken.isEmpty, !credentials.refreshToken.isEmpty else { return (nil, false) }
+                return (credentials, false)
+            }
+            refreshInFlight = refresh
+        }
+        let (credentials, rejected) = await refresh.value
+        // Another pairing/refresh may have replaced this session while HTTP was in flight.
+        guard currentRefreshToken == refreshToken else { return nil }
+        refreshInFlight = nil
+        if rejected { await disconnect(); return nil }
+        if let credentials {
+            currentToken = credentials.accessToken
+            currentRefreshToken = credentials.refreshToken
+            try? await tokenStore.save(accessToken: credentials.accessToken, refreshToken: credentials.refreshToken, accountToken: nil)
+        }
         return credentials
     }
 
@@ -1063,7 +1074,7 @@ final class MacBackendChannel: NSObject {
     }
 
     private func scheduleReconnect() {
-        guard let currentToken, reconnectTask == nil else { return }
+        guard currentToken != nil, reconnectTask == nil else { return }
         let delays: [UInt64] = [1, 2, 4, 8, 16, 30]
         let delay = delays[min(reconnectAttempt, delays.count - 1)]
         let jitter = UInt64.random(in: 0...250)
@@ -1083,7 +1094,7 @@ final class MacBackendChannel: NSObject {
                 try? await self.tokenStore.save(accessToken: credentials.accessToken, refreshToken: credentials.refreshToken, accountToken: nil)
                 self.open(token: credentials.accessToken)
             } else {
-                self.open(token: currentToken)
+                if let token = self.currentToken { self.open(token: token) }
             }
         }
     }
