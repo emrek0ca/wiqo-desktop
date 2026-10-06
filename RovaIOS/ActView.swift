@@ -109,7 +109,7 @@ struct ActView: View {
             .padding(.bottom, 28)
         }
         .scrollDismissesKeyboard(.interactively)
-        .background(RovaDesign.canvas)
+        .background(Color(.systemBackground))
         .confirmationDialog("Proje silinsin mi?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible, presenting: pendingDelete) { project in
             Button("\(project.name) projesini sil", role: .destructive) { Task { await model.delete(project.id) } }
             Button("Vazgeç", role: .cancel) {}
@@ -284,6 +284,24 @@ private struct ProjectRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if let summary = project.history.first?.summary, !summary.isEmpty {
+                    Text(summary)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                if !fileKinds.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(fileKinds, id: \.self) { kind in
+                            Text(kind)
+                                .font(.custom("JetBrainsMono-Regular", size: 10, relativeTo: .caption2))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(WiqoTheme.inset, in: Capsule())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
             Spacer(minLength: 8)
             Image(systemName: project.mode.systemImage)
@@ -305,6 +323,10 @@ private struct ProjectRow: View {
         formatter.unitsStyle = .short
         return formatter
     }()
+
+    private var fileKinds: [String] {
+        Array(Set(project.files.keys.map { ($0 as NSString).pathExtension.lowercased() }.filter { !$0.isEmpty })).sorted().prefix(4).map { $0 }
+    }
 
     private var caption: String {
         [project.isWeb ? "Web" : "Python", "v\(project.versionNumber)", Self.relativeFormatter.localizedString(for: project.updatedAt, relativeTo: Date())].joined(separator: " · ")
@@ -390,7 +412,20 @@ struct CodeProjectWorkspaceView: View {
     @State private var showingConsent = false
     @State private var pcStatus: String?
     @State private var pcOutput: String?
+    @State private var tab: WorkspaceTab = .preview
+    @State private var codeFile: String?
+    @State private var console: [ConsoleLine] = []
+    @State private var showingConsole = false
+    @State private var expandedEntry: UUID?
     @FocusState private var focused: Bool
+
+    private enum WorkspaceTab: Hashable { case preview, code, history }
+
+    private struct ConsoleLine: Identifiable {
+        let id = UUID()
+        let level: String
+        let text: String
+    }
 
     private var project: ActLocalProject? { model.project(projectID) }
     private var working: Bool { model.job?.projectID == projectID }
@@ -414,11 +449,12 @@ struct CodeProjectWorkspaceView: View {
                 .padding(.horizontal, 16)
                 .frame(height: 44)
             }
-            stage
+            tabBar
+            content
             Divider()
             footer
         }
-        .background(RovaDesign.canvas)
+        .background(Color(.systemBackground))
         .navigationTitle(embedded ? "" : (project?.name ?? "Proje"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { if !embedded { ToolbarItem(placement: .topBarTrailing) { menu } } }
@@ -435,6 +471,148 @@ struct CodeProjectWorkspaceView: View {
             await model.sync(projectID)
             reloadToken += 1
         }
+        .onChange(of: reloadToken) { _, _ in console.removeAll() }
+    }
+
+    // MARK: Sekmeler
+
+    private var tabBar: some View {
+        WiqoPillTabs<WorkspaceTab>(
+            options: [
+                WiqoPillTabs<WorkspaceTab>.Option(value: .preview, title: isWeb ? "Önizleme" : "Çıktı", systemImage: isWeb ? "iphone" : "play.rectangle"),
+                WiqoPillTabs<WorkspaceTab>.Option(value: .code, title: "Kod", systemImage: "chevron.left.forwardslash.chevron.right"),
+                WiqoPillTabs<WorkspaceTab>.Option(value: .history, title: "Geçmiş", systemImage: "clock.arrow.circlepath")
+            ],
+            selection: $tab
+        )
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch tab {
+        case .preview: stage
+        case .code: codeStage
+        case .history: historyStage
+        }
+    }
+
+    /// The files of the project, one tab per file, read like an editor: line numbers, syntax colours, copy.
+    private var codeStage: some View {
+        let files = project?.sortedFiles ?? []
+        let selected = files.first { $0.path == codeFile } ?? files.first { $0.path == "index.html" || $0.path == "main.py" } ?? files.first
+        return VStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(files, id: \.path) { file in
+                        Button { codeFile = file.path } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: Self.icon(for: file.path)).font(.system(size: 11))
+                                Text(file.path).font(.custom("JetBrainsMono-Regular", size: 12, relativeTo: .caption))
+                            }
+                            .padding(.horizontal, 10)
+                            .frame(height: 30)
+                            .background(file.path == selected?.path ? WiqoTheme.ink : WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .foregroundStyle(file.path == selected?.path ? Color(.systemBackground) : Color.primary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 14)
+            }
+            .padding(.bottom, 8)
+            if let selected {
+                ScrollView {
+                    WiqoCodeBlock(code: selected.content, title: selected.path)
+                        .id(selected.path)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 14)
+                }
+            } else {
+                Spacer()
+                Text("Projede dosya yok.").font(.footnote).foregroundStyle(.secondary)
+                Spacer()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// What changed, version by version; open an entry to see its diff.
+    private var historyStage: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 8) {
+                ForEach(project?.history ?? []) { entry in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button { withAnimation(.snappy(duration: 0.2)) { expandedEntry = expandedEntry == entry.id ? nil : entry.id } } label: {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: entry.verified ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                    .foregroundStyle(entry.verified ? Color.green : Color.orange)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(entry.summary).font(.subheadline.weight(.medium)).foregroundStyle(.primary).multilineTextAlignment(.leading)
+                                    Text("\(entry.source) · \(entry.date.formatted(date: .abbreviated, time: .shortened)) · \(Self.counts(entry))")
+                                        .font(.custom("JetBrainsMono-Regular", size: 11, relativeTo: .caption2))
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 4)
+                                Image(systemName: expandedEntry == entry.id ? "chevron.up" : "chevron.down").font(.caption2).foregroundStyle(.tertiary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        if expandedEntry == entry.id {
+                            ForEach(entry.changes, id: \.path) { change in
+                                WiqoCodeBlock(diff: Self.unifiedDiff(change), title: change.path)
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .wiqoCard()
+                }
+            }
+            .padding(14)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private static func icon(for path: String) -> String {
+        switch (path as NSString).pathExtension.lowercased() {
+        case "html", "htm": return "chevron.left.forwardslash.chevron.right"
+        case "css": return "paintbrush"
+        case "js", "json": return "curlybraces"
+        case "py": return "terminal"
+        case "md": return "doc.text"
+        default: return "doc"
+        }
+    }
+
+    private static func counts(_ entry: ActHistoryEntry) -> String {
+        var added = 0
+        var removed = 0
+        for change in entry.changes {
+            let diff = unifiedDiff(change).split(separator: "\n")
+            added += diff.filter { $0.hasPrefix("+") }.count
+            removed += diff.filter { $0.hasPrefix("-") }.count
+        }
+        return "\(entry.changes.count) dosya +\(added) −\(removed)"
+    }
+
+    /// A readable diff of one file change (removed and added lines in place; no surrounding context).
+    private static func unifiedDiff(_ change: ActHistoryChange) -> String {
+        let before = (change.before ?? "").components(separatedBy: "\n")
+        let after = (change.after ?? "").components(separatedBy: "\n")
+        let delta = after.difference(from: change.before == nil ? [] : before)
+        var removals: [Int: String] = [:]
+        var insertions: [Int: String] = [:]
+        for step in delta {
+            switch step {
+            case .remove(let offset, let element, _): removals[offset] = element
+            case .insert(let offset, let element, _): insertions[offset] = element
+            }
+        }
+        var lines = ["@@ \(change.path) @@"]
+        for offset in removals.keys.sorted() { lines.append("-\(removals[offset]!)") }
+        for offset in insertions.keys.sorted() { lines.append("+\(insertions[offset]!)") }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: Sahne
@@ -447,7 +625,11 @@ struct CodeProjectWorkspaceView: View {
                         WiqoHTMLWebView(
                             html: WiqoHTMLDocument.wrap(page, viewportWidth: WiqoPreviewDevice.phone.viewportWidth, reduceMotion: reduceMotion),
                             projectDataKey: project.id,
-                            reloadToken: reloadToken
+                            reloadToken: reloadToken,
+                            onConsole: { level, text in
+                                console.append(ConsoleLine(level: level, text: text))
+                                if console.count > 80 { console.removeFirst(console.count - 80) }
+                            }
                         )
                         .background(Color.white)
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -528,6 +710,7 @@ struct CodeProjectWorkspaceView: View {
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
+            if isWeb && tab == .preview { consoleStrip }
             if let latest = project?.history.first { changeStrip(latest) }
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("Ne değiştirelim?", text: $draft, axis: .vertical)
@@ -554,6 +737,55 @@ struct CodeProjectWorkspaceView: View {
         .background(.bar)
     }
 
+    /// The page's console: what it logged and every error it threw. Errors can be sent straight to the writer.
+    @ViewBuilder private var consoleStrip: some View {
+        let errors = console.filter { $0.level == "error" }
+        if !console.isEmpty {
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "terminal").font(.system(size: 12))
+                    Text("Konsol").font(.footnote.weight(.semibold))
+                    if !errors.isEmpty {
+                        Text("\(errors.count) hata").font(.caption2.weight(.semibold)).padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(WiqoTheme.red.opacity(0.15), in: Capsule()).foregroundStyle(WiqoTheme.red)
+                    }
+                    Text("\(console.count) satır").font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                    if !errors.isEmpty {
+                        Button { draft = "Sayfada şu hatalar var, düzelt: " + errors.prefix(3).map(\.text).joined(separator: "; "); focused = true } label: {
+                            Label("Düzelt", systemImage: "wand.and.stars").font(.footnote.weight(.medium))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(WiqoTheme.ink)
+                        .disabled(model.job != nil)
+                    }
+                    Button { console.removeAll() } label: { Image(systemName: "trash").font(.system(size: 12)) }.buttonStyle(.plain).foregroundStyle(.secondary)
+                    Button { withAnimation(.snappy(duration: 0.2)) { showingConsole.toggle() } } label: { Image(systemName: showingConsole ? "chevron.down" : "chevron.up").font(.system(size: 12, weight: .semibold)) }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 36)
+                if showingConsole {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(console) { line in
+                                Text(line.text)
+                                    .font(.custom("JetBrainsMono-Regular", size: 11, relativeTo: .caption2))
+                                    .foregroundStyle(line.level == "error" ? WiqoTheme.red : line.level == "warn" ? WiqoTheme.orange : Color.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
+                    }
+                    .frame(maxHeight: 130)
+                }
+            }
+            .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
     private func changeStrip(_ entry: ActHistoryEntry) -> some View {
         HStack(spacing: 10) {
             Image(systemName: entry.verified ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
@@ -562,6 +794,9 @@ struct CodeProjectWorkspaceView: View {
                 Text("v\(project?.versionNumber ?? 0) · \(entry.summary)")
                     .font(.footnote)
                     .lineLimit(1)
+                Text("\(project?.files.count ?? 0) dosya · \(project?.mode.title ?? "")")
+                    .font(.custom("JetBrainsMono-Regular", size: 10, relativeTo: .caption2))
+                    .foregroundStyle(.secondary)
                 if !entry.verified {
                     Text("Telefonda denenemedi; çalışmıyorsa geri al.")
                         .font(.caption2)

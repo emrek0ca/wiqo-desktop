@@ -165,10 +165,22 @@ struct WiqoHTMLWebView: UIViewRepresentable {
     var projectDataKey: String? = nil
     /// Changing this reloads the same HTML from scratch (the "yenile" action).
     var reloadToken = 0
+    /// Receives what the page writes to the console and the errors it throws: (level, text).
+    var onConsole: ((String, String) -> Void)? = nil
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    private static let consoleScript = """
+    (function(){var send=function(l,a){try{window.webkit.messageHandlers.wiqoConsole.postMessage({level:l,text:Array.prototype.map.call(a,function(x){try{return typeof x==='object'?JSON.stringify(x):String(x)}catch(e){return String(x)}}).join(' ').slice(0,400)})}catch(e){}};['log','info','warn','error'].forEach(function(l){var o=console[l];console[l]=function(){send(l,arguments);o.apply(console,arguments)}});window.addEventListener('error',function(e){send('error',[e.message+(e.lineno?' (satır '+e.lineno+')':'')])});window.addEventListener('unhandledrejection',function(e){send('error',[String(e.reason)])})})();
+    """
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var lastLoaded: String?
         var lastToken = 0
+        var onConsole: ((String, String) -> Void)?
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard let body = message.body as? [String: Any], let level = body["level"] as? String, let text = body["text"] as? String else { return }
+            onConsole?(level, text)
+        }
 
         @MainActor
         func webView(
@@ -189,6 +201,10 @@ struct WiqoHTMLWebView: UIViewRepresentable {
             configuration.userContentController.addUserScript(WiqoProjectDataBridge.script(for: projectDataKey))
             configuration.userContentController.add(WiqoProjectDataBridge(key: projectDataKey), name: WiqoProjectDataBridge.messageName)
         }
+        if onConsole != nil {
+            configuration.userContentController.addUserScript(WKUserScript(source: Self.consoleScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+            configuration.userContentController.add(context.coordinator, name: "wiqoConsole")
+        }
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.isOpaque = false
@@ -198,6 +214,7 @@ struct WiqoHTMLWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         webView.isUserInteractionEnabled = isInteractive
+        context.coordinator.onConsole = onConsole
         guard context.coordinator.lastLoaded != html || context.coordinator.lastToken != reloadToken else { return }
         context.coordinator.lastLoaded = html
         context.coordinator.lastToken = reloadToken

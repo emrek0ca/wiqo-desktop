@@ -29,6 +29,10 @@ struct RovaMacApp: App {
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 320, height: 380)
+        Window("Wiqo Projeleri", id: RovaWindowID.projects) {
+            MacProjectsView()
+        }
+        .defaultSize(width: 900, height: 600)
         Settings {
             MacSettingsView(runtime: runtime)
         }
@@ -37,6 +41,7 @@ struct RovaMacApp: App {
 
 enum RovaWindowID {
     static let pairingQR = "pairing-qr"
+    static let projects = "projects"
 }
 
 /// Presents the first-run window without changing the existing menu-bar and QR scenes. A small

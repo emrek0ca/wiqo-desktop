@@ -47,8 +47,14 @@ struct MacMenuView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Button {
+                openWindow(id: RovaWindowID.projects)
+                NSApp.activate(ignoringOtherApps: true)
+            } label: {
+                Label("Projeler", systemImage: "square.stack.3d.up")
+            }
             Button { runtime.openProjectsFolder() } label: {
-                Label("Wiqo Projeleri", systemImage: "folder")
+                Label("Wiqo Projeleri klasörü", systemImage: "folder")
             }
             Text(runtime.projectSyncStatus).font(.caption).foregroundStyle(.secondary)
             SettingsLink {

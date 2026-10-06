@@ -24,6 +24,7 @@
 		6C369710154A1D68C1CCC4A7 /* AutomationTemplatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E027010A9289E389FE2FC646 /* AutomationTemplatesView.swift */; };
 		701B311C77C0CDA1CAFCAB78 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 06A62B7FB2C6453A366C1B38 /* Assets.xcassets */; };
 		7A591C26FAD5E71C69CA3830 /* ClipboardWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF3CBEDDCB158AA6FF7347F /* ClipboardWatcher.swift */; };
+		D50000000000000000000401 /* MacProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50000000000000000000400 /* MacProjectsView.swift */; };
 		D30000000000000000000C17 /* MacProjectSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C16 /* MacProjectSync.swift */; };
 		92543008EFD54FB88E87006F /* DeviceCapabilitiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A19CF80E5304FC2A06CD0CA /* DeviceCapabilitiesView.swift */; };
 		98D7CE60A345E6E8CBEE8D65 /* MacBackendChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3072ACE850F6012D34640ABF /* MacBackendChannel.swift */; };
@@ -258,6 +259,7 @@
 		E50000000000000000000002 /* LocalBrowserWorkerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBrowserWorkerClient.swift; sourceTree = "<group>"; };
 		E50000000000000000000004 /* RovaBrowserWorker */ = {isa = PBXFileReference; lastKnownFileType = folder; path = RovaBrowserWorker; sourceTree = "<group>"; };
 		EBF3CBEDDCB158AA6FF7347F /* ClipboardWatcher.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClipboardWatcher.swift; sourceTree = "<group>"; };
+		D50000000000000000000400 /* MacProjectsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacProjectsView.swift; sourceTree = "<group>"; };
 		D30000000000000000000C16 /* MacProjectSync.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacProjectSync.swift; sourceTree = "<group>"; };
 		F001 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
 		F002 /* Validation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Validation.swift; sourceTree = "<group>"; };
@@ -396,6 +398,7 @@
 				6E83CFEFCD81E067708F22DC /* Assets.xcassets */,
 				EBF3CBEDDCB158AA6FF7347F /* ClipboardWatcher.swift */,
 				D30000000000000000000C16 /* MacProjectSync.swift */,
+				D50000000000000000000400 /* MacProjectsView.swift */,
 				4CB2D3456C2FC772030765F9 /* CapabilitySettings.swift */,
 				D30000000000000000000065 /* MacStorage.swift */,
 				D30000000000000000000066 /* MacTimeout.swift */,
@@ -742,6 +745,7 @@
 				98D7CE60A345E6E8CBEE8D65 /* MacBackendChannel.swift in Sources */,
 				7A591C26FAD5E71C69CA3830 /* ClipboardWatcher.swift in Sources */,
 				D30000000000000000000C17 /* MacProjectSync.swift in Sources */,
+				D50000000000000000000401 /* MacProjectsView.swift in Sources */,
 				5881451312769523475482A3 /* CapabilitySettings.swift in Sources */,
 				D30000000000000000000001 /* MacStorage.swift in Sources */,
 				D30000000000000000000002 /* MacTimeout.swift in Sources */,
