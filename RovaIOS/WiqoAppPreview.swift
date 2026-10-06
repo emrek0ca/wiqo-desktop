@@ -84,13 +84,10 @@ enum WiqoHTMLDocument {
     /// Wraps generated HTML for on-device preview: fixes the layout width, blocks network access
     /// (a preview is a presentation surface, not a browser) while still allowing scripts and
     /// styles from the two public CDNs generated pages commonly use, and honours reduced motion.
-    /// `offline`: no network source at all (Act projects: packages come from the device's verified cache, nothing from a CDN).
-    static func wrap(_ source: String, viewportWidth: Int, reduceMotion: Bool, offline: Bool = false) -> String {
+    static func wrap(_ source: String, viewportWidth: Int, reduceMotion: Bool) -> String {
         let viewport = "<meta name=\"viewport\" content=\"width=\(viewportWidth)\">"
         let cdn = "https://cdnjs.cloudflare.com https://cdn.jsdelivr.net"
-        let policy = offline
-            ? "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'"
-            : "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline' \(cdn) https://fonts.googleapis.com; script-src 'unsafe-inline' \(cdn); font-src data: \(cdn) https://fonts.gstatic.com; connect-src 'none'"
+        let policy = "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline' \(cdn) https://fonts.googleapis.com; script-src 'unsafe-inline' \(cdn); font-src data: \(cdn) https://fonts.gstatic.com; connect-src 'none'"
         let security = "<meta http-equiv=\"Content-Security-Policy\" content=\"\(policy)\">"
         let motion = reduceMotion ? "<style>*{animation-duration:.01ms!important;transition-duration:.01ms!important;}</style>" : ""
         let stripped = source.replacingOccurrences(
@@ -275,7 +272,9 @@ final class ActWebVerifier: NSObject, WKNavigationDelegate {
         page.navigationDelegate = self
         webView = page
         defer { page.stopLoading(); webView = nil; continuation = nil }
-        let policy = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'"
+        // The same two public CDNs the preview allows, so a page that uses one is tried the way it will run.
+        let cdn = "https://cdnjs.cloudflare.com https://cdn.jsdelivr.net"
+        let policy = "default-src 'none'; script-src 'unsafe-inline' \(cdn); style-src 'unsafe-inline' \(cdn) https://fonts.googleapis.com; img-src data: blob:; font-src data: \(cdn) https://fonts.gstatic.com; connect-src 'none'; form-action 'none'; frame-src 'none'"
         let meta = "<meta http-equiv=\"Content-Security-Policy\" content=\"\(policy)\">"
         let safeHTML: String
         if let head = html.range(of: "<head(?:\\s[^>]*)?>", options: [.regularExpression, .caseInsensitive]) {

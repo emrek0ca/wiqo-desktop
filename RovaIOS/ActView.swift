@@ -612,7 +612,7 @@ struct CodeProjectWorkspaceView: View {
                 let packaged = ActPackages.shared.inlineCached(page)
                 if packaged.missing.isEmpty {
                     WiqoHTMLWebView(
-                        html: WiqoHTMLDocument.wrap(packaged.html, viewportWidth: previewDevice.viewportWidth, reduceMotion: reduceMotion, offline: true),
+                        html: WiqoHTMLDocument.wrap(packaged.html, viewportWidth: previewDevice.viewportWidth, reduceMotion: reduceMotion),
                         projectDataKey: project.id,
                         reloadToken: reloadToken
                     )
@@ -901,7 +901,7 @@ struct CodeProjectWorkspaceView: View {
                         let packaged = ActPackages.shared.inlineCached(page)
                         if packaged.missing.isEmpty {
                             WiqoHTMLWebView(
-                                html: WiqoHTMLDocument.wrap(packaged.html, viewportWidth: previewDevice.viewportWidth, reduceMotion: reduceMotion, offline: true),
+                                html: WiqoHTMLDocument.wrap(packaged.html, viewportWidth: previewDevice.viewportWidth, reduceMotion: reduceMotion),
                                 projectDataKey: project.id,
                                 reloadToken: reloadToken,
                                 onConsole: { level, text in

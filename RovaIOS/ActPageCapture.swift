@@ -35,7 +35,7 @@ enum ActExportKind: String, CaseIterable, Identifiable {
 }
 
 /// Takes a PDF or a picture of a project's page, locally, with the same WebKit that shows the preview: the page is
-/// loaded (offline, packages already in it), given a moment to draw (charts animate), measured, and captured whole.
+/// loaded (packages already in it; the two public CDNs a page may use are allowed), given a moment to draw (charts animate), measured, and captured whole.
 @MainActor
 enum ActPageCapture {
     enum Output { case pdf, png }

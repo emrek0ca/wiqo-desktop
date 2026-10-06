@@ -565,7 +565,7 @@ final class ActModel: ObservableObject {
     /// One export of the project as a file for the share sheet. The source ZIP is built here from the project's own files
     /// (paths normalised; the sync format and package code are never in it). A single HTML carries the verified packages
     /// and is refused (DEVICE_PACKAGE_MISSING) rather than shared incomplete. PDF and picture come from the page as this
-    /// device shows it, offline.
+    /// device shows it (packages from the device cache, the two public CDNs still allowed).
     func export(_ kind: ActExportKind, id: String, width: Int) async throws -> URL {
         guard let p = project(id) else { throw ActError("Proje bulunamadı.") }
         let name = Self.stem(p.name)
@@ -587,7 +587,7 @@ final class ActModel: ObservableObject {
         case .pdf, .png:
             guard p.isWeb else { throw ActError("PDF ve ekran görüntüsü yalnız web projeleri için.") }
             let page = try await readyPage(for: p)
-            let html = WiqoHTMLDocument.wrap(page, viewportWidth: width, reduceMotion: true, offline: true)
+            let html = WiqoHTMLDocument.wrap(page, viewportWidth: width, reduceMotion: true)
             let data = try await ActPageCapture.capture(html: html, projectKey: p.id, width: width, output: kind == .pdf ? .pdf : .png)
             let url = dir.appendingPathComponent("\(name).\(kind == .pdf ? "pdf" : "png")")
             try data.write(to: url, options: .atomic)
