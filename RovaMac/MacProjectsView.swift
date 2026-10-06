@@ -151,7 +151,7 @@ struct MacProjectsView: View {
     @ViewBuilder private func preview(_ project: MacProjectsModel.Project) -> some View {
         if project.isWeb {
             let files = project.files.map { ActBundler.File(path: $0.key, content: $0.value) }
-            if let page = ActBundler.bundleWeb(files).map(ActBundler.ensureViewport) {
+            if let page = ActBundler.bundleWeb(files).map(ActBundler.ensureViewport).map({ ActLook.inject($0, files: project.files) }) {
                 MacPageView(html: page)
             } else {
                 placeholder("Bu projede önizlenecek bir sayfa (index.html) yok.")

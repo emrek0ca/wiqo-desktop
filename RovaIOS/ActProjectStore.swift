@@ -45,12 +45,15 @@ struct ActLocalProject: Codable, Identifiable, Sendable {
     var files: [String: String] { replica.files }
     /// The version shown to the person: the hub's for synced projects, a count for device-only ones.
     var versionNumber: Int { replica.hubId == nil ? history.count : max(replica.version, history.count) }
+    var look: ActLook { ActLook.read(from: replica.files) }
     var sortedFiles: [(path: String, content: String)] { replica.files.sorted { $0.key < $1.key }.map { ($0.key, $0.value) } }
 
     /// The page, ready to show: styles, scripts and other pages folded in, built here on the phone.
     var bundle: String? {
         guard isWeb else { return nil }
-        return ActBundler.bundleWeb(sortedFiles.map { ActBundler.File(path: $0.path, content: $0.content) }).map(ActBundler.ensureViewport)
+        return ActBundler.bundleWeb(sortedFiles.map { ActBundler.File(path: $0.path, content: $0.content) })
+            .map(ActBundler.ensureViewport)
+            .map { ActLook.inject($0, files: files) }
     }
 }
 

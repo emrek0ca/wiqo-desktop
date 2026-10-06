@@ -212,8 +212,9 @@ actor MacProjectSync {
             return (true, opened ? "Klasör editörde açıldı." : "Editör bulunamadı; klasör Finder'da açıldı.")
         case "open_preview":
             // Built here from the folder: the page never has to leave this Mac.
-            let files = scan(folder).sorted { $0.key < $1.key }.map { ActBundler.File(path: $0.key, content: $0.value) }
-            guard let page = ActBundler.bundleWeb(files).map(ActBundler.ensureViewport) else { return (false, "Bu projede önizlenecek bir sayfa (index.html) yok.") }
+            let all = scan(folder)
+            let files = all.sorted { $0.key < $1.key }.map { ActBundler.File(path: $0.key, content: $0.value) }
+            guard let page = ActBundler.bundleWeb(files).map(ActBundler.ensureViewport).map({ ActLook.inject($0, files: all) }) else { return (false, "Bu projede önizlenecek bir sayfa (index.html) yok.") }
             let url = folder.appendingPathComponent(Self.previewName)
             do { try page.write(to: url, atomically: true, encoding: .utf8) } catch { return (false, "Önizleme dosyası yazılamadı.") }
             await MainActor.run { _ = NSWorkspace.shared.open(url) }

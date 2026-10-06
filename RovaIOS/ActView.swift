@@ -440,6 +440,7 @@ struct CodeProjectWorkspaceView: View {
     @ObservedObject private var model = ActModel.shared
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var runResult: ActHub.RunResult?
     @State private var running = false
     @State private var draft = ""
@@ -627,7 +628,7 @@ struct CodeProjectWorkspaceView: View {
 
     /// The files of the project, one chip per file, read like an editor (line numbers, syntax colours) and editable by hand.
     private var codeStage: some View {
-        let files = project?.sortedFiles ?? []
+        let files = (project?.sortedFiles ?? []).filter { $0.path != ActLook.fileName }
         let selected = files.first { $0.path == codeFile } ?? files.first { $0.path == "index.html" || $0.path == "main.py" } ?? files.first
         return VStack(spacing: 0) {
             HStack(spacing: 0) {
@@ -949,16 +950,45 @@ struct CodeProjectWorkspaceView: View {
             }
             .padding(14)
         }
+        .background(outputBackground ?? Color.clear)
+        .environment(\.colorScheme, outputScheme ?? colorScheme)
+    }
+
+    // The program's output wears the project's look (theme, accent, text size, typeface).
+
+    private var outputScheme: ColorScheme? {
+        switch project?.look.theme { case "dark": return .dark; case "light": return .light; default: return nil }
+    }
+
+    private var outputBackground: Color? {
+        switch project?.look.theme { case "dark": return Color(red: 0.055, green: 0.063, blue: 0.078); case "light": return .white; default: return nil }
+    }
+
+    private var outputFont: Font {
+        let size = 13 * Double(project?.look.scale ?? 100) / 100
+        switch project?.look.font {
+        case "serif": return .system(size: size, design: .serif)
+        case "rounded": return .system(size: size, design: .rounded)
+        default: return .system(size: size, design: .monospaced)
+        }
+    }
+
+    private var outputAccent: Color? {
+        guard let hex = project?.look.accent, let value = Int(hex.dropFirst(), radix: 16) else { return nil }
+        return Color(red: Double((value >> 16) & 0xff) / 255, green: Double((value >> 8) & 0xff) / 255, blue: Double(value & 0xff) / 255)
     }
 
     private func outputCard(_ title: String, _ text: String, error: String?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Text(text).font(.system(.footnote, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-            if let error { Text(error).font(.system(.footnote, design: .monospaced)).foregroundStyle(WiqoTheme.red).frame(maxWidth: .infinity, alignment: .leading) }
+            Text(title).font(.caption.weight(.semibold)).foregroundStyle(outputAccent ?? .secondary)
+            Text(text).font(outputFont).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            if let error { Text(error).font(outputFont).foregroundStyle(WiqoTheme.red).frame(maxWidth: .infinity, alignment: .leading) }
         }
         .padding(14)
-        .wiqoCard()
+        .background(outputBackground == nil ? WiqoTheme.surface : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: WiqoTheme.cardRadius, style: .continuous))
+        .overlay(alignment: .leading) {
+            if let accent = outputAccent { RoundedRectangle(cornerRadius: 2).fill(accent).frame(width: 3).padding(.vertical, 10) }
+        }
     }
 
     // MARK: Alt bölüm
@@ -992,9 +1022,7 @@ struct CodeProjectWorkspaceView: View {
                 onSend: requestSend
             ) {
                 Menu {
-                    if isWeb {
-                        Button { showingStyle = true } label: { Label("Görünüm (anında)", systemImage: "paintpalette") }
-                    }
+                    Button { showingStyle = true } label: { Label("Görünüm", systemImage: "paintpalette") }
                     Section("Hazır istekler") {
                         ForEach(Self.starters, id: \.title) { starter in
                             Button { draft = starter.prompt; focused = true } label: { Label(starter.title, systemImage: starter.icon) }
