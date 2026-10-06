@@ -23,8 +23,9 @@ struct ActJobState: Equatable {
 
 struct ActError: LocalizedError {
     let message: String
+    var code: String?
     var errorDescription: String? { message }
-    init(_ message: String) { self.message = message }
+    init(_ message: String, code: String? = nil) { self.message = message; self.code = code }
 }
 
 /// Everything the Act tab does, in one place: projects live on this phone as full copies, are synced to
@@ -122,14 +123,15 @@ final class ActModel: ObservableObject {
         }
     }
 
-    func edit(_ id: String, request: String) async {
+    /// `errors`: the page's console errors from this phone, sent with the request as diagnostics (one fix request, not several).
+    func edit(_ id: String, request: String, errors: [(level: String, text: String)] = []) async {
         guard job == nil, let project = project(id) else { return }
         notice = nil
         job = ActJobState(projectID: id, stage: .writing, message: "Sırada…")
         cancelRequested = false
         defer { job = nil }
         do {
-            let result = try await runWriter(operation: "edit", request: request, project: project)
+            let result = try await runWriter(operation: "edit", request: request, project: project, errors: errors)
             _ = try await commit(result, request: request, project: project, mode: project.mode)
         } catch {
             if !cancelRequested { notice = (error as? LocalizedError)?.errorDescription ?? "Değişiklik uygulanamadı; proje değişmedi." }
@@ -159,14 +161,38 @@ final class ActModel: ObservableObject {
         notice = "Görev durduruldu; proje değişmedi."
     }
 
+    /// What a writer refusal or failure code means when the server sent no sentence with it.
+    private static func describe(code: String?) -> String? {
+        switch code {
+        case "VALIDATION_FAILED": return "Üretilen kod doğrulamadan geçemedi; isteği biraz değiştirip yeniden dene."
+        case "RUN_CAPACITY", "PACKAGE_CAPACITY": return "Python çalıştırma kapasitesi şu an dolu; biraz sonra tekrar dene."
+        case "UNSUPPORTED_PACKAGE": return "İstenen Python paketi veya sürümü desteklenmiyor."
+        case "PACKAGE_UNAVAILABLE": return "Paket şu an kurulamıyor; biraz sonra tekrar dene."
+        case "RETRYABLE_RESTART": return "Sunucu yeniden başladı; isteği yeniden gönderebilirsin."
+        default: return nil
+        }
+    }
+
     /// Sends the request (and the files it needs) to the stateless writer and follows it to its answer.
-    private func runWriter(operation: String, request: String, project: ActLocalProject?) async throws -> ActHub.WriterResult {
+    /// A full queue (WRITER_BUSY) is waited out, a server restart is retried once; both are visible on the job card.
+    private func runWriter(operation: String, request: String, project: ActLocalProject?, errors: [(level: String, text: String)] = [], restarted: Bool = false) async throws -> ActHub.WriterResult {
         let files = (project?.sortedFiles ?? []).map { (path: $0.path, content: $0.content) }
-        let writerID: String
-        do {
-            writerID = try await hub.startWriter(operation: operation, request: request, files: files, kind: project?.kind ?? "web", name: project?.name)
-        } catch {
-            throw ActError((error as? LocalizedError)?.errorDescription ?? "Yazara ulaşılamadı.")
+        var writerID = ""
+        var waits = 0
+        while true {
+            if cancelRequested { throw ActError("Görev durduruldu.") }
+            do {
+                writerID = try await hub.startWriter(operation: operation, request: request, files: files, kind: project?.kind ?? "web", name: project?.name, errors: errors)
+                break
+            } catch let error as ActHub.HubError {
+                guard error.code == "WRITER_BUSY", waits < 6 else { throw ActError(error.errorDescription ?? "Yazara ulaşılamadı.", code: error.code) }
+                waits += 1
+                let wait = min(max(error.retryAfter ?? 5, 2), 20)
+                job?.message = "Yazar şu an dolu; \(wait) sn sonra yeniden denenecek (\(waits)/6)."
+                try? await Task.sleep(for: .seconds(wait))
+            } catch {
+                throw ActError((error as? LocalizedError)?.errorDescription ?? "Yazara ulaşılamadı.")
+            }
         }
         job?.writerJobID = writerID
         var failures = 0
@@ -177,10 +203,17 @@ final class ActModel: ObservableObject {
                 failures = 0
                 if state.finished {
                     await hub.acknowledgeWriter(writerID)
-                    guard state.status == "done", let result = state.result else { throw ActError(state.error ?? "Değişiklik üretilemedi.") }
+                    if state.errorCode == "RETRYABLE_RESTART", !restarted {
+                        job?.message = "Sunucu yeniden başladı; istek yeniden gönderiliyor."
+                        return try await runWriter(operation: operation, request: request, project: project, errors: errors, restarted: true)
+                    }
+                    guard state.status == "done", let result = state.result else {
+                        let reason = (state.error?.isEmpty == false ? state.error : nil) ?? Self.describe(code: state.errorCode) ?? "Değişiklik üretilemedi."
+                        throw ActError(reason, code: state.errorCode)
+                    }
                     return result
                 }
-                job?.message = state.progress
+                job?.message = state.status == "queued" ? "Sırada; yazar boşalınca başlayacak." : state.progress
             } catch let error as ActError {
                 throw error
             } catch {
@@ -209,14 +242,29 @@ final class ActModel: ObservableObject {
             job?.stage = .verifying
             job?.message = "Sayfa bu telefonun tarayıcısında açılıp deneniyor."
             let list = files.sorted { $0.key < $1.key }.map { ActBundler.File(path: $0.key, content: $0.value) }
-            guard let page = ActBundler.bundleWeb(list).map(ActBundler.ensureViewport) else { throw ActError("Projede açılacak bir sayfa yok.") }
-            switch await ActWebVerifier().verify(page) {
-            case .passed: break
-            case .passedWithNotes(let found): notes = found
-            case .problems(let problems): throw ActError(problems.first ?? "Sayfa doğrulanamadı; proje değişmedi.")
-            case .unavailable:
+            guard let raw = ActBundler.bundleWeb(list).map(ActBundler.ensureViewport) else { throw ActError("Projede açılacak bir sayfa yok.") }
+            // A page that uses packages is tried with the device's verified copies; without them it is not verified.
+            var page = raw
+            var packageProblem: String?
+            do {
+                try await ActPackages.shared.prepare(raw) { [hub] in try await hub.packages() }
+                let packaged = ActPackages.shared.inlineCached(raw)
+                if packaged.missing.isEmpty { page = packaged.html } else { packageProblem = ActPackageError("\(packaged.missing.joined(separator: ", ")) cihazda yok").errorDescription }
+            } catch let error as ActPackageError {
+                packageProblem = error.errorDescription
+            }
+            if let packageProblem {
                 verified = false
-                warning = "Telefonda denenemedi; değişiklik kaydedildi. Çalışmıyorsa geri alabilirsin."
+                warning = "\(packageProblem). Değişiklik kaydedildi ama sayfa doğrulanmadı."
+            } else {
+                switch await ActWebVerifier().verify(page) {
+                case .passed: break
+                case .passedWithNotes(let found): notes = found
+                case .problems(let problems): throw ActError(problems.first ?? "Sayfa doğrulanamadı; proje değişmedi.")
+                case .unavailable:
+                    verified = false
+                    warning = "Telefonda denenemedi; değişiklik kaydedildi. Çalışmıyorsa geri alabilirsin."
+                }
             }
         }
         job?.stage = .saving
@@ -322,7 +370,12 @@ final class ActModel: ObservableObject {
 
     /// After a hand edit: try the page on this phone and say so when it no longer works (the edit stays; undo is one tap).
     private func checkPage(_ id: String) async {
-        guard let page = project(id)?.bundle else { return }
+        guard let current = project(id) else { return }
+        let page: String
+        do { page = try await readyPage(for: current) } catch {
+            notice = "\((error as? LocalizedError)?.errorDescription ?? "Sayfa hazırlanamadı"). Sayfa doğrulanmadı."
+            return
+        }
         if case .problems(let problems) = await ActWebVerifier().verify(page) {
             notice = "Kaydedildi ama sayfa hata veriyor: " + (problems.first ?? "açılamadı") + " Geri alabilirsin."
         }
@@ -476,24 +529,70 @@ final class ActModel: ObservableObject {
         return try await hub.run(files: p.sortedFiles.map { (path: $0.path, content: $0.content) })
     }
 
-    /// The project as a file for the share sheet: one HTML page, or the program's text.
+    /// The page with its JavaScript packages put in from the device's verified cache (downloaded and checked first when
+    /// they are not there yet). Throws `ActPackageError` (DEVICE_PACKAGE_MISSING) when that cannot be done.
+    func readyPage(for project: ActLocalProject) async throws -> String {
+        guard let raw = project.bundle else { throw ActError("Projede açılacak bir sayfa (index.html) yok.") }
+        try await ActPackages.shared.prepare(raw) { [hub] in try await hub.packages() }
+        let packaged = ActPackages.shared.inlineCached(raw)
+        guard packaged.missing.isEmpty else { throw ActPackageError("\(packaged.missing.joined(separator: ", ")) cihazda yok") }
+        return packaged.html
+    }
+
+    /// A program's text as a file (a single .py as it is, several joined with headers).
     func exportURL(_ id: String) throws -> URL {
         guard let p = project(id) else { throw ActError("Proje bulunamadı.") }
-        let safe = p.name.replacingOccurrences(of: "/", with: "-")
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-export-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        if p.isWeb, let bundle = p.bundle {
-            let url = dir.appendingPathComponent("\(safe).html")
-            try bundle.write(to: url, atomically: true, encoding: .utf8)
-            return url
-        }
         let files = p.sortedFiles
         guard let first = files.first else { throw ActError("Projede dosya yok.") }
         let single = files.count == 1
-        let url = dir.appendingPathComponent(single ? URL(fileURLWithPath: first.path).lastPathComponent : "\(safe).py")
+        let url = try Self.exportFolder().appendingPathComponent(single ? URL(fileURLWithPath: first.path).lastPathComponent : "\(Self.stem(p.name)).py")
         let text = single ? first.content : files.map { "# --- \($0.path) ---\n\($0.content)" }.joined(separator: "\n\n")
         try text.write(to: url, atomically: true, encoding: .utf8)
         return url
+    }
+
+    private static func stem(_ name: String) -> String {
+        let cleaned = name.replacingOccurrences(of: "[/\\:*?\"<>|]", with: "-", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        return String((cleaned.isEmpty ? "Proje" : cleaned).prefix(60))
+    }
+
+    private static func exportFolder() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-export-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// One export of the project as a file for the share sheet. The source ZIP is built here from the project's own files
+    /// (paths normalised; the sync format and package code are never in it). A single HTML carries the verified packages
+    /// and is refused (DEVICE_PACKAGE_MISSING) rather than shared incomplete. PDF and picture come from the page as this
+    /// device shows it, offline.
+    func export(_ kind: ActExportKind, id: String, width: Int) async throws -> URL {
+        guard let p = project(id) else { throw ActError("Proje bulunamadı.") }
+        let name = Self.stem(p.name)
+        let dir = try Self.exportFolder()
+        switch kind {
+        case .zip:
+            let entries = p.sortedFiles.map { (path: $0.path, data: Data($0.content.utf8)) }
+            let data = ActArchive.zip(entries)
+            guard entries.contains(where: { ActArchive.normalizedPath($0.path) != nil }) else { throw ActError("Projede dışa aktarılacak dosya yok.") }
+            let url = dir.appendingPathComponent("\(name).zip")
+            try data.write(to: url, options: .atomic)
+            return url
+        case .html:
+            guard p.isWeb else { throw ActError("Tek HTML yalnız web projeleri için.") }
+            let page = try await readyPage(for: p)
+            let url = dir.appendingPathComponent("\(name).html")
+            try page.write(to: url, atomically: true, encoding: .utf8)
+            return url
+        case .pdf, .png:
+            guard p.isWeb else { throw ActError("PDF ve ekran görüntüsü yalnız web projeleri için.") }
+            let page = try await readyPage(for: p)
+            let html = WiqoHTMLDocument.wrap(page, viewportWidth: width, reduceMotion: true, offline: true)
+            let data = try await ActPageCapture.capture(html: html, projectKey: p.id, width: width, output: kind == .pdf ? .pdf : .png)
+            let url = dir.appendingPathComponent("\(name).\(kind == .pdf ? "pdf" : "png")")
+            try data.write(to: url, options: .atomic)
+            return url
+        }
     }
 
     /// Hands one of the fixed actions to the paired Mac and follows it to its answer.

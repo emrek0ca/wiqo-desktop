@@ -464,6 +464,10 @@ struct CodeProjectWorkspaceView: View {
     @State private var fileNameField = ""
     @State private var pendingFileDelete: String?
     @State private var showingFullScreen = false
+    @State private var packageError: String?
+    @State private var loadingPackages = false
+    @State private var pendingErrors: [(level: String, text: String)] = []
+    @StateObject private var exporter = ActExporter()
     @FocusState private var focused: Bool
 
     private enum WorkspaceTab: Hashable { case preview, code, history }
@@ -515,6 +519,8 @@ struct CodeProjectWorkspaceView: View {
         .navigationTitle(embedded ? "" : (project?.name ?? "Proje"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { if !embedded { ToolbarItem(placement: .topBarTrailing) { menu } } }
+        .sheet(item: $exporter.shared) { file in ActShareSheet(url: file.url).presentationDetents([.medium, .large]) }
+        .onChange(of: draft) { _, text in if text != "Sayfadaki konsol hatalarını düzelt" { pendingErrors = [] } }
         .sheet(isPresented: $showingDetails) { NavigationStack { CodeProjectDetailView(projectID: projectID) } }
         .fullScreenCover(isPresented: $showingFullScreen) { fullScreenPreview }
         .wiqoConfirmation("Proje silinsin mi?", isPresented: $confirmingDelete) {
@@ -603,12 +609,17 @@ struct CodeProjectWorkspaceView: View {
         ZStack(alignment: .topTrailing) {
             Color.white.ignoresSafeArea()
             if let project, let page = project.bundle {
-                WiqoHTMLWebView(
-                    html: WiqoHTMLDocument.wrap(page, viewportWidth: previewDevice.viewportWidth, reduceMotion: reduceMotion),
-                    projectDataKey: project.id,
-                    reloadToken: reloadToken
-                )
-                .ignoresSafeArea(edges: .bottom)
+                let packaged = ActPackages.shared.inlineCached(page)
+                if packaged.missing.isEmpty {
+                    WiqoHTMLWebView(
+                        html: WiqoHTMLDocument.wrap(packaged.html, viewportWidth: previewDevice.viewportWidth, reduceMotion: reduceMotion, offline: true),
+                        projectDataKey: project.id,
+                        reloadToken: reloadToken
+                    )
+                    .ignoresSafeArea(edges: .bottom)
+                } else {
+                    packageCard(packaged.missing)
+                }
             }
             Button { showingFullScreen = false } label: {
                 Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundStyle(.primary)
@@ -887,21 +898,27 @@ struct CodeProjectWorkspaceView: View {
             if let project {
                 if isWeb {
                     if let page = project.bundle {
-                        WiqoHTMLWebView(
-                            html: WiqoHTMLDocument.wrap(page, viewportWidth: previewDevice.viewportWidth, reduceMotion: reduceMotion),
-                            projectDataKey: project.id,
-                            reloadToken: reloadToken,
-                            onConsole: { level, text in
-                                console.append(ConsoleLine(level: level, text: text))
-                                if console.count > 80 { console.removeFirst(console.count - 80) }
-                            }
-                        )
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(WiqoTheme.lineStrong, lineWidth: 0.5) }
-                        .shadow(color: .black.opacity(0.08), radius: 12, y: 5)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
+                        let packaged = ActPackages.shared.inlineCached(page)
+                        if packaged.missing.isEmpty {
+                            WiqoHTMLWebView(
+                                html: WiqoHTMLDocument.wrap(packaged.html, viewportWidth: previewDevice.viewportWidth, reduceMotion: reduceMotion, offline: true),
+                                projectDataKey: project.id,
+                                reloadToken: reloadToken,
+                                onConsole: { level, text in
+                                    console.append(ConsoleLine(level: level, text: text))
+                                    if console.count > 80 { console.removeFirst(console.count - 80) }
+                                }
+                            )
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(WiqoTheme.lineStrong, lineWidth: 0.5) }
+                            .shadow(color: .black.opacity(0.08), radius: 12, y: 5)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                        } else {
+                            packageCard(packaged.missing)
+                                .task(id: packaged.missing) { await loadPackages(page) }
+                        }
                     } else {
                         Text("Bu projede açılacak bir sayfa (index.html) yok.").font(.footnote).foregroundStyle(.secondary)
                     }
@@ -920,6 +937,36 @@ struct CodeProjectWorkspaceView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The page asks for JavaScript packages that are not (yet) on this device, verified. It is not shown half-working.
+    private func packageCard(_ missing: [String]) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: loadingPackages ? "arrow.down.circle" : "exclamationmark.triangle").font(.system(size: 26)).foregroundStyle(.secondary)
+            Text(loadingPackages ? "Paketler indiriliyor ve doğrulanıyor…" : "Paket eksik (DEVICE_PACKAGE_MISSING)").font(.subheadline.weight(.semibold))
+            Text(missing.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: ", ")).font(.custom("JetBrainsMono-Regular", size: 12, relativeTo: .caption)).foregroundStyle(.secondary)
+            if let packageError, !loadingPackages {
+                Text(packageError).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Button("Tekrar dene") { if let page = project?.bundle { Task { await loadPackages(page) } } }.buttonStyle(.wiqoPill(.accent))
+            } else if loadingPackages {
+                ProgressView()
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func loadPackages(_ page: String) async {
+        guard !loadingPackages, let current = project else { return }
+        loadingPackages = true
+        packageError = nil
+        defer { loadingPackages = false }
+        do {
+            _ = try await model.readyPage(for: current)
+            reloadToken += 1
+        } catch {
+            packageError = (error as? LocalizedError)?.errorDescription ?? "Paketler indirilemedi."
+        }
     }
 
     private var pythonStage: some View {
@@ -964,6 +1011,23 @@ struct CodeProjectWorkspaceView: View {
                     .font(.footnote)
                     .foregroundStyle(WiqoTheme.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let busy = exporter.busy {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(busy).font(.footnote)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            if let exportError = exporter.error {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.circle").foregroundStyle(WiqoTheme.red)
+                    Text(exportError).font(.footnote).foregroundStyle(WiqoTheme.red).lineLimit(4)
+                    Spacer(minLength: 4)
+                    Button { exporter.error = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }.buttonStyle(.plain)
+                }
             }
             if let pcStatus {
                 HStack(spacing: 8) {
@@ -1019,7 +1083,7 @@ struct CodeProjectWorkspaceView: View {
                     Text("\(console.count) satır").font(.caption2).foregroundStyle(.secondary)
                     Spacer()
                     if !errors.isEmpty {
-                        Button { draft = "Sayfada şu hatalar var, düzelt: " + errors.prefix(3).map(\.text).joined(separator: "; "); focused = true } label: {
+                        Button { fixConsoleErrors(errors.map { (level: $0.level, text: $0.text) }) } label: {
                             Label("Düzelt", systemImage: "wand.and.stars").font(.footnote.weight(.medium))
                         }
                         .buttonStyle(.plain)
@@ -1115,7 +1179,14 @@ struct CodeProjectWorkspaceView: View {
                     }
                 }
             }
-            Button { showingDetails = true } label: { Label("Paylaş ve ayrıntılar", systemImage: "square.and.arrow.up") }
+            Menu {
+                ForEach(ActExportKind.allCases.filter { isWeb || !$0.needsPage }) { kind in
+                    Button { exporter.run(kind, projectID: projectID, width: previewDevice.viewportWidth) } label: { Label(kind.title, systemImage: kind.systemImage) }
+                }
+                if !isWeb { Button { shareProgramText() } label: { Label("Programı metin olarak", systemImage: "doc.text") } }
+            } label: { Label("Dışa aktar", systemImage: "square.and.arrow.up") }
+            .disabled(exporter.busy != nil)
+            Button { showingDetails = true } label: { Label("Dosyalar ve geçmiş", systemImage: "doc.on.doc") }
             Button { if let id = model.duplicate(projectID) { onOpen?(id) } } label: { Label("Kopya oluştur", systemImage: "plus.square.on.square") }
             Divider()
             Button(role: .destructive) { confirmingDelete = true } label: { Label("Projeyi sil", systemImage: "trash") }
@@ -1143,15 +1214,30 @@ struct CodeProjectWorkspaceView: View {
     private func startSend() {
         model.recordConsent()
         let request = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let errors = pendingErrors
+        pendingErrors = []
         Task {
-            await model.edit(projectID, request: request)
-            if model.notice == nil || model.notice?.hasPrefix("Telefonda denenemedi") == true {
+            await model.edit(projectID, request: request, errors: errors)
+            if model.notice == nil || model.notice?.hasPrefix("Telefonda denenemedi") == true || model.notice?.hasPrefix("Paket eksik") == true {
                 draft = ""
                 WiqoHaptics.selection()
             }
             runResult = nil
             reloadToken += 1
         }
+    }
+
+    /// All the page's console errors go to the writer in one fix request (as diagnostics, not as text to obey).
+    private func fixConsoleErrors(_ errors: [(level: String, text: String)]) {
+        guard !errors.isEmpty else { return }
+        pendingErrors = Array(errors.prefix(20))
+        draft = "Sayfadaki konsol hatalarını düzelt"
+        requestSend()
+    }
+
+    private func shareProgramText() {
+        do { exporter.shared = ActExporter.SharedFile(url: try model.exportURL(projectID)) }
+        catch { exporter.error = (error as? LocalizedError)?.errorDescription ?? "Dışa aktarılamadı." }
     }
 
     private func undo() {

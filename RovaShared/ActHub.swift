@@ -34,12 +34,17 @@ public struct ActHub: Sendable {
         public let changes: [Change]
         public let needsDeviceCheck: Bool
         public let problems: [String]
+        /// An explain/review answer (no file changes come with it).
+        public let text: String?
     }
     public struct WriterJob: Decodable, Sendable {
         public let id: String
+        /// queued, running, done, failed, cancelled
         public let status: String
         public let progress: String
         public let error: String?
+        /// VALIDATION_FAILED, RUN_CAPACITY, UNSUPPORTED_PACKAGE, PACKAGE_UNAVAILABLE, RETRYABLE_RESTART
+        public let errorCode: String?
         public let result: WriterResult?
         public var finished: Bool { status == "done" || status == "failed" || status == "cancelled" }
     }
@@ -47,6 +52,8 @@ public struct ActHub: Sendable {
 
     public enum HubError: LocalizedError, Sendable {
         case server(status: Int, message: String)
+        /// The server refused with a code (WRITER_BUSY, RUN_CAPACITY, PACKAGE_CAPACITY, UNSUPPORTED_PACKAGE, PACKAGE_UNAVAILABLE) and maybe a wait.
+        case rejected(status: Int, code: String, message: String, retryAfter: Int?)
         case network(String)
         case notSignedIn
         case badResponse
@@ -54,12 +61,22 @@ public struct ActHub: Sendable {
         public var errorDescription: String? {
             switch self {
             case .server(_, let message): return message
+            case .rejected(_, _, let message, let retryAfter):
+                guard let retryAfter else { return message }
+                return "\(message) \(retryAfter) sn sonra tekrar dene."
             case .network(let message): return message
             case .notSignedIn: return "Wiqo hesabına bağlı değil."
             case .badResponse: return "Sunucudan geçersiz yanıt geldi."
             }
         }
-        public var status: Int? { if case .server(let status, _) = self { return status }; return nil }
+        public var status: Int? {
+            switch self {
+            case .server(let status, _), .rejected(let status, _, _, _): return status
+            default: return nil
+            }
+        }
+        public var code: String? { if case .rejected(_, let code, _, _) = self { return code }; return nil }
+        public var retryAfter: Int? { if case .rejected(_, _, _, let wait) = self { return wait }; return nil }
     }
 
     private let baseURL: URL
@@ -126,10 +143,12 @@ public struct ActHub: Sendable {
 
     // MARK: Writer
 
-    public func startWriter(operation: String, request: String, files: [(path: String, content: String)], kind: String, name: String?) async throws -> String {
+    /// `errors` are the page's console errors from this phone (at most 20); the writer reads them as diagnostics.
+    public func startWriter(operation: String, request: String, files: [(path: String, content: String)], kind: String, name: String?, errors: [(level: String, text: String)] = []) async throws -> String {
         struct Response: Decodable { let jobId: String }
         var body: [String: Any] = ["operation": operation, "request": request, "kind": kind, "files": files.map { ["path": $0.path, "content": $0.content] }]
         if let name { body["name"] = name }
+        if !errors.isEmpty { body["errors"] = errors.prefix(20).map { ["level": String($0.level.prefix(20)), "text": String($0.text.prefix(1000))] } }
         return try await send("POST", "code-sync/writer/jobs", body: body, as: Response.self).jobId
     }
 
@@ -137,6 +156,9 @@ public struct ActHub: Sendable {
     public func cancelWriter(_ id: String) async throws { _ = try await send("POST", "code-sync/writer/jobs/\(id)/cancel", body: [:], as: Ok.self) }
     /// The device has the result; the server forgets it.
     public func acknowledgeWriter(_ id: String) async { _ = try? await send("DELETE", "code-sync/writer/jobs/\(id)", body: nil, as: Ok.self) }
+
+    /// The JavaScript packages a web project may use, and the pinned Python ones (public metadata only).
+    public func packages() async throws -> ActPackageCatalog { try await get("code-sync/packages", as: ActPackageCatalog.self) }
 
     /// Runs a Python project in the server's sandbox for this one request.
     public func run(files: [(path: String, content: String)]) async throws -> RunResult {
@@ -214,8 +236,12 @@ public struct ActHub: Sendable {
         catch { throw HubError.network((error as? URLError)?.localizedDescription ?? "Sunucuya ulaşılamadı.") }
         guard let http = response as? HTTPURLResponse else { throw HubError.badResponse }
         guard (200..<300).contains(http.statusCode) || acceptable.contains(http.statusCode) else {
-            let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]).flatMap { ($0["error"] as? [String: Any])?["message"] as? String }
-            throw HubError.server(status: http.statusCode, message: message ?? "Sunucu \(http.statusCode) döndürdü.")
+            let error = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]).flatMap { $0["error"] as? [String: Any] }
+            let message = (error?["message"] as? String) ?? "Sunucu \(http.statusCode) döndürdü."
+            if let code = error?["code"] as? String {
+                throw HubError.rejected(status: http.statusCode, code: code, message: message, retryAfter: http.value(forHTTPHeaderField: "Retry-After").flatMap { Int($0) })
+            }
+            throw HubError.server(status: http.statusCode, message: message)
         }
         return (data, http.statusCode)
     }

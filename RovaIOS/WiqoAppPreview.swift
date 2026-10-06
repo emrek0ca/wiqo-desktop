@@ -84,10 +84,13 @@ enum WiqoHTMLDocument {
     /// Wraps generated HTML for on-device preview: fixes the layout width, blocks network access
     /// (a preview is a presentation surface, not a browser) while still allowing scripts and
     /// styles from the two public CDNs generated pages commonly use, and honours reduced motion.
-    static func wrap(_ source: String, viewportWidth: Int, reduceMotion: Bool) -> String {
+    /// `offline`: no network source at all (Act projects: packages come from the device's verified cache, nothing from a CDN).
+    static func wrap(_ source: String, viewportWidth: Int, reduceMotion: Bool, offline: Bool = false) -> String {
         let viewport = "<meta name=\"viewport\" content=\"width=\(viewportWidth)\">"
         let cdn = "https://cdnjs.cloudflare.com https://cdn.jsdelivr.net"
-        let policy = "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline' \(cdn) https://fonts.googleapis.com; script-src 'unsafe-inline' \(cdn); font-src data: \(cdn) https://fonts.gstatic.com; connect-src 'none'"
+        let policy = offline
+            ? "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'"
+            : "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline' \(cdn) https://fonts.googleapis.com; script-src 'unsafe-inline' \(cdn); font-src data: \(cdn) https://fonts.gstatic.com; connect-src 'none'"
         let security = "<meta http-equiv=\"Content-Security-Policy\" content=\"\(policy)\">"
         let motion = reduceMotion ? "<style>*{animation-duration:.01ms!important;transition-duration:.01ms!important;}</style>" : ""
         let stripped = source.replacingOccurrences(

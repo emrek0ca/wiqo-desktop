@@ -7,7 +7,7 @@ struct CodeProjectDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var model = ActModel.shared
-    @State private var exportURL: URL?
+    @StateObject private var exporter = ActExporter()
     @State private var openFile: OpenFile?
 
     private struct OpenFile: Identifiable {
@@ -39,6 +39,7 @@ struct CodeProjectDetailView: View {
         .navigationTitle("Proje ayrıntıları")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Bitti") { dismiss() } } }
+        .sheet(item: $exporter.shared) { file in ActShareSheet(url: file.url).presentationDetents([.medium, .large]) }
         .sheet(item: $openFile) { file in
             NavigationStack {
                 ScrollView { WiqoCodeBlock(code: file.content, title: file.path).padding() }
@@ -48,18 +49,23 @@ struct CodeProjectDetailView: View {
         }
     }
 
-    /// Sharing is a file, not a link: the page as one HTML file (or the program's files) goes through the share sheet.
+    /// Sharing is a file, not a link: the sources as a ZIP, the page as one HTML file, a PDF or a picture of the page.
+    /// Everything is made on this phone; nothing is published.
     private func shareSection(_ project: ActLocalProject) -> some View {
         Section {
-            if let url = exportURL {
-                ShareLink(item: url) { Label(project.isWeb ? "Sayfayı HTML dosyası olarak paylaş" : "Programı dosya olarak paylaş", systemImage: "square.and.arrow.up") }
-            } else {
-                Button { prepareExport() } label: { Label("Paylaşım dosyasını hazırla", systemImage: "square.and.arrow.up") }
+            ForEach(ActExportKind.allCases.filter { project.isWeb || !$0.needsPage }) { kind in
+                Button { exporter.run(kind, projectID: projectID) } label: { Label(kind.title, systemImage: kind.systemImage) }
+                    .disabled(exporter.busy != nil)
             }
+            if !project.isWeb {
+                Button { do { exporter.shared = ActExporter.SharedFile(url: try model.exportURL(projectID)) } catch { exporter.error = (error as? LocalizedError)?.errorDescription } } label: { Label("Programı metin olarak", systemImage: "doc.text") }
+            }
+            if let busy = exporter.busy { HStack(spacing: 8) { ProgressView().controlSize(.small); Text(busy).font(.footnote) } }
+            if let error = exporter.error { Text(error).font(.footnote).foregroundStyle(.red) }
         } header: {
-            Text("Paylaşım")
+            Text("Dışa aktar")
         } footer: {
-            Text("Dosya AirDrop, Mesajlar veya Dosyalar ile gönderilir; hiçbir şey internette yayınlanmaz.")
+            Text("Dosya AirDrop, Mesajlar veya Dosyalar ile gönderilir; hiçbir şey internette yayınlanmaz. Tek HTML, doğrulanmış paketleri içine gömer; paket cihazda yoksa eksik dosya paylaşılmaz.")
         }
     }
 
@@ -117,11 +123,6 @@ struct CodeProjectDetailView: View {
 
     private static func size(_ bytes: Int) -> String {
         bytes < 1024 ? "\(bytes) B" : String(format: "%.1f KB", Double(bytes) / 1024)
-    }
-
-    private func prepareExport() {
-        do { exportURL = try model.exportURL(projectID) }
-        catch { model.notice = (error as? LocalizedError)?.errorDescription ?? "Dosya hazırlanamadı." }
     }
 }
 
