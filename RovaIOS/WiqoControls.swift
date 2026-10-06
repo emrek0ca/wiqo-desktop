@@ -514,3 +514,54 @@ extension View {
         modifier(WiqoToastHost(level: level))
     }
 }
+
+// MARK: - Confirmations
+
+extension View {
+    /// A confirmation that always opens centred on the screen. `confirmationDialog` anchors itself to the view it is
+    /// attached to (a popover on newer iOS), so on a scroll view or a whole screen it appears at some unrelated spot.
+    /// A cancel button ("Vazgeç") is added here; the actions only need the confirming button.
+    func wiqoConfirmation<A: View, M: View>(
+        _ title: String,
+        isPresented: Binding<Bool>,
+        onCancel: @escaping () -> Void = {},
+        @ViewBuilder actions: @escaping () -> A,
+        @ViewBuilder message: @escaping () -> M
+    ) -> some View {
+        alert(title, isPresented: isPresented) {
+            actions()
+            Button("Vazgeç", role: .cancel, action: onCancel)
+        } message: {
+            message()
+        }
+    }
+
+    func wiqoConfirmation<A: View>(
+        _ title: String,
+        isPresented: Binding<Bool>,
+        onCancel: @escaping () -> Void = {},
+        @ViewBuilder actions: @escaping () -> A
+    ) -> some View {
+        wiqoConfirmation(title, isPresented: isPresented, onCancel: onCancel, actions: actions) { EmptyView() }
+    }
+
+    /// The same for a confirmation about one item: the item is captured when the alert opens, so the confirming
+    /// button still has it after the binding is cleared.
+    func wiqoConfirmation<Item, A: View, M: View>(
+        item: Binding<Item?>,
+        title: @escaping (Item) -> String,
+        @ViewBuilder actions: @escaping (Item) -> A,
+        @ViewBuilder message: @escaping (Item) -> M
+    ) -> some View {
+        alert(
+            item.wrappedValue.map(title) ?? "",
+            isPresented: Binding(get: { item.wrappedValue != nil }, set: { if !$0 { item.wrappedValue = nil } }),
+            presenting: item.wrappedValue
+        ) { value in
+            actions(value)
+            Button("Vazgeç", role: .cancel) {}
+        } message: { value in
+            message(value)
+        }
+    }
+}

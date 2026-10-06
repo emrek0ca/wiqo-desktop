@@ -260,7 +260,7 @@ struct ProjectTaskCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .wiqoCard()
         .task(id: "\(task.id)-\(pollGeneration)") { await poll() }
-        .confirmationDialog("Proje iptal edilsin mi?", isPresented: $confirmingCancel, titleVisibility: .visible) {
+        .wiqoConfirmation("Proje iptal edilsin mi?", isPresented: $confirmingCancel) {
             Button("Projeyi iptal et", role: .destructive) { Task { await cancel() } }
         } message: {
             Text("Wiqo projeyi durdurur; yarım kalan iş teslim edilmez.")
@@ -836,7 +836,7 @@ struct AgentTaskCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .wiqoCard()
         .task(id: "\(task.id)-\(pollGeneration)") { await poll() }
-        .confirmationDialog("Görev durdurulsun mu?", isPresented: $confirmingCancel, titleVisibility: .visible) {
+        .wiqoConfirmation("Görev durdurulsun mu?", isPresented: $confirmingCancel) {
             Button("Görevi durdur", role: .destructive) {
                 Task {
                     isBusy = true
@@ -1290,13 +1290,12 @@ struct NamedAgentsView: View {
         .navigationTitle("Ajanlarım")
         .task { await load() }
         .refreshable { await load() }
-        .confirmationDialog("Ajan silinsin mi?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+        .wiqoConfirmation("Ajan silinsin mi?", isPresented: $confirmingDelete, onCancel: { agentToDelete = nil }) {
             Button("Ajanı sil", role: .destructive) {
                 if let agentToDelete {
                     Task { await delete(agent: agentToDelete) }
                 }
             }
-            Button("Vazgeç", role: .cancel) { agentToDelete = nil }
         } message: {
             Text(agentToDelete?.name ?? "")
         }

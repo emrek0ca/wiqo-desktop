@@ -110,11 +110,10 @@ struct ActView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .background(Color(.systemBackground))
-        .confirmationDialog("Proje silinsin mi?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible, presenting: pendingDelete) { project in
-            Button("\(project.name) projesini sil", role: .destructive) { Task { await model.delete(project.id) } }
-            Button("Vazgeç", role: .cancel) {}
-        } message: { _ in
-            Text("Dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.")
+        .wiqoConfirmation(item: $pendingDelete, title: { _ in "Proje silinsin mi?" }) { project in
+            Button("Sil", role: .destructive) { Task { await model.delete(project.id) } }
+        } message: { project in
+            Text("\"\(project.name)\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.")
         }
         .sheet(isPresented: $showingPrivacy) { ActPrivacySheet() }
         .writerConsent(isPresented: $showingConsent, deviceOnly: mode == .deviceOnly) { startCreate() }
@@ -417,6 +416,15 @@ struct CodeProjectWorkspaceView: View {
     @State private var console: [ConsoleLine] = []
     @State private var showingConsole = false
     @State private var expandedEntry: UUID?
+    @State private var editing = false
+    @State private var editorText = ""
+    @State private var searching = false
+    @State private var searchText = ""
+    @State private var previewDevice: WiqoPreviewDevice = .phone
+    @State private var showingNewFile = false
+    @State private var renamingFile: String?
+    @State private var fileNameField = ""
+    @State private var pendingFileDelete: String?
     @FocusState private var focused: Bool
 
     private enum WorkspaceTab: Hashable { case preview, code, history }
@@ -451,19 +459,33 @@ struct CodeProjectWorkspaceView: View {
             }
             tabBar
             content
-            Divider()
-            footer
+            if !(tab == .code && editing) {
+                Divider()
+                footer
+            }
         }
         .background(Color(.systemBackground))
         .navigationTitle(embedded ? "" : (project?.name ?? "Proje"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { if !embedded { ToolbarItem(placement: .topBarTrailing) { menu } } }
         .sheet(isPresented: $showingDetails) { NavigationStack { CodeProjectDetailView(projectID: projectID) } }
-        .confirmationDialog("Proje silinsin mi?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Projeyi sil", role: .destructive) { Task { await deleteProject() } }
-            Button("Vazgeç", role: .cancel) {}
+        .wiqoConfirmation("Proje silinsin mi?", isPresented: $confirmingDelete) {
+            Button("Sil", role: .destructive) { Task { await deleteProject() } }
         } message: {
             Text("Dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.")
+        }
+        .wiqoConfirmation(item: $pendingFileDelete, title: { "\($0) silinsin mi?" }) { path in
+            Button("Dosyayı sil", role: .destructive) { model.saveFiles(projectID, remove: [path], summary: "\(path) silindi") }
+        } message: { _ in Text("Silme geçmişe yazılır; Geçmiş sekmesinden geri alınabilir.") }
+        .alert("Yeni dosya", isPresented: $showingNewFile) {
+            TextField("ornek.css", text: $fileNameField).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Button("Ekle") { addFile(fileNameField) }
+            Button("Vazgeç", role: .cancel) {}
+        } message: { Text("Klasör kullanabilirsin: js/app.js. Türler: html, css, js, json, txt, md, py, svg, csv.") }
+        .alert("Yeniden adlandır", isPresented: Binding(get: { renamingFile != nil }, set: { if !$0 { renamingFile = nil } })) {
+            TextField("dosya adı", text: $fileNameField).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Button("Kaydet") { if let old = renamingFile { renameFile(old, to: fileNameField) } }
+            Button("Vazgeç", role: .cancel) {}
         }
         .writerConsent(isPresented: $showingConsent, deviceOnly: project?.mode == .deviceOnly) { startSend() }
         .task {
@@ -491,42 +513,118 @@ struct CodeProjectWorkspaceView: View {
 
     @ViewBuilder private var content: some View {
         switch tab {
-        case .preview: stage
+        case .preview:
+            VStack(spacing: 0) {
+                if isWeb { previewBar }
+                stage
+            }
         case .code: codeStage
         case .history: historyStage
         }
     }
 
-    /// The files of the project, one tab per file, read like an editor: line numbers, syntax colours, copy.
+    private var previewBar: some View {
+        HStack(spacing: 10) {
+            ForEach(WiqoPreviewDevice.allCases) { device in
+                Button { withAnimation(.snappy(duration: 0.2)) { previewDevice = device } } label: {
+                    Label(device.title, systemImage: device.systemImage)
+                        .font(.footnote.weight(.medium))
+                        .padding(.horizontal, 10)
+                        .frame(height: 30)
+                        .background(previewDevice == device ? WiqoTheme.inset : Color.clear, in: Capsule())
+                        .foregroundStyle(previewDevice == device ? Color.primary : Color.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+            Button { reloadToken += 1 } label: { Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .medium)) }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Sayfayı yenile")
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 2)
+    }
+
+    /// The files of the project, one chip per file, read like an editor (line numbers, syntax colours) and editable by hand.
     private var codeStage: some View {
         let files = project?.sortedFiles ?? []
         let selected = files.first { $0.path == codeFile } ?? files.first { $0.path == "index.html" || $0.path == "main.py" } ?? files.first
         return VStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(files, id: \.path) { file in
-                        Button { codeFile = file.path } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: Self.icon(for: file.path)).font(.system(size: 11))
-                                Text(file.path).font(.custom("JetBrainsMono-Regular", size: 12, relativeTo: .caption))
+            HStack(spacing: 0) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(files, id: \.path) { file in
+                            Button { codeFile = file.path; searching = false } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: Self.icon(for: file.path)).font(.system(size: 11))
+                                    Text(file.path).font(.custom("JetBrainsMono-Regular", size: 12, relativeTo: .caption))
+                                }
+                                .padding(.horizontal, 10)
+                                .frame(height: 30)
+                                .background(file.path == selected?.path ? WiqoTheme.ink : WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .foregroundStyle(file.path == selected?.path ? Color(.systemBackground) : Color.primary)
                             }
-                            .padding(.horizontal, 10)
-                            .frame(height: 30)
-                            .background(file.path == selected?.path ? WiqoTheme.ink : WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .foregroundStyle(file.path == selected?.path ? Color(.systemBackground) : Color.primary)
+                            .buttonStyle(.plain)
+                            .disabled(editing)
+                            .contextMenu {
+                                Button { fileNameField = file.path; renamingFile = file.path } label: { Label("Yeniden adlandır", systemImage: "pencil") }
+                                Button(role: .destructive) { pendingFileDelete = file.path } label: { Label("Sil", systemImage: "trash") }
+                            }
+                        }
+                        Button { fileNameField = ""; showingNewFile = true } label: {
+                            Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).frame(width: 30, height: 30)
+                                .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                         .buttonStyle(.plain)
+                        .foregroundStyle(.primary)
+                        .disabled(editing)
+                        .accessibilityLabel("Yeni dosya")
                     }
+                    .padding(.horizontal, 14)
                 }
-                .padding(.horizontal, 14)
+                Button { searching.toggle(); searchText = "" } label: {
+                    Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .medium)).frame(width: 34, height: 34)
+                        .foregroundStyle(searching ? Color.primary : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(editing)
+                .accessibilityLabel("Projede ara")
+                Button {
+                    if editing { editing = false } else if let selected { editorText = selected.content; searching = false; editing = true }
+                } label: {
+                    Image(systemName: editing ? "xmark" : "pencil.line").font(.system(size: 14, weight: .medium)).frame(width: 34, height: 34)
+                        .foregroundStyle(editing ? Color.primary : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(selected == nil || model.job != nil)
+                .accessibilityLabel(editing ? "Düzenlemeyi bırak" : "Düzenle")
+                .padding(.trailing, 8)
             }
             .padding(.bottom, 8)
-            if let selected {
-                ScrollView {
-                    WiqoCodeBlock(code: selected.content, title: selected.path)
-                        .id(selected.path)
+            if searching {
+                searchPanel(files)
+            } else if let selected {
+                if editing {
+                    ActCodeEditor(text: $editorText)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .padding(.horizontal, 14)
-                        .padding(.bottom, 14)
+                        .padding(.bottom, 8)
+                    HStack(spacing: 10) {
+                        Text(selected.path).font(.custom("JetBrainsMono-Regular", size: 11, relativeTo: .caption2)).foregroundStyle(.secondary).lineLimit(1)
+                        Spacer()
+                        Button("Vazgeç") { editing = false }.buttonStyle(.wiqoPill(.secondary))
+                        Button("Kaydet") { saveEdit(selected.path) }.buttonStyle(.wiqoPill(.accent)).disabled(editorText == selected.content)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
+                } else {
+                    ScrollView {
+                        WiqoCodeBlock(code: selected.content, title: selected.path)
+                            .id(selected.path)
+                            .padding(.horizontal, 14)
+                            .padding(.bottom, 14)
+                    }
                 }
             } else {
                 Spacer()
@@ -537,11 +635,97 @@ struct CodeProjectWorkspaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private struct SearchHit: Identifiable {
+        let path: String
+        let line: Int
+        let text: String
+        var id: String { "\(path):\(line)" }
+    }
+
+    private func hits(_ query: String, in files: [(path: String, content: String)]) -> [SearchHit] {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        guard needle.count >= 2 else { return [] }
+        var found: [SearchHit] = []
+        for file in files {
+            for (index, line) in file.content.components(separatedBy: "\n").enumerated() where line.range(of: needle, options: .caseInsensitive) != nil {
+                found.append(SearchHit(path: file.path, line: index + 1, text: line.trimmingCharacters(in: .whitespaces)))
+                if found.count >= 80 { return found }
+            }
+        }
+        return found
+    }
+
+    private func searchPanel(_ files: [(path: String, content: String)]) -> some View {
+        let results = hits(searchText, in: files)
+        return VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Tüm dosyalarda ara", text: $searchText).textInputAutocapitalization(.never).autocorrectionDisabled()
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 38)
+            .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, 14)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if results.isEmpty {
+                        Text(searchText.trimmingCharacters(in: .whitespaces).count < 2 ? "En az 2 harf yaz." : "Sonuç yok.")
+                            .font(.footnote).foregroundStyle(.secondary).padding(.top, 20).frame(maxWidth: .infinity)
+                    }
+                    ForEach(results) { hit in
+                        Button { codeFile = hit.path; searching = false } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(hit.path):\(hit.line)").font(.custom("JetBrainsMono-Regular", size: 11, relativeTo: .caption2)).foregroundStyle(.secondary)
+                                Text(hit.text).font(.custom("JetBrainsMono-Regular", size: 12, relativeTo: .caption)).foregroundStyle(.primary).lineLimit(2)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        Divider().padding(.leading, 14)
+                    }
+                }
+            }
+        }
+    }
+
+    private func saveEdit(_ path: String) {
+        editing = false
+        focused = false
+        model.saveFiles(projectID, set: [path: editorText], summary: "\(path) elle düzenlendi")
+        reloadToken += 1
+        WiqoHaptics.selection()
+    }
+
+    /// A new file, empty; names are checked against what sync accepts.
+    private func addFile(_ raw: String) {
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard validFileName(name) else { return }
+        model.saveFiles(projectID, set: [name: ""], summary: "\(name) eklendi")
+        codeFile = name
+        editorText = ""
+        editing = true
+    }
+
+    private func renameFile(_ old: String, to raw: String) {
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard name != old, validFileName(name), let content = project?.files[old] else { return }
+        model.saveFiles(projectID, set: [name: content], remove: [old], summary: "\(old) → \(name)")
+        codeFile = name
+    }
+
+    private func validFileName(_ name: String) -> Bool {
+        let ok = !name.isEmpty && !name.hasPrefix("/") && !name.contains("..") && ActSync.isSyncable(path: name, content: "") && project?.files[name] == nil
+        if !ok { model.notice = "Dosya adı geçersiz ya da zaten var (türler: html, css, js, json, txt, md, py, svg, csv)." }
+        return ok
+    }
+
     /// What changed, version by version; open an entry to see its diff.
     private var historyStage: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
-                ForEach(project?.history ?? []) { entry in
+                ForEach(Array((project?.history ?? []).enumerated()), id: \.element.id) { index, entry in
                     VStack(alignment: .leading, spacing: 8) {
                         Button { withAnimation(.snappy(duration: 0.2)) { expandedEntry = expandedEntry == entry.id ? nil : entry.id } } label: {
                             HStack(alignment: .top, spacing: 10) {
@@ -561,6 +745,14 @@ struct CodeProjectWorkspaceView: View {
                         if expandedEntry == entry.id {
                             ForEach(entry.changes, id: \.path) { change in
                                 WiqoCodeBlock(diff: Self.unifiedDiff(change), title: change.path)
+                            }
+                            if index > 0 {
+                                Button { model.restore(projectID, to: entry.id); tab = .preview; reloadToken += 1 } label: {
+                                    Label("Bu sürüme dön", systemImage: "arrow.uturn.backward")
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(model.job != nil)
                             }
                         }
                     }
@@ -623,7 +815,7 @@ struct CodeProjectWorkspaceView: View {
                 if isWeb {
                     if let page = project.bundle {
                         WiqoHTMLWebView(
-                            html: WiqoHTMLDocument.wrap(page, viewportWidth: WiqoPreviewDevice.phone.viewportWidth, reduceMotion: reduceMotion),
+                            html: WiqoHTMLDocument.wrap(page, viewportWidth: previewDevice.viewportWidth, reduceMotion: reduceMotion),
                             projectDataKey: project.id,
                             reloadToken: reloadToken,
                             onConsole: { level, text in

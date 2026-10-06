@@ -292,9 +292,8 @@ struct AccountSettingsView: View {
         .sheet(isPresented: $showingPaywall) {
             PaywallView(subscriptionStore: subscriptionStore)
         }
-        .confirmationDialog("Wiqo hesabından çıkmak istediğine emin misin?", isPresented: $showingSignOutConfirmation, titleVisibility: .visible) {
+        .wiqoConfirmation("Wiqo hesabından çıkmak istediğine emin misin?", isPresented: $showingSignOutConfirmation) {
             Button("Çıkış yap", role: .destructive) { authSession.signOut(); dismiss() }
-            Button("Vazgeç", role: .cancel) { }
         }
         .onChange(of: profileStore.profile) { old, fresh in
             // Adopt a background refresh only while the user hasn't started editing.

@@ -90,12 +90,7 @@ struct ConnectorListCard: View {
         }
         .background(connectorCardBackground)
         .accessibilityElement(children: .contain)
-        .confirmationDialog(
-            picked?.title ?? "",
-            isPresented: Binding(get: { picked != nil }, set: { if !$0 { picked = nil } }),
-            titleVisibility: .visible,
-            presenting: picked
-        ) { item in
+        .wiqoConfirmation(item: $picked, title: { $0.title }) { item in
             if let path = item.id, item.badge != "Klasör" {
                 Button("Telefonuma gönder") { followUp?.send("\(path) dosyasını telefonuma gönder.") }
                 Button("Oku ve özetle") { followUp?.send("\(path) dosyasını oku ve özetle.") }
@@ -104,8 +99,7 @@ struct ConnectorListCard: View {
                 Button("Bu klasörü listele") { followUp?.send("\(path) klasörünün içini listele.") }
                     .disabled(item.badge != "Klasör")
             }
-            Button("Vazgeç", role: .cancel) {}
-        }
+        } message: { _ in EmptyView() }
     }
 
     private var header: some View {

@@ -268,6 +268,49 @@ final class ActModel: ObservableObject {
         if p.mode == .devices { Task { await sync(id) } }
     }
 
+    // MARK: Manual edits
+
+    /// Saves what was changed by hand in the code editor (edited, new, renamed or deleted files) as one history entry.
+    func saveFiles(_ id: String, set: [String: String] = [:], remove: [String] = [], summary: String) {
+        guard job == nil, var p = project(id) else { return }
+        let before = p.files
+        var files = before
+        for (path, content) in set { files[path] = content }
+        for path in remove where set[path] == nil { files.removeValue(forKey: path) }
+        guard files != before else { return }
+        p.replica.files = files
+        p.history = Array(([ActHistoryEntry(id: UUID(), summary: summary, date: Date(), verified: true, source: "Elle düzenleme", changes: diff(before, files))] + p.history).prefix(30))
+        notice = nil
+        store(p)
+        if p.mode == .devices { Task { await sync(id) } }
+        if p.isWeb { Task { await checkPage(id) } }
+    }
+
+    /// After a hand edit: try the page on this phone and say so when it no longer works (the edit stays; undo is one tap).
+    private func checkPage(_ id: String) async {
+        guard let page = project(id)?.bundle else { return }
+        if case .problems(let problems) = await ActWebVerifier().verify(page) {
+            notice = "Kaydedildi ama sayfa hata veriyor: " + (problems.first ?? "açılamadı") + " Geri alabilirsin."
+        }
+    }
+
+    /// Takes the project back to how it was right after `entryID` (everything newer is undone, as one new history entry).
+    func restore(_ id: String, to entryID: UUID) {
+        guard job == nil, var p = project(id), let index = p.history.firstIndex(where: { $0.id == entryID }), index > 0 else { return }
+        let before = p.files
+        var files = before
+        for entry in p.history[..<index] {
+            for change in entry.changes {
+                if let restored = change.before { files[change.path] = restored } else { files.removeValue(forKey: change.path) }
+            }
+        }
+        guard files != before else { return }
+        p.replica.files = files
+        p.history = Array(([ActHistoryEntry(id: UUID(), summary: "Sürüme dönüldü: \(p.history[index].summary)", date: Date(), verified: true, source: "Geri yükleme", changes: diff(before, files))] + p.history).prefix(30))
+        store(p)
+        if p.mode == .devices { Task { await sync(id) } }
+    }
+
     // MARK: Undo, delete, privacy
 
     func canUndo(_ id: String) -> Bool { (project(id)?.history.count ?? 0) >= 2 }

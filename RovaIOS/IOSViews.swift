@@ -91,34 +91,32 @@ private struct WiqoActivityView: View {
                 }
             }
         }
-        .confirmationDialog(
-            selectedPendingTask?.ref?.type == "project" ? "Proje iptal edilsin mi?"
-                : selectedPendingTask?.ref?.type == "agent_task" ? "Arka plan görevi durdurulsun mu?"
-                : selectedPendingTask?.ref?.type == "terminal_grant" ? "Terminal oturumu kapatılsın mı?"
-                : "PC işi iptal edilsin mi?",
-            isPresented: Binding(
-                get: { selectedPendingTask != nil },
-                set: { if !$0 { selectedPendingTask = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button(selectedPendingTask?.ref?.type == "project" ? "Projeyi iptal et"
-                : selectedPendingTask?.ref?.type == "agent_task" ? "Görevi durdur"
-                : selectedPendingTask?.ref?.type == "terminal_grant" ? "Oturumu kapat"
-                : "PC işini iptal et", role: .destructive) {
-                guard let item = selectedPendingTask else { return }
-                selectedPendingTask = nil
-                Task { await cancelPendingTask(item) }
+        .wiqoConfirmation(
+            item: $selectedPendingTask,
+            title: { task in
+                task.ref?.type == "project" ? "Proje iptal edilsin mi?"
+                    : task.ref?.type == "agent_task" ? "Arka plan görevi durdurulsun mu?"
+                    : task.ref?.type == "terminal_grant" ? "Terminal oturumu kapatılsın mı?"
+                    : "PC işi iptal edilsin mi?"
+            },
+            actions: { item in
+                Button(item.ref?.type == "project" ? "Projeyi iptal et"
+                    : item.ref?.type == "agent_task" ? "Görevi durdur"
+                    : item.ref?.type == "terminal_grant" ? "Oturumu kapat"
+                    : "PC işini iptal et", role: .destructive) {
+                    Task { await cancelPendingTask(item) }
+                }
+            },
+            message: { item in
+                Text(item.ref?.type == "project"
+                     ? "Wiqo projeyi durdurur; o ana kadar yapılan kısım teslim edilmez."
+                     : item.ref?.type == "agent_task"
+                        ? "Wiqo görevi o adımda bırakır; yarım sonuç teslim edilmez."
+                     : item.ref?.type == "terminal_grant"
+                        ? "Oturum izni hemen kapatılır. PC çevrimdışıysa başlamış bir işin durduğu doğrulanamayabilir."
+                        : "PC'ye gönderilmiş bir adımın sonucu belirsiz kalabilir; Wiqo bunu Etkinlik'te gösterecek.")
             }
-        } message: {
-            Text(selectedPendingTask?.ref?.type == "project"
-                 ? "Wiqo projeyi durdurur; o ana kadar yapılan kısım teslim edilmez."
-                 : selectedPendingTask?.ref?.type == "agent_task"
-                    ? "Wiqo görevi o adımda bırakır; yarım sonuç teslim edilmez."
-                 : selectedPendingTask?.ref?.type == "terminal_grant"
-                    ? "Oturum izni hemen kapatılır. PC çevrimdışıysa başlamış bir işin durduğu doğrulanamayabilir."
-                    : "PC'ye gönderilmiş bir adımın sonucu belirsiz kalabilir; Wiqo bunu Etkinlik'te gösterecek.")
-        }
+        )
         .alert("Durum", isPresented: Binding(
             get: { cancelNotice != nil },
             set: { if !$0 { cancelNotice = nil } }
@@ -397,12 +395,10 @@ private struct WiqoMemoryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
-        .confirmationDialog("Bu hafıza kaydı silinsin mi?", isPresented: Binding(get: { selected != nil }, set: { if !$0 { selected = nil } })) {
-            Button("Kaydı sil", role: .destructive) {
-                if let selected { Task { await remove(selected.id) } }
-            }
-        }
-        .confirmationDialog("Tüm hafıza silinsin mi?", isPresented: $confirmAll) {
+        .wiqoConfirmation(item: $selected, title: { _ in "Bu hafıza kaydı silinsin mi?" }) { memory in
+            Button("Kaydı sil", role: .destructive) { Task { await remove(memory.id) } }
+        } message: { _ in EmptyView() }
+        .wiqoConfirmation("Tüm hafıza silinsin mi?", isPresented: $confirmAll) {
             Button("Tümünü sil", role: .destructive) { Task { await removeAll() } }
         }
     }
@@ -1628,9 +1624,8 @@ struct PCSettingsView: View {
                 settingsRow(title: "PC'yi unut", systemImage: "laptopcomputer.slash", isDestructive: true)
             }
         }
-        .confirmationDialog("PC'yi unutmak istediğine emin misin?", isPresented: $showingForgetMacConfirmation, titleVisibility: .visible) {
+        .wiqoConfirmation("PC'yi unutmak istediğine emin misin?", isPresented: $showingForgetMacConfirmation) {
             Button("PC'yi unut", role: .destructive) { model.forgetPairing(); dismiss() }
-            Button("Vazgeç", role: .cancel) { }
         }
     }
 
@@ -1697,18 +1692,12 @@ struct PCSettingsView: View {
             }
             Button("Vazgeç", role: .cancel) {}
         }
-        .confirmationDialog("Bu cihazı listeden kaldırmak istediğine emin misin?", isPresented: Binding(
-            get: { deletingDeviceID != nil },
-            set: { if !$0 { deletingDeviceID = nil } }
-        ), titleVisibility: .visible) {
+        .wiqoConfirmation(item: $deletingDeviceID, title: { _ in "Bu cihazı listeden kaldırmak istediğine emin misin?" }) { id in
             Button("Cihazı sil", role: .destructive) {
-                guard let id = deletingDeviceID else { return }
-                deletingDeviceID = nil
                 backendDevices.removeAll { $0.id == id }
                 Task { try? await RovaBackendClient.deleteDevice(id: id) }
             }
-            Button("Vazgeç", role: .cancel) {}
-        }
+        } message: { _ in EmptyView() }
     }
 
     /// A live status view of what Wiqo can actually do on this Mac right now - answers "neden
@@ -1855,7 +1844,7 @@ struct PCSettingsView: View {
             }
             .disabled(model.state != .connected)
         }
-        .confirmationDialog("PC kilitlenecek. Devam et?", isPresented: $showingLockConfirmation, titleVisibility: .visible) {
+        .wiqoConfirmation("PC kilitlenecek. Devam et?", isPresented: $showingLockConfirmation) {
             Button("PC'yi kilitle", role: .destructive) {
                 hapticImpact()
                 Task {
@@ -1863,9 +1852,8 @@ struct PCSettingsView: View {
                     if ok { _ = await model.send(.lockMac) }
                 }
             }
-            Button("Vazgeç", role: .cancel) { }
         }
-        .confirmationDialog("PC uyku moduna alınacak. Devam et?", isPresented: $showingSleepConfirmation, titleVisibility: .visible) {
+        .wiqoConfirmation("PC uyku moduna alınacak. Devam et?", isPresented: $showingSleepConfirmation) {
             Button("PC'yi uyut", role: .destructive) {
                 hapticImpact()
                 Task {
@@ -1873,14 +1861,12 @@ struct PCSettingsView: View {
                     if ok { _ = await model.sleepMac() }
                 }
             }
-            Button("Vazgeç", role: .cancel) { }
         }
-        .confirmationDialog("PC ekranı uyutulacak. Devam et?", isPresented: $showingDisplaySleepConfirmation, titleVisibility: .visible) {
+        .wiqoConfirmation("PC ekranı uyutulacak. Devam et?", isPresented: $showingDisplaySleepConfirmation) {
             Button("Ekranı uyut", role: .destructive) {
                 hapticImpact()
                 Task { _ = await model.displaySleep() }
             }
-            Button("Vazgeç", role: .cancel) { }
         }
     }
 
