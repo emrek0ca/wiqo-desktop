@@ -20,14 +20,14 @@ export const SCENES = {
 } as const;
 
 export const COPY = {
-  hook: ['Kod için', 'masaya dönme.'], request: ['Telefondan', 'iste.'],
-  task: ['“Ana ekrana', 'arama ekle.”'],
-  act: 'Sohbetten eyleme.', coding: ['Wiqo,', 'Mac’te', 'kodlasın.'],
-  codingBody: ['Projen bilgisayarında.', 'Kontrol telefonunda.'],
-  preview: ['Sonucu', 'telefonunda', 'gör.'],
-  previewBody: ['Kod ve önizleme,', 'aynı yerde.'],
-  product: 'Wiqo Act', promise: ['Telefondan söyle.', 'Bilgisayarın yapsın.'],
-  close: 'Kodunu doğrudan telefonunda gör.',
+  hook: ['Kod için', 'masaya dönme'], request: ['Telefondan', 'iste'],
+  task: ['Ana ekrana', 'arama ekle'],
+  act: 'Sohbetten eyleme', coding: ['Wiqo', 'PC üzerinden', 'kodlasın'],
+  codingBody: ['Projen bilgisayarında', 'Kontrol telefonunda'],
+  preview: ['Sonucu', 'telefonunda', 'gör'],
+  previewBody: ['Kod ve önizleme', 'aynı yerde'],
+  product: 'Wiqo Act', promise: ['Telefondan söyle', 'Bilgisayarın yapsın'],
+  close: 'Kodunu doğrudan telefonunda gör',
 } as const;
 
 export const MOTION = {
@@ -42,8 +42,8 @@ export const MOTION = {
 export const LAYOUT = {
   hook: { x: STYLE.side, y: 515 }, request: { x: STYLE.side, y: 460 },
   task: { x: STYLE.side, y: 920, size: 57 },
-  coding: { x: 440, y: 815, size: 101 }, codingBody: { x: STYLE.side, y: 1275 },
-  preview: { x: STYLE.side, y: 475 }, previewBody: { x: STYLE.side, y: 980 },
+  coding: { x: STYLE.side, y: 460, size: STYLE.headline }, codingBody: { x: STYLE.side, y: 940 },
+  preview: { x: STYLE.side, y: 460 }, previewBody: { x: STYLE.side, y: 940 },
   endTitle: { y: 525, size: 124 }, endPromise: { y: 755, size: 59 },
   endClose: { y: 1435, size: 35 },
 } as const;
@@ -78,13 +78,13 @@ export const POSES: Record<MascotName, readonly Pose[]> = {
     pose(616, 430, 1285, 240, 0, 2), pose(642, 430, 1250, 240, 1),
   ],
   green: [
-    pose(285, 215, 715, 360, 0, -3), pose(309, 245, 645, 360, 1),
-    pose(434, 245, 645, 360, 1), pose(454, 220, 665, 345, 0),
+    pose(285, 805, 1055, 350, 0, -3), pose(309, 805, 1015, 350, 1),
+    pose(434, 805, 1015, 350, 1), pose(454, 825, 1060, 330, 0),
     pose(628, 650, 1285, 240, 0, -2), pose(654, 650, 1250, 240, 1),
   ],
   purple: [
-    pose(450, 815, 1260, 380, 0, 3), pose(474, 785, 1205, 380, 1),
-    pose(586, 785, 1205, 380, 1), pose(607, 805, 1240, 365, 0),
+    pose(450, 805, 1100, 360, 0, 3), pose(474, 805, 1060, 360, 1),
+    pose(586, 805, 1060, 360, 1), pose(607, 825, 1100, 345, 0),
     pose(640, 860, 1285, 240, 0, 2), pose(666, 860, 1250, 240, 1),
   ],
 };

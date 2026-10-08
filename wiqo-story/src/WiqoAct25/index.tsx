@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import '@fontsource/roboto/400.css';
+import '@fontsource/roboto/500.css';
+import '@fontsource/roboto/600.css';
 import '@fontsource/roboto/700.css';
 import {
   AbsoluteFill, Easing, Img, Sequence, cancelRender, continueRender, delayRender,
@@ -30,7 +31,7 @@ const RevealedText: React.FC<{
       position: 'absolute', left: center ? STYLE.side : x, top: y,
       width: center ? width - STYLE.side * 2 : width - x - STYLE.side,
       fontSize: size, lineHeight: STYLE.lineHeight, color, textAlign: center ? 'center' : 'left',
-      letterSpacing: STYLE.tracking, fontWeight: 400,
+      letterSpacing: STYLE.tracking, fontWeight: 500,
     }}>
       {lines.map((line, lineIndex) => (
         <div key={line} style={{ overflow: 'hidden', paddingBottom: '0.13em', marginBottom: '-0.08em', whiteSpace: 'nowrap' }}>
@@ -155,7 +156,7 @@ export const WiqoAct25: React.FC = () => {
   const [fontHandle] = useState(() => delayRender('Wiqo Act yerel fontları yükleniyor'));
   useEffect(() => {
     void Promise.all([
-      document.fonts.load('400 108px Roboto', 'Kod için masaya dönme. ğüşöçİı'),
+      document.fonts.load('500 108px Roboto', 'Kod için masaya dönme ğüşöçİı'),
       document.fonts.load('700 246px Roboto', 'CHAT'),
     ]).then(() => continueRender(fontHandle)).catch((error: unknown) => cancelRender(error));
   }, [fontHandle]);
