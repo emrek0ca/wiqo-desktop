@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import java.util.UUID
 
 data class ChatUiState(
@@ -26,6 +27,7 @@ data class ChatUiState(
     val progress: String? = null,
     val partialReply: String = "",
     val sending: Boolean = false,
+    val recovering: Boolean = false,
     val error: String? = null,
     val completedSends: Int = 0,
     val pendingConfirmations: List<JsonObject> = emptyList(),
@@ -43,18 +45,26 @@ class ChatViewModel(private val container: AppContainer, val conversationId: Str
         viewModelScope.launch {
             accountId = container.api.currentAccountId()
             val account = accountId ?: return@launch
-            if (conversationId != "default" && container.database.conversations().getMessages(account, conversationId).isEmpty()) {
+            if (conversationId != "default") {
+                val local = container.database.conversations().getMessages(account, conversationId)
+                val localCounts = local.groupingBy { it.role to it.content }.eachCount()
+                val remoteCounts = mutableMapOf<Pair<String, String>, Int>()
                 runCatching { container.api.conversationMessages(conversationId) }.getOrDefault(emptyList()).forEachIndexed { index, remote ->
                     val role = remote["role"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content } ?: return@forEachIndexed
                     val content = remote["content"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content } ?: return@forEachIndexed
+                    val key = role to content
+                    val count = (remoteCounts[key] ?: 0) + 1
+                    remoteCounts[key] = count
+                    if (count <= (localCounts[key] ?: 0)) return@forEachIndexed
                     val time = remote["createdAt"]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
                         ?.let(::parseRemoteTime) ?: (index + 1L)
                     container.database.conversations().insert(
                         LocalConversationMessage(
                             "remote-$conversationId-$index", account, conversationId, role, content, time,
-                            (remote["artifacts"] as? kotlinx.serialization.json.JsonArray)?.let { artifacts ->
-                                buildJsonObject { put("artifacts", artifacts) }.toString()
-                            },
+                            buildJsonObject {
+                                (remote["artifacts"] as? JsonArray)?.let { put("artifacts", it) }
+                                (remote["widgets"] as? JsonArray)?.let { put("widgets", it) }
+                            }.toString(),
                         ),
                     )
                 }
@@ -66,11 +76,31 @@ class ChatViewModel(private val container: AppContainer, val conversationId: Str
     }
 
     private var sendJob: kotlinx.coroutines.Job? = null
+    private var currentRequestId: String? = null
 
     fun cancelSending() {
+        val requestId = currentRequestId ?: return
+        if (sendJob?.isActive != true) return
         sendJob?.cancel()
         sendJob = null
-        mutableState.value = mutableState.value.copy(sending = false, progress = null, partialReply = "")
+        mutableState.value = mutableState.value.copy(sending = false, recovering = true, progress = "İşlem sunucuda sürüyor; yanıt izleniyor…", partialReply = "")
+        viewModelScope.launch {
+            try {
+                val response = container.api.awaitCopilotRequest(requestId, conversationId,
+                    onProgress = { status -> mutableState.value = mutableState.value.copy(progress = status) },
+                    onEvent = ::handleStreamEvent)
+                val account = accountId ?: return@launch
+                container.database.conversations().insert(LocalConversationMessage(
+                    UUID.randomUUID().toString(), account, conversationId, "assistant", response.reply,
+                    System.currentTimeMillis(), response.terminal?.safeDisplayMetadata()?.toString(),
+                ))
+                mutableState.value = mutableState.value.copy(recovering = false, progress = null, partialReply = "",
+                    pendingConfirmations = emptyList(), locationRequestId = null, completedSends = mutableState.value.completedSends + 1)
+            } catch (failure: Exception) {
+                mutableState.value = mutableState.value.copy(recovering = false, progress = null,
+                    error = failure.message ?: "İşlem sonucu alınamadı. Sohbeti yeniden açıp geçmişi yenile.")
+            } finally { currentRequestId = null }
+        }
     }
 
     private val answeredLocationRequests = mutableSetOf<String>()
@@ -90,8 +120,14 @@ class ChatViewModel(private val container: AppContainer, val conversationId: Str
             mutableState.value = mutableState.value.copy(error = "Bir kerede en fazla dört görsel ekleyebilirsin.")
             return
         }
-        if ((clean.isEmpty() && attachments.isEmpty() && files.isEmpty()) || mutableState.value.sending) return
+        if (files.size > 5 || JsonArray(files.map { it.toJson() }).toString().toByteArray(Charsets.UTF_8).size > 6_000_000) {
+            mutableState.value = mutableState.value.copy(error = "Dosya içeriği sunucu sınırını aşıyor. Daha az dosya ekleyip tekrar dene.")
+            return
+        }
+        if ((clean.isEmpty() && attachments.isEmpty() && files.isEmpty()) || mutableState.value.sending || mutableState.value.recovering) return
         accountId = account
+        val requestId = UUID.randomUUID().toString()
+        currentRequestId = requestId
         sendJob = viewModelScope.launch {
             val requestText = clean.ifBlank { "Ekli dosyaları incele." }
             val displayText = clean.ifBlank { "Ekli dosyaları incele." }
@@ -111,6 +147,7 @@ class ChatViewModel(private val container: AppContainer, val conversationId: Str
                 val response = container.api.converse(
                     conversationId,
                     turns,
+                    requestId = requestId,
                     attachments,
                     files = files,
                     createAgent = createAgent,
@@ -125,12 +162,17 @@ class ChatViewModel(private val container: AppContainer, val conversationId: Str
                     ),
                 )
                 mutableState.value = mutableState.value.copy(sending = false, progress = null, partialReply = "", pendingConfirmations = emptyList(), locationRequestId = null, completedSends = mutableState.value.completedSends + 1)
+                currentRequestId = null
+            } catch (_: CancellationException) {
+                // The backend may still finish; cancelSending follows the request ledger.
             } catch (error: ApiException) {
                 runCatching { container.database.conversations().delete(userMessage) }
                 mutableState.value = mutableState.value.copy(sending = false, progress = null, partialReply = "", error = error.message)
+                currentRequestId = null
             } catch (_: Exception) {
                 runCatching { container.database.conversations().delete(userMessage) }
                 mutableState.value = mutableState.value.copy(sending = false, progress = null, partialReply = "", error = "Yanıt alınamadı. Tekrar deneyebilirsin.")
+                currentRequestId = null
             }
         }
     }

@@ -282,7 +282,7 @@ internal fun ChatScreen(
         if (last >= 0) listState.animateScrollToItem(last)
     }
 
-    val canSend = draft.isNotBlank() || attachments.isNotEmpty() || fileContents.isNotEmpty()
+    val canSend = (draft.isNotBlank() || attachments.isNotEmpty() || fileContents.isNotEmpty()) && !state.recovering
 
     Column(
         modifier = Modifier
@@ -502,11 +502,42 @@ internal fun ChatScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                MarkdownReply(text = message.content)
+                                if (metadata.widgets.none { (it["presentation"] as? JsonPrimitive)?.contentOrNull == "widget_only" }) {
+                                    MarkdownReply(text = message.content)
+                                }
+
+                                metadata.widgets.forEach { widget -> ChatWidgetSummary(widget, onOpenRelated) }
 
                                 if (metadata.confirmations.isNotEmpty()) {
                                     metadata.confirmations.forEach { confirmation ->
                                         Text("${confirmation.title}: ${confirmation.summary}", color = colors.ink3, fontFamily = WiqoSans, fontSize = 12.sp)
+                                    }
+                                }
+                                metadata.related?.let { related ->
+                                    TextButton(onClick = { onOpenRelated(related.route, related.id) }) {
+                                        Text(related.title, fontFamily = WiqoSans)
+                                    }
+                                }
+                                metadata.artifacts.forEach { artifact ->
+                                    TextButton(onClick = {
+                                        scope.launch {
+                                            try {
+                                                val file = container.artifacts.download(artifact)
+                                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                                    type = artifact.mimeType
+                                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                }
+                                                context.startActivity(Intent.createChooser(intent, artifact.filename))
+                                            } catch (failure: Exception) {
+                                                attachmentError = failure.message ?: "Dosya açılamadı."
+                                            }
+                                        }
+                                    }) {
+                                        Icon(Icons.Outlined.Description, contentDescription = null, modifier = Modifier.size(17.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(artifact.filename, fontFamily = WiqoSans)
                                     }
                                 }
 
@@ -653,13 +684,6 @@ internal fun ChatScreen(
                                                 },
                                             )
                                             DropdownMenuItem(
-                                                text = { Text("Yeniden oluştur", fontFamily = WiqoSans, fontSize = 14.sp) },
-                                                leadingIcon = { Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                                                onClick = {
-                                                    showMenu = false
-                                                },
-                                            )
-                                            DropdownMenuItem(
                                                 text = { Text("Yanıtı paylaş", fontFamily = WiqoSans, fontSize = 14.sp) },
                                                 leadingIcon = { Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp)) },
                                                 onClick = {
@@ -678,7 +702,7 @@ internal fun ChatScreen(
                         }
                     }
 
-                    if (state.sending) {
+                    if (state.sending || state.recovering) {
                         item(key = "sending-indicator") {
                             ThinkingLiveView(label = state.progress ?: "Bakıyorum…")
                         }

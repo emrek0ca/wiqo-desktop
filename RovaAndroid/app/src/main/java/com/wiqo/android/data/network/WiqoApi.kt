@@ -52,6 +52,40 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
         .callTimeout(110, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
+    private val eventClient = client.newBuilder()
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .callTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
+
+    /** One authenticated SSE connection. The caller owns reconnection and lifecycle. */
+    suspend fun observeDeviceEvents(onEvent: (JsonObject) -> Unit) = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url("$BASE_URL/devices/events")
+            .header("Accept", "text/event-stream")
+            .header("Authorization", "Bearer ${requireSessionToken()}")
+            .build()
+        val call = eventClient.newCall(request)
+        val cancellation = currentCoroutineContext()[kotlinx.coroutines.Job]?.invokeOnCompletion { cause ->
+            if (cause is kotlinx.coroutines.CancellationException) call.cancel()
+        }
+        try {
+            call.execute().use { response ->
+                if (!response.isSuccessful) throw response.apiError(json)
+                val source = response.body?.source() ?: throw IOException("Cihaz olay akışı boş.")
+                while (!source.exhausted()) {
+                    currentCoroutineContext().ensureActive()
+                    val line = source.readUtf8Line() ?: break
+                    if (line.startsWith("data:")) {
+                        val event = runCatching { json.parseToJsonElement(line.removePrefix("data:").trim()) as? JsonObject }.getOrNull()
+                        if (event != null) withContext(Dispatchers.Main) { onEvent(event) }
+                    }
+                }
+            }
+        } finally {
+            cancellation?.dispose()
+            call.cancel()
+        }
+    }
 
     suspend fun login(email: String, password: String): String = authenticate(
         "auth/login",
@@ -395,6 +429,7 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
     suspend fun converse(
         conversationId: String,
         messages: List<ChatTurn>,
+        requestId: String = java.util.UUID.randomUUID().toString(),
         attachments: List<ChatAttachment> = emptyList(),
         files: List<ChatFileContent> = emptyList(),
         createAgent: Boolean = false,
@@ -402,7 +437,7 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
         onDelta: (String) -> Unit = {},
         onEvent: (JsonObject) -> Unit = {},
     ): ChatReply = withContext(Dispatchers.IO) {
-        val id = java.util.UUID.randomUUID().toString()
+        val id = requestId
         val requestBody = buildJsonObject {
             put("conversationId", conversationId)
             put("requestId", id)
@@ -487,6 +522,13 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
             call.cancel()
         }
     }
+
+    suspend fun awaitCopilotRequest(
+        requestId: String,
+        conversationId: String,
+        onProgress: (String) -> Unit,
+        onEvent: (JsonObject) -> Unit,
+    ): ChatReply = waitForCopilotRequest(requestId, conversationId, onProgress, onEvent)
 
     private suspend fun waitForCopilotRequest(
         requestId: String,

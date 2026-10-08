@@ -38,6 +38,7 @@ internal data class ChatConfirmationCard(val title: String, val summary: String)
 internal data class ChatMessageMetadata(
     val attachmentNames: List<String> = emptyList(),
     val artifacts: List<ChatArtifact> = emptyList(),
+    val widgets: List<JsonObject> = emptyList(),
     val related: ChatRelatedCard? = null,
     val confirmations: List<ChatConfirmationCard> = emptyList(),
 )
@@ -77,7 +78,53 @@ internal fun parseMessageMetadata(raw: String?): ChatMessageMetadata {
         val title = item.scalar("title")?.take(120) ?: return@mapNotNull null
         ChatConfirmationCard(title, item.scalar("summary")?.take(400).orEmpty())
     }.take(10)
-    return ChatMessageMetadata(attachmentNames, artifacts, related, confirmations)
+    val widgets = (root["widgets"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.take(20)
+    return ChatMessageMetadata(attachmentNames, artifacts, widgets, related, confirmations)
+}
+
+@Composable
+internal fun ChatWidgetSummary(widget: JsonObject, onOpenRelated: (String, String?) -> Unit) {
+    val type = widget.scalar("type") ?: return
+    val title = widget.scalar("title") ?: when (type) {
+        "weather" -> "Hava durumu"
+        "sources" -> "Kaynaklar"
+        "artifact" -> "Dosya"
+        else -> type.replace('_', ' ')
+    }
+    val summary = widget.scalar("summary") ?: widget.scalar("description")
+    val colors = WiqoDesign.colors
+    Column(Modifier.fillMaxWidth().background(colors.inset, RoundedCornerShape(12.dp)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(title, fontFamily = WiqoSans, fontWeight = FontWeight.SemiBold, color = colors.ink)
+        summary?.let { Text(it.take(600), fontFamily = WiqoSans, color = colors.ink, fontSize = 13.sp) }
+        when (type) {
+            "list" -> (widget["items"] as? JsonArray).orEmpty().take(12).forEach { item ->
+                val row = item as? JsonObject ?: return@forEach
+                Text("• ${row.scalar("title").orEmpty()} ${row.scalar("subtitle").orEmpty()}".trim().take(250),
+                    fontFamily = WiqoSans, color = colors.ink, fontSize = 13.sp)
+            }
+            "table" -> {
+                val columns = (widget["columns"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                if (columns.isNotEmpty()) Text(columns.joinToString("  |  ").take(250), fontFamily = WiqoMono, fontSize = 12.sp)
+                (widget["rows"] as? JsonArray).orEmpty().take(12).forEach { row ->
+                    val values = (row as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                    Text(values.joinToString("  |  ").take(250), fontFamily = WiqoMono, fontSize = 12.sp)
+                }
+            }
+            "created_resource" -> {
+                val resource = widget.scalar("resourceType")
+                val id = widget.scalar("id")
+                val route = when (resource) {
+                    "agent" -> "agents"
+                    "automation" -> "automation-detail"
+                    else -> null
+                }
+                if (route != null && id != null) androidx.compose.material3.TextButton(onClick = { onOpenRelated(route, id) }) {
+                    Text("Aç")
+                }
+            }
+        }
+    }
 }
 
 @Composable

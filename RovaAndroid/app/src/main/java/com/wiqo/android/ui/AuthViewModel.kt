@@ -20,6 +20,18 @@ class AuthViewModel(private val container: AppContainer) : ViewModel() {
     private val mutableState = MutableStateFlow(AuthUiState(signedIn = container.tokenStore.read() != null))
     val state = mutableState.asStateFlow()
 
+    init {
+        if (mutableState.value.signedIn) viewModelScope.launch {
+            try {
+                container.api.get("profile")
+            } catch (error: ApiException) {
+                if (error.statusCode == 401 || error.statusCode == 403) signOut()
+            } catch (_: Exception) {
+                // Offline startup may still show the locally cached conversation.
+            }
+        }
+    }
+
     fun login(email: String, password: String) = authenticate { container.api.login(email, password) }
 
     fun register(email: String, password: String, inviteCode: String?) = authenticate {
@@ -38,11 +50,14 @@ class AuthViewModel(private val container: AppContainer) : ViewModel() {
     fun signOut() {
         val accountId = container.api.currentAccountId()
         viewModelScope.launch {
-            accountId?.let { container.database.conversations().clearAccount(it) }
-            runCatching { container.artifacts.clearAccount(accountId) }
-            container.pushRegistration.revoke()
-            container.tokenStore.clearCredentials()
-            mutableState.value = AuthUiState()
+            try {
+                accountId?.let { container.database.conversations().clearAccount(it) }
+                runCatching { container.artifacts.clearAccount(accountId) }
+                container.pushRegistration.revoke()
+            } finally {
+                container.tokenStore.clearCredentials()
+                mutableState.value = AuthUiState()
+            }
         }
     }
 

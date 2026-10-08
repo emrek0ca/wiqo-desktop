@@ -91,6 +91,21 @@ class RemotePageViewModel(private val container: AppContainer, private val path:
 
     fun consumeOpenUrl() { mutableState.value = mutableState.value.copy(openUrl = null) }
 
+    fun startTelegramLink() {
+        if (mutableState.value.busyAction != null) return
+        viewModelScope.launch {
+            mutableState.value = mutableState.value.copy(busyAction = "telegram", error = null)
+            try {
+                val response = container.api.post("channels/telegram/link-code", JsonObject(emptyMap())) as? JsonObject
+                val url = (response?.get("url") as? JsonPrimitive)?.content
+                if (url == null || !url.startsWith("https://t.me/")) throw ApiException("Telegram bağlantısı açılamadı.", 502)
+                mutableState.value = mutableState.value.copy(busyAction = null, openUrl = url)
+            } catch (error: Exception) {
+                mutableState.value = mutableState.value.copy(busyAction = null, error = error.message ?: "Telegram bağlantısı açılamadı.")
+            }
+        }
+    }
+
     class Factory(private val container: AppContainer, private val path: String) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = RemotePageViewModel(container, path) as T
@@ -191,6 +206,7 @@ internal fun remoteActions(pageId: String, item: JsonElement): List<RemoteAction
         "memory" -> "memory/items"
         "memory-candidates" -> "memory/candidates"
         "trust" -> "trust-grants"
+        "mcp" -> "mcp/servers"
         else -> pageId
     }
     fun action(
@@ -208,6 +224,8 @@ internal fun remoteActions(pageId: String, item: JsonElement): List<RemoteAction
             add(action("Bu hesaptan kaldır", "", "DELETE", confirm = true, success = "Bilgisayar hesaptan kaldırıldı."))
         }
         "skills" -> listOf(action("Beceriyi sil", "", "DELETE", confirm = true, success = "Beceri silindi."))
+        "mcp" -> listOf(action("Sunucuyu kaldır", "", "DELETE", confirm = true, success = "MCP sunucusu kaldırıldı."))
+        "channels" -> listOf(action("Bağlantıyı kaldır", "", "DELETE", confirm = true, success = "Kanal bağlantısı kaldırıldı."))
         "memory-candidates" -> listOf(
             action("Kabul et", "/accept", "POST", success = "Hafıza kaydedildi."),
             action("Reddet", "/dismiss", "POST", confirm = true, success = "Öneri kaldırıldı."),

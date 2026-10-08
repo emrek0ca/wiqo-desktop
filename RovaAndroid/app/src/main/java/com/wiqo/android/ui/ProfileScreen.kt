@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -14,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -105,21 +107,20 @@ internal fun ProfileScreen(container: AppContainer, onBack: () -> Unit, onDelete
                 OutlinedTextField(name, { name = it.take(40) }, label = { Text("Ad") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(address, { address = it.take(40) }, label = { Text("Hitap") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Text("Yanıt tonu")
-                androidx.compose.material3.SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    listOf("samimi", "profesyonel", "kisa", "detayli").forEachIndexed { index, option ->
-                        androidx.compose.material3.SegmentedButton(
-                            selected = tone == option,
-                            onClick = { tone = option },
-                            shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(index, 4),
-                            label = { Text(when (option) { "kisa" -> "Kısa"; "detayli" -> "Detaylı"; else -> option.replaceFirstChar(Char::uppercase) }) },
-                        )
+                Column {
+                    listOf("samimi", "profesyonel", "kisa", "detayli").chunked(2).forEach { options ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            options.forEach { option ->
+                                FilterChip(selected = tone == option, onClick = { tone = option },
+                                    label = { Text(when (option) { "kisa" -> "Kısa"; "detayli" -> "Detaylı"; else -> option.replaceFirstChar(Char::uppercase) }) })
+                            }
+                        }
                     }
                 }
                 Text("Yanıt dili")
-                androidx.compose.material3.SingleChoiceSegmentedButtonRow {
-                    listOf("tr", "en").forEachIndexed { index, option ->
-                        androidx.compose.material3.SegmentedButton(selected = language == option, onClick = { language = option },
-                            shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(index, 2),
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("tr", "en").forEach { option ->
+                        FilterChip(selected = language == option, onClick = { language = option },
                             label = { Text(if (option == "tr") "Türkçe" else "English") })
                     }
                 }

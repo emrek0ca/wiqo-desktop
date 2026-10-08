@@ -68,6 +68,10 @@ internal fun RemotePage(
     val state by vm.state.collectAsStateWithLifecycle()
     var pendingAction by remember(path) { mutableStateOf<RemoteAction?>(null) }
     var showSkillEditor by remember(path) { mutableStateOf(false) }
+    var showMcpEditor by remember(path) { mutableStateOf(false) }
+    var mcpName by remember(path) { mutableStateOf("") }
+    var mcpUrl by remember(path) { mutableStateOf("") }
+    var mcpToken by remember(path) { mutableStateOf("") }
     var skillName by remember(path) { mutableStateOf("") }
     var skillPrompt by remember(path) { mutableStateOf("") }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -84,6 +88,8 @@ internal fun RemotePage(
             navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri") } },
             actions = {
                 if (destination.id == "skills") TextButton(onClick = { showSkillEditor = true }) { Text("Yeni beceri") }
+                if (destination.id == "mcp") TextButton(onClick = { showMcpEditor = true }) { Text("Sunucu ekle") }
+                if (destination.id == "channels") TextButton(onClick = vm::startTelegramLink) { Text("Telegram bağla") }
                 if (onPair != null) IconButton(onClick = onPair) { Icon(Icons.Filled.QrCodeScanner, "PC eşleştir") }
                 IconButton(onClick = vm::refresh) { Icon(Icons.Filled.Refresh, "Yenile") }
             },
@@ -236,6 +242,31 @@ internal fun RemotePage(
                 ) { Text("Kaydet") }
             },
             dismissButton = { TextButton(onClick = { showSkillEditor = false }) { Text("Vazgeç") } },
+        )
+    }
+    if (showMcpEditor) {
+        AlertDialog(
+            onDismissRequest = { showMcpEditor = false },
+            title = { Text("MCP sunucusu ekle") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(mcpName, { mcpName = it.take(40) }, label = { Text("Ad") }, singleLine = true)
+                    OutlinedTextField(mcpUrl, { mcpUrl = it.take(2_048) }, label = { Text("HTTPS adresi") }, singleLine = true)
+                    OutlinedTextField(mcpToken, { mcpToken = it.take(4_000) }, label = { Text("Erişim anahtarı (isteğe bağlı)") }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val body = buildJsonObject {
+                        put("name", mcpName.trim()); put("url", mcpUrl.trim())
+                        mcpToken.takeIf(String::isNotBlank)?.let { put("authToken", it.trim()) }
+                    }
+                    showMcpEditor = false
+                    mcpToken = ""
+                    vm.perform(RemoteAction("Sunucu ekleniyor", "mcp/servers", "POST", body, successMessage = "MCP sunucusu eklendi."))
+                }, enabled = mcpName.trim().length >= 2 && mcpUrl.startsWith("https://") && state.busyAction == null) { Text("Ekle") }
+            },
+            dismissButton = { TextButton(onClick = { showMcpEditor = false; mcpToken = "" }) { Text("Vazgeç") } },
         )
     }
 }

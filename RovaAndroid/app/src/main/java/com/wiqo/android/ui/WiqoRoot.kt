@@ -17,6 +17,8 @@ import com.wiqo.android.AppContainer
 import com.wiqo.android.NotificationLink
 import com.wiqo.android.data.security.SecureTokenStore
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -110,7 +112,7 @@ private fun WiqoHome(
             val pairedId = container.tokenStore.read(SecureTokenStore.COMPANION_DEVICE_ID)
             val pairedDevice = deviceList.mapNotNull { it as? JsonObject }
                 .firstOrNull { (it["id"] as? JsonPrimitive)?.contentOrNull == pairedId }
-            isPaired = pairedDevice != null && container.tokenStore.read(SecureTokenStore.PAIRING_TOKEN) != null
+            isPaired = pairedId != null && container.tokenStore.read(SecureTokenStore.PAIRING_TOKEN) != null
             isConnected = isPaired && (pairedDevice?.get("online") as? JsonPrimitive)?.contentOrNull == "true"
             deviceName = (pairedDevice?.get("displayName") as? JsonPrimitive)?.contentOrNull ?: "PC"
         }
@@ -126,6 +128,29 @@ private fun WiqoHome(
                 val title = (obj["title"] as? JsonPrimitive)?.contentOrNull ?: "Sohbet"
                 ConversationItem(id = id, title = title, updatedAt = System.currentTimeMillis())
             })
+        }
+    }
+
+    LaunchedEffect(container) {
+        var retryDelay = 2_000L
+        while (isActive) {
+            try {
+                container.api.observeDeviceEvents { event ->
+                    val device = event["device"] as? JsonObject ?: return@observeDeviceEvents
+                    val id = (device["id"] as? JsonPrimitive)?.contentOrNull
+                    val pairedId = container.tokenStore.read(SecureTokenStore.COMPANION_DEVICE_ID)
+                    if (id != null && id == pairedId) {
+                        isPaired = container.tokenStore.read(SecureTokenStore.PAIRING_TOKEN) != null
+                        isConnected = isPaired && (device["online"] as? JsonPrimitive)?.contentOrNull == "true"
+                        deviceName = (device["displayName"] as? JsonPrimitive)?.contentOrNull ?: deviceName
+                    }
+                }
+                retryDelay = 2_000L
+            } catch (error: com.wiqo.android.data.network.ApiException) {
+                if (error.statusCode == 401 || error.statusCode == 403) break
+            } catch (_: Exception) { /* Network loss: reconnect while the signed-in screen is active. */ }
+            delay(retryDelay)
+            retryDelay = (retryDelay * 2).coerceAtMost(30_000L)
         }
     }
 
@@ -168,7 +193,7 @@ private fun WiqoHome(
             },
             onOpenRelated = { route, id ->
                 when (route) {
-                    "project-detail", "agent-task-detail" -> remoteDestination = DestinationData(route, id)
+                    "project-detail", "agent-task-detail", "automation-detail", "agents" -> remoteDestination = DestinationData(route, id)
                     "devices" -> showPCSettings = true
                     else -> remoteDestination = DestinationData("activity", null)
                 }
@@ -272,7 +297,7 @@ private fun WiqoHome(
             SubscriptionScreen(container = container, onBack = { showPaywall = false })
         }
 
-        if (showSettings && remoteDestination == null && !showPaywall && !showPairing) {
+        if (showSettings && remoteDestination == null && !showPaywall && !showPairing && !showPCSettings) {
             SettingsScreen(
                 preferences = container.preferences,
                 onNavigate = { destination ->

@@ -408,120 +408,6 @@ private struct WiqoActivityView: View {
     }
 }
 
-private struct WiqoMemoryView: View {
-    @State private var memories: [RovaBackendClient.StoredMemory] = []
-    @State private var candidates: [RovaBackendClient.MemoryCandidate] = []
-    @State private var isLoading = true
-    @State private var error: String?
-    @State private var selected: RovaBackendClient.StoredMemory?
-    @State private var confirmAll = false
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if let error { Text(error).font(.footnote).foregroundStyle(WiqoTheme.red) }
-                if !candidates.isEmpty { suggestions }
-                if isLoading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 30)
-                } else if memories.isEmpty && candidates.isEmpty {
-                    VStack(spacing: 10) {
-                        Image(systemName: "brain.head.profile").font(.system(size: 36)).foregroundStyle(.secondary)
-                        Text("Henüz bir şey hatırlamıyorum").font(.headline)
-                        Text("Tercihlerini bana söylediğinde burada görürsün.").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
-                } else if !memories.isEmpty {
-                    WiqoSettingsGroup {
-                        ForEach(Array(memories.enumerated()), id: \.element.id) { index, memory in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text(memory.content).font(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
-                                Button { selected = memory } label: {
-                                    Image(systemName: "trash").font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 36, height: 36).contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Sil")
-                            }
-                            .padding(.leading, 14)
-                            .padding(.trailing, 6)
-                            .padding(.vertical, 6)
-                            .overlay(alignment: .bottom) { if index < memories.count - 1 { Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 14) } }
-                        }
-                    }
-                    Button("Tüm hafızayı sil", role: .destructive) { confirmAll = true }
-                        .font(.subheadline)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(.horizontal, RovaDesign.screenPadding)
-            .padding(.top, 8)
-            .padding(.bottom, 32)
-        }
-        .background(WiqoSettingsStyle.canvas)
-        .navigationTitle("Hafıza")
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
-        .refreshable { await load() }
-        .wiqoConfirmation(item: $selected, title: { _ in String(localized: "Bu hafıza kaydı silinsin mi?") }) { memory in
-            Button("Kaydı sil", role: .destructive) { Task { await remove(memory.id) } }
-        } message: { memory in Text(memory.content) }
-        .wiqoConfirmation(String(localized: "Tüm hafıza silinsin mi?"), isPresented: $confirmAll) {
-            Button("Tümünü sil", role: .destructive) { Task { await removeAll() } }
-        } message: {
-            Text("Wiqo senin hakkında öğrendiği her şeyi unutur. Bu geri alınamaz.")
-        }
-    }
-
-    /// Wiqo asks before keeping something: one tap to keep, one to drop.
-    private var suggestions: some View {
-        WiqoSettingsGroup(title: String(localized: "Hatırlayayım mı?")) {
-            ForEach(Array(candidates.enumerated()), id: \.element.id) { index, candidate in
-                HStack(spacing: 4) {
-                    Text(candidate.content).font(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
-                    Button { Task { await dismiss(candidate) } } label: { Image(systemName: "xmark").font(.footnote.weight(.bold)).foregroundStyle(.secondary).frame(width: 40, height: 40) }
-                        .buttonStyle(.plain).accessibilityLabel("Hayır")
-                    Button { Task { await accept(candidate) } } label: { Image(systemName: "checkmark").font(.footnote.weight(.bold)).foregroundStyle(WiqoTheme.green).frame(width: 40, height: 40) }
-                        .buttonStyle(.plain).accessibilityLabel("Hatırla")
-                }
-                .padding(.leading, 14)
-                .padding(.trailing, 6)
-                .padding(.vertical, 4)
-                .overlay(alignment: .bottom) { if index < candidates.count - 1 { Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 14) } }
-            }
-        }
-    }
-
-    private func load() async {
-        isLoading = memories.isEmpty
-        defer { isLoading = false }
-        async let stored = RovaBackendClient.fetchStoredMemories()
-        async let suggested = try? RovaBackendClient.fetchMemoryCandidates()
-        do { memories = try await stored; error = nil }
-        catch { self.error = String(localized: "Hafıza yüklenemedi. Yeniden denemek için aşağı çek.") }
-        candidates = ((await suggested) ?? candidates).filter { $0.status == "pending" }
-    }
-
-    private func accept(_ candidate: RovaBackendClient.MemoryCandidate) async {
-        do { try await RovaBackendClient.acceptMemoryCandidate(id: candidate.id); candidates.removeAll { $0.id == candidate.id }; await load() }
-        catch { self.error = String(localized: "Kaydedilemedi. Tekrar dene.") }
-    }
-
-    private func dismiss(_ candidate: RovaBackendClient.MemoryCandidate) async {
-        do { try await RovaBackendClient.dismissMemoryCandidate(id: candidate.id); candidates.removeAll { $0.id == candidate.id } }
-        catch { self.error = String(localized: "İşlem tamamlanamadı. Tekrar dene.") }
-    }
-
-    private func remove(_ id: Int) async {
-        do { try await RovaBackendClient.deleteStoredMemory(id: id); memories.removeAll { $0.id == id }; selected = nil; error = nil }
-        catch { self.error = String(localized: "Kayıt silinemedi. Tekrar dene.") }
-    }
-
-    private func removeAll() async {
-        do { try await RovaBackendClient.deleteAllStoredMemories(); memories = []; error = nil }
-        catch { self.error = String(localized: "Hafıza silinemedi. Tekrar dene.") }
-    }
-}
-
 private struct WiqoGoalsView: View {
     @State private var goals: [RovaBackendClient.RovaGoal] = []
     @State private var isLoading = true
@@ -1339,8 +1225,7 @@ struct SettingsView: View {
     // MARK: Profile and plan
 
     private var profileCard: some View {
-        let info = subscriptionStore.info
-        return VStack(spacing: 12) {
+        VStack(spacing: 12) {
             NavigationLink {
                 AccountSettingsView(profileStore: profileStore, authSession: authSession, subscriptionStore: subscriptionStore)
             } label: {
@@ -1375,7 +1260,7 @@ struct SettingsView: View {
                 SubscriptionView(subscriptionStore: subscriptionStore)
             } label: {
                 WiqoRow(
-                    systemImage: "sparkles",
+                    systemImage: "infinity",
                     title: String(localized: "Abonelik"),
                     subtitle: String(localized: "Bugün \(info.usage.messages.used)/\(info.usage.messages.limit) mesaj"),
                     showsDivider: false
@@ -1547,15 +1432,7 @@ struct SettingsView: View {
             }
             .buttonStyle(WiqoRowButtonStyle())
             NavigationLink { WiqoGoalsView() } label: {
-                WiqoRow(systemImage: "target", title: String(localized: "Hedefler"), showsDivider: true)
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-            NavigationLink { WiqoMemoryView() } label: {
-                WiqoRow(systemImage: "brain.head.profile", title: String(localized: "Hafıza"), showsDivider: true)
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-            NavigationLink { WiqoActivityView(model: model) } label: {
-                WiqoRow(systemImage: "clock.arrow.circlepath", title: String(localized: "Etkinlik"), showsDivider: false)
+                WiqoRow(systemImage: "target", title: String(localized: "Hedefler"), showsDivider: false)
             }
             .buttonStyle(WiqoRowButtonStyle())
         }
