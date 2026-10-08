@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E88948E2CA54BB90FD8C7B27 /* PCSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7178948E2CA54BB90FD8C7B /* PCSettingsView.swift */; };
+		E8DE96C56CBAC202420A47BC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7EEDE96C56CBAC202420A47 /* SettingsView.swift */; };
+		E8F77020CC2C2C338D2F0365 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7F5F77020CC2C2C338D2F03 /* PairingView.swift */; };
+		E857A85CCD3729D81B96EFDA /* WiqoHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7D457A85CCD3729D81B96EF /* WiqoHomeView.swift */; };
+		E89F9A1D2BD362CE32069DA9 /* WiqoGoalsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7C09F9A1D2BD362CE32069D /* WiqoGoalsView.swift */; };
+		E847E4F9A98A9D2A812CF7F4 /* WiqoActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A547E4F9A98A9D2A812CF7 /* WiqoActivityView.swift */; };
 		E8D326D3D91D55F60434D6AA /* RovaBackendClient+Reminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = E786D326D3D91D55F60434D6 /* RovaBackendClient+Reminders.swift */; };
 		E83174C11FA3030A3AD7A319 /* RovaBackendClient+Automations.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7CD3174C11FA3030A3AD7A3 /* RovaBackendClient+Automations.swift */; };
 		E8271391A68B25689306A013 /* RovaBackendClient+Billing.swift in Sources */ = {isa = PBXBuildFile; fileRef = E73C271391A68B25689306A0 /* RovaBackendClient+Billing.swift */; };
@@ -188,6 +194,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E7178948E2CA54BB90FD8C7B /* PCSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PCSettingsView.swift; sourceTree = "<group>"; };
+		E7EEDE96C56CBAC202420A47 /* SettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E7F5F77020CC2C2C338D2F03 /* PairingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		E7D457A85CCD3729D81B96EF /* WiqoHomeView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoHomeView.swift; sourceTree = "<group>"; };
+		E7C09F9A1D2BD362CE32069D /* WiqoGoalsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoGoalsView.swift; sourceTree = "<group>"; };
+		E7A547E4F9A98A9D2A812CF7 /* WiqoActivityView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoActivityView.swift; sourceTree = "<group>"; };
 		E786D326D3D91D55F60434D6 /* RovaBackendClient+Reminders.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "RovaBackendClient+Reminders.swift"; sourceTree = "<group>"; };
 		E7CD3174C11FA3030A3AD7A3 /* RovaBackendClient+Automations.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "RovaBackendClient+Automations.swift"; sourceTree = "<group>"; };
 		E73C271391A68B25689306A0 /* RovaBackendClient+Billing.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "RovaBackendClient+Billing.swift"; sourceTree = "<group>"; };
@@ -520,6 +532,12 @@
 				AAAFA55B3331D4116B3819B3 /* ArtifactPreview.swift */,
 				395FF78233CB35CC80BB3B64 /* Billing.swift */,
 				91687FA6CF10762A30145E6C /* PaywallView.swift */,
+				E7178948E2CA54BB90FD8C7B /* PCSettingsView.swift */,
+				E7EEDE96C56CBAC202420A47 /* SettingsView.swift */,
+				E7F5F77020CC2C2C338D2F03 /* PairingView.swift */,
+				E7D457A85CCD3729D81B96EF /* WiqoHomeView.swift */,
+				E7C09F9A1D2BD362CE32069D /* WiqoGoalsView.swift */,
+				E7A547E4F9A98A9D2A812CF7 /* WiqoActivityView.swift */,
 				E786D326D3D91D55F60434D6 /* RovaBackendClient+Reminders.swift */,
 				E7CD3174C11FA3030A3AD7A3 /* RovaBackendClient+Automations.swift */,
 				E73C271391A68B25689306A0 /* RovaBackendClient+Billing.swift */,
@@ -904,6 +922,12 @@
 				9D4EB581866295D210CBC5E7 /* ArtifactPreview.swift in Sources */,
 				61D8FCE0A1D986DE1A0BF730 /* Billing.swift in Sources */,
 				3B3989760AB287C6DF759DA5 /* PaywallView.swift in Sources */,
+				E88948E2CA54BB90FD8C7B27 /* PCSettingsView.swift in Sources */,
+				E8DE96C56CBAC202420A47BC /* SettingsView.swift in Sources */,
+				E8F77020CC2C2C338D2F0365 /* PairingView.swift in Sources */,
+				E857A85CCD3729D81B96EFDA /* WiqoHomeView.swift in Sources */,
+				E89F9A1D2BD362CE32069DA9 /* WiqoGoalsView.swift in Sources */,
+				E847E4F9A98A9D2A812CF7F4 /* WiqoActivityView.swift in Sources */,
 				E8D326D3D91D55F60434D6AA /* RovaBackendClient+Reminders.swift in Sources */,
 				E83174C11FA3030A3AD7A319 /* RovaBackendClient+Automations.swift in Sources */,
 				E8271391A68B25689306A013 /* RovaBackendClient+Billing.swift in Sources */,
