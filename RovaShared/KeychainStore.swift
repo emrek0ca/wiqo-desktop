@@ -58,6 +58,26 @@ public enum RovaKeychainStore {
         return data
     }
 
+    /// Removes every item of this app that was written before `date`. The Keychain outlives an uninstall; items older than the current installation are the previous one's.
+    @discardableResult
+    public static func deleteItems(createdBefore date: Date) -> Int {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecReturnAttributes: true,
+            kSecMatchLimit: kSecMatchLimitAll
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let items = result as? [[CFString: Any]] else { return 0 }
+        var removed = 0
+        for item in items {
+            guard let account = item[kSecAttrAccount] as? String,
+                  let created = item[kSecAttrCreationDate] as? Date, created < date else { continue }
+            if (try? delete(account: account)) != nil { removed += 1 }
+        }
+        return removed
+    }
+
     public static func delete(account: String) throws {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,

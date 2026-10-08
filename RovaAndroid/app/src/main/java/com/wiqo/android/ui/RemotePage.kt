@@ -117,6 +117,7 @@ internal fun endpointFor(destination: DestinationData): String = when (destinati
     "agent-task-detail" -> "agent-tasks/${destination.path.asSafeIdentifier()}"
     "task-request" -> "copilot/requests/${destination.path.asSafeIdentifier()}"
     "project-detail" -> "projects/${destination.path.asNumericIdentifier()}"
+    "automation-detail" -> "automations/${destination.path.asNumericIdentifier()}"
     "automation-run" -> {
         val path = destination.path.orEmpty()
         if (path.matches(Regex("[0-9]+/runs/[0-9]+/journal"))) "automations/$path" else "activity"

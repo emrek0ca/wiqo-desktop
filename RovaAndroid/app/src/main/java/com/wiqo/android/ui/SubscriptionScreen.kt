@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,6 +29,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,13 +44,15 @@ import com.wiqo.android.AppContainer
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-internal fun SubscriptionScreen(container: AppContainer) {
+internal fun SubscriptionScreen(container: AppContainer, onBack: () -> Unit = {}) {
     val state by container.billing.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     LaunchedEffect(Unit) { container.billing.load() }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Planlar") }) }) { insets ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Planlar") }, navigationIcon = {
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri") }
+    }) }) { insets ->
         Box(Modifier.fillMaxWidth().padding(insets), contentAlignment = Alignment.TopCenter) {
             Column(
                 Modifier.fillMaxWidth().widthIn(max = 620.dp).verticalScroll(rememberScrollState()).padding(20.dp),

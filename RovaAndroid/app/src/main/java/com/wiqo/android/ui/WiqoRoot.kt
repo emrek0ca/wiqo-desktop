@@ -1,10 +1,5 @@
 package com.wiqo.android.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -20,10 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wiqo.android.AppContainer
 import com.wiqo.android.NotificationLink
-import com.wiqo.android.data.local.ThemeMode
-import kotlinx.coroutines.Dispatchers
+import com.wiqo.android.data.security.SecureTokenStore
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -65,20 +58,17 @@ private fun WiqoHome(
     onNotificationConsumed: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    val themeMode by container.preferences.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
-
     var conversationId by remember { mutableStateOf("default") }
     var draftPrompt by remember { mutableStateOf<String?>(null) }
-
-    // Modal sheet visibility states matching iOS WiqoHomeView
     var showSidebar by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showPCSettings by remember { mutableStateOf(false) }
     var showTemplates by remember { mutableStateOf(false) }
     var showPairing by remember { mutableStateOf(false) }
     var showPaywall by remember { mutableStateOf(false) }
-    var showActivity by remember { mutableStateOf(false) }
-    var showWelcome by remember { mutableStateOf(false) }
+    var remoteDestination by remember { mutableStateOf<DestinationData?>(null) }
+    var homeRefresh by remember { mutableStateOf(0) }
+    var pcError by remember { mutableStateOf<String?>(null) }
 
     var isPaired by remember { mutableStateOf(false) }
     var isConnected by remember { mutableStateOf(false) }
@@ -88,45 +78,34 @@ private fun WiqoHome(
 
     val conversationList = remember { mutableStateListOf<ConversationItem>() }
 
-    // Refresh conversations and status from API
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val profile = container.api.get("profile") as? JsonObject
-                if (profile != null) {
-                    val name = (profile["displayName"] as? JsonPrimitive)?.contentOrNull
-                    val email = (profile["email"] as? JsonPrimitive)?.contentOrNull
-                    withContext(Dispatchers.Main) {
-                        if (!name.isNullOrBlank()) userName = name
-                        if (!email.isNullOrBlank()) userEmail = email
-                    }
-                }
+    LaunchedEffect(homeRefresh) {
+        val profile = runCatching { container.api.get("profile") as? JsonObject }.getOrNull()
+        userName = (profile?.get("displayName") as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) ?: "Wiqo Kullanıcısı"
+        userEmail = (profile?.get("email") as? JsonPrimitive)?.contentOrNull.orEmpty()
 
-                val devices = container.api.get("devices") as? JsonArray
-                if (devices != null && devices.isNotEmpty()) {
-                    val firstDev = devices.firstOrNull() as? JsonObject
-                    val devLabel = (firstDev?.get("name") as? JsonPrimitive)?.contentOrNull ?: "PC"
-                    withContext(Dispatchers.Main) {
-                        isPaired = true
-                        isConnected = true
-                        deviceName = devLabel
-                    }
-                }
+        val deviceList = runCatching {
+            ((container.api.get("devices") as? JsonObject)?.get("devices") as? JsonArray).orEmpty()
+        }.getOrNull()
+        if (deviceList != null) {
+            val pairedId = container.tokenStore.read(SecureTokenStore.COMPANION_DEVICE_ID)
+            val pairedDevice = deviceList.mapNotNull { it as? JsonObject }
+                .firstOrNull { (it["id"] as? JsonPrimitive)?.contentOrNull == pairedId }
+            isPaired = pairedDevice != null && container.tokenStore.read(SecureTokenStore.PAIRING_TOKEN) != null
+            isConnected = isPaired && (pairedDevice?.get("online") as? JsonPrimitive)?.contentOrNull == "true"
+            deviceName = (pairedDevice?.get("displayName") as? JsonPrimitive)?.contentOrNull ?: "PC"
+        }
 
-                val convs = container.api.get("conversations") as? JsonArray
-                if (convs != null) {
-                    val items = convs.mapNotNull { item ->
-                        val obj = item as? JsonObject ?: return@mapNotNull null
-                        val id = (obj["id"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
-                        val title = (obj["title"] as? JsonPrimitive)?.contentOrNull ?: "Sohbet"
-                        ConversationItem(id = id, title = title, updatedAt = System.currentTimeMillis())
-                    }
-                    withContext(Dispatchers.Main) {
-                        conversationList.clear()
-                        conversationList.addAll(items)
-                    }
-                }
-            }
+        val conversations = runCatching {
+            ((container.api.get("conversations") as? JsonObject)?.get("conversations") as? JsonArray).orEmpty()
+        }.getOrNull()
+        if (conversations != null) {
+            conversationList.clear()
+            conversationList.addAll(conversations.mapNotNull { item ->
+                val obj = item as? JsonObject ?: return@mapNotNull null
+                val id = (obj["id"] as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+                val title = (obj["title"] as? JsonPrimitive)?.contentOrNull ?: "Sohbet"
+                ConversationItem(id = id, title = title, updatedAt = System.currentTimeMillis())
+            })
         }
     }
 
@@ -140,27 +119,27 @@ private fun WiqoHome(
                 }
             }
             "devices" -> showPCSettings = true
-            "activity" -> showActivity = true
+            "activity" -> remoteDestination = DestinationData("activity", null)
             "settings" -> showSettings = true
             "subscription" -> showPaywall = true
             "pairing" -> showPairing = true
+            "connected" -> remoteDestination = DestinationData("connected", null, link.oauthMessage)
             else -> {
                 if (link.conversationId != null) conversationId = link.conversationId
-                else showActivity = true
+                else remoteDestination = DestinationData("activity", null)
             }
         }
         onNotificationConsumed()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Primary Screen: ChatScreen matching CopilotView.swift
         ChatScreen(
             container = container,
             conversationId = conversationId,
             draftPrompt = draftPrompt,
             isPaired = isPaired,
             isConnected = isConnected,
-            onOpenSidebar = { showSidebar = true },
+            onOpenSidebar = { homeRefresh += 1; showSidebar = true },
             onOpenPCSettings = { showPCSettings = true },
             onOpenTemplates = { showTemplates = true },
             onNewConversation = {
@@ -169,11 +148,12 @@ private fun WiqoHome(
             },
             onOpenRelated = { route, id ->
                 when (route) {
-                    "project-detail", "agent-task-detail" -> showActivity = true
+                    "project-detail", "agent-task-detail" -> remoteDestination = DestinationData(route, id)
                     "devices" -> showPCSettings = true
-                    else -> showActivity = true
+                    else -> remoteDestination = DestinationData("activity", null)
                 }
             },
+            onSendCompleted = { homeRefresh += 1 },
         )
 
         // Slide-in Conversation Sidebar Drawer matching iOS SidebarOverlay
@@ -199,6 +179,7 @@ private fun WiqoHome(
                 }
                 scope.launch {
                     runCatching { container.api.delete("conversations/$id") }
+                        .onFailure { homeRefresh += 1 }
                 }
             },
             onOpenSettings = {
@@ -208,28 +189,6 @@ private fun WiqoHome(
             userName = userName,
             userEmail = userEmail,
         )
-
-        // Separate Full-Screen Settings Page
-        AnimatedVisibility(
-            visible = showSettings,
-            enter = slideInHorizontally { it } + fadeIn(),
-            exit = slideOutHorizontally { it } + fadeOut(),
-        ) {
-            SettingsSheet(
-                onDismiss = { showSettings = false },
-                onSignOut = onSignOut,
-                isPaired = isPaired,
-                isConnected = isConnected,
-                deviceName = deviceName,
-                userName = userName,
-                currentThemeMode = themeMode,
-                onThemeModeChange = { mode ->
-                    scope.launch {
-                        container.preferences.setThemeMode(mode)
-                    }
-                },
-            )
-        }
 
         if (showPCSettings) {
             PCSettingsSheet(
@@ -242,10 +201,24 @@ private fun WiqoHome(
                     showPairing = true
                 },
                 onForgetDevice = {
-                    isPaired = false
-                    isConnected = false
-                    showPCSettings = false
+                    scope.launch {
+                        try {
+                            container.tokenStore.read(SecureTokenStore.COMPANION_DEVICE_ID)?.let { id ->
+                                container.api.delete("devices/$id")
+                            }
+                            listOf(SecureTokenStore.PAIRING_TOKEN, SecureTokenStore.PAIRING_FINGERPRINT,
+                                SecureTokenStore.PAIRING_DEVICE_ID, SecureTokenStore.COMPANION_DEVICE_ID)
+                                .forEach(container.tokenStore::remove)
+                            isPaired = false
+                            isConnected = false
+                            showPCSettings = false
+                            homeRefresh += 1
+                        } catch (error: Exception) {
+                            pcError = error.message ?: "PC kaldırılamadı. Tekrar dene."
+                        }
+                    }
                 },
+                error = pcError,
             )
         }
 
@@ -261,36 +234,37 @@ private fun WiqoHome(
         }
 
         if (showPairing) {
-            PairingSheet(
-                onDismiss = { showPairing = false },
-                onStartQrScan = {},
-                onPairWithCode = { code ->
-                    isPaired = true
-                    isConnected = true
-                    showPairing = false
-                },
+            PairingScreen(
+                container = container,
+                onBack = { showPairing = false },
+                onPaired = { showPairing = false; homeRefresh += 1 },
             )
         }
 
         if (showPaywall) {
-            PaywallSheet(
-                onDismiss = { showPaywall = false },
-                onSubscribePro = {},
+            SubscriptionScreen(container = container, onBack = { showPaywall = false })
+        }
+
+        if (showSettings && remoteDestination == null && !showPaywall && !showPairing) {
+            SettingsScreen(
+                preferences = container.preferences,
+                onNavigate = { destination -> remoteDestination = destination },
+                onSignOut = onSignOut,
+                onBack = { showSettings = false },
             )
         }
 
-        if (showActivity) {
-            ActivitySheet(
-                onDismiss = { showActivity = false },
-            )
-        }
-
-        if (showWelcome) {
-            WiqoWelcomeSheet(
-                onDismiss = { showWelcome = false },
-                onConnect = {
-                    showWelcome = false
-                    showPairing = true
+        remoteDestination?.takeUnless { showPairing || showPaywall }?.let { destination ->
+            RemotePage(
+                container = container,
+                destination = destination,
+                title = destination.id.replace('-', ' ').replaceFirstChar(Char::uppercase),
+                onBack = { remoteDestination = null; homeRefresh += 1 },
+                onPair = if (destination.id == "devices") ({ showPairing = true }) else null,
+                onSelect = when (destination.id) {
+                    "agent-tasks" -> ({ id -> remoteDestination = DestinationData("agent-task-detail", id) })
+                    "automations" -> ({ id -> remoteDestination = DestinationData("automation-detail", id) })
+                    else -> null
                 },
             )
         }

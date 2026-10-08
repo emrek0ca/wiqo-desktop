@@ -1,6 +1,8 @@
 package com.wiqo.android.data.network
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.time.Instant
@@ -17,12 +19,39 @@ internal fun signedStatusCommandRequest(
     nonce: String,
     createdAtEpochMs: Long,
 ): JsonObject {
-    require(UUID.fromString(id).toString() == id.lowercase())
     require(type == "getSystemStatus" || type == "ping")
+    return signedDeviceCommandRequest(id, type, token, nonce, createdAtEpochMs)
+}
+
+/** Only the explicit PC controls exposed by the Android screen may be signed. */
+internal fun signedDeviceCommandRequest(
+    id: String,
+    type: String,
+    token: String,
+    nonce: String,
+    createdAtEpochMs: Long,
+    value: Int? = null,
+): JsonObject {
+    require(UUID.fromString(id).toString() == id.lowercase())
+    val payload: JsonObject
+    val canonicalPayload: String
+    when (type) {
+        "getSystemStatus", "ping", "lockMac", "sleepMac", "displaySleep", "toggleMute" -> {
+            require(value == null)
+            payload = buildJsonObject { put("kind", "none") }
+            canonicalPayload = """{"kind":"none"}"""
+        }
+        "setVolume", "setBrightness" -> {
+            require(value != null && value in 0..100)
+            val kind = if (type == "setVolume") "volume" else "brightness"
+            payload = buildJsonObject { put("kind", kind); put("value", value) }
+            canonicalPayload = """{"kind":"$kind","value":$value}"""
+        }
+        else -> throw IllegalArgumentException("Unsupported device command")
+    }
     require(token.isNotBlank() && nonce.isNotBlank() && nonce.length <= 200)
     require(createdAtEpochMs > 0)
 
-    val canonicalPayload = """{"kind":"none"}"""
     val payloadDigest = sha256Hex(canonicalPayload.toByteArray(Charsets.UTF_8))
     val message = "wiqo-command:v2:$id:$type:$createdAtEpochMs:$nonce:$payloadDigest"
     val mac = Mac.getInstance("HmacSHA256")
@@ -32,7 +61,7 @@ internal fun signedStatusCommandRequest(
     return buildJsonObject {
         put("id", id)
         put("type", type)
-        put("payload", buildJsonObject { put("kind", "none") })
+        put("payload", payload)
         put("createdAt", createdAt)
         put("signatureVersion", 2)
         put("createdAtEpochMs", createdAtEpochMs)

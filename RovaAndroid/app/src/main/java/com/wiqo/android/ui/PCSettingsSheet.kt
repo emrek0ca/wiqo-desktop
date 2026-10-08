@@ -73,6 +73,7 @@ fun PCSettingsSheet(
     onBrightnessChange: (Float) -> Unit = {},
     initialVolume: Float = 0.5f,
     initialBrightness: Float = 0.8f,
+    error: String? = null,
 ) {
     val colors = WiqoDesign.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -123,6 +124,8 @@ fun PCSettingsSheet(
                     )
                 }
             }
+
+            error?.let { Text(it, color = colors.red, fontFamily = WiqoSans) }
 
             if (!isPaired) {
                 // Not paired card

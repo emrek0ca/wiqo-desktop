@@ -17,7 +17,7 @@ data class AuthUiState(
 )
 
 class AuthViewModel(private val container: AppContainer) : ViewModel() {
-    private val mutableState = MutableStateFlow(AuthUiState(signedIn = true))
+    private val mutableState = MutableStateFlow(AuthUiState(signedIn = container.tokenStore.read() != null))
     val state = mutableState.asStateFlow()
 
     fun login(email: String, password: String) = authenticate { container.api.login(email, password) }

@@ -9,6 +9,10 @@ struct RovaIOSApp: App {
     @StateObject private var authSession = AuthSessionStore()
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        WiqoInstallHygiene.dropPreviousInstallSecrets()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView(model: model, authSession: authSession)
@@ -345,5 +349,16 @@ enum RovaApprovalNotificationRoute {
     static func consumeActivity() -> Bool {
         defer { UserDefaults.standard.removeObject(forKey: activityStorageKey) }
         return UserDefaults.standard.bool(forKey: activityStorageKey)
+    }
+}
+
+/// The Keychain survives deleting the app, so a reinstall used to find the old session and open straight into the account. Everything saved
+/// before this installation's data container was created belongs to the previous installation and is removed before anything reads it:
+/// deleting the app signs the account out. An update keeps its container (and its newer Keychain items), so nobody is signed out by updating.
+enum WiqoInstallHygiene {
+    static func dropPreviousInstallSecrets() {
+        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+              let installed = (try? FileManager.default.attributesOfItem(atPath: documents.path))?[.creationDate] as? Date else { return }
+        RovaKeychainStore.deleteItems(createdBefore: installed)
     }
 }

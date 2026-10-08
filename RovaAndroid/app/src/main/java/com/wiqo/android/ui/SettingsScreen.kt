@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -28,6 +29,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -40,6 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.launch
 
 private data class SettingsItem(val id: String, val title: String, val subtitle: String? = null)
@@ -67,6 +71,7 @@ internal fun SettingsScreen(
     preferences: com.wiqo.android.data.local.UserPreferencesStore,
     onNavigate: (DestinationData) -> Unit,
     onSignOut: () -> Unit,
+    onBack: () -> Unit = {},
 ) {
     val themeMode by preferences.themeMode.collectAsState(initial = com.wiqo.android.data.local.ThemeMode.SYSTEM)
     val scope = rememberCoroutineScope()
@@ -78,8 +83,10 @@ internal fun SettingsScreen(
     val notificationSettings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         notificationsEnabled = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
     }
-    Scaffold(topBar = { TopAppBar(title = { Text("Ayarlar") }) }) { insets ->
-        Column(Modifier.fillMaxSize().padding(insets).padding(horizontal = 16.dp)) {
+    Scaffold(topBar = { TopAppBar(title = { Text("Ayarlar") }, navigationIcon = {
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri") }
+    }) }) { insets ->
+        Column(Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(8.dp))
             Text("Görünüm", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
             Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

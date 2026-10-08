@@ -250,7 +250,7 @@ internal fun DeviceScreen(container: AppContainer, onPair: () -> Unit) {
 
 @Composable
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-internal fun PairingScreen(container: AppContainer, onBack: () -> Unit) {
+internal fun PairingScreen(container: AppContainer, onBack: () -> Unit, onPaired: () -> Unit = {}) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var result by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var scanning by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
@@ -263,6 +263,7 @@ internal fun PairingScreen(container: AppContainer, onBack: () -> Unit) {
             result = "Yerel PC bağlantısı doğrulanıyor…"
             scope.launch {
                 result = runCatching { container.api.claimRelayOrLocalQr(code) }
+                    .onSuccess { onPaired() }
                     .getOrElse { it.message ?: "Eşleşme tamamlanamadı." }
             }
         } else {
@@ -296,6 +297,7 @@ internal fun PairingScreen(container: AppContainer, onBack: () -> Unit) {
                                 result = "QR okundu. Eşleşme tamamlanıyor…"
                                 scope.launch {
                                     result = runCatching { container.api.claimRelayOrLocalQr(value) }
+                                        .onSuccess { onPaired() }
                                         .getOrElse { it.message ?: "Eşleşme tamamlanamadı." }
                                 }
                             }

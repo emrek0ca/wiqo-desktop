@@ -138,6 +138,16 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
     }
 
     suspend fun sendCompanionStatus(deviceId: String): JsonElement {
+        val response = sendCompanionCommand(deviceId, "getSystemStatus") as? JsonObject
+            ?: throw ApiException("PC yanıtı okunamadı.", 502)
+        val data = response["data"] as? JsonObject ?: throw ApiException("PC durum bilgisi eksik.", 502)
+        return data["value"] ?: data
+    }
+
+    suspend fun sendCompanionCommand(deviceId: String, type: String, value: Int? = null): JsonElement {
+        if (tokenStore.read(SecureTokenStore.COMPANION_DEVICE_ID) != deviceId) {
+            throw ApiException("Bu telefon seçilen PC ile eşleşmemiş.", 403)
+        }
         val pairingToken = tokenStore.read(SecureTokenStore.PAIRING_TOKEN)
             ?: throw ApiException("Önce bu Wiqo hesabıyla PC eşleştir.", 409)
         val nonceBytes = ByteArray(32).also(SecureRandom()::nextBytes)
@@ -145,12 +155,13 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
             nonceBytes,
             android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING,
         )
-        val request = signedStatusCommandRequest(
+        val request = signedDeviceCommandRequest(
             id = java.util.UUID.randomUUID().toString(),
-            type = "getSystemStatus",
+            type = type,
             token = pairingToken,
             nonce = nonce,
             createdAtEpochMs = System.currentTimeMillis(),
+            value = value,
         )
         val response = post("devices/${java.net.URLEncoder.encode(deviceId, Charsets.UTF_8.name())}/command", request) as? JsonObject
             ?: throw ApiException("PC yanıtı okunamadı.", 502)
@@ -158,8 +169,7 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
             val error = response["error"] as? JsonObject
             throw ApiException(error?.string("message") ?: "PC durum bilgisi alınamadı.", 502)
         }
-        val data = response["data"] as? JsonObject ?: throw ApiException("PC durum bilgisi eksik.", 502)
-        return data["value"] ?: data
+        return response
     }
 
     fun backendConfirmationBody(confirmationId: String, approved: Boolean, details: JsonObject): JsonObject = buildJsonObject {
@@ -385,8 +395,10 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
         conversationId: String,
         messages: List<ChatTurn>,
         attachments: List<ChatAttachment> = emptyList(),
+        createAgent: Boolean = false,
         onProgress: (String) -> Unit,
         onDelta: (String) -> Unit = {},
+        onEvent: (JsonObject) -> Unit = {},
     ): ChatReply = withContext(Dispatchers.IO) {
         val id = java.util.UUID.randomUUID().toString()
         val requestBody = buildJsonObject {
@@ -404,6 +416,10 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
             })
             put("availableApps", JsonArray(emptyList()))
             put("availableCapabilities", JsonArray(emptyList()))
+            put("clientFeatures", buildJsonArray { add("artifact-directory-v1") })
+            put("locale", java.util.Locale.getDefault().toLanguageTag())
+            if (createAgent) put("composerIntent", "create_agent")
+            tokenStore.read(SecureTokenStore.COMPANION_DEVICE_ID)?.let { put("deviceId", it) }
         }
         val request = Request.Builder()
             .url("$BASE_URL/copilot/chat")
@@ -420,7 +436,7 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
             call.execute().use { response ->
                 if (!response.isSuccessful) {
                     val error = response.apiError(json)
-                    if (error.statusCode >= 500) return@withContext waitForCopilotRequest(id, conversationId, onProgress)
+                    if (error.statusCode >= 500) return@withContext waitForCopilotRequest(id, conversationId, onProgress, onEvent)
                     throw error
                 }
                 val source = response.body?.source() ?: throw ApiException("Sunucudan boş yanıt alındı.", 502)
@@ -441,11 +457,12 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
                             if (data.isNotEmpty()) {
                                 val value = runCatching { json.parseToJsonElement(data) as? JsonObject }.getOrNull()
                                 when ((value?.string("type") ?: eventName).lowercase()) {
-                                    "status", "progress", "activity" -> value?.string("text", "message", "label")?.let(onProgress)
+                                    "status", "progress" -> value?.string("text", "message", "label")?.let(onProgress)
                                     "delta", "text_delta" -> value?.string("text", "delta", "content")?.let(onDelta)
                                     "reset" -> onProgress("")
                                     "error" -> throw ApiException(value?.string("message") ?: "Yanıt alınamadı.", 502)
                                     "done", "complete", "completed", "result" -> if (value != null) final = value
+                                    else -> if (value != null) onEvent(value)
                                 }
                             }
                             eventName = "message"
@@ -454,22 +471,27 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
                     }
                     if (final != null) break
                 }
-                val payload = final ?: return@withContext waitForCopilotRequest(id, conversationId, onProgress)
+                val payload = final ?: return@withContext waitForCopilotRequest(id, conversationId, onProgress, onEvent)
                 val reply = payload.string("reply", "text", "content")
                     ?: throw ApiException("Sunucudan geçersiz bir yanıt alındı.", 502)
                 ChatReply(conversationId, reply, payload.string("requestId") ?: id, payload)
             }
         } catch (error: IOException) {
             currentCoroutineContext().ensureActive()
-            waitForCopilotRequest(id, conversationId, onProgress)
+            waitForCopilotRequest(id, conversationId, onProgress, onEvent)
         } finally {
             cancellation?.dispose()
             call.cancel()
         }
     }
 
-    private suspend fun waitForCopilotRequest(requestId: String, conversationId: String, onProgress: (String) -> Unit): ChatReply {
-        val deadline = System.nanoTime() + 150_000_000_000L
+    private suspend fun waitForCopilotRequest(
+        requestId: String,
+        conversationId: String,
+        onProgress: (String) -> Unit,
+        onEvent: (JsonObject) -> Unit,
+    ): ChatReply {
+        val deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(16)
         var missingCount = 0
         onProgress("Bağlantı kesildi; Wiqo işlemin sonucunu koruyor…")
         while (System.nanoTime() < deadline) {
@@ -487,6 +509,18 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
                         val error = root["error"] as? JsonObject
                         throw ApiException(error?.string("message") ?: "İşlem tamamlanamadı.", 502)
                     }
+                    "awaiting_backend_confirmation" -> {
+                        onProgress("İşlem onayını bekliyor…")
+                        val response = root["response"] as? JsonObject
+                        if (response != null) onEvent(buildJsonObject {
+                            put("type", "confirmation_needed")
+                            put("backendConfirmations", response["backendConfirmations"] ?: JsonArray(emptyList()))
+                        })
+                    }
+                    "awaiting_weather_location" -> {
+                        onProgress("Hava durumu için konum bekleniyor…")
+                        onEvent(buildJsonObject { put("type", "location_required"); put("requestId", requestId) })
+                    }
                     "running", "queued", "waiting_approval" -> onProgress("İşlem bağlantıdan bağımsız devam ediyor…")
                     else -> {
                         missingCount += 1
@@ -500,7 +534,7 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
             } catch (error: IOException) {
                 currentCoroutineContext().ensureActive()
             }
-            delay(if (missingCount > 0) 500 else 1_000)
+            delay(if (missingCount > 0) 500 else 2_000)
         }
         throw ApiException("İşlem sunucuda devam ediyor olabilir. Sohbeti açıp biraz sonra tekrar kontrol et.", 408)
     }

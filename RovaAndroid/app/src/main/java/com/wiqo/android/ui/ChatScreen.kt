@@ -80,6 +80,9 @@ import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -136,6 +139,9 @@ import com.wiqo.android.ui.theme.WiqoDesign
 import com.wiqo.android.ui.theme.WiqoSans
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 private data class QuickSuggestion(val title: String, val icon: ImageVector? = null)
 
@@ -159,6 +165,7 @@ internal fun ChatScreen(
     onOpenTemplates: () -> Unit = {},
     onNewConversation: () -> Unit = {},
     onOpenRelated: (String, String?) -> Unit = { _, _ -> },
+    onSendCompleted: () -> Unit = {},
     draftPrompt: String? = null,
     isPaired: Boolean = false,
     isConnected: Boolean = false,
@@ -171,19 +178,24 @@ internal fun ChatScreen(
     val vm: ChatViewModel = viewModel(key = "chat-$conversationId", factory = ChatViewModel.Factory(container, conversationId))
     val state by vm.state.collectAsStateWithLifecycle()
 
-    var draft by rememberSaveable { mutableStateOf(draftPrompt ?: "") }
-    val attachments = remember { mutableStateListOf<ChatAttachment>() }
+    var draft by rememberSaveable(conversationId) { mutableStateOf(draftPrompt ?: "") }
+    val attachments = remember(conversationId) { mutableStateListOf<ChatAttachment>() }
     var isComposerFocused by remember { mutableStateOf(false) }
-    var isCreatingAgent by remember { mutableStateOf(false) }
+    var isCreatingAgent by remember(conversationId) { mutableStateOf(false) }
     var isRecordingAudio by remember { mutableStateOf(false) }
     var showPlusMenu by remember { mutableStateOf(false) }
     var attachmentError by rememberSaveable { mutableStateOf<String?>(null) }
+    var weatherCity by remember(conversationId) { mutableStateOf("") }
     val listState = rememberLazyListState()
 
     LaunchedEffect(draftPrompt) {
         if (!draftPrompt.isNullOrBlank()) {
             draft = draftPrompt
         }
+    }
+
+    LaunchedEffect(state.completedSends) {
+        if (state.completedSends > 0) onSendCompleted()
     }
 
     val addUris: (List<android.net.Uri>) -> Unit = { uris ->
@@ -477,12 +489,7 @@ internal fun ChatScreen(
 
                                 if (metadata.confirmations.isNotEmpty()) {
                                     metadata.confirmations.forEach { confirmation ->
-                                        WiqoApprovalCard(
-                                            title = confirmation.title,
-                                            summary = confirmation.summary,
-                                            onApprove = {},
-                                            onDecline = {},
-                                        )
+                                        Text("${confirmation.title}: ${confirmation.summary}", color = colors.ink3, fontFamily = WiqoSans, fontSize = 12.sp)
                                     }
                                 }
 
@@ -659,6 +666,29 @@ internal fun ChatScreen(
                             ThinkingLiveView(label = state.progress ?: "Bakıyorum…")
                         }
                     }
+                    if (state.pendingConfirmations.isNotEmpty()) {
+                        items(state.pendingConfirmations, key = { "approval-${(it["id"] as? JsonPrimitive)?.content}" }) { confirmation ->
+                            val id = (confirmation["id"] as? JsonPrimitive)?.content.orEmpty()
+                            val details = confirmation["details"] as? JsonObject
+                            WiqoApprovalCard(
+                                title = (confirmation["title"] as? JsonPrimitive)?.contentOrNull ?: "İşlem onayı",
+                                summary = (confirmation["summary"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+                                fields = details?.entries?.filterNot { it.key.startsWith("wiqo") }
+                                    ?.mapNotNull { (key, value) ->
+                                        (value as? JsonPrimitive)?.contentOrNull?.let { WiqoApprovalField(key, key, it) }
+                                    }.orEmpty(),
+                                isDestructive = (confirmation["isDestructive"] as? JsonPrimitive)?.content == "true",
+                                isProcessing = state.confirmationBusy == id,
+                                onApprove = { vm.resolveConfirmation(confirmation, true) },
+                                onDecline = { vm.resolveConfirmation(confirmation, false) },
+                            )
+                        }
+                    }
+                    if (state.liveUpdates.isNotEmpty()) {
+                        item(key = "live-updates") {
+                            Text(state.liveUpdates.last(), fontFamily = WiqoSans, fontSize = 12.sp, color = colors.ink3)
+                        }
+                    }
                     if (state.partialReply.isNotEmpty()) {
                         item(key = "partial-reply") {
                             MarkdownReply(text = state.partialReply)
@@ -723,6 +753,8 @@ internal fun ChatScreen(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
+            state.error?.let { Text(it, color = colors.red, fontFamily = WiqoSans, fontSize = 12.sp) }
+            attachmentError?.let { Text(it, color = colors.red, fontFamily = WiqoSans, fontSize = 12.sp) }
             val composerShape = RoundedCornerShape(26.dp)
 
             Column(
@@ -926,7 +958,8 @@ internal fun ChatScreen(
                                     draft = ""
                                     attachments.clear()
                                     keyboard?.hide()
-                                    vm.send(textToSend, attToSend)
+                                    vm.send(textToSend, attToSend, createAgent = isCreatingAgent)
+                                    isCreatingAgent = false
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
@@ -964,6 +997,14 @@ internal fun ChatScreen(
             }
         }
     }
+
+    if (state.locationRequestId != null) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Hava durumu konumu") },
+            text = { OutlinedTextField(value = weatherCity, onValueChange = { weatherCity = it.take(80) }, label = { Text("Şehir") }, singleLine = true) },
+            confirmButton = { TextButton(onClick = { vm.respondWithLocation(weatherCity) }) { Text("Gönder") } },
+            dismissButton = { TextButton(onClick = { vm.respondWithLocation(null) }) { Text("Konumu paylaşma") } },
+        )
+    }
 }
-
-

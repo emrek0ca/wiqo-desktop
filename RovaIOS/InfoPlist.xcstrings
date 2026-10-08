@@ -1,335 +1,359 @@
 {
-  "sourceLanguage": "tr",
-  "strings": {
-    "NSCameraUsageDescription": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo uses the camera to scan the PC pairing QR code and documents. The scanned pages are read on the phone."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo nutzt die Kamera, um den QR‑Code und die Dokumente für die PC‑Koppelung zu scannen. Die gescannten Seiten werden auf dem Gerät gelesen."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, utiliza la cámara para escanear el código QR de emparejamiento de PC y los documentos. Las páginas escaneadas se leen en el teléfono."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, utilise l’appareil photo pour scanner le code QR de jumelage PC et les documents. Les pages scannées sont lues sur votre téléphone."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ويكو يستخدم الكاميرا لمسح رمز QR ومستندات التوافق على الكمبيوتر الشخصي. تُقرأ الصفحات الممسوحة على الهاتف."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo использует камеру для сканирования QR‑кода и документов при сопряжении с ПК. Сканированные страницы читаются на телефоне."
-          }
-        },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, PC eşleşme QR kodunu ve belgelerini taramak için kamerayı kullanır. Taranan sayfalar telefonda okunur."
+  "sourceLanguage" : "tr",
+  "strings" : {
+    "CFBundleDisplayName" : {
+      "comment" : "Bundle display name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Wiqo"
           }
         }
       }
     },
-    "NSContactsUsageDescription": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, when you request something like \"Call Ali,\" it looks up that person in your contacts. The contacts stay on the phone and are not sent to the server."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo sucht in Ihrem Telefonbuch nach der Person, wenn Sie z. B. \"Rufe Ali an\" verlangen. Das Telefonbuch bleibt auf dem Gerät, wird nicht an den Server gesendet."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, al solicitar algo como \"Llamar a Ali\", busca a esa persona en tu agenda. La agenda permanece en el teléfono, no se envía al servidor."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, lorsqu’il effectue des requêtes comme « Appelle Ali », consulte votre répertoire pour trouver la personne. Le répertoire reste sur votre téléphone, il n’est pas envoyé au serveur."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ويكو، عند طلبات مثل \"اتصل بألي\"، يبحث في دليل الاتصال الخاص بك للعثور على الشخص. يبقى الدليل على الهاتف ولا يُرسل إلى الخادم."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, при запросах типа \"Позвонить Али\" просматривает ваш адресный список, чтобы найти этого человека. Список остаётся на телефоне, не отправляется на сервер."
-          }
-        },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, \"Ali'yi ara\" gibi isteklerde rehberinde o kişiyi bulmak için rehberine bakar. Rehber telefonda kalır, sunucuya gönderilmez."
+    "CFBundleName" : {
+      "comment" : "Bundle name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Wiqo"
           }
         }
       }
     },
-    "NSLocalNetworkUsageDescription": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo finds your PC on the same network and uses the local network to send commands."
+    "NSCameraUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ويكو يستخدم الكاميرا لمسح رمز QR ومستندات التوافق على الكمبيوتر الشخصي. تُقرأ الصفحات الممسوحة على الهاتف."
           }
         },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo verwendet Ihr lokales Netzwerk, um Ihren PC im selben Netzwerk zu finden und Befehle zu senden."
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo nutzt die Kamera, um den QR‑Code und die Dokumente für die PC‑Koppelung zu scannen. Die gescannten Seiten werden auf dem Gerät gelesen."
           }
         },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, encuentra tu PC en la misma red y usa la red local para enviar comandos."
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo uses the camera to scan the PC pairing QR code and documents. The scanned pages are read on the phone."
           }
         },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, trouve votre PC sur le même réseau et utilise le réseau local pour envoyer des commandes."
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, utiliza la cámara para escanear el código QR de emparejamiento de PC y los documentos. Las páginas escaneadas se leen en el teléfono."
           }
         },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ويكو يكتشف جهاز الكمبيوتر الشخصي على نفس الشبكة ويستخدم الشبكة المحلية لإرسال الأوامر."
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, utilise l’appareil photo pour scanner le code QR de jumelage PC et les documents. Les pages scannées sont lues sur votre téléphone."
           }
         },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo использует локальную сеть для поиска вашего ПК в той же сети и отправки команд."
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo использует камеру для сканирования QR‑кода и документов при сопряжении с ПК. Сканированные страницы читаются на телефоне."
           }
         },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, aynı ağdaki PC’nizi bulup komut göndermek için yerel ağınızı kullanır."
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, PC eşleşme QR kodunu ve belgelerini taramak için kamerayı kullanır. Taranan sayfalar telefonda okunur."
           }
         }
       }
     },
-    "NSLocationWhenInUseUsageDescription": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo uses the city name for weather and your location to find routes and nearby places on the map. Coordinates are not sent to the server; map results are calculated on the phone with Apple Maps."
+    "NSContactsUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ويكو، عند طلبات مثل \"اتصل بألي\"، يبحث في دليل الاتصال الخاص بك للعثور على الشخص. يبقى الدليل على الهاتف ولا يُرسل إلى الخادم."
           }
         },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo nutzt den Stadtnamen für das Wetter und Ihren Standort, um Routen und nahegelegene Orte zu finden. Die Koordinaten werden nicht an den Server gesendet; die Kartenergebnisse werden auf dem Gerät mit Apple Maps berechnet."
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo sucht in Ihrem Telefonbuch nach der Person, wenn Sie z. B. \"Rufe Ali an\" verlangen. Das Telefonbuch bleibt auf dem Gerät, wird nicht an den Server gesendet."
           }
         },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, usa el nombre de la ciudad para el clima y tu ubicación para encontrar rutas y lugares cercanos en el mapa. Las coordenadas no se envían al servidor; los resultados del mapa se calculan en el teléfono con Apple Maps."
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, when you request something like \"Call Ali,\" it looks up that person in your contacts. The contacts stay on the phone and are not sent to the server."
           }
         },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, utilise le nom de la ville pour la météo et votre position pour trouver des itinéraires et des lieux proches. Les coordonnées ne sont pas envoyées au serveur ; les résultats de la carte sont calculés sur votre téléphone avec Apple Maps."
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, al solicitar algo como \"Llamar a Ali\", busca a esa persona en tu agenda. La agenda permanece en el teléfono, no se envía al servidor."
           }
         },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ويكو يستخدم اسم المدينة للطقس، وموقعك للعثور على الطرق والأماكن القريبة على الخريطة. لا تُرسل الإحداثيات إلى الخادم؛ تُحسب نتائج الخريطة على الهاتف باستخدام خرائط Apple."
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, lorsqu’il effectue des requêtes comme « Appelle Ali », consulte votre répertoire pour trouver la personne. Le répertoire reste sur votre téléphone, il n’est pas envoyé au serveur."
           }
         },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo использует название города для погоды и ваше местоположение для поиска маршрутов и ближайших мест на карте. Координаты не отправляются на сервер; результаты карты рассчитываются на телефоне в Apple Картах."
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, при запросах типа \"Позвонить Али\" просматривает ваш адресный список, чтобы найти этого человека. Список остаётся на телефоне, не отправляется на сервер."
           }
         },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, hava durumu için şehir adını, haritada da rota ve yakındaki yerleri bulmak için konumunu kullanır. Koordinatlar sunucuya gönderilmez; harita sonuçları telefonda Apple Haritalar ile hesaplanır."
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, \"Ali'yi ara\" gibi isteklerde rehberinde o kişiyi bulmak için rehberine bakar. Rehber telefonda kalır, sunucuya gönderilmez."
           }
         }
       }
     },
-    "NSMicrophoneUsageDescription": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo uses the microphone to transcribe your voice command to text."
+    "NSLocalNetworkUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ويكو يكتشف جهاز الكمبيوتر الشخصي على نفس الشبكة ويستخدم الشبكة المحلية لإرسال الأوامر."
           }
         },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo nutzt das Mikrofon, um Ihre Sprachbefehle in Text umzuwandeln."
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo verwendet Ihr lokales Netzwerk, um Ihren PC im selben Netzwerk zu finden und Befehle zu senden."
           }
         },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, convierte tu comando de voz en texto usando el micrófono."
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo finds your PC on the same network and uses the local network to send commands."
           }
         },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, utilise le microphone pour convertir votre commande vocale en texte."
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, encuentra tu PC en la misma red y usa la red local para enviar comandos."
           }
         },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ويكو يستخدم الميكروفون لتحويل أوامرك الصوتية إلى نص."
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, trouve votre PC sur le même réseau et utilise le réseau local pour envoyer des commandes."
           }
         },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo использует микрофон для преобразования голосовой команды в текст."
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo использует локальную сеть для поиска вашего ПК в той же сети и отправки команд."
           }
         },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır."
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, aynı ağdaki PC’nizi bulup komut göndermek için yerel ağınızı kullanır."
           }
         }
       }
     },
-    "NSPhotoLibraryAddUsageDescription": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo requests access to save the images it generates to Photos. It does not read your photos."
+    "NSLocationWhenInUseUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ويكو يستخدم اسم المدينة للطقس، وموقعك للعثور على الطرق والأماكن القريبة على الخريطة. لا تُرسل الإحداثيات إلى الخادم؛ تُحسب نتائج الخريطة على الهاتف باستخدام خرائط Apple."
           }
         },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo bittet um Zugriff, um erstellte Bilder in die Fotos zu speichern. Es liest Ihre Fotos nicht."
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo nutzt den Stadtnamen für das Wetter und Ihren Standort, um Routen und nahegelegene Orte zu finden. Die Koordinaten werden nicht an den Server gesendet; die Kartenergebnisse werden auf dem Gerät mit Apple Maps berechnet."
           }
         },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, solicita acceso para guardar las imágenes que genera en Fotos. No lee tus fotos."
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo uses the city name for weather and your location to find routes and nearby places on the map. Coordinates are not sent to the server; map results are calculated on the phone with Apple Maps."
           }
         },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, demande l’accès pour enregistrer les images qu’il génère dans Photos, si vous le souhaitez. Il ne lit pas vos photos."
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, usa el nombre de la ciudad para el clima y tu ubicación para encontrar rutas y lugares cercanos en el mapa. Las coordenadas no se envían al servidor; los resultados del mapa se calculan en el teléfono con Apple Maps."
           }
         },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ويكو يطلب إذنًا لحفظ الصور التي ينتجها في تطبيق الصور إذا رغبت. لا يقرأ صورك."
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, utilise le nom de la ville pour la météo et votre position pour trouver des itinéraires et des lieux proches. Les coordonnées ne sont pas envoyées au serveur ; les résultats de la carte sont calculés sur votre téléphone avec Apple Maps."
           }
         },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo запрашивает доступ к сохранению сгенерированных изображений в Фотоальбом, если вы захотите. Он не читает ваши фотографии."
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo использует название города для погоды и ваше местоположение для поиска маршрутов и ближайших мест на карте. Координаты не отправляются на сервер; результаты карты рассчитываются на телефоне в Apple Картах."
           }
         },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, ürettiği görselleri istersen Fotoğraflar'a kaydetmek için erişim ister. Fotoğraflarını okumaz."
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, hava durumu için şehir adını, haritada da rota ve yakındaki yerleri bulmak için konumunu kullanır. Koordinatlar sunucuya gönderilmez; harita sonuçları telefonda Apple Haritalar ile hesaplanır."
           }
         }
       }
     },
-    "NSSpeechRecognitionUsageDescription": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo uses speech recognition on your iPhone to convert your voice command to text."
+    "NSMicrophoneUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ويكو يستخدم الميكروفون لتحويل أوامرك الصوتية إلى نص."
           }
         },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo verwendet die Spracherkennung auf Ihrem iPhone, um Ihre Sprachbefehle in Text umzuwandeln."
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo nutzt das Mikrofon, um Ihre Sprachbefehle in Text umzuwandeln."
           }
         },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, convierte tu comando de voz en texto en tu iPhone usando el reconocimiento de voz."
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo uses the microphone to transcribe your voice command to text."
           }
         },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, utilise la reconnaissance vocale pour convertir votre commande vocale en texte sur votre iPhone."
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, convierte tu comando de voz en texto usando el micrófono."
           }
         },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ويكو يستخدم التعرف على الكلام لتحويل أوامرك الصوتية إلى نص على هاتفك iPhone."
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, utilise le microphone pour convertir votre commande vocale en texte."
           }
         },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo использует распознавание речи на вашем iPhone для преобразования голосовой команды в текст."
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo использует микрофон для преобразования голосовой команды в текст."
           }
         },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo, sesli komutunuzu iPhone’unuzda metne dönüştürmek için konuşma tanımayı kullanır."
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır."
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryAddUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ويكو يطلب إذنًا لحفظ الصور التي ينتجها في تطبيق الصور إذا رغبت. لا يقرأ صورك."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo bittet um Zugriff, um erstellte Bilder in die Fotos zu speichern. Es liest Ihre Fotos nicht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo requests access to save the images it generates to Photos. It does not read your photos."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, solicita acceso para guardar las imágenes que genera en Fotos. No lee tus fotos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, demande l’accès pour enregistrer les images qu’il génère dans Photos, si vous le souhaitez. Il ne lit pas vos photos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo запрашивает доступ к сохранению сгенерированных изображений в Фотоальбом, если вы захотите. Он не читает ваши фотографии."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, ürettiği görselleri istersen Fotoğraflar'a kaydetmek için erişim ister. Fotoğraflarını okumaz."
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ويكو يستخدم التعرف على الكلام لتحويل أوامرك الصوتية إلى نص على هاتفك iPhone."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo verwendet die Spracherkennung auf Ihrem iPhone, um Ihre Sprachbefehle in Text umzuwandeln."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo uses speech recognition on your iPhone to convert your voice command to text."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, convierte tu comando de voz en texto en tu iPhone usando el reconocimiento de voz."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, utilise la reconnaissance vocale pour convertir votre commande vocale en texte sur votre iPhone."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo использует распознавание речи на вашем iPhone для преобразования голосовой команды в текст."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiqo, sesli komutunuzu iPhone’unuzda metne dönüştürmek için konuşma tanımayı kullanır."
           }
         }
       }
     }
   },
-  "version": "1.0"
+  "version" : "1.0"
 }
