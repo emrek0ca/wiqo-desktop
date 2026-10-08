@@ -521,15 +521,15 @@ public enum ApplicationID: String, Codable, CaseIterable, Sendable {
     public var displayName: String {
         switch self {
         case .safari: return "Safari"
-        case .xcode: return String(localized: "Xcode")
+        case .xcode: return "Xcode"
         case .terminal: return "Terminal"
         case .finder: return "Finder"
-        case .visualStudioCode: return String(localized: "Visual Studio Code")
-        case .mail: return String(localized: "Mail")
-        case .music: return String(localized: "Music")
-        case .messages: return String(localized: "Messages")
-        case .notes: return String(localized: "Notes")
-        case .systemSettings: return String(localized: "System Settings")
+        case .visualStudioCode: return "Visual Studio Code"
+        case .mail: return "Mail"
+        case .music: return "Music"
+        case .messages: return "Messages"
+        case .notes: return "Notes"
+        case .systemSettings: return "System Settings"
         }
     }
 }

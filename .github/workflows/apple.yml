@@ -31,6 +31,8 @@ jobs:
           node-version: "22"
       - name: String Catalog is built from translations.json and complete
         run: node contracts/i18n/build.mjs --check
+      - name: No wire identifier is wrapped in String(localized:)
+        run: node contracts/i18n/guard.mjs
       - name: Inline-app kit embedded in WiqoInlineApp.swift is current
         run: |
           node contracts/inline-app/sync.mjs

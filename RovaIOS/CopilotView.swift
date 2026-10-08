@@ -2160,7 +2160,7 @@ struct CopilotView: View {
         let taskHistory = taskStart.map { Array(history[$0...]).filter { !$0.content.hasPrefix("Yerel PC sonuçları hazır.") } } ?? history
         let continuationHistory = Array(taskHistory.prefix(1)) + [
             RovaBackendClient.ChatTurn(role: "assistant", content: initialReply),
-            RovaBackendClient.ChatTurn(role: "user", content: String(localized: "Yerel PC sonuçları hazır. Bu sonuçları kullanarak önceki isteği şimdi tamamla; belge içeriğini yeniden isteme."))
+            RovaBackendClient.ChatTurn(role: "user", content: "Yerel PC sonuçları hazır. Bu sonuçları kullanarak önceki isteği şimdi tamamla; belge içeriğini yeniden isteme.")
         ]
         recentDeviceResults.removeAll(keepingCapacity: true)
         liveReplyBubbleID = nil
@@ -2746,8 +2746,11 @@ struct CopilotView: View {
     /// request that cannot see the waiting step (it answered "Bu sonuç önceki bir göreve ait"). "vazgeç" / "iptal" cancels it.
     private func answerPendingConfirmation(with text: String) -> Bool {
         let folded = text.lowercased().trimmingCharacters(in: .punctuationCharacters.union(.whitespacesAndNewlines))
-        let approve: Set<String> = ["devam", "devam et", "devam edelim", "kaldığın yerden devam et", "evet", "onayla", "onaylıyorum", "tamam", "olur", "yap", "başla", "evet devam et"]
-        let decline: Set<String> = ["vazgeç", "iptal", "iptal et", "hayır", "dur", "yapma"]
+        // Turkish as before, plus the words of the phone's own language for the same answers ("Ja", "Abbrechen"...).
+        let approve = Set(["devam", "devam et", "devam edelim", "kaldığın yerden devam et", "evet", "onayla", "onaylıyorum", "tamam", "olur", "yap", "başla", "evet devam et"])
+            .union([String(localized: "Evet"), String(localized: "Onayla"), String(localized: "Tamam"), String(localized: "Devam et")].map { $0.lowercased() })
+        let decline = Set(["vazgeç", "iptal", "iptal et", "hayır", "dur", "yapma"])
+            .union([String(localized: "Hayır"), String(localized: "İptal"), String(localized: "Vazgeç")].map { $0.lowercased() })
         guard approve.contains(folded) || decline.contains(folded), let bubble = bubbleAwaitingApproval else { return false }
         if decline.contains(folded) {
             if bubble.needsConfirmation { cancelConfirmation(for: bubble.id) }

@@ -68,11 +68,11 @@ private actor CopilotLocationPromptLedger {
 /// pairing token already is. This is the single integration point for both account handling and
 /// the AI copilot feature.
 enum RovaBackendClient {
-    private static let tokenAccount = "rova-backend-token"
+    static let tokenAccount = "rova-backend-token"
     /// Mirrors rova-backend's chat file-content contract and leaves room under express.json's 20 MB cap.
-    private static let maxFileContentsPayloadBytes = 6_000_000
-    private static let maxAttachmentContentsPayloadBytes = 19_000_000
-    private static let maxCopilotRequestBodyBytes = 19_500_000
+    static let maxFileContentsPayloadBytes = 6_000_000
+    static let maxAttachmentContentsPayloadBytes = 19_000_000
+    static let maxCopilotRequestBodyBytes = 19_500_000
     static let apnsBundleID = "com.wiqo.ios"
 
     #if DEBUG
@@ -88,7 +88,7 @@ enum RovaBackendClient {
         return String(data: data, encoding: .utf8)
     }
 
-    private static func mobileReadCacheKey(_ path: String) -> String {
+    static func mobileReadCacheKey(_ path: String) -> String {
         "\(currentUserID ?? currentUserEmail ?? "anonymous"):\(path)"
     }
 
@@ -104,7 +104,7 @@ enum RovaBackendClient {
 
     static var currentUserEmail: String? { tokenPayload?["email"] as? String }
 
-    private static var tokenPayload: [String: Any]? {
+    static var tokenPayload: [String: Any]? {
         guard let token else { return nil }
         let segments = token.split(separator: ".")
         guard segments.count >= 2 else { return nil }
@@ -177,7 +177,7 @@ enum RovaBackendClient {
         return decoded.token
     }
 
-    private static func authenticate(path: String, email: String, password: String, inviteCode: String? = nil) async throws -> String {
+    static func authenticate(path: String, email: String, password: String, inviteCode: String? = nil) async throws -> String {
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -790,7 +790,7 @@ enum RovaBackendClient {
         let deadlineAt: String?
     }
 
-    private struct CopilotStepResponse: Decodable {
+    struct CopilotStepResponse: Decodable {
         let id: UUID?
         let type: CommandType
         let payload: CommandPayload
@@ -915,8 +915,8 @@ enum RovaBackendClient {
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("copilot/chat"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("text/event-stream", forHTTPHeaderField: String(localized: "Accept"))
-        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         // The backend keeps the result in its request ledger; this timeout only bounds the live
         // stream. A dropped stream is resumed through copilot/requests below.
         request.timeoutInterval = 90
@@ -1177,7 +1177,7 @@ enum RovaBackendClient {
         return try await authorizedPost("copilot/confirm", body: body, as: BackendConfirmationResponse.self)
     }
 
-    private static func makeConverseResult(
+    static func makeConverseResult(
         reply: String,
         steps: [CopilotStepResponse],
         executionState: String?,
@@ -1215,7 +1215,7 @@ enum RovaBackendClient {
         )
     }
 
-    private static func waitForCopilotRequest(
+    static func waitForCopilotRequest(
         requestID: UUID,
         onStatus: @escaping @MainActor @Sendable (String) -> Void,
         onLocationRequired: @escaping @MainActor @Sendable (String) async -> Void
@@ -1514,753 +1514,24 @@ enum RovaBackendClient {
         return result
     }
 
-    // MARK: - Profile & account
+    // MARK: - Shared plumbing
 
-    static func fetchProfile() async throws -> UserProfile {
-        try await authorizedGet("profile", as: UserProfile.self)
-    }
-
-    /// `body` is a JSON object of only the fields that changed; `null` clears a field.
-    static func updateProfile(body: Data) async throws -> UserProfile {
-        let data = try await authorizedJSON("profile", method: "PUT", body: body)
-        do { return try JSONDecoder().decode(UserProfile.self, from: data) } catch { throw RovaBackendError.invalidResponse }
-    }
-
-    /// Permanently deletes the account and all of its server-side data. The caller signs out
-    /// afterwards, once it has cleared the account's local caches.
-    static func deleteAccount(password: String) async throws {
-        _ = try await authorizedJSON("profile", method: "DELETE", body: try JSONSerialization.data(withJSONObject: ["password": password]))
-    }
-
-    // MARK: - Conversation history (server-side backup of chat history)
-
-    struct RemoteConversationSummary: Decodable {
-        let id: String
-        let title: String
-        let preview: String
-        let updatedAt: String
-        let turnCount: Int
-    }
-
-    struct RemoteConversationMessage: Decodable {
-        let role: String
-        let content: String
-        let createdAt: String
-        let artifacts: [ArtifactDescriptor]
-        let widgets: [CopilotResultWidget]?
-    }
-
-    static func fetchConversations() async throws -> [RemoteConversationSummary] {
-        struct Response: Decodable { let conversations: [RemoteConversationSummary] }
-        return try await authorizedGet("conversations", as: Response.self).conversations
-    }
-
-    /// A saved request the user re-runs with one tap (backend: agent/skills.ts).
-    struct UserSkill: Decodable, Identifiable, Sendable {
-        let id: Int
-        let name: String
-        let prompt: String
-    }
-
-    static func fetchSkills() async throws -> [UserSkill] {
-        struct Response: Decodable { let skills: [UserSkill] }
-        return try await authorizedGet("skills", as: Response.self).skills
-    }
-
-    static func saveSkill(name: String, prompt: String) async throws {
-        struct Response: Decodable { let id: Int }
-        _ = try await authorizedPost("skills", body: ["name": name, "prompt": prompt], as: Response.self)
-    }
-
-    static func deleteSkill(id: Int) async throws {
-        _ = try await authorizedMutate("skills/\(id)", method: "DELETE")
-    }
-
-    /// Turns an automation run into a conversation ("run-<id>") and returns its id.
-    static func conversationFromRun(automationID: Int, runID: Int) async throws -> String {
-        struct Response: Decodable { let conversationId: String }
-        return try await authorizedPost("automations/\(automationID)/runs/\(runID)/conversation", body: [:], as: Response.self).conversationId
-    }
-
-    static func fetchConversationMessages(id: String) async throws -> [RemoteConversationMessage] {
-        struct Response: Decodable { let messages: [RemoteConversationMessage] }
-        return try await authorizedGet("conversations/\(id)/messages", as: Response.self).messages
-    }
-
-    static func deleteConversationRemote(id: String) async throws {
-        _ = try await authorizedMutate("conversations/\(id)", method: "DELETE")
-    }
-
-    // MARK: - Canvas
-
-    static func runCanvasCode(
-        language: String,
-        code: String,
-        timeoutSeconds: Int = 15,
-        packages: [String] = [],
-        onTaskID: @escaping @MainActor @Sendable (Int) -> Void = { _ in },
-        onProgress: @escaping @MainActor @Sendable (String) -> Void = { _ in }
-    ) async throws -> CanvasRunResult {
-        struct Submission: Decodable { let taskId: Int; let status: String; let message: String }
-        var body: [String: Any] = ["language": language, "code": code, "timeoutSeconds": timeoutSeconds]
-        if !packages.isEmpty { body["packages"] = packages }
-        let submission = try await authorizedPost(
-            "canvas/run",
-            body: body,
-            as: Submission.self
-        )
-        await onTaskID(submission.taskId)
-        let deadline = Date().addingTimeInterval(packages.isEmpty ? 120 : 180)
-        while Date() < deadline {
-            if Task.isCancelled {
-                try? await cancelCanvasRun(taskID: submission.taskId)
-                throw CancellationError()
-            }
-            let task = try await fetchQueueTask(id: submission.taskId)
-            switch task.status {
-            case "done":
-                guard let result = task.result else { throw RovaBackendError.invalidResponse }
-                return result
-            case "failed", "unknown":
-                throw RovaBackendError.declined(nonEmptyMessage(task.error, fallback: String(localized: "Kod çalıştırma tamamlanamadı.")))
-            case "cancelled":
-                throw RovaBackendError.declined(String(localized: "Kod çalıştırma iptal edildi."))
-            default:
-                if let progress = task.progress, !progress.isEmpty { await onProgress(progress) }
-                try await Task.sleep(nanoseconds: 350_000_000)
-            }
-        }
-        throw RovaBackendError.network(String(localized: "Kod çalıştırma beklenenden uzun sürdü. İstersen tekrar deneyebilirsin."))
-    }
-
-    private static func fetchQueueTask(id: Int) async throws -> QueueTask {
-        try await authorizedGet("queue/\(id)", as: QueueTask.self)
-    }
-
-    static func cancelCanvasRun(taskID: Int) async throws {
-        _ = try await authorizedMutate("queue/\(taskID)/cancel", method: "POST")
-    }
-
-    // MARK: - Billing
-
-    /// The UUID handed to StoreKit with a purchase (Apple's appAccountToken) so notifications name this account.
-    static func fetchStoreKitAccountToken() async throws -> UUID {
-        struct Response: Decodable { let token: String }
-        let response = try await authorizedGet("billing/storekit/account-token", as: Response.self)
-        guard let token = UUID(uuidString: response.token) else { throw RovaBackendError.network(String(localized: "İstek anlaşılamadı.")) }
-        return token
-    }
-
-    /// The plans the paywall lists, with the limits the backend enforces.
-    static func fetchPlans() async throws -> [WiqoPlan] {
-        struct Response: Decodable { let plans: [WiqoPlan] }
-        return try await authorizedGet("billing/plans", as: Response.self).plans
-    }
-
-    static func fetchSubscription() async throws -> SubscriptionInfo {
-        try await authorizedGet("billing/subscription", as: SubscriptionInfo.self)
-    }
-
-    /// Forwards a StoreKit transaction's raw JWS to the backend right after a purchase - the
-    /// backend independently re-verifies it against Apple's root certificate before granting
-    /// anything (see rova-backend/src/billing/subscriptions.ts). The response carries the account's
-    /// new plan and usage, so the app can show it at once.
-    static func verifyStoreKitTransaction(_ signedTransaction: String) async throws -> SubscriptionInfo? {
-        struct Response: Decodable { let ok: Bool; let subscription: SubscriptionInfo? }
-        return try await authorizedPost("billing/storekit/verify", body: ["signedTransaction": signedTransaction], as: Response.self).subscription
-    }
-
-    static func fetchDevices() async throws -> [DeviceStatus] {
-        struct Response: Decodable { let devices: [DeviceStatus] }
-        // Presence changes independently of account/device metadata; a cached `online` value
-        // must never be presented as current after a disconnect or wake.
-        return try await authorizedGet("devices", as: Response.self).devices
-    }
-
-    static func registerFileTransfer(commandID: UUID, deviceID: UUID) async throws {
-        let body = try JSONSerialization.data(withJSONObject: ["commandId": commandID.uuidString, "deviceId": deviceID.uuidString])
-        _ = try await authorizedJSON("file-transfers/intents", method: "POST", body: body)
-    }
-
-    struct DeviceEvent: Decodable {
-        let type: String
-        let device: DeviceStatus
-    }
-
-    static func observeDeviceEvents(_ onEvent: @escaping @MainActor @Sendable (DeviceEvent) -> Void) async throws {
-        guard let token else { throw RovaBackendError.notAuthenticated }
-        var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("devices/events"))
-        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
-        request.setValue("text/event-stream", forHTTPHeaderField: String(localized: "Accept"))
-        request.timeoutInterval = 60
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else { throw RovaBackendError.invalidResponse }
-        if http.statusCode == 401 { throw RovaBackendError.notAuthenticated }
-        guard http.statusCode == 200 else { throw RovaBackendError.network("Cihaz bağlantısı izlenemiyor.") }
-        for try await line in bytes.lines {
-            try Task.checkCancellation()
-            guard line.hasPrefix("data: "),
-                  let data = String(line.dropFirst(6)).data(using: .utf8),
-                  let event = try? JSONDecoder().decode(DeviceEvent.self, from: data) else { continue }
-            await onEvent(event)
-        }
-    }
-
-    struct AccountInfo: Decodable {
-        let email: String
-        let isFoundingMember: Bool
-    }
-
-    static func fetchAccountInfo() async throws -> AccountInfo {
-        try await authorizedGet("auth/me", as: AccountInfo.self)
-    }
-
-    /// A code someone can hand a friend - redeeming one credits both sides a Pro bonus (see
-    /// rova-backend's grantReferralBonus). Every account always has a few unused ones; the
-    /// backend self-provisions a fresh batch the first time this is read.
-    struct InviteCode: Decodable, Identifiable {
-        var id: String { code }
-        let code: String
-        let used: Bool
-        let createdAt: String
-    }
-
-    static func fetchInviteCodes() async throws -> [InviteCode] {
-        struct Response: Decodable { let codes: [InviteCode] }
-        return try await authorizedGet("auth/invite-codes", as: Response.self).codes
-    }
-
-    /// A real Google/Notion account connection (see rova-backend's routes/oauth.ts) - never the
-    /// tokens themselves, just enough to show "bağlı: ___" and let the user disconnect it.
-    struct OAuthConnection: Decodable, Identifiable {
-        var id: String { provider }
-        let provider: String
-        let accountLabel: String?
-        let connectedAt: String
-        let accessLevel: String?
-        /// "needs_reconnect" when the provider refused the stored authorisation (older servers send nothing).
-        let status: String?
-    }
-
-    /// An app the person can connect, as the server lists it: a provider added on the server shows up here without an app update.
-    struct OAuthProviderInfo: Decodable, Identifiable, Equatable {
-        let id: String
-        let name: String
-        let symbol: String
-        let summary: String?
-        let available: Bool?
-
-        static let builtIn: [OAuthProviderInfo] = [
-            OAuthProviderInfo(id: "google", name: "Google", symbol: "envelope.badge", summary: "Gmail, Takvim ve Drive", available: true),
-            OAuthProviderInfo(id: "notion", name: "Notion", symbol: "doc.text", summary: String(localized: "Sayfalar ve notlar"), available: true)
-        ]
-    }
-
-    /// The server's catalogue, or the built-in pair when the server is older or unreachable.
-    static func fetchOAuthProviders() async -> [OAuthProviderInfo] {
-        struct Response: Decodable { let providers: [OAuthProviderInfo] }
-        guard let providers = try? await authorizedGet("oauth/providers", as: Response.self).providers, !providers.isEmpty else {
-            return OAuthProviderInfo.builtIn
-        }
-        return providers.filter { $0.available != false }
-    }
-
-    static func fetchOAuthConnections() async throws -> [OAuthConnection] {
-        struct Response: Decodable { let connections: [OAuthConnection] }
-        return try await authorizedGet("oauth", as: Response.self).connections
-    }
-
-    /// Returns the provider's own consent URL to open in an ASWebAuthenticationSession - this
-    /// request itself carries the real Authorization header (a webview navigation couldn't), and
-    /// the state that ties the resulting callback back to this account is embedded server-side.
-    static func startOAuth(provider: String) async throws -> URL {
-        struct Response: Decodable { let url: String }
-        let response = try await authorizedGet("oauth/\(provider)/start", as: Response.self)
-        guard let url = URL(string: response.url) else { throw RovaBackendError.invalidResponse }
-        return url
-    }
-
-    /// A remote MCP server the user connected (backend src/mcp/). The key never comes back.
-    struct McpServer: Decodable, Identifiable, Sendable {
-        let id: Int
-        let name: String
-        let url: String
-        let hasToken: Bool
-    }
-
-    static func fetchMcpServers() async throws -> [McpServer] {
-        struct Response: Decodable { let servers: [McpServer] }
-        return try await authorizedGet("mcp/servers", as: Response.self).servers
-    }
-
-    /// The backend connects and lists the server's tools before keeping it, so a wrong address or
-    /// key fails here with a readable message instead of at the first use.
-    static func addMcpServer(name: String, url: String, authToken: String?) async throws -> Int {
-        struct Response: Decodable { let toolCount: Int }
-        var body: [String: Any] = ["name": name, "url": url]
-        if let authToken, !authToken.isEmpty { body["authToken"] = authToken }
-        return try await authorizedPost("mcp/servers", body: body, as: Response.self).toolCount
-    }
-
-    /// Messaging apps linked to this account (backend src/channels/).
-    struct ChannelStatus: Decodable, Sendable {
-        struct Telegram: Decodable, Sendable { let available: Bool; let bot: String? }
-        struct Link: Decodable, Identifiable, Sendable { let id: Int; let channel: String; let label: String? }
-        let telegram: Telegram
-        let links: [Link]
-    }
-
-    static func fetchChannels() async throws -> ChannelStatus {
-        try await authorizedGet("channels", as: ChannelStatus.self)
-    }
-
-    /// A one-time link that opens the Telegram bot with the code already in it.
-    static func startTelegramLink() async throws -> URL {
-        struct Response: Decodable { let url: String }
-        let response = try await authorizedPost("channels/telegram/link-code", body: [:], as: Response.self)
-        guard let url = URL(string: response.url), url.scheme == "https", url.host == "t.me" else { throw RovaBackendError.invalidResponse }
-        return url
-    }
-
-    static func unlinkChannel(id: Int) async throws {
-        _ = try await authorizedMutate("channels/\(id)", method: "DELETE")
-    }
-
-    static func deleteMcpServer(id: Int) async throws {
-        _ = try await authorizedMutate("mcp/servers/\(id)", method: "DELETE")
-    }
-
-    static func disconnectOAuth(provider: String) async throws {
-        _ = try await authorizedMutate("oauth/\(provider)", method: "DELETE")
-    }
-
-    static func setOAuthAccessLevel(provider: String, level: String) async throws {
-        guard level == "read" || level == "write", provider == "google" || provider == "notion" else { throw RovaBackendError.invalidResponse }
-        _ = try await authorizedPut("oauth/\(provider)/access", body: ["accessLevel": level])
-    }
-
-    /// Sets (or, with `nil`/empty, clears) a user-chosen name for one paired PC - lets more than
-    /// one paired PC be told apart ("Ofis PC", "Ev PC") instead of both showing the same
-    /// hostname-derived name.
-    @discardableResult
-    static func renameDevice(id: String, name: String?) async throws -> DeviceStatus {
-        struct Response: Decodable { let device: DeviceStatus }
-        let value: Any = name ?? NSNull()
-        let body = try JSONSerialization.data(withJSONObject: ["displayName": value])
-        let data = try await authorizedJSON("devices/\(id)", method: "PATCH", body: body)
-        guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else { throw RovaBackendError.invalidResponse }
-        WiqoMobileReadCache.shared.invalidate(mobileReadCacheKey("devices"))
-        return decoded.device
-    }
-
-    /// Removes a PC from this account's "Bağlı cihazlar" list - the backend relay registry only,
-    /// not the phone's own direct pairing (see IOSConnectionModel.forgetPairing for that).
-    static func deleteDevice(id: String) async throws {
-        _ = try await authorizedMutate("devices/\(id)", method: "DELETE")
-        WiqoMobileReadCache.shared.invalidate(mobileReadCacheKey("devices"))
-    }
-
-    /// The interactive fallback used when the direct local connection to the paired PC isn't
-    /// available (different network, PC just woke up, etc.) - relays the same already-confirmed
-    /// CommandRequest through the PC's own persistent backend connection (the one automations
-    /// already use) and returns the real CommandResult once the PC replies. `deviceId` targets a
-    /// specific paired PC. Callers must never select an arbitrary online PC.
-    static func sendDeviceCommand(_ request: CommandRequest, deviceId: String) async throws -> CommandResult {
-        let body = try Self.iso8601Encoder.encode(request)
-        let path = "devices/\(deviceId)/command"
-        let timeout: TimeInterval = switch RovaOperationManifest.entry(for: request.type).timeoutClass {
-        case .short, .medium: 35
-        case .long: request.type == .sendFileToPhone ? 130 : 75
-        }
-        let data = try await authorizedJSON(path, method: "POST", body: body, timeout: timeout)
-        do {
-            return try Self.iso8601Decoder.decode(CommandResult.self, from: data)
-        } catch {
-            throw RovaBackendError.invalidResponse
-        }
-    }
-
-    struct RelayPairingClaim: Decodable {
-        let deviceId: String
-        let displayName: String
-        let platform: String
-        let pairingToken: String
-    }
-
-    /// Claims the short-lived QR bootstrap session. The backend binds the Mac to this signed-in
-    /// account; the returned pairing token is only for the existing per-command signature path.
-    static func claimRelayPairing(sessionID: String, secret: String) async throws -> RelayPairingClaim {
-        let body = try JSONSerialization.data(withJSONObject: ["secret": secret])
-        let data = try await authorizedJSON("device-pairing/sessions/\(sessionID)/claim", method: "POST", body: body)
-        do { return try JSONDecoder().decode(RelayPairingClaim.self, from: data) }
-        catch { throw RovaBackendError.invalidResponse }
-    }
-
-    /// CommandRequest/CommandResult carry Date fields encoded as ISO-8601 strings everywhere else
-    /// in this protocol (see RovaShared/Framing.swift's RovaWireCodec) - matched here so this
-    /// relay path round-trips the same values the direct connection would have produced.
-    private static let iso8601Encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        return encoder
-    }()
-
-    private static let iso8601Decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }()
-
-    static func refreshProactiveSuggestions() async throws -> [ProactiveSuggestion] {
-        struct Response: Decodable { let suggestions: [ProactiveSuggestion] }
-        return try await authorizedPost("proactive/refresh", body: [:], as: Response.self).suggestions
-    }
-
-    static func updateProactiveSuggestion(id: Int, action: String) async throws {
-        guard action == "accept" || action == "dismiss" else { return }
-        _ = try await authorizedMutate("proactive/suggestions/\(id)/\(action)", method: "POST")
-    }
-
-    // MARK: - Tasks & automations (created conversationally; managed here)
-
-    struct RovaTask: Decodable, Identifiable {
-        let id: Int
-        let title: String
-        let status: String
-        let createdAt: String
-        let completedAt: String?
-    }
-
-    struct RovaAutomation: Decodable, Identifiable {
-        let id: Int
-        let prompt: String
-        let cron: String
-        let isActive: Bool
-        let lastRunAt: String?
-        let nextRunAt: String?
-        let lifecycleStatus: String?
-        let targetDeviceId: String?
-        /// "Her gün 14:35" - the backend's plain reading of the schedule.
-        let scheduleLabel: String?
-        /// "phone" when this phone delivers it itself, "server" when the backend pushes it.
-        let delivery: String?
-
-        private enum CodingKeys: String, CodingKey {
-            case id, prompt, cron, isActive, lastRunAt, nextRunAt, lifecycleStatus, targetDeviceId, scheduleLabel, delivery
-        }
-
-        init(
-            id: Int,
-            prompt: String,
-            cron: String,
-            isActive: Bool,
-            lastRunAt: String? = nil,
-            nextRunAt: String? = nil,
-            lifecycleStatus: String? = nil,
-            targetDeviceId: String? = nil,
-            scheduleLabel: String? = nil,
-            delivery: String? = nil
-        ) {
-            self.id = id
-            self.prompt = prompt
-            self.cron = cron
-            self.isActive = isActive
-            self.lastRunAt = lastRunAt
-            self.nextRunAt = nextRunAt
-            self.lifecycleStatus = lifecycleStatus
-            self.targetDeviceId = targetDeviceId
-            self.scheduleLabel = scheduleLabel
-            self.delivery = delivery
-        }
-
-        init(from decoder: Decoder) throws {
-            let values = try decoder.container(keyedBy: CodingKeys.self)
-            id = try values.decode(Int.self, forKey: .id)
-            prompt = try values.decode(String.self, forKey: .prompt)
-            cron = try values.decode(String.self, forKey: .cron)
-            isActive = try values.decode(Bool.self, forKey: .isActive)
-            lastRunAt = try values.decodeIfPresent(String.self, forKey: .lastRunAt)
-            nextRunAt = try values.decodeIfPresent(String.self, forKey: .nextRunAt)
-            lifecycleStatus = try values.decodeIfPresent(String.self, forKey: .lifecycleStatus)
-            targetDeviceId = try values.decodeIfPresent(String.self, forKey: .targetDeviceId)
-            scheduleLabel = try values.decodeIfPresent(String.self, forKey: .scheduleLabel)
-            delivery = try values.decodeIfPresent(String.self, forKey: .delivery)
-        }
-    }
-
-    struct AutomationReviewItem: Decodable, Identifiable {
-        let runId: Int
-        let automationId: Int
-        let title: String
-        let status: String
-        let reply: String?
-        let error: String?
-        let delivered: Bool
-        let currentStep: Int
-        let waitingReason: String?
-        let errorCategory: String?
-        let checkpointAt: String?
-        let lastProgressAt: String?
-        let finishedAt: String?
-
-        var id: Int { runId }
-    }
-
-    struct AutomationActionResponse: Decodable {
-        let ok: Bool
-        let status: String?
-        let runId: Int?
-        let coalesced: Bool?
-        let nextRunAt: String?
-    }
-
-    /// One step of a past automation run.
-    struct AutomationRunStep: Decodable, Identifiable {
-        let id: Int
-        let stepIndex: Int
-        let kind: String
-        let status: String
-        let inputSummary: String?
-        let outputSummary: String?
-        let error: String?
-        let attemptCount: Int
-        let maxAttempts: Int
-        let isDestructive: Bool
-        let requiresUserPresence: Bool
-        let startedAt: String?
-        let finishedAt: String?
-        let commandId: String?
-        let deliveryState: String?
-        let acknowledgedAt: String?
-        let lastProgressAt: String?
-        let deadlineAt: String?
-        let lastErrorCode: String?
-        let lastErrorCategory: String?
-    }
-
-    struct AutomationRun: Decodable, Identifiable {
-        let id: Int
-        let status: String
-        let reply: String?
-        let error: String?
-        let delivered: Bool
-        let completionDeliveryState: String?
-        let pushState: String?
-        let pushError: String?
-        let currentStep: Int?
-        let checkpointAt: String?
-        let lastProgressAt: String?
-        let deadlineAt: String?
-        let startedAt: String
-        let finishedAt: String?
-        let steps: [AutomationRunStep]
-    }
-
-    struct ExecutionJournalEntry: Decodable, Identifiable {
-        let id: Int
-        let stepId: String?
-        let event: String
-        let toolName: String?
-        let status: String?
-        let verified: Bool
-        let retryable: Bool
-        let sideEffectUncertain: Bool
-        let errorCode: String?
-        let summary: String
-        let durationMs: Int?
-        let createdAt: String
-    }
-
-    static func fetchAutomationRuns(id: Int) async throws -> [AutomationRun] {
-        struct Response: Decodable { let runs: [AutomationRun] }
-        return try await authorizedGet("automations/\(id)/runs", as: Response.self).runs
-    }
-
-    static func fetchAutomationJournal(automationID: Int, runID: Int) async throws -> [ExecutionJournalEntry] {
-        struct Response: Decodable { let entries: [ExecutionJournalEntry] }
-        return try await authorizedGet("automations/\(automationID)/runs/\(runID)/journal", as: Response.self).entries
-    }
-
-    static func fetchCopilotJournal(requestID: UUID) async throws -> [ExecutionJournalEntry] {
-        struct Response: Decodable { let entries: [ExecutionJournalEntry] }
-        return try await authorizedGet("copilot/requests/\(requestID.uuidString)/journal", as: Response.self).entries
-    }
-
-    static func fetchTasks() async throws -> [RovaTask] {
-        struct Response: Decodable { let tasks: [RovaTask] }
-        return try await authorizedGet("tasks", as: Response.self).tasks
-    }
-
-    struct RovaGoal: Decodable, Identifiable {
-        let id: Int
-        let title: String
-        let createdAt: String
-        let total: Int
-        let done: Int
-    }
-
-    static func fetchGoals() async throws -> [RovaGoal] {
-        struct Response: Decodable { let goals: [RovaGoal] }
-        return try await authorizedGet("tasks/goals", as: Response.self).goals
-    }
-
-    static func completeTask(id: Int) async throws {
-        _ = try await authorizedMutate("tasks/\(id)/complete", method: "POST")
-    }
-
-    static func fetchAutomations() async throws -> [RovaAutomation] {
-        struct Response: Decodable { let automations: [RovaAutomation] }
-        return try await authorizedGet("automations", as: Response.self).automations
-    }
-
-    static func fetchAutomationReview() async throws -> [AutomationReviewItem] {
-        struct Response: Decodable { let items: [AutomationReviewItem] }
-        return try await authorizedGet("automations/review", as: Response.self).items
-    }
-
-    static func pauseAutomation(id: Int) async throws -> AutomationActionResponse {
-        defer { reconcileLocalReminders() }
-        return try await authorizedPost("automations/\(id)/pause", body: [:], as: AutomationActionResponse.self)
-    }
-
-    static func resumeAutomation(id: Int) async throws -> AutomationActionResponse {
-        defer { reconcileLocalReminders() }
-        return try await authorizedPost("automations/\(id)/resume", body: [:], as: AutomationActionResponse.self)
-    }
-
-    static func runAutomationNow(id: Int) async throws -> AutomationActionResponse {
-        try await authorizedPost("automations/\(id)/run-now", body: [:], as: AutomationActionResponse.self)
-    }
-
-    static func updateAutomation(
-        id: Int,
-        prompt: String? = nil,
-        cron: String? = nil,
-        timezone: String? = nil,
-        targetDeviceId: String? = nil
-    ) async throws {
-        var values: [String: Any] = [:]
-        if let prompt { values["prompt"] = prompt }
-        if let cron { values["cron"] = cron }
-        if let timezone { values["timezone"] = timezone }
-        if let targetDeviceId { values["targetDeviceId"] = targetDeviceId }
-        let data = try JSONSerialization.data(withJSONObject: values)
-        _ = try await authorizedJSON("automations/\(id)", method: "PATCH", body: data)
-        reconcileLocalReminders()
-    }
-
-    static func retryAutomationRun(automationID: Int, runID: Int) async throws -> AutomationActionResponse {
-        try await authorizedPost("automations/\(automationID)/runs/\(runID)/retry", body: [:], as: AutomationActionResponse.self)
-    }
-
-    static func resolveUnknownAutomationRun(
-        automationID: Int,
-        runID: Int,
-        resolution: String
-    ) async throws -> AutomationActionResponse {
-        try await authorizedPost(
-            "automations/\(automationID)/runs/\(runID)/resolve-unknown",
-            body: ["resolution": resolution],
-            as: AutomationActionResponse.self
-        )
-    }
-
-    static func fetchProject(id: Int) async throws -> ProjectDetail {
-        try await authorizedGet("projects/\(id)", as: ProjectDetail.self)
-    }
-
-    static func cancelAgentTask(id: Int) async throws {
-        struct Response: Decodable { let ok: Bool }
-        _ = try await authorizedPost("agent-tasks/\(id)/cancel", body: [:], as: Response.self)
-    }
-
-    static func cancelProject(id: Int) async throws -> ProjectDetail {
-        try await authorizedPost("projects/\(id)/cancel", body: [:], as: ProjectDetail.self)
-    }
-
-    static func retryProject(id: Int) async throws -> ProjectDetail {
-        try await authorizedPost("projects/\(id)/retry", body: [:], as: ProjectDetail.self)
-    }
-
-    struct DeferredTaskDetail: Decodable, Sendable {
-        let status: String
-        let message: String
-        let finished: Bool
-    }
-
-    static func fetchDeferredTask(id: Int) async throws -> DeferredTaskDetail {
-        try await authorizedGet("devices/pending-tasks/\(id)", as: DeferredTaskDetail.self)
-    }
-
-    static func cancelDeferredTask(id: Int) async throws -> DeferredCancellationResponse {
-        let data = try await authorizedMutate("devices/pending-tasks/\(id)", method: "DELETE")
-        return try JSONDecoder().decode(DeferredCancellationResponse.self, from: data)
-    }
-
-    static func cancelAutomation(id: Int) async throws {
-        _ = try await authorizedMutate("automations/\(id)", method: "DELETE")
-        reconcileLocalReminders()
-    }
-
-    // MARK: - On-device reminders
-
-    /// A notification-only automation the phone schedules itself (backend: automation/localDelivery.ts).
-    struct LocalNotification: Decodable, Sendable {
-        let automationId: Int
-        let specHash: String?
-        let title: String
-        let body: String
-        let hour: Int
-        let minute: Int
-        /// 0 = Sunday ... 6 = Saturday, like cron; nil = every day.
-        let weekdays: [Int]?
-        let timezone: String
-    }
-
-    /// A single-moment reminder ("yarın 9'da", "10 dakika sonra").
-    struct LocalOnceNotification: Decodable, Sendable {
-        let automationId: Int
-        let title: String
-        let body: String
-        /// ISO 8601 instant.
-        let at: String
-    }
-
-    struct LocalNotificationPlan: Decodable, Sendable {
-        let notifications: [LocalNotification]
-        let once: [LocalOnceNotification]?
-    }
-
-    static func fetchLocalNotifications() async throws -> LocalNotificationPlan {
-        try await authorizedGet("automations/local-notifications", as: LocalNotificationPlan.self)
-    }
-
-    static func leaseLocalDelivery(_ automationIDs: [Int]) async throws -> [Int] {
-        struct Response: Decodable { let leased: [Int] }
-        return try await authorizedPost("automations/local-delivery", body: ["automationIds": automationIDs], as: Response.self).leased
-    }
-
-    /// Automations can change from chat approvals or the detail screen; the phone's own schedule follows.
-    static func reconcileLocalReminders() {
-        Task { @MainActor in WiqoLocalReminders.shared.reconcile() }
-    }
-
-    private static func authorizedGet<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
+    static func authorizedGet<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
-        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
         return try decode(T.self, from: data, response: response)
     }
 
-    private static func authorizedPost<T: Decodable>(_ path: String, body: [String: Any], as type: T.Type, timeout: TimeInterval? = nil, missingRouteMessage: String? = nil) async throws -> T {
+    static func authorizedPost<T: Decodable>(_ path: String, body: [String: Any], as type: T.Type, timeout: TimeInterval? = nil, missingRouteMessage: String? = nil) async throws -> T {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
         if let timeout { request.timeoutInterval = timeout }
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
@@ -2270,12 +1541,12 @@ enum RovaBackendClient {
         return try decode(T.self, from: data, response: response)
     }
 
-    private static func authorizedPut(_ path: String, body: [String: Any]) async throws -> Data {
+    static func authorizedPut(_ path: String, body: [String: Any]) async throws -> Data {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
@@ -2286,11 +1557,11 @@ enum RovaBackendClient {
     }
 
     @discardableResult
-    private static func authorizedMutate(_ path: String, method: String) async throws -> Data {
+    static func authorizedMutate(_ path: String, method: String) async throws -> Data {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
         request.httpMethod = method
-        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
         guard (200..<300).contains(response.statusCode) else {
@@ -2300,13 +1571,13 @@ enum RovaBackendClient {
         return data
     }
 
-    private static func authorizedJSON(_ path: String, method: String, body: Data, timeout: TimeInterval = 60) async throws -> Data {
+    static func authorizedJSON(_ path: String, method: String, body: Data, timeout: TimeInterval = 60) async throws -> Data {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
         request.httpMethod = method
         request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = body
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
@@ -2316,8 +1587,6 @@ enum RovaBackendClient {
         }
         return data
     }
-
-    // MARK: - Shared plumbing
 
     /// Downloads a generated document/image into a per-account cache folder so it can be opened
     /// with Quick Look (PDF, Word, Excel, CSV, images...). The backend's artifact URL requires the
@@ -2339,7 +1608,7 @@ enum RovaBackendClient {
         }
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: artifact.downloadURL)
-        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
         guard (200..<300).contains(response.statusCode) else {
@@ -2353,11 +1622,11 @@ enum RovaBackendClient {
         return destination
     }
 
-    private static func sha256Hex(_ data: Data) -> String {
+    static func sha256Hex(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    static func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         var retried = false
         while true {
             let data: Data
@@ -2380,11 +1649,11 @@ enum RovaBackendClient {
         }
     }
 
-    private static func isRepeatable(_ request: URLRequest) -> Bool {
+    static func isRepeatable(_ request: URLRequest) -> Bool {
         (request.httpMethod ?? "GET") == "GET"
     }
 
-    private static func isDroppedConnection(_ error: Error) -> Bool {
+    static func isDroppedConnection(_ error: Error) -> Bool {
         guard let urlError = error as? URLError else { return false }
         switch urlError.code {
         case .networkConnectionLost, .cannotConnectToHost, .dnsLookupFailed: return true
@@ -2392,7 +1661,7 @@ enum RovaBackendClient {
         }
     }
 
-    private static func decode<T: Decodable>(_ type: T.Type, from data: Data, response: HTTPURLResponse) throws -> T {
+    static func decode<T: Decodable>(_ type: T.Type, from data: Data, response: HTTPURLResponse) throws -> T {
         guard (200..<300).contains(response.statusCode) else {
             let message = serverErrorMessage(from: data)
             if response.statusCode == 422 {
@@ -2407,7 +1676,7 @@ enum RovaBackendClient {
         }
     }
 
-    private static func userFacingNetworkMessage(for error: Error) -> String {
+    static func userFacingNetworkMessage(for error: Error) -> String {
         guard let urlError = error as? URLError else {
             return String(localized: "Wiqo sunucusuna ulaşılamadı. Lütfen internet bağlantını kontrol edip tekrar dene.")
         }
@@ -2423,7 +1692,7 @@ enum RovaBackendClient {
         }
     }
 
-    private static func userFacingHTTPMessage(for statusCode: Int) -> String {
+    static func userFacingHTTPMessage(for statusCode: Int) -> String {
         switch statusCode {
         case 400:
             return String(localized: "Gönderdiğin bilgiler geçersiz. Lütfen kontrol edip tekrar dene.")
@@ -2446,12 +1715,12 @@ enum RovaBackendClient {
         }
     }
 
-    private static func nonEmptyMessage(_ message: String?, fallback: String) -> String {
+    static func nonEmptyMessage(_ message: String?, fallback: String) -> String {
         let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? fallback : trimmed
     }
 
-    private static func serverErrorMessage(from data: Data) -> String? {
+    static func serverErrorMessage(from data: Data) -> String? {
         guard let envelope = try? JSONDecoder().decode(BackendErrorEnvelope.self, from: data) else { return nil }
         let message = envelope.error?.message ?? envelope.message ?? envelope.result?.text
         let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -2464,7 +1733,7 @@ enum RovaBackendClient {
     /// silently dropped before reaching any caller. Appending it here means every existing
     /// `RovaBackendError.network(message)` surface (there is no single shared error view) gets it
     /// for free, without hunting down and touching every place that already displays this string.
-    private static func appendingErrorCode(_ message: String, code: String?) -> String {
+    static func appendingErrorCode(_ message: String, code: String?) -> String {
         guard let code, !code.isEmpty else { return message }
         return "\(message) (kod: \(code))"
     }
@@ -2507,7 +1776,7 @@ private struct BackendErrorEnvelope: Decodable {
 /// Short-lived cache for repeatable mobile reads. Commands, writes, auth, and live chat never use
 /// this cache. Keeping it in the existing client avoids another project-file entry and keeps the
 /// read policy next to the requests it protects.
-private final class WiqoMobileReadCache: @unchecked Sendable {
+final class WiqoMobileReadCache: @unchecked Sendable {
     static let shared = WiqoMobileReadCache()
 
     private struct Entry {
@@ -2680,7 +1949,7 @@ private final class OneShotCityLocator: NSObject, @preconcurrency CLLocationMana
 /// a hint - the backend validates it exactly like its own router's output, keeps every policy check,
 /// and never lets it ask the user a question. Returns JSON in route_intent's shape, or nil.
 enum WiqoOnDeviceRouter {
-    private static let timeout: Duration = .milliseconds(1_000)
+    static let timeout: Duration = .milliseconds(1_000)
 
     static func hint(for message: String) async -> Data? {
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2762,7 +2031,7 @@ enum WiqoOnDeviceIntentModel {
         let confidence: Double
     }
 
-    private static let instructions = """
+    static let instructions = """
     Wiqo asistanına gelen bir isteği yalnızca sınıflandırırsın; işi yapmaz, araç çağırmaz, yetki vermezsin. \
     Kullanıcının kendi PC/dosya kapsamı güncellik gerektirmez. Olumsuz istek ("gönderme") sohbettir. \
     PC'de açık/çalışan uygulamaları soran farklı günlük ifadeleri aynı list_running_applications anlamında sınıflandır. \

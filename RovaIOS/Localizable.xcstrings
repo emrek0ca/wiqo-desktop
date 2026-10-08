@@ -1928,47 +1928,6 @@
         }
       }
     },
-    "%@ şimdiye kadar öğrendiklerini unutur; kendisi kalır.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ will forget everything it has learned so far; it remains."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ vergisst bis jetzt alles, was er gelernt hat; er bleibt."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ olvidará todo lo que ha aprendido; él permanecerá."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ oubliera tout ce qu'il a appris jusqu'à présent ; il restera."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ سيُنسى ما تعلمه حتى الآن؛ سيبقى نفسه."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ теперь забудет всё, что вы узнали; он останется."
-          }
-        }
-      }
-    },
     "%@ • %lld yetenek": {
       "extractionState": "manual",
       "localizations": {
@@ -2252,47 +2211,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld / %lld шагов выполнено"
-          }
-        }
-      }
-    },
-    "%lld / %lld alt görev tamamlandı": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld / %lld sub‑tasks completed"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld / %lld Unteraufgaben abgeschlossen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld / %lld subtareas completadas"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld / %lld sous‑tâches terminées"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تم %lld / %lld مهمة فرعية"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld / %lld подзадач выполнено"
           }
         }
       }
@@ -3158,88 +3076,6 @@
         }
       }
     },
-    "%lld çalışıyor": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld running"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld läuft"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld en ejecución"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld éléments en cours"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld يعمل"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld работает"
-          }
-        }
-      }
-    },
-    "%lld şey senin kararını bekliyor": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld things are waiting for your decision"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld Dinge warten auf deine Entscheidung"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld cosas están esperando tu decisión"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld éléments attendent votre décision"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld شيء ينتظر قرارك"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld вещей ждут вашего решения"
-          }
-        }
-      }
-    },
     "%lld/%lld adım": {
       "extractionState": "manual",
       "localizations": {
@@ -3486,47 +3322,6 @@
         }
       }
     },
-    "1 şey senin kararını bekliyor": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 thing is waiting for your decision"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 Ding wartet auf deine Entscheidung"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 cosa está esperando tu decisión"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 élément attend votre décision"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "شيء واحد ينتظر قرارك"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 вещь ждёт вашего решения"
-          }
-        }
-      }
-    },
     "3 günlük tahmin": {
       "extractionState": "manual",
       "localizations": {
@@ -3769,47 +3564,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Управление подпиской"
-          }
-        }
-      }
-    },
-    "Accept": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Accept"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Akzeptieren"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aceptar"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Accepter"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "موافق"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Принять"
           }
         }
       }
@@ -4634,47 +4388,6 @@
         }
       }
     },
-    "Ajan üzerinde çalışıyor": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Agent is working"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Agent arbeitet"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Trabajando en el agente"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Agent en cours d'exécution"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الوكيل يعمل"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Агент работает"
-          }
-        }
-      }
-    },
     "Ajanlarım": {
       "extractionState": "manual",
       "localizations": {
@@ -4794,47 +4507,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Удалить агента"
-          }
-        }
-      }
-    },
-    "Ajanın hafızası silinsin mi?": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Do you want to clear the agent's memory?"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Soll der Speicher des Agenten gelöscht werden?"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "¿Borrar la memoria del agente?"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Effacer l'historique de l'agent ?"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "هل تريد مسح ذاكرة الوكيل؟"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Удалить память агента?"
           }
         }
       }
@@ -5659,47 +5331,6 @@
         }
       }
     },
-    "Arka plan görevleri": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Background tasks"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hintergrundaufgaben"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tareas en segundo plano"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tâches en arrière-plan"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "مهام الخلفية"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Фоновые задачи"
-          }
-        }
-      }
-    },
     "Arka plan rengi değişti": {
       "extractionState": "manual",
       "localizations": {
@@ -5901,47 +5532,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Необходим путь(ы) для архивирования"
-          }
-        }
-      }
-    },
-    "Authorization": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Authorization"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Authorization"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Autorización"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Autorisation"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "التفويض"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Авторизация"
           }
         }
       }
@@ -6803,47 +6393,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Проверяем…"
-          }
-        }
-      }
-    },
-    "Bana her hafta sektör haberlerini özetleyen bir ajan kur": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Set up an agent that summarizes industry news every week"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Erstelle einen Agenten, der dir wöchentlich Branchennews zusammenfasst"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Crea un agente que resuma las noticias de la industria cada semana"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Créez un agent qui résume chaque semaine les actualités de votre secteur"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "أنشئ وكيلًا يلخص أخبار الصناعة أسبوعيًا لي"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Создайте агента, который каждую неделю резюмирует новости отрасли"
           }
         }
       }
@@ -8365,47 +7914,6 @@
         }
       }
     },
-    "Bearer %@": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bearer %@"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bearer %@"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bearer %@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bearer %@"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bearer %@"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bearer %@"
-          }
-        }
-      }
-    },
     "Beceri olarak kaydedildi": {
       "extractionState": "manual",
       "localizations": {
@@ -9349,47 +8857,6 @@
         }
       }
     },
-    "Bir hedef söyle; Wiqo alt görevlere bölsün ve ilerlemeni burada göstersin.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "State a goal; Wiqo will break it into sub‑tasks and show your progress here"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gib ein Ziel vor; Wiqo zerlegt es in Unteraufgaben und zeigt deinen Fortschritt hier an."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Di una meta; Wiqo la dividirá en subtareas y mostrará tu progreso aquí."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Indiquez un objectif ; Wiqo le découpera en sous-tâches et affichera votre progression ici."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "أخبرني هدفًا؛ سيقسم Wiqo المهام الفرعية ويعرض تقدمك هنا."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Укажите цель; Wiqo разбивает её на подзадачи и показывает прогресс здесь."
-          }
-        }
-      }
-    },
     "Bir istek yazılırken o isteğin dosyaları gider, saklanmaz.": {
       "extractionState": "manual",
       "localizations": {
@@ -9468,47 +8935,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "При выборе шаблона открывается новый чат с Wiqo, и запрос заполняется в поле ввода – до отправки можно изменить время, целый ПК и др."
-          }
-        }
-      }
-    },
-    "Bir şey hatırlat": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remind me of something"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Etwas erinnern"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recordar algo"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rappeler quelque chose"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تذكير بشيء"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Напомнить"
           }
         }
       }
@@ -10452,47 +9878,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Файлы, загруженные на этой неделе"
-          }
-        }
-      }
-    },
-    "Bu hafıza kaydı silinsin mi?": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete this memory record?"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Soll dieser Speicherprotokoll-Eintrag gelöscht werden?"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "¿Eliminar esta entrada de memoria?"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Supprimer cet enregistrement mémoire ?"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "هل تريد حذف هذه السجل الذاكرة؟"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Удалить эту запись памяти?"
           }
         }
       }
@@ -11850,47 +11235,6 @@
         }
       }
     },
-    "Bugünkü %@ kullanımı %lld / %lld": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Today's %@ usage %lld / %lld"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Heute %@ Nutzung %lld / %lld"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Uso de %@ de hoy %lld / %lld"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Usage d'aujourd'hui de %@ %lld / %lld"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "استخدام %@ اليوم %lld / %lld"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Сегодня %@ использовано %lld / %lld"
-          }
-        }
-      }
-    },
     "Bugünkü hakkın doldu. Pro ile devam edebilirsin.": {
       "extractionState": "manual",
       "localizations": {
@@ -12215,47 +11559,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Я жду твоего подтверждения, чтобы запустить это"
-          }
-        }
-      }
-    },
-    "Burada bir şey yok.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nothing here"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hier gibt es nichts."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No hay nada aquí"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Il n'y a rien ici."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لا يوجد شيء هنا"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ничего не найдено"
           }
         }
       }
@@ -13162,47 +12465,6 @@
         }
       }
     },
-    "Devam eden": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ongoing"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In Progress"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Continuando"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "En cours"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "مستمر"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Продолжить"
-          }
-        }
-      }
-    },
     "Devam et": {
       "extractionState": "manual",
       "localizations": {
@@ -13527,47 +12789,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Диаграмма"
-          }
-        }
-      }
-    },
-    "Diğer": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Other"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Other"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Otros"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Autre"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "أخرى"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Другое"
           }
         }
       }
@@ -15417,47 +14638,6 @@
         }
       }
     },
-    "Duraklat": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pause"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pause"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pausar"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mettre en pause"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "إيقاف مؤقت"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Приостановить"
-          }
-        }
-      }
-    },
     "Duraklatıldı": {
       "extractionState": "manual",
       "localizations": {
@@ -15618,47 +14798,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Не удалось остановить; задача, возможно, уже завершена."
-          }
-        }
-      }
-    },
-    "Durduruldu": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stopped"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Paused"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Detenido"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Arrêté"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "متوقف"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Остановлено"
           }
         }
       }
@@ -17795,47 +16934,6 @@
         }
       }
     },
-    "Fark ettikleri": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "They noticed"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "They noticed"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lo que notaron"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ce qu'ils ont remarqué"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الفرق بينهما"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Обнаружено"
-          }
-        }
-      }
-    },
     "Fiyat bilgisi yok": {
       "extractionState": "manual",
       "localizations": {
@@ -19845,88 +18943,6 @@
         }
       }
     },
-    "Görev ve otomasyonlar yüklenemedi.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tasks and automations could not be loaded."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aufgaben und Automationen konnten nicht geladen werden."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No se pudieron cargar tareas y automatizaciones."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Échec du chargement des tâches et automatisations."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تعذر تحميل المهام والأتمتة."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Задачи и автоматизации не удалось загрузить."
-          }
-        }
-      }
-    },
-    "Görev yok": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No task"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Keine Aufgabe"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sin tareas"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aucune tâche"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لا توجد مهمة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Нет задач"
-          }
-        }
-      }
-    },
     "Görevi durdur": {
       "extractionState": "manual",
       "localizations": {
@@ -20005,47 +19021,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Задачи"
-          }
-        }
-      }
-    },
-    "Görevler ve otomasyonlar": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tasks & automations"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aufgaben und Automatisierungen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tareas y automatizaciones"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tâches et automatisations"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "المهام والأتمتة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Задачи и автоматизация"
           }
         }
       }
@@ -20210,47 +19185,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Увеличить изображение"
-          }
-        }
-      }
-    },
-    "Göster": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mostrar"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Afficher"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "إظهار"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Показать"
           }
         }
       }
@@ -20624,252 +19558,6 @@
         }
       }
     },
-    "Günde 1 görsel": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 image per day"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 Bild pro Tag"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 imagen al día"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 image par jour"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "صورة واحدة يوميًا"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 изображение в день"
-          }
-        }
-      }
-    },
-    "Günde 10 görsel": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "10 images per day"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "10 Bilder pro Tag"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "10 imágenes al día"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "10 images par jour"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "10 صور يوميًا"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "10 изображений в день"
-          }
-        }
-      }
-    },
-    "Günde 10 mesaj": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "10 messages per day"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "10 Nachrichten pro Tag"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "10 mensajes al día"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "10 messages par jour"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "10 رسائل يوميًا"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "10 сообщений в день"
-          }
-        }
-      }
-    },
-    "Günde 100 mesaj": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "100 messages per day"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "100 Nachrichten pro Tag"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "100 mensajes al día"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "100 messages par jour"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "100 رسالة يوميًا"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "100 сообщений в день"
-          }
-        }
-      }
-    },
-    "Günde 20 görsel": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "20 images per day"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "20 Bilder pro Tag"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "20 imágenes al día"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "20 images par jour"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "20 صورة يوميًا"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "20 изображений в день"
-          }
-        }
-      }
-    },
-    "Günde 200 mesaj": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "200 messages per day"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "200 Nachrichten pro Tag"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "200 mensajes al día"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "200 messages par jour"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "200 رسالة يوميًا"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "200 сообщений в день"
-          }
-        }
-      }
-    },
     "Günün özetini akşam bana gönderir": {
       "extractionState": "manual",
       "localizations": {
@@ -20911,47 +19599,6 @@
         }
       }
     },
-    "Haber verdi": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reported"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reported"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Informado"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Averti"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "أبلغت"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Сообщено"
-          }
-        }
-      }
-    },
     "Hafta sonu hatırlatıcı özeti": {
       "extractionState": "manual",
       "localizations": {
@@ -20989,47 +19636,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Сводка напоминаний на выходных"
-          }
-        }
-      }
-    },
-    "Haftalık rapor": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Weekly report"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Weekly report"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Informe semanal"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rapport hebdomadaire"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تقرير أسبوعي"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Еженедельный отчёт"
           }
         }
       }
@@ -21157,47 +19763,6 @@
         }
       }
     },
-    "Hafıza silindi": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Memory cleared"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Memory cleared"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Memoria borrada"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mémoire effacée"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تم مسح الذاكرة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Память очищена"
-          }
-        }
-      }
-    },
     "Hafıza silindi.": {
       "extractionState": "manual",
       "localizations": {
@@ -21276,170 +19841,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Не удалось удалить память."
-          }
-        }
-      }
-    },
-    "Hafıza silinemedi. Tekrar dene.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not delete memory. Try again."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Speicher konnte nicht gelöscht werden. Bitte erneut versuchen."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No se pudo borrar la memoria. Inténtalo de nuevo."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Impossible de supprimer la mémoire. Réessaye."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تعذر حذف الذاكرة. حاول مرة أخرى."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Не удалось удалить память. Повторите попытку."
-          }
-        }
-      }
-    },
-    "Hafıza yüklenemedi. Yeniden denemek için aşağı çek.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Memory could not be loaded. Pull down to retry."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Speicher konnte nicht geladen werden. Nach unten ziehen zum erneuten Laden."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No se pudo cargar la memoria. Desliza hacia abajo para reintentar."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Impossible de charger la mémoire. Tire vers le bas pour réessayer."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تعذر تحميل الذاكرة. اسحب لأسفل لإعادة المحاولة."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Память не загружена. Потяните вниз, чтобы повторить."
-          }
-        }
-      }
-    },
-    "Hafızada ara": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Search memory"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Search memory"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Buscar en la memoria"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recherche dans la mémoire"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "بحث في الذاكرة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Поиск в памяти"
-          }
-        }
-      }
-    },
-    "Hafızası": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Memory"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Memory"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Memoria"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sa mémoire"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ذاكرتك"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Память"
           }
         }
       }
@@ -22141,47 +20542,6 @@
         }
       }
     },
-    "Hatırlayayım mı?": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Should I remind you?"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Soll ich dich erinnern?"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "¿Te lo recuerdo?"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Souhaitez‑vous un rappel?"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "هل أذكرك؟"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Надо напомнить?"
-          }
-        }
-      }
-    },
     "Hava durumu": {
       "extractionState": "manual",
       "localizations": {
@@ -22551,47 +20911,6 @@
         }
       }
     },
-    "Hedef belirle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Set goal"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Set goal"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Establecer objetivo"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Définir un objectif"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "حدد هدفاً"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Установить цель"
-          }
-        }
-      }
-    },
     "Hedef yol güvenli bir yerel yol değil.": {
       "extractionState": "manual",
       "localizations": {
@@ -22629,47 +20948,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Целевой путь не является безопасным локальным путем."
-          }
-        }
-      }
-    },
-    "Hedefim: ": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "My goal: "
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "My goal: "
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mi objetivo: "
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mon objectif : "
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "هدفي: "
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Моя цель: "
           }
         }
       }
@@ -22756,47 +21034,6 @@
         }
       }
     },
-    "Hedeflerini sohbette Wiqo'ya söyle. Alt görevler tamamlandıkça ilerleme burada güncellenir.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tell Wiqo your goals in chat. Progress updates here as sub‑tasks finish."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Erzähle Wiqo in der Unterhaltung deine Ziele. Sobald Unteraufgaben abgeschlossen sind, wird der Fortschritt hier aktualisiert."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dile a Wiqo tus objetivos en la conversación. A medida que se completen subtareas, el progreso se actualizará aquí."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Discuter tes objectifs avec Wiqo. La progression se met à jour ici au fur et à mesure que les sous‑tâches sont terminées."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "أخبر Wiqo عن أهدافك في الدردشة. مع إكمال المهام الفرعية، يتم تحديث التقدم هنا."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Скажите Wiqo о своих целях в чате. По мере завершения подзадач прогресс обновляется здесь."
-          }
-        }
-      }
-    },
     "Henüz ajan yok": {
       "extractionState": "manual",
       "localizations": {
@@ -22834,129 +21071,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Пока нет агента"
-          }
-        }
-      }
-    },
-    "Henüz ajan yok. “Bana haftalık özet çıkaran bir ajan kur” diyebilirsin.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No agent yet. You can say “Create an agent that gives me a weekly summary.”"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No agent yet. You can say “Create an agent that gives me a weekly summary.”"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aún no hay agente. Puedes decir \"Crea un agente que me haga un resumen semanal\"."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pas encore d'agent. Vous pouvez dire « Crée un agent qui me donne un résumé hebdomadaire »."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لا يوجد وكيل بعد. يمكنك أن تقول: “أنشئ وكيلًا يقدّم لي ملخّصًا أسبوعيًا”."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Пока нет агента. Вы можете сказать: «Создай агента, который будет делать еженедельный обзор»."
-          }
-        }
-      }
-    },
-    "Henüz alt görev yok": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No sub‑tasks"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No sub‑tasks"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aún no hay subtareas"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pas encore de sous-tâche"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لا توجد مهام فرعية"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Пока нет подзадач"
-          }
-        }
-      }
-    },
-    "Henüz bir şey hatırlamıyorum": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "I don’t remember anything yet"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "I don’t remember anything yet"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aún no recuerdo nada"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Je ne me souviens de rien pour l'instant"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لا أذكر أي شيء بعد الآن"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Пока ничего не помню"
           }
         }
       }
@@ -23039,47 +21153,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Пока нет цели"
-          }
-        }
-      }
-    },
-    "Henüz hedef yok.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No goal yet."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Noch kein Ziel."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aún no hay objetivo."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pas encore d’objectif."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لا توجد أهداف بعد."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Пока нет цели."
           }
         }
       }
@@ -23453,47 +21526,6 @@
         }
       }
     },
-    "Her cuma akşamı haftalık raporumu hazırlayıp hatırlat": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prepare and remind me of my weekly report every Friday evening"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prepare and remind me of my weekly report every Friday evening"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cada viernes por la noche prepara y recuerda mi informe semanal"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Préparez et rappelez mon rapport hebdomadaire chaque vendredi soir"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "كل جمعة مساءً أعد تقريرًا أسبوعيًا وأذكّر"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Каждую пятницу вечером готовить и напоминать о еженедельном отчёте"
-          }
-        }
-      }
-    },
     "Her gece 00:30'da PC'mi otomatik kilitleyen bir otomasyon oluştur.": {
       "extractionState": "manual",
       "localizations": {
@@ -23781,47 +21813,6 @@
         }
       }
     },
-    "Her sabah 8'de bana günün özetini gönder": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Send me a daily summary at 8 am every morning"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Send me a daily summary at 8 a.m. every morning"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cada mañana a las 8 envíame un resumen del día"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Envoyez-moi le résumé du jour chaque matin à 8h"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "كل صباح الساعة 8 أرسل لي ملخّص اليوم"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Каждое утро в 8:00 отправлять мне обзор дня"
-          }
-        }
-      }
-    },
     "Her sabah 9'da bana günün özetini çıkar": {
       "extractionState": "manual",
       "localizations": {
@@ -23900,47 +21891,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Утреннее резюме погоды и дня"
-          }
-        }
-      }
-    },
-    "Her sabah özet": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Daily summary"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Daily summary"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Resumen matutino"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Résumé du matin"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "كل صباح ملخّص"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Утренний обзор"
           }
         }
       }
@@ -25011,47 +22961,6 @@
         }
       }
     },
-    "Kaydedilemedi. Tekrar dene.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Failed to save. Try again."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Speichern fehlgeschlagen. Bitte erneut versuchen."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No se pudo guardar. Inténtalo de nuevo."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Échec de l’enregistrement. Réessayer."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لم يتم الحفظ. حاول مرة أخرى."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Не удалось сохранить. Повторите попытку."
-          }
-        }
-      }
-    },
     "Kaydediliyor": {
       "extractionState": "manual",
       "localizations": {
@@ -25130,47 +23039,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Сохранить"
-          }
-        }
-      }
-    },
-    "Kaydı sil": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete record"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aufnahme löschen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Eliminar registro"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Supprimer l’enregistrement"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "حذف التسجيل"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Удалить запись"
           }
         }
       }
@@ -25622,129 +23490,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Зарегистрироваться"
-          }
-        }
-      }
-    },
-    "Kayıt silinemedi. Tekrar dene.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Failed to delete record. Try again."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aufnahme konnte nicht gelöscht werden. Versuche es erneut."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No se pudo eliminar el registro. Inténtalo de nuevo."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Impossible de supprimer l'enregistrement. Réessayer."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تعذر حذف السجل. حاول مرة أخرى."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Не удалось удалить запись. Повторите попытку."
-          }
-        }
-      }
-    },
-    "Kayıtlı hafıza yok.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No saved memory."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Keine gespeicherten Erinnerungen."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No hay memoria guardada."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aucun souvenir enregistré."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لا توجد ذاكرة مسجلة."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Сохранённой памяти нет."
-          }
-        }
-      }
-    },
-    "Kendi başına": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "On its own"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Allein"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Por sí mismo"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Par lui-même"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "بحد ذاته"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Самостоятельно"
           }
         }
       }
@@ -29152,47 +26897,6 @@
         }
       }
     },
-    "Mac bağlantısı": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mac connection"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mac-Verbindung"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Conexión a Mac"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connexion Mac"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "اتصال Mac"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Подключение к Mac"
-          }
-        }
-      }
-    },
     "Mac işi yürütülüyor · sonuç burada görünecek": {
       "extractionState": "manual",
       "localizations": {
@@ -29640,88 +27344,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Открывается предпросмотр на Mac…"
-          }
-        }
-      }
-    },
-    "Mail": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mail"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mail"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mail"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mail"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "البريد"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Почта"
-          }
-        }
-      }
-    },
-    "Mail ve takvim izleme, onaysız yapılanlar": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mail and calendar monitoring, unauthorized actions"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "E-Mails und Kalender verfolgen, ohne Genehmigung"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Seguimiento de correo y calendario, acciones sin autorización"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Suivi des e‑mails et du calendrier, actions non autorisées"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "مراقبة البريد والتقويم، ما لم يُوافق عليه"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Отслеживание почты и календаря, действия без согласия"
           }
         }
       }
@@ -30546,47 +28168,6 @@
         }
       }
     },
-    "Messages": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Messages"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Messages"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Messages"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Messages"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الرسائل"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Сообщения"
-          }
-        }
-      }
-    },
     "Metin yapıştır veya yaz…": {
       "extractionState": "manual",
       "localizations": {
@@ -30788,47 +28369,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Лучше отображается на мобильном"
-          }
-        }
-      }
-    },
-    "Music": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Music"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Music"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Music"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Musique"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الموسيقى"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Музыка"
           }
         }
       }
@@ -31202,47 +28742,6 @@
         }
       }
     },
-    "Not aldı": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Note taken"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Notiz erstellt"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nota tomada"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Note prise"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تم أخذ ملاحظات"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Получено сообщение"
-          }
-        }
-      }
-    },
     "Not bilgileri geçersiz.": {
       "extractionState": "manual",
       "localizations": {
@@ -31321,88 +28820,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Создать заметку"
-          }
-        }
-      }
-    },
-    "Notes": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Notes"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Notizen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Notas"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Notes"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ملاحظات"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Заметки"
-          }
-        }
-      }
-    },
-    "Notlar": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Notes"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Notizen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Notas"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Notes"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الملاحظات"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Записки"
           }
         }
       }
@@ -32391,129 +29808,6 @@
         }
       }
     },
-    "Otomasyon iptal edildi": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automation cancelled"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatisierung abgebrochen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatización cancelada"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatisation annulée"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تم إلغاء الأتمتة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Автоматизация отменена"
-          }
-        }
-      }
-    },
-    "Otomasyon iptal edilemedi.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automation could not cancel."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatisierung konnte nicht abgebrochen werden."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No se pudo cancelar la automatización."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Impossible d’annuler l’automatisation"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تعذر إلغاء الأتمتة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Автоматизацию не удалось отменить."
-          }
-        }
-      }
-    },
-    "Otomasyon seçenekleri": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automation Options"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatisierungsoptionen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Opciones de automatización"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Options d'automatisation"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "خيارات الأتمتة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Параметры автоматизации"
-          }
-        }
-      }
-    },
     "Otomasyon silindi": {
       "extractionState": "manual",
       "localizations": {
@@ -32801,47 +30095,6 @@
         }
       }
     },
-    "Otomasyonu duraklat": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pause automation"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatisierung pausieren"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pausar automatización"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mettre l’automatisation en pause"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "إيقاف الأتمتة مؤقتًا"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Приостановить автоматизацию"
-          }
-        }
-      }
-    },
     "Otomasyonu sil": {
       "extractionState": "manual",
       "localizations": {
@@ -32879,47 +30132,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Удалить автоматизацию"
-          }
-        }
-      }
-    },
-    "Otomasyonu sürdür": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Continue automation"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatisierung fortsetzen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Continuar automatización"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Poursuivre l’automatisation"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "استمرار الأتمتة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Продолжить автоматизацию"
           }
         }
       }
@@ -38541,88 +35753,6 @@
         }
       }
     },
-    "Rol, rutin ve hafıza": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Role, routine, and memory"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rolle, Routine und Erinnerung"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rol, rutina y memoria"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rôle, routine et mémoire"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الدور، الروتين والذاكرة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Роль, рутина и память"
-          }
-        }
-      }
-    },
-    "Rolü": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Role"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rolle"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rol"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rôle"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الدور"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Роль"
-          }
-        }
-      }
-    },
     "Rota hesaplanamadı.": {
       "extractionState": "manual",
       "localizations": {
@@ -38701,47 +35831,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Рутинный"
-          }
-        }
-      }
-    },
-    "Rutini var": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You have a routine"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Du hast ein Ritual"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tienes rutina"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Vous avez une routine"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لديك روتين"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "У вас есть рутина"
           }
         }
       }
@@ -39849,47 +36938,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Символьное выражение недопустимо"
-          }
-        }
-      }
-    },
-    "Senin hakkında": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "About you"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Über dich"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sobre ti"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "À propos de vous"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "عنك"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "О вас"
           }
         }
       }
@@ -41329,47 +38377,6 @@
         }
       }
     },
-    "Son biten": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recently finished"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Letzte beendet"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Último finalizado"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dernier terminé"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "آخر انتهاء"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Последний завершённый"
-          }
-        }
-      }
-    },
     "Son değişikliği geri al": {
       "extractionState": "manual",
       "localizations": {
@@ -41653,47 +38660,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Следующая работа"
-          }
-        }
-      }
-    },
-    "Sonucu belirsiz kalan otomasyonlar var": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Some automations have uncertain results"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Es gibt Automatisierungen mit unbestimmtem Ergebnis"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hayes de resultados inciertos"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Il y a des automatisations dont le résultat est incertain"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "هناك أتمتة غير مؤكدة النتيجة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Есть автоматизации с неопределенным результатом"
           }
         }
       }
@@ -42518,47 +39484,6 @@
         }
       }
     },
-    "System Settings": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "System Settings"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Systemeinstellungen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Configuración del sistema"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Réglages système"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "إعدادات النظام"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Системные настройки"
-          }
-        }
-      }
-    },
     "Süre doldu": {
       "extractionState": "manual",
       "localizations": {
@@ -42801,47 +39726,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Сбросить"
-          }
-        }
-      }
-    },
-    "Sırada": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In queue"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In der Warteschlange"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "En la cola"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "En attente"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "في الانتظار"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "В очереди"
           }
         }
       }
@@ -43457,88 +40341,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "ОК"
-          }
-        }
-      }
-    },
-    "Tamamlanamadı": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not complete"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nicht abgeschlossen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No completado"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Non terminé"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لم يكتمل"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Не завершено"
-          }
-        }
-      }
-    },
-    "Tamamlanan": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Completed"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Abgeschlossen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Completado"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Terminés"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "مكتمل"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Завершённые"
           }
         }
       }
@@ -44732,129 +41534,6 @@
         }
       }
     },
-    "Tercihlerin": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preferences"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Deine Präferenzen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preferencias"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Vos préférences"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تفضيلاتك"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ваши предпочтения"
-          }
-        }
-      }
-    },
-    "Tercihlerini bana söylediğinde burada görürsün.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "When you share your preferences, you’ll see them here."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wenn du mir deine Vorlieben sagst, siehst du sie hier."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cuando me dices tus preferencias, las verás aquí."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lorsque vous me communiquez vos préférences, vous les voyez ici."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "عندما تخبرني بتفضيلاتك سترى ذلك هنا."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Когда вы поделитесь своими предпочтениями, вы увидите их здесь."
-          }
-        }
-      }
-    },
-    "Tercihlerini, çevreni ve sık yaptığın işleri bana söyle; sonraki sohbetlerde hatırlarım. İstediğin zaman buradan silebilirsin.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tell me about your preferences, environment, and frequent tasks; I’ll remember them for future chats. You can delete them here anytime."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Erzähle mir deine Vorlieben, deine Umgebung und die Aufgaben, die du häufig erledigst; ich werde sie in zukünftigen Gesprächen berücksichtigen. Du kannst sie jederzeit hier löschen."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dime tus preferencias, tu entorno y las tareas que haces con frecuencia; las recordaré en las próximas conversaciones. Puedes borrarlas aquí cuando quieras."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dites-moi vos préférences, votre environnement et les tâches que vous faites souvent ; je me souviendrai lors des prochaines conversations. Vous pouvez les supprimer ici quand vous voulez."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "أخبرني عن تفضيلاتك، بيئتك، وأعمالك المتكررة؛ سأتذكرها في المحادثات القادمة. يمكنك حذفها من هنا في أي وقت."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Расскажите мне о своих предпочтениях, окружении и часто выполняемых задачах; я запомню их для будущих бесед. При желании вы можете удалить их здесь."
-          }
-        }
-      }
-    },
     "Terminal izni bu telefonda imzalanamadı. PC eşleşmesini kontrol et.": {
       "extractionState": "manual",
       "localizations": {
@@ -45470,88 +42149,6 @@
         }
       }
     },
-    "Tüm hafıza silinsin mi?": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete all memory?"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Soll der gesamte Speicher gelöscht werden?"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "¿Eliminar toda la memoria?"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Supprimer toute la mémoire ?"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "هل تريد مسح كل الذاكرة؟"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Удалить всю память?"
-          }
-        }
-      }
-    },
-    "Tüm hafızayı sil": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Erase all memory"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gesamten Speicher löschen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Borrar toda la memoria"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Effacer tout le cache"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "امسح كل الذاكرة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Очистить всю память"
-          }
-        }
-      }
-    },
     "Tümünü göster (%lld satır)": {
       "extractionState": "manual",
       "localizations": {
@@ -45589,88 +42186,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Показать все (%lld строк)"
-          }
-        }
-      }
-    },
-    "Tümünü göster (%lld)": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show all (%lld)"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alle anzeigen (%lld)"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mostrar todo (%lld)"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Afficher tout (%lld)"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "عرض الكل (%lld)"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Показать все (%lld)"
-          }
-        }
-      }
-    },
-    "Tümünü sil": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete all"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alles löschen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Borrar todo"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Supprimer tout"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "امسح الكل"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Удалить все"
           }
         }
       }
@@ -46618,47 +43133,6 @@
         }
       }
     },
-    "Visual Studio Code": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Visual Studio Code"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Visual Studio Code"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Visual Studio Code"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Visual Studio Code"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Visual Studio Code"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Visual Studio Code"
-          }
-        }
-      }
-    },
     "Web kaynağı": {
       "extractionState": "manual",
       "localizations": {
@@ -46983,47 +43457,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Wiqo делает это автоматически, потому что вы уже одобрили."
-          }
-        }
-      }
-    },
-    "Wiqo bunları hatırlamayı öneriyor": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo suggests remembering these"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo schlägt vor, dies zu merken"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo sugiere que recuerde esto"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo recommande de les mémoriser"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "يقترح Wiqo أن يتذكر هذه"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo рекомендует запомнить это"
           }
         }
       }
@@ -47602,47 +44035,6 @@
         }
       }
     },
-    "Wiqo senin hakkında öğrendiği her şeyi unutur. Bu geri alınamaz.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo forgets everything it learns about you. This is irreversible."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo vergisst alles, was es über dich gelernt hat. Das ist unwiderruflich."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo olvida todo lo que ha aprendido sobre ti. Esto es irreversible."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo oubliera tout ce qu'il a appris à votre sujet. C'est irréversible."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "يُنسى Wiqo كل ما تعلمه عنك. لا يمكن التراجع."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wiqo забудет всё, что узнал о вас. Это невозможно отменить."
-          }
-        }
-      }
-    },
     "Wiqo sunucusu isteği tamamlayamadı. Lütfen tekrar dene.": {
       "extractionState": "manual",
       "localizations": {
@@ -48053,47 +44445,6 @@
         }
       }
     },
-    "Wiqo'nun hatırladıklarını burada görebilir ve silebilirsin.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You can view and delete what Wiqo remembers here."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hier kannst du die Erinnerungen von Wiqo einsehen und löschen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Puedes ver y eliminar lo que Wiqo recuerda aquí."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Vous pouvez voir et supprimer les souvenirs de Wiqo ici."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "يمكنك رؤية ما يتذكره Wiqo هنا وحذفه."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Вы можете просмотреть и удалить то, что Wiqo запомнил, здесь."
-          }
-        }
-      }
-    },
     "Wiqo'nun işleri": {
       "extractionState": "manual",
       "localizations": {
@@ -48377,47 +44728,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Улучшить Wiqo"
-          }
-        }
-      }
-    },
-    "Xcode": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Xcode"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Xcode"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Xcode"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Xcode"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Xcode"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Xcode"
           }
         }
       }
@@ -49119,47 +45429,6 @@
         }
       }
     },
-    "Yarım kaldı": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Half‑finished"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unvollständig"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Interrumpido"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "En cours"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "مُتوقف"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Остановлено"
-          }
-        }
-      }
-    },
     "Yarın": {
       "extractionState": "manual",
       "localizations": {
@@ -49652,47 +45921,6 @@
         }
       }
     },
-    "Yeni bir şey hatırlat": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remind me of something new"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Erinnere mich an etwas Neues"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recordatorio nuevo"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rappeler quelque chose de nouveau"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تذكير جديد"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Напомнить новое"
-          }
-        }
-      }
-    },
     "Yeni cihaza geçerken gerekir. Güvenli bir yere yaz; kaybedersen şifreli projeler açılamaz.": {
       "extractionState": "manual",
       "localizations": {
@@ -49771,47 +45999,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Новый файл"
-          }
-        }
-      }
-    },
-    "Yeni hedef": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "New goal"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Neues Ziel"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Meta nueva"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nouvel objectif"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "هدف جديد"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Новая цель"
           }
         }
       }
@@ -50099,47 +46286,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Место"
-          }
-        }
-      }
-    },
-    "Yerel PC sonuçları hazır. Bu sonuçları kullanarak önceki isteği şimdi tamamla; belge içeriğini yeniden isteme.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Local PC results ready. Use these results to complete the previous request now; do not request the document content again."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lokale PC-Ergebnisse bereit. Verwende diese Ergebnisse, um die vorherige Anfrage jetzt abzuschließen; bitte nicht erneut nach dem Dokumentinhalt fragen."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Los resultados locales de PC están listos. Usa estos resultados para completar la solicitud anterior ahora; no vuelvas a solicitar el contenido del documento."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Résultats locaux sur PC prêts. Utilisez ces résultats pour compléter la requête précédente maintenant ; ne demandez pas à nouveau le contenu du document."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "نتائج الكمبيوتر المحلي جاهزة. استخدم هذه النتائج لإكمال الطلب السابق الآن؛ لا تطلب محتوى المستند مرة أخرى."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Результаты локального ПК готовы. Используйте их, чтобы завершить предыдущий запрос; не запрашивайте содержимое документа снова."
           }
         }
       }
@@ -51825,88 +47971,6 @@
         }
       }
     },
-    "Çalışan ve biten uzun işler": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ongoing and completed long tasks"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Laufende und abgeschlossene Aufgaben"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "trabajos largos en curso y finalizados"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tâches longues en cours et terminées"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "العمليات الطويلة الجارية والمكتملة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "долгие задачи в работе и завершённые"
-          }
-        }
-      }
-    },
-    "Çalışanlar, otomasyonlar, ajanlar": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Workers, automations, agents"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mitarbeiter, Automatisierungen, Agenten"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Trabajadores, automatizaciones, agentes"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Employés, automatisations, agents"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الموظفون، الأتمتة، الوكلاء"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Работники, автоматизации, агенты"
-          }
-        }
-      }
-    },
     "Çalışma Geçmişi": {
       "extractionState": "manual",
       "localizations": {
@@ -53260,47 +49324,6 @@
         }
       }
     },
-    "Önemsiz bulundu": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Marked as insignificant"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Als unwichtig markiert"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Encontrado irrelevante"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Écarté comme non important"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تم اعتباره غير مهم"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Найдено незначительное"
-          }
-        }
-      }
-    },
     "Önemsiz, bir daha gösterme": {
       "extractionState": "manual",
       "localizations": {
@@ -53379,88 +49402,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Предложение"
-          }
-        }
-      }
-    },
-    "Önerilenler": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Suggested"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Empfohlen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sugerencias"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Suggestions"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "المقترحات"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Рекомендации"
-          }
-        }
-      }
-    },
-    "Önerme": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Suggest"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Vorschlag"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sugerir"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Suggérer"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "اقتراح"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Рекомендовать"
           }
         }
       }
@@ -54080,47 +50021,6 @@
         }
       }
     },
-    "İlerlet": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Advance"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Weiterleiten"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Avanzar"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Avancer"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تقدم"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Продвинуть"
-          }
-        }
-      }
-    },
     "İletiliyor…": {
       "extractionState": "manual",
       "localizations": {
@@ -54158,129 +50058,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Передаётся…"
-          }
-        }
-      }
-    },
-    "İlgi bekleyen": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pending interest"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Warten auf Interesse"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pendiente de atención"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "En attente d’intérêt"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "انتظار الاهتمام"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ожидает внимания"
-          }
-        }
-      }
-    },
-    "İncele": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Review"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Überprüfen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Revisar"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Examiner"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "راجع"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Просмотреть"
-          }
-        }
-      }
-    },
-    "İncelenecek": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "To review"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zu prüfen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Revisar"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "À examiner"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "مراجعة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Будет рассмотрено"
           }
         }
       }
@@ -54568,47 +50345,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Отмена…"
-          }
-        }
-      }
-    },
-    "İptal et": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cancel"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Abbrechen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cancelar"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Annuler"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "إلغاء"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Отменить"
           }
         }
       }
@@ -55064,47 +50800,6 @@
         }
       }
     },
-    "İzleme": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tracking"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Verfolgen"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Seguimiento"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Suivi"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "مراقبة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Отслеживание"
-          }
-        }
-      }
-    },
     "İzleme ve rutinler açık": {
       "extractionState": "manual",
       "localizations": {
@@ -55142,47 +50837,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Включено отслеживание и рутины"
-          }
-        }
-      }
-    },
-    "İzleme, izinler ve geçmiş": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tracking, permissions, and history"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Verfolgung, Berechtigungen und Verlauf"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Seguimiento, permisos y historial"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Suivi, autorisations et historique"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "المراقبة، الأذونات والسجل"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Отслеживание, разрешения и история"
           }
         }
       }
@@ -55265,47 +50919,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "При назначении"
-          }
-        }
-      }
-    },
-    "İş verilince çalışır": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Works when assigned"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wird ausgeführt, wenn ein Auftrag erteilt wird"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Funciona al recibir una tarea"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fonctionne lorsqu’on lui donne une tâche"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "يعمل عند إعطاء مهمة"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Работает при задании задачи"
           }
         }
       }
@@ -55880,47 +51493,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Работа не завершена. Пожалуйста, попробуйте снова."
-          }
-        }
-      }
-    },
-    "İşlem tamamlanamadı. Tekrar dene.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Operation failed. Try again."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aktion konnte nicht abgeschlossen werden. Bitte erneut versuchen."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La operación no se pudo completar. Inténtalo de nuevo."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "L’opération a échoué. Réessaie"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لم يتم إكمال العملية. حاول مرة أخرى."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Операция не завершена. Повторите попытку."
           }
         }
       }
@@ -56663,47 +52235,6 @@
         }
       }
     },
-    "Şimdi çalışıyor": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Now working"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Jetzt läuft es"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ahora está en ejecución"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fonctionne maintenant"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "يعمل الآن"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Сейчас работает"
-          }
-        }
-      }
-    },
     "Şimdi şunu yapıyorum: %@": {
       "extractionState": "manual",
       "localizations": {
@@ -56864,47 +52395,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Сейчас: %@"
-          }
-        }
-      }
-    },
-    "Şunu hatırla: ": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remember this: "
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Merke dir das: "
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recuerda esto: "
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Souviens‑toi de ceci : "
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تذكر هذا: "
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Запомни: "
           }
         }
       }
@@ -57155,47 +52645,6 @@
         }
       }
     },
-    "“%@” hedefim için sıradaki adımı planla": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Plan the next step for “%@” toward my goal"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Plane den nächsten Schritt für \"%@\""
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Planifica el siguiente paso para “%@”"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Planifie l’étape suivante pour « %@ »"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "خطط للخطوة التالية لـ “%@” في هدفي"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "«%@» планируй следующий шаг для моего задания"
-          }
-        }
-      }
-    },
     "“%@” için haritada bir sonuç bulamadım.": {
       "extractionState": "manual",
       "localizations": {
@@ -57233,47 +52682,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "«%@» не найдено на карте."
-          }
-        }
-      }
-    },
-    "“%@” için kayıt yok.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No record for “%@”"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Keine Aufzeichnung für \"%@\""
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No hay registro para “%@”"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aucun enregistrement pour « %@ »"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لا توجد سجلات لـ “%@”"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Нет записей для «%@»"
           }
         }
       }

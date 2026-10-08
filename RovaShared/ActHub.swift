@@ -225,7 +225,7 @@ public struct ActHub: Sendable {
         guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else { throw HubError.badResponse }
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = method
-        request.setValue(String(localized: "Bearer \(accessToken)"), forHTTPHeaderField: String(localized: "Authorization"))
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         if let body {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")

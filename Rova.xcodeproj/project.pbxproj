@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E8D326D3D91D55F60434D6AA /* RovaBackendClient+Reminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = E786D326D3D91D55F60434D6 /* RovaBackendClient+Reminders.swift */; };
+		E83174C11FA3030A3AD7A319 /* RovaBackendClient+Automations.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7CD3174C11FA3030A3AD7A3 /* RovaBackendClient+Automations.swift */; };
+		E8271391A68B25689306A013 /* RovaBackendClient+Billing.swift in Sources */ = {isa = PBXBuildFile; fileRef = E73C271391A68B25689306A0 /* RovaBackendClient+Billing.swift */; };
+		E872E13DD47B2ADD0CA6EF98 /* RovaBackendClient+Account.swift in Sources */ = {isa = PBXBuildFile; fileRef = E77E72E13DD47B2ADD0CA6EF /* RovaBackendClient+Account.swift */; };
 		D30000000000000000000C96 /* KeychainInstallTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000C95 /* KeychainInstallTests.swift */; };
 		E85F91D5E574CA21A1446C1C /* WiqoWorkHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7575F91D5E574CA21A1446C /* WiqoWorkHub.swift */; };
 		E8938BBA3B534491EBAB51B2 /* SubscriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7F4938BBA3B534491EBAB51 /* SubscriptionView.swift */; };
@@ -184,6 +188,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E786D326D3D91D55F60434D6 /* RovaBackendClient+Reminders.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "RovaBackendClient+Reminders.swift"; sourceTree = "<group>"; };
+		E7CD3174C11FA3030A3AD7A3 /* RovaBackendClient+Automations.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "RovaBackendClient+Automations.swift"; sourceTree = "<group>"; };
+		E73C271391A68B25689306A0 /* RovaBackendClient+Billing.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "RovaBackendClient+Billing.swift"; sourceTree = "<group>"; };
+		E77E72E13DD47B2ADD0CA6EF /* RovaBackendClient+Account.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "RovaBackendClient+Account.swift"; sourceTree = "<group>"; };
 		D30000000000000000000C95 /* KeychainInstallTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainInstallTests.swift; sourceTree = "<group>"; };
 		E7575F91D5E574CA21A1446C /* WiqoWorkHub.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoWorkHub.swift; sourceTree = "<group>"; };
 		E7F4938BBA3B534491EBAB51 /* SubscriptionView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubscriptionView.swift; sourceTree = "<group>"; };
@@ -512,6 +520,10 @@
 				AAAFA55B3331D4116B3819B3 /* ArtifactPreview.swift */,
 				395FF78233CB35CC80BB3B64 /* Billing.swift */,
 				91687FA6CF10762A30145E6C /* PaywallView.swift */,
+				E786D326D3D91D55F60434D6 /* RovaBackendClient+Reminders.swift */,
+				E7CD3174C11FA3030A3AD7A3 /* RovaBackendClient+Automations.swift */,
+				E73C271391A68B25689306A0 /* RovaBackendClient+Billing.swift */,
+				E77E72E13DD47B2ADD0CA6EF /* RovaBackendClient+Account.swift */,
 				E7575F91D5E574CA21A1446C /* WiqoWorkHub.swift */,
 				E7F4938BBA3B534491EBAB51 /* SubscriptionView.swift */,
 				8E470424BA1B9926C7F1169F /* CanvasView.swift */,
@@ -892,6 +904,10 @@
 				9D4EB581866295D210CBC5E7 /* ArtifactPreview.swift in Sources */,
 				61D8FCE0A1D986DE1A0BF730 /* Billing.swift in Sources */,
 				3B3989760AB287C6DF759DA5 /* PaywallView.swift in Sources */,
+				E8D326D3D91D55F60434D6AA /* RovaBackendClient+Reminders.swift in Sources */,
+				E83174C11FA3030A3AD7A319 /* RovaBackendClient+Automations.swift in Sources */,
+				E8271391A68B25689306A013 /* RovaBackendClient+Billing.swift in Sources */,
+				E872E13DD47B2ADD0CA6EF98 /* RovaBackendClient+Account.swift in Sources */,
 				E85F91D5E574CA21A1446C1C /* WiqoWorkHub.swift in Sources */,
 				E8938BBA3B534491EBAB51B2 /* SubscriptionView.swift in Sources */,
 				49B373C9F593CC5E80FE77F8 /* CanvasView.swift in Sources */,
