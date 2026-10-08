@@ -500,8 +500,8 @@ extension MacSystem {
                     _ = await launch(ResolvedApplicationTarget(name: application.name, bundleIdentifier: application.bundleIdentifier, path: path))
                     verified = await waitForApplication(target: group, expectedRunning: true, expectedActive: true, timeoutSeconds: 2)
                 }
-                // Opening something that is already open succeeded if it is still running.
-                let succeeded = verified || payload.action == .open
+                // Opening requires observing the requested foreground state.
+                let succeeded = verified
                 let content = ApplicationControlContent(
                     action: payload.action,
                     resolvedName: application.name,

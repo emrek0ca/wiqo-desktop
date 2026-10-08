@@ -1,6 +1,8 @@
 import AppKit
 import Foundation
 import CryptoKit
+import PDFKit
+import Vision
 import UniformTypeIdentifiers
 
 /// Reading, writing and moving files and documents on this Mac.
@@ -197,7 +199,7 @@ except Exception:
             }
         }
         let entry = FileSystemEntry(path: url.path, name: url.lastPathComponent, byteCount: Int64(size), modifiedAt: attributes.contentModificationDate, isDirectory: false, fileType: url.pathExtension)
-        return (.files([entry]), "Doğrulandı: \(url.path) · \(size) bayt", nil)
+        return (.files([entry]), "Doğrulandı: \(url.path) · \(size) bayt\(expectedSHA256.map { " · SHA-256: \($0.lowercased())" } ?? "")", nil)
     }
 
     static func readDocument(_ filename: String) -> (data: CommandData?, error: RovaError?) {
@@ -212,10 +214,11 @@ except Exception:
     /// Downloads a backend-produced artifact over the authenticated Mac channel and commits it
     /// to Desktop only after the complete response has arrived. The URL is allow-listed by the
     /// shared validator, so a model-produced URL cannot turn this into an arbitrary downloader.
-    static func saveArtifact(_ payload: ArtifactFilePayload, token: String) async -> RovaError? {
+    static func saveArtifact(_ payload: ArtifactFilePayload, token: String) async -> (data: CommandData?, message: String, error: RovaError?) {
+        func fail(code: String, message: String) -> (data: CommandData?, message: String, error: RovaError?) { (nil, message, RovaError(code: code, message: message)) }
         guard RovaValidation.isAllowedArtifactURL(payload.downloadURL),
               let url = URL(string: payload.downloadURL) else {
-            return RovaError(code: "INVALID_ARTIFACT_URL", message: "Artifact indirme adresi güvenli değil.")
+            return fail(code: "INVALID_ARTIFACT_URL", message: "Artifact indirme adresi güvenli değil.")
         }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -224,33 +227,35 @@ except Exception:
         do {
             let (bytes, response) = try await URLSession.shared.bytes(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                return RovaError(code: "ARTIFACT_DOWNLOAD_FAILED", message: "Artifact backend'den indirilemedi.")
+                return fail(code: "ARTIFACT_DOWNLOAD_FAILED", message: "Artifact backend'den indirilemedi.")
             }
             if let contentType = http.value(forHTTPHeaderField: "Content-Type"), contentType.lowercased().hasPrefix("application/json") {
-                return RovaError(code: "ARTIFACT_DOWNLOAD_FAILED", message: "Artifact backend'den geçerli bir dosya döndürmedi.")
+                return fail(code: "ARTIFACT_DOWNLOAD_FAILED", message: "Artifact backend'den geçerli bir dosya döndürmedi.")
             }
             if let contentLength = http.value(forHTTPHeaderField: "Content-Length").flatMap(Int64.init), contentLength > DocumentEngine.maxFileBytes {
-                return RovaError(code: "ARTIFACT_TOO_LARGE", message: "İndirilen dosya desteklenen boyut sınırını aşıyor.")
+                return fail(code: "ARTIFACT_TOO_LARGE", message: "İndirilen dosya desteklenen boyut sınırını aşıyor.")
             }
             var data = Data()
             data.reserveCapacity(min(Int(payload.byteCount ?? DocumentEngine.maxFileBytes), Int(DocumentEngine.maxFileBytes)))
             for try await byte in bytes {
                 if data.count >= Int(DocumentEngine.maxFileBytes) {
-                    return RovaError(code: "ARTIFACT_TOO_LARGE", message: "İndirilen dosya desteklenen boyut sınırını aşıyor.")
+                    return fail(code: "ARTIFACT_TOO_LARGE", message: "İndirilen dosya desteklenen boyut sınırını aşıyor.")
                 }
                 data.append(byte)
             }
             if let expectedByteCount = payload.byteCount, Int64(data.count) != expectedByteCount {
-                return RovaError(code: "ARTIFACT_INTEGRITY_FAILED", message: "İndirilen artifact boyut doğrulamasından geçmedi.")
+                return fail(code: "ARTIFACT_INTEGRITY_FAILED", message: "İndirilen artifact boyut doğrulamasından geçmedi.")
             }
             if let expectedSHA256 = payload.sha256, RovaCrypto.sha256Hex(data) != expectedSHA256.lowercased() {
-                return RovaError(code: "ARTIFACT_INTEGRITY_FAILED", message: "İndirilen artifact bütünlük doğrulamasından geçmedi.")
+                return fail(code: "ARTIFACT_INTEGRITY_FAILED", message: "İndirilen artifact bütünlük doğrulamasından geçmedi.")
             }
-            return DocumentEngine.commitArtifact(data, filename: payload.filename, overwrite: payload.overwrite)
+            return await Task.detached(priority: .userInitiated) {
+                DocumentEngine.commitArtifact(data, filename: payload.filename, overwrite: payload.overwrite, destinationDirectory: payload.destinationDirectory)
+            }.value
         } catch is CancellationError {
-            return RovaError(code: "CANCELLED", message: "Artifact indirme iptal edildi.")
+            return fail(code: "CANCELLED", message: "Artifact indirme iptal edildi.")
         } catch {
-            return RovaError(code: "ARTIFACT_DOWNLOAD_FAILED", message: "Artifact indirilemedi.")
+            return fail(code: "ARTIFACT_DOWNLOAD_FAILED", message: "Artifact indirilemedi.")
         }
     }
 
@@ -348,9 +353,19 @@ except Exception:
     }
 
     static func sendFileToPhone(_ payload: LocalFileOperationPayload, commandID: UUID, accessToken: String) async -> (data: CommandData?, error: RovaError?) {
-        guard let file = resolvedLocalURL(payload.path), isRegularFile(file), !isSymbolicLink(file),
-              let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-              size > 0, Int64(size) <= maxPhoneTransferBytes else {
+        guard let file = resolvedLocalURL(payload.path), FileManager.default.fileExists(atPath: file.path) else {
+            return (nil, missingPathError(payload.path, message: "Gönderilecek dosya bulunamadı."))
+        }
+        guard isRegularFile(file), !isSymbolicLink(file) else {
+            return (nil, RovaError(code: "INVALID_FILE", message: "Yalnızca normal dosyalar gönderilebilir; klasör veya sembolik bağlantı seçilemez."))
+        }
+        guard let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            return (nil, RovaError(code: "FILE_READ_FAILED", message: "Dosya bilgisi okunamadı. Dosyaya erişim iznini kontrol et."))
+        }
+        guard size > 0 else {
+            return (nil, RovaError(code: "INVALID_FILE", message: "Dosya boş; aktarılacak içerik bulunamadı."))
+        }
+        guard Int64(size) <= maxPhoneTransferBytes else {
             return (nil, RovaError(code: "FILE_TOO_LARGE", message: "Yalnızca 25 MB veya daha küçük normal dosyalar gönderilebilir."))
         }
         do {
@@ -375,6 +390,10 @@ except Exception:
                   let body = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let artifactID = body["artifactId"] as? String else {
                 return (nil, RovaError(code: "TRANSFER_FAILED", message: "Dosya telefona iletilemedi."))
+            }
+            guard let receivedBytes = body["byteCount"] as? Int, receivedBytes == size,
+                  let receivedHash = body["sha256"] as? String, receivedHash == sha256 else {
+                return (nil, RovaError(code: "TRANSFER_UNVERIFIED", message: "Aktarılan dosyanın boyutu veya bütünlüğü doğrulanamadı."))
             }
             return (.fileTransfer(artifactID), nil)
         } catch is CancellationError {
@@ -969,6 +988,390 @@ extension MacSystem {
                 timer.cancel()
                 continuation.resume(returning: ProcessResult(status: process.terminationStatus, stdout: data, stderr: String(data: errorData, encoding: .utf8) ?? ""))
             }
+        }
+    }
+}
+
+// MARK: - File chores (fileUtility)
+
+extension MacSystem {
+    /// One sentence chores on files: a new folder, a zip, merged PDFs, a smaller picture, the text of a scan, a tidy folder.
+    /// Every source and destination goes through the same path resolution as the other file commands (no symlink targets,
+    /// Turkish folder names translated), and nothing is ever overwritten: a taken name gets " 2".
+    static func fileUtility(_ payload: FileUtilityPayload) async -> (data: CommandData?, message: String, error: RovaError?) {
+        let manager = FileManager.default
+        func fail(_ code: String, _ message: String, category: String = "tool_failure") -> (data: CommandData?, message: String, error: RovaError?) {
+            (nil, message, RovaError(code: code, message: message, category: category))
+        }
+        func listing(_ urls: [URL]) -> CommandData { .files(urls.compactMap(fileSystemEntry)) }
+        func report(_ path: String, _ text: String) -> CommandData {
+            .fileData(FileDataContent(path: path, mimeType: "text/plain", text: String(text.prefix(20_000)), truncated: text.count > 20_000))
+        }
+        func existing(_ raw: String?) -> URL? { raw.flatMap { resolvedLocalURL($0) } }
+        func missing(_ raw: String?) -> (data: CommandData?, message: String, error: RovaError?) {
+            let error = missingPathError(raw ?? "", message: "\"\(raw ?? "")\" bulunamadı.")
+            return (nil, error.message, error)
+        }
+        func freeURL(_ url: URL) -> URL {
+            guard manager.fileExists(atPath: url.path) else { return url }
+            let base = url.deletingPathExtension().lastPathComponent
+            let ext = url.pathExtension
+            for index in 2...999 {
+                let candidate = url.deletingLastPathComponent().appendingPathComponent(ext.isEmpty ? "\(base) \(index)" : "\(base) \(index).\(ext)")
+                if !manager.fileExists(atPath: candidate.path) { return candidate }
+            }
+            return url
+        }
+        func target(_ raw: String?, fallback: URL) -> URL? {
+            guard let raw else { return freeURL(fallback) }
+            if let folder = resolvedLocalURL(raw), isDirectory(folder) { return freeURL(folder.appendingPathComponent(fallback.lastPathComponent)) }
+            return resolvedLocalURL(raw, allowingMissingLastComponent: true).map(freeURL)
+        }
+        func regularFiles(in folder: URL, recursive: Bool, cap: Int) -> [URL] {
+            let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
+            var found: [URL] = []
+            if recursive {
+                let walker = manager.enumerator(at: folder, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles, .skipsPackageDescendants])
+                while let url = walker?.nextObject() as? URL, found.count < cap {
+                    if isRegularFile(url), !isSymbolicLink(url) { found.append(url) }
+                }
+            } else {
+                let items = (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])) ?? []
+                found = Array(items.filter { isRegularFile($0) && !isSymbolicLink($0) }.prefix(cap))
+            }
+            return found
+        }
+        func size(_ url: URL) -> Int64 { Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+        func modified(_ url: URL) -> Date { (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast }
+        func human(_ bytes: Int64) -> String { ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
+        func short(_ url: URL) -> String { (url.path as NSString).abbreviatingWithTildeInPath }
+
+        switch payload.action {
+        case .createFolder:
+            guard let raw = payload.path, let url = resolvedLocalURL(raw, allowingMissingLastComponent: true) else {
+                return fail("INVALID_PATH", "Klasörün açılacağı yer yok ya da yol geçersiz; üst klasörü kontrol et.")
+            }
+            if manager.fileExists(atPath: url.path) {
+                return isDirectory(url) ? (listing([url]), "\(url.lastPathComponent) klasörü zaten var.", nil) : fail("ALREADY_EXISTS", "Bu adla bir dosya var.")
+            }
+            do { try manager.createDirectory(at: url, withIntermediateDirectories: false) } catch {
+                let failure = localFileError(code: "CREATE_FOLDER_FAILED", fallback: "Klasör oluşturulamadı.", error: error)
+                return (nil, failure.message, failure)
+            }
+            return (listing([url]), "\(url.lastPathComponent) klasörü oluşturuldu.", nil)
+
+        case .archive:
+            let raws = (payload.paths ?? []) + (payload.path.map { [$0] } ?? [])
+            var sources: [URL] = []
+            for raw in raws { guard let url = existing(raw) else { return missing(raw) }; sources.append(url) }
+            guard let first = sources.first else { return fail("INVALID_PAYLOAD", "Arşivlenecek dosya yok.") }
+            let name = sources.count == 1 ? first.deletingPathExtension().lastPathComponent : "Arşiv"
+            guard let output = target(payload.destination, fallback: first.deletingLastPathComponent().appendingPathComponent("\(name).zip")) else { return fail("INVALID_PATH", "Arşivin kaydedileceği yer geçersiz.") }
+            var input = first
+            var scratch: URL?
+            if sources.count > 1 {
+                let folder = manager.temporaryDirectory.appendingPathComponent("wiqo-zip-\(UUID().uuidString)").appendingPathComponent(name)
+                do {
+                    try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+                    for source in sources { try manager.copyItem(at: source, to: folder.appendingPathComponent(source.lastPathComponent)) }
+                } catch { return fail("ARCHIVE_FAILED", "Dosyalar arşiv için hazırlanamadı.") }
+                input = folder
+                scratch = folder.deletingLastPathComponent()
+            }
+            let result = await runProcess("/usr/bin/ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", input.path, output.path], timeout: 180)
+            if let scratch { try? manager.removeItem(at: scratch) }
+            guard result.status == 0, manager.fileExists(atPath: output.path) else { return fail("ARCHIVE_FAILED", "Zip oluşturulamadı.") }
+            return (listing([output]), "\(output.lastPathComponent) hazır (\(sources.count) öğe, \(human(size(output)))).", nil)
+
+        case .extract:
+            guard let archive = existing(payload.path) else { return missing(payload.path) }
+            guard let folder = target(payload.destination, fallback: archive.deletingLastPathComponent().appendingPathComponent(archive.deletingPathExtension().lastPathComponent)) else { return fail("INVALID_PATH", "Açılacak yer geçersiz.") }
+            let result = await runProcess("/usr/bin/ditto", ["-x", "-k", archive.path, folder.path], timeout: 180)
+            guard result.status == 0, manager.fileExists(atPath: folder.path) else { return fail("EXTRACT_FAILED", "Arşiv açılamadı; zip dosyası mı?") }
+            return (listing([folder]), "Arşiv \(folder.lastPathComponent) klasörüne açıldı.", nil)
+
+        case .mergePDF:
+            var sources: [URL] = []
+            for raw in payload.paths ?? [] { guard let url = existing(raw) else { return missing(raw) }; sources.append(url) }
+            let merged = PDFDocument()
+            for source in sources {
+                guard let document = PDFDocument(url: source) else { return fail("NOT_A_PDF", "\(source.lastPathComponent) PDF olarak açılamadı.") }
+                for index in 0..<document.pageCount { if let page = document.page(at: index) { merged.insert(page, at: merged.pageCount) } }
+            }
+            guard let first = sources.first, let output = target(payload.destination, fallback: first.deletingLastPathComponent().appendingPathComponent("Birleşik.pdf")) else { return fail("INVALID_PATH", "Birleşik PDF'in yeri geçersiz.") }
+            guard merged.pageCount > 0, merged.write(to: output) else { return fail("MERGE_FAILED", "PDF'ler birleştirilemedi.") }
+            return (listing([output]), "\(sources.count) PDF birleştirildi: \(output.lastPathComponent) (\(merged.pageCount) sayfa).", nil)
+
+        case .splitPDF:
+            guard let source = existing(payload.path) else { return missing(payload.path) }
+            guard let document = PDFDocument(url: source) else { return fail("NOT_A_PDF", "\(source.lastPathComponent) PDF olarak açılamadı.") }
+            guard let folder = target(payload.destination, fallback: source.deletingLastPathComponent().appendingPathComponent("\(source.deletingPathExtension().lastPathComponent) sayfalar")) else { return fail("INVALID_PATH", "Sayfaların yeri geçersiz.") }
+            do { try manager.createDirectory(at: folder, withIntermediateDirectories: true) } catch { return fail("SPLIT_FAILED", "Sayfalar için klasör açılamadı.") }
+            var outputs: [URL] = []
+            for index in 0..<min(document.pageCount, payload.limit) {
+                guard let page = document.page(at: index) else { continue }
+                let single = PDFDocument()
+                single.insert(page, at: 0)
+                let url = folder.appendingPathComponent("\(source.deletingPathExtension().lastPathComponent)-sayfa-\(index + 1).pdf")
+                if single.write(to: url) { outputs.append(url) }
+            }
+            guard !outputs.isEmpty else { return fail("SPLIT_FAILED", "PDF sayfalara ayrılamadı.") }
+            return (listing([folder]), "\(outputs.count) sayfa ayrı PDF oldu: \(folder.lastPathComponent).", nil)
+
+        case .compressImage:
+            guard let source = existing(payload.path) else { return missing(payload.path) }
+            let edge = Int(payload.mode ?? "") ?? 1600
+            guard let output = target(payload.destination, fallback: source.deletingLastPathComponent().appendingPathComponent("\(source.deletingPathExtension().lastPathComponent)-küçük.jpg")) else { return fail("INVALID_PATH", "Küçük görselin yeri geçersiz.") }
+            let result = await runProcess("/usr/bin/sips", ["-Z", String(max(200, min(edge, 8000))), "-s", "format", "jpeg", "-s", "formatOptions", "75", source.path, "--out", output.path], timeout: 60)
+            guard result.status == 0, manager.fileExists(atPath: output.path) else { return fail("COMPRESS_FAILED", "Görsel küçültülemedi; bir görsel dosyası mı?") }
+            return (listing([output]), "\(output.lastPathComponent): \(human(size(source))) → \(human(size(output))).", nil)
+
+        case .findDuplicates:
+            guard let folder = existing(payload.path), isDirectory(folder) else { return missing(payload.path) }
+            let files = regularFiles(in: folder, recursive: true, cap: 5_000)
+            let bySize = Dictionary(grouping: files.filter { size($0) > 0 }, by: size).filter { $0.value.count > 1 }
+            var groups: [[URL]] = []
+            for (_, sameSize) in bySize {
+                var byHash: [String: [URL]] = [:]
+                for url in sameSize {
+                    guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { continue }
+                    byHash[SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(), default: []].append(url)
+                }
+                groups += byHash.values.filter { $0.count > 1 }
+            }
+            groups.sort { size($0[0]) * Int64($0.count) > size($1[0]) * Int64($1.count) }
+            if groups.isEmpty { return (report(folder.path, "\(files.count) dosyada kopya yok."), "Kopya dosya yok.", nil) }
+            let lines = groups.prefix(payload.limit).enumerated().map { index, group in
+                "\(index + 1). \(human(size(group[0]))) × \(group.count): " + group.map(short).joined(separator: " | ")
+            }
+            let wasted = groups.reduce(Int64(0)) { $0 + size($1[0]) * Int64($1.count - 1) }
+            return (report(folder.path, lines.joined(separator: "\n")), "\(groups.count) kopya grubu bulundu; silinirse \(human(wasted)) boşalır.", nil)
+
+        case .diskUsage:
+            guard let folder = existing(payload.path), isDirectory(folder) else { return missing(payload.path) }
+            let values = try? folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey])
+            let free = values?.volumeAvailableCapacityForImportantUsage.map { human($0) } ?? "?"
+            let total = values?.volumeTotalCapacity.map { human(Int64($0)) } ?? "?"
+            let files = regularFiles(in: folder, recursive: true, cap: 20_000)
+            let largest = files.sorted { size($0) > size($1) }.prefix(payload.limit)
+            var subfolders: [String: Int64] = [:]
+            for file in files {
+                let relative = file.path.dropFirst(folder.path.count + 1)
+                if let top = relative.split(separator: "/").first, relative.contains("/") { subfolders[String(top), default: 0] += size(file) }
+            }
+            let topFolders = subfolders.sorted { $0.value > $1.value }.prefix(8).map { "\($0.key): \(human($0.value))" }
+            let text = (["Disk: \(free) boş / \(total)", "\(short(folder)) toplam: \(human(files.reduce(0) { $0 + size($1) }))", "En büyük klasörler: " + topFolders.joined(separator: ", "), "En büyük dosyalar:"]
+                + largest.map { "- \(short($0)) \(human(size($0)))" }).joined(separator: "\n")
+            return (report(folder.path, text), "Disk: \(free) boş.", nil)
+
+        case .recentFiles:
+            let home = manager.homeDirectoryForCurrentUser
+            let files = ["Desktop", "Documents", "Downloads"].flatMap { regularFiles(in: home.appendingPathComponent($0), recursive: true, cap: 3_000) }
+            let recent = Array(files.sorted { modified($0) > modified($1) }.prefix(payload.limit))
+            return (listing(recent), "Son değişen \(recent.count) dosya.", nil)
+
+        case .restoreFromTrash:
+            let trash = manager.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
+            let items: [URL]
+            do { items = try manager.contentsOfDirectory(at: trash, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) } catch {
+                let failure = localFileError(code: "TRASH_UNREADABLE", fallback: "Çöp kutusu okunamadı.", error: error)
+                return (nil, failure.message, failure)
+            }
+            let wanted = ApplicationNameMatcher.normalize(payload.name ?? "")
+            let ranked = items.map { ($0, ApplicationNameMatcher.score($0.deletingPathExtension().lastPathComponent, query: wanted)) }.sorted { $0.1 > $1.1 }
+            guard let best = ranked.first, best.1 >= 0.6 else {
+                let names = items.sorted { modified($0) > modified($1) }.prefix(5).map(\.lastPathComponent).joined(separator: ", ")
+                return fail("FILE_NOT_FOUND", "Çöpte \"\(payload.name ?? "")\" yok. Son atılanlar: \(names.isEmpty ? "çöp boş" : names).")
+            }
+            let home = manager.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
+            guard let output = target(payload.destination, fallback: home.appendingPathComponent(best.0.lastPathComponent)) else { return fail("INVALID_PATH", "Geri getirilecek yer geçersiz.") }
+            do { try manager.moveItem(at: best.0, to: output) } catch {
+                let failure = localFileError(code: "RESTORE_FAILED", fallback: "Dosya çöpten geri getirilemedi.", error: error)
+                return (nil, failure.message, failure)
+            }
+            return (listing([output]), "\(output.lastPathComponent) çöpten \(short(output.deletingLastPathComponent())) klasörüne geri getirildi.", nil)
+
+        case .reveal:
+            guard let url = existing(payload.path) else { return missing(payload.path) }
+            await MainActor.run { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+            return (listing([url]), "\(url.lastPathComponent) Finder'da gösterildi.", nil)
+
+        case .openWith:
+            guard let url = existing(payload.path) else { return missing(payload.path) }
+            let result = await runProcess("/usr/bin/open", ["-a", payload.name ?? "", url.path], timeout: 20)
+            guard result.status == 0 else { return fail("APPLICATION_NOT_FOUND", "\"\(payload.name ?? "")\" uygulaması bulunamadı ya da dosyayı açamadı.") }
+            return (listing([url]), "\(url.lastPathComponent) \(payload.name ?? "") ile açıldı.", nil)
+
+        case .print:
+            guard let url = existing(payload.path) else { return missing(payload.path) }
+            let result = await runProcess("/usr/bin/lp", [url.path], timeout: 30)
+            guard result.status == 0 else { return fail("PRINT_FAILED", result.stderr.isEmpty ? "Yazdırılamadı; varsayılan yazıcı tanımlı mı?" : "Yazdırılamadı: \(result.stderr.prefix(160))") }
+            return (listing([url]), "\(url.lastPathComponent) yazıcıya gönderildi.", nil)
+
+        case .ocr:
+            guard let url = existing(payload.path) else { return missing(payload.path) }
+            var images: [CGImage] = []
+            if url.pathExtension.lowercased() == "pdf", let document = PDFDocument(url: url) {
+                for index in 0..<min(document.pageCount, 10) {
+                    guard let page = document.page(at: index) else { continue }
+                    let bounds = page.bounds(for: .mediaBox)
+                    let scale = 2000 / max(bounds.width, bounds.height, 1)
+                    if let image = page.thumbnail(of: CGSize(width: bounds.width * scale, height: bounds.height * scale), for: .mediaBox).cgImage(forProposedRect: nil, context: nil, hints: nil) { images.append(image) }
+                }
+            } else if let source = CGImageSourceCreateWithURL(url as CFURL, nil), let image = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+                images.append(image)
+            }
+            guard !images.isEmpty else { return fail("OCR_UNSUPPORTED", "Bu dosyadan görüntü alınamadı; PDF ya da görsel olmalı.") }
+            var pages: [String] = []
+            for image in images {
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.recognitionLanguages = ["tr-TR", "en-US"]
+                request.usesLanguageCorrection = true
+                try? VNImageRequestHandler(cgImage: image).perform([request])
+                pages.append((request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n"))
+            }
+            let text = pages.enumerated().map { pages.count > 1 ? "— Sayfa \($0.offset + 1) —\n\($0.element)" : $0.element }.joined(separator: "\n\n")
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return fail("OCR_EMPTY", "Görselde okunabilir yazı bulunamadı.") }
+            return (report(url.path, text), "\(url.lastPathComponent) okundu (\(images.count) sayfa).", nil)
+
+        case .setTags:
+            guard let url = existing(payload.path) else { return missing(payload.path) }
+            do { try (url as NSURL).setResourceValue(payload.tags ?? [], forKey: .tagNamesKey) } catch {
+                return fail("TAG_FAILED", "Etiketler yazılamadı.")
+            }
+            return (listing([url]), "\(url.lastPathComponent) etiketlendi: \((payload.tags ?? []).joined(separator: ", ")).", nil)
+
+        case .organize:
+            guard let folder = existing(payload.path), isDirectory(folder) else { return missing(payload.path) }
+            let byMonth = payload.mode == "month"
+            let groups: [(String, Set<String>)] = [
+                ("Belgeler", ["doc", "docx", "pages", "txt", "md", "rtf", "odt"]), ("PDF", ["pdf"]),
+                ("Tablolar", ["xls", "xlsx", "csv", "numbers", "ods"]), ("Sunumlar", ["ppt", "pptx", "key", "odp"]),
+                ("Görseller", ["png", "jpg", "jpeg", "heic", "gif", "webp", "svg", "tiff"]), ("Videolar", ["mov", "mp4", "m4v", "avi"]),
+                ("Sesler", ["mp3", "m4a", "wav", "aiff"]), ("Arşivler", ["zip", "rar", "7z", "dmg", "tar", "gz"])
+            ]
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM"
+            var moved: [String: Int] = [:]
+            for file in regularFiles(in: folder, recursive: false, cap: payload.limit) {
+                let bucket = byMonth ? formatter.string(from: modified(file)) : (groups.first { $0.1.contains(file.pathExtension.lowercased()) }?.0 ?? "Diğer")
+                let destination = folder.appendingPathComponent(bucket, isDirectory: true)
+                do {
+                    try manager.createDirectory(at: destination, withIntermediateDirectories: true)
+                    try manager.moveItem(at: file, to: freeURL(destination.appendingPathComponent(file.lastPathComponent)))
+                    moved[bucket, default: 0] += 1
+                } catch { continue }
+            }
+            guard !moved.isEmpty else { return fail("NOTHING_TO_ORGANIZE", "Düzenlenecek dosya yok (alt klasörlerdekilere dokunulmaz).") }
+            let summary = moved.sorted { $0.value > $1.value }.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
+            return (listing(moved.keys.sorted().map { folder.appendingPathComponent($0) }), "\(moved.values.reduce(0, +)) dosya klasörlere ayrıldı: \(summary).", nil)
+
+        case .batchRename:
+            guard let folder = existing(payload.path), isDirectory(folder), let pattern = payload.name else { return missing(payload.path) }
+            let files = regularFiles(in: folder, recursive: false, cap: payload.limit).sorted { modified($0) < modified($1) }
+            let width = String(files.count).count
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            var renamed: [URL] = []
+            for (index, file) in files.enumerated() {
+                let base = pattern
+                    .replacingOccurrences(of: "{n}", with: String(format: "%0\(width)d", index + 1))
+                    .replacingOccurrences(of: "{name}", with: file.deletingPathExtension().lastPathComponent)
+                    .replacingOccurrences(of: "{date}", with: formatter.string(from: modified(file)))
+                guard RovaValidation.isValidDesktopFilename(base) else { return fail("INVALID_NAME", "Ad kalıbı geçerli bir dosya adı üretmiyor.") }
+                let destination = freeURL(folder.appendingPathComponent(file.pathExtension.isEmpty ? base : "\(base).\(file.pathExtension)"))
+                do { try manager.moveItem(at: file, to: destination); renamed.append(destination) } catch { continue }
+            }
+            guard !renamed.isEmpty else { return fail("RENAME_FAILED", "Yeniden adlandırılacak dosya yok.") }
+            return (listing(Array(renamed.prefix(20))), "\(renamed.count) dosya yeniden adlandırıldı.", nil)
+        }
+    }
+}
+
+// MARK: - System chores (systemUtility)
+
+extension MacSystem {
+    static func systemUtility(_ payload: SystemUtilityPayload) async -> (data: CommandData?, message: String, error: RovaError?) {
+        func fail(_ code: String, _ message: String, category: String = "tool_failure") -> (data: CommandData?, message: String, error: RovaError?) {
+            (nil, message, RovaError(code: code, message: message, category: category))
+        }
+        func report(_ title: String, _ text: String) -> CommandData { .fileData(FileDataContent(path: title, mimeType: "text/plain", text: String(text.prefix(8_000)))) }
+        func appleScript(_ source: String) async -> String? {
+            await MainActor.run {
+                var error: NSDictionary?
+                guard let script = NSAppleScript(source: source) else { return "Betik hazırlanamadı." }
+                _ = script.executeAndReturnError(&error)
+                guard let error else { return nil }
+                return (error[NSAppleScript.errorNumber] as? NSNumber)?.intValue == -1743
+                    ? "Wiqo'ya Otomasyon/Erişilebilirlik izni ver (Sistem Ayarları › Gizlilik ve Güvenlik)."
+                    : (error[NSAppleScript.errorMessage] as? String ?? "İşlem yapılamadı.")
+            }
+        }
+        switch payload.action {
+        case .darkMode:
+            let value = payload.mode == "on" ? "true" : payload.mode == "off" ? "false" : "not dark mode"
+            if let error = await appleScript("tell application \"System Events\" to tell appearance preferences to set dark mode to \(value)") {
+                return fail("AUTOMATION_PERMISSION", error, category: "permission")
+            }
+            return (nil, payload.mode == "on" ? "Koyu mod açıldı." : payload.mode == "off" ? "Açık mod açıldı." : "Görünüm değiştirildi.", nil)
+
+        case .topProcesses:
+            let result = await runProcess("/bin/ps", ["-Aceo", "pid,pcpu,pmem,comm", "-r"], timeout: 10)
+            let lines = (String(data: result.stdout, encoding: .utf8) ?? "").split(separator: "\n").prefix(payload.limit + 1).joined(separator: "\n")
+            guard result.status == 0, !lines.isEmpty else { return fail("PROCESS_LIST_FAILED", "Süreçler okunamadı.") }
+            return (report("top-processes", lines), "En çok kaynak kullanan \(payload.limit) süreç.", nil)
+
+        case .battery:
+            let power = await runProcess("/usr/bin/pmset", ["-g", "batt"], timeout: 10)
+            let registry = await runProcess("/usr/sbin/ioreg", ["-rn", "AppleSmartBattery"], timeout: 10)
+            let summary = String(data: power.stdout, encoding: .utf8) ?? ""
+            let details = String(data: registry.stdout, encoding: .utf8) ?? ""
+            func value(_ key: String) -> Int? {
+                guard let range = details.range(of: "\"\(key)\" = ") else { return nil }
+                return Int(details[range.upperBound...].prefix { $0.isNumber })
+            }
+            var lines = [summary.trimmingCharacters(in: .whitespacesAndNewlines)]
+            if let cycles = value("CycleCount") { lines.append("Döngü sayısı: \(cycles)") }
+            if let maximum = value("AppleRawMaxCapacity") ?? value("NominalChargeCapacity"), let design = value("DesignCapacity"), design > 0 {
+                lines.append("Pil sağlığı: %\(Int(Double(maximum) / Double(design) * 100))")
+            }
+            guard !summary.isEmpty else { return fail("BATTERY_UNAVAILABLE", "Pil bilgisi okunamadı (masaüstü Mac olabilir).") }
+            return (report("battery", lines.joined(separator: "\n")), "Pil durumu okundu.", nil)
+
+        case .arrangeWindows:
+            guard let screen = await MainActor.run(body: { NSScreen.main.map { ($0.frame, $0.visibleFrame) } }) else { return fail("NO_SCREEN", "Ekran bulunamadı.") }
+            let (frame, visible) = screen
+            let top = Int(frame.maxY - visible.maxY), left = Int(visible.minX), width = Int(visible.width), height = Int(visible.height)
+            let owners = ((CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? [])
+                .filter { ($0[kCGWindowLayer as String] as? Int) == 0 }
+                .compactMap { $0[kCGWindowOwnerName as String] as? String }
+                .filter { $0 != "Wiqo" }
+            var apps: [String] = []
+            for owner in owners where !apps.contains(owner) { apps.append(owner) }
+            guard let first = apps.first else { return fail("NO_WINDOW", "Düzenlenecek açık pencere yok.") }
+            func place(_ app: String, x: Int, w: Int) -> String {
+                "tell application \"System Events\" to tell process \"\(app.replacingOccurrences(of: "\"", with: ""))\" to tell front window to set {position, size} to {{\(x), \(top)}, {\(w), \(height)}}"
+            }
+            if payload.mode == "maximize" {
+                if let error = await appleScript(place(first, x: left, w: width)) { return fail("ACCESSIBILITY_PERMISSION", error, category: "permission") }
+                return (nil, "\(first) penceresi ekranı kapladı.", nil)
+            }
+            guard apps.count >= 2 else { return fail("ONE_WINDOW", "Yan yana koymak için iki uygulama penceresi açık olmalı.") }
+            if let error = await appleScript(place(first, x: left, w: width / 2)) { return fail("ACCESSIBILITY_PERMISSION", error, category: "permission") }
+            if let error = await appleScript(place(apps[1], x: left + width / 2, w: width / 2)) { return fail("ACCESSIBILITY_PERMISSION", error, category: "permission") }
+            return (nil, "\(first) ve \(apps[1]) yan yana dizildi.", nil)
+
+        case .speak:
+            let manager = FileManager.default
+            let input = manager.temporaryDirectory.appendingPathComponent("wiqo-say-\(UUID().uuidString).txt")
+            let stamp = ISO8601DateFormatter().string(from: Date()).prefix(16).replacingOccurrences(of: ":", with: ".")
+            let output = manager.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/Wiqo ses \(stamp).m4a")
+            do { try (payload.text ?? "").write(to: input, atomically: true, encoding: .utf8) } catch { return fail("SPEAK_FAILED", "Metin hazırlanamadı.") }
+            let result = await runProcess("/usr/bin/say", ["-f", input.path, "-o", output.path, "--file-format=m4af"], timeout: 180)
+            try? manager.removeItem(at: input)
+            guard result.status == 0, manager.fileExists(atPath: output.path) else { return fail("SPEAK_FAILED", "Ses dosyası oluşturulamadı.") }
+            return (.files([fileSystemEntry(output)].compactMap { $0 }), "Ses dosyası masaüstüne kaydedildi: \(output.lastPathComponent).", nil)
         }
     }
 }

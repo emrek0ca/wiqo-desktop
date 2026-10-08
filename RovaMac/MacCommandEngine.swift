@@ -233,7 +233,12 @@ actor MacCommandEngine {
         let outcome: (data: CommandData?, message: String, error: RovaError?)
         switch waitResult {
         case .completed(let data, let message, let error):
-            outcome = (data, message, error)
+            if error == nil, data?.hasFailedVerification == true {
+                let verificationError = RovaError(code: "POSTCONDITION_FAILED", message: "Araç çalıştı ancak beklenen sonuç doğrulanamadı; sonraki adıma geçilmedi.", category: "verification")
+                outcome = (data, verificationError.message, verificationError)
+            } else {
+                outcome = (data, message, error)
+            }
         case .timedOut:
             outcome = (
                 nil,
@@ -318,7 +323,7 @@ actor MacCommandEngine {
             return 20_000_000_000
         case .endBrowserTask:
             return 5_000_000_000
-        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles, .convertFile, .runFilePlan, .localAnalyze:
+        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles, .convertFile, .runFilePlan, .localAnalyze, .fileUtility, .systemUtility:
             return 240_000_000_000
         case .listCalendarEvents, .createCalendarEvent, .listReminders, .createReminder,
              .completeReminder, .listDesktopFiles, .readDesktopFile, .listFiles, .readFile,
@@ -338,13 +343,13 @@ actor MacCommandEngine {
             guard case .application(let id) = request.payload else {
                 return (nil, "Geçersiz uygulama isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Uygulama seçimi geçersiz."))
             }
-            let error = await Task.detached(priority: .userInitiated) { MacSystem.openApplication(id) }.value
-            return (nil, error == nil ? "\(id.displayName) açıldı." : error!.message, error)
+            let outcome = await MacSystem.controlApplication(ApplicationControlPayload(action: .open, target: id.displayName))
+            return (outcome.data, outcome.error?.message ?? "\(id.displayName) açıldı ve kontrol edildi.", outcome.error)
         case .openApplicationByName:
             guard case .applicationQuery(let query) = request.payload else {
                 return (nil, "Geçersiz uygulama arama isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Uygulama adı geçersiz.", category: "tool_failure"))
             }
-            let outcome = await MacSystem.openApplicationByName(query)
+            let outcome = await MacSystem.controlApplication(ApplicationControlPayload(action: .open, target: query))
             return (outcome.data, outcome.error == nil ? "\(query) açıldı." : outcome.error!.message, outcome.error)
         case .controlApplication:
             guard case .applicationControl(let application) = request.payload else {
@@ -467,9 +472,7 @@ actor MacCommandEngine {
             guard let token = await fileTransferToken?(), !token.isEmpty else {
                 return (nil, "Backend oturumu bulunamadı.", RovaError(code: "BACKEND_AUTH_REQUIRED", message: "Artifact indirmek için Mac backend oturumu gerekli."))
             }
-            let error = await MacSystem.saveArtifact(artifact, token: token)
-            if let error { return (nil, error.message, error) }
-            return await Task.detached { MacSystem.verifiedDesktopFileResult(filename: artifact.filename, expectedBytes: artifact.byteCount, expectedSHA256: artifact.sha256) }.value
+            return await MacSystem.saveArtifact(artifact, token: token)
         case .readDocument:
             guard case .fileName(let filename) = request.payload else {
                 return (nil, "Geçersiz belge okuma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Belge adı geçersiz."))
@@ -683,6 +686,18 @@ actor MacCommandEngine {
             }
             let outcome = await browserWorker.close(taskId: payload.taskId)
             return (outcome.0.map(CommandData.browserTask), outcome.1, outcome.2)
+        case .fileUtility:
+            guard case .fileUtility(let payload) = request.payload else {
+                return (nil, "Geçersiz dosya işlemi.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya işlemi geçersiz.", category: "validation"))
+            }
+            let outcome = await MacSystem.fileUtility(payload)
+            return (outcome.data, outcome.message, outcome.error)
+        case .systemUtility:
+            guard case .systemUtility(let payload) = request.payload else {
+                return (nil, "Geçersiz sistem işlemi.", RovaError(code: "INVALID_PAYLOAD", message: "Sistem işlemi geçersiz.", category: "validation"))
+            }
+            let outcome = await MacSystem.systemUtility(payload)
+            return (outcome.data, outcome.message, outcome.error)
         case .localAnalyze:
             guard case .localAnalysis(let payload) = request.payload else {
                 return (nil, "Geçersiz yerel analiz isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Yerel analiz isteği geçersiz.", category: "validation"))

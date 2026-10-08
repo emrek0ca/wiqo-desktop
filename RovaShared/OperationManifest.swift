@@ -139,6 +139,8 @@ public enum RovaOperationManifest {
         case .listRunningApplications: return "device.app.list"
         case .computerBrowser, .endBrowserTask: return "device.browser.control"
         case .localAnalyze: return "local.analysis"
+        case .fileUtility: return "device.files.utility"
+        case .systemUtility: return "device.system.utility"
         }
     }
 
@@ -181,6 +183,8 @@ public enum RovaOperationManifest {
         case .computerBrowser: return "computerBrowser"
         case .endBrowserTask: return "browserTask"
         case .localAnalyze: return "localAnalysis"
+        case .fileUtility: return "fileUtility"
+        case .systemUtility: return "systemUtility"
         }
     }
 
@@ -201,13 +205,13 @@ public enum RovaOperationManifest {
             CommandType.saveTextFile, .readDocument, .listFiles, .searchFiles, .readFile, .sendFileToPhone, .writeFile,
             .moveFile, .copyFile, .convertFile, .deleteFile, .executeCode, .captureScreen,
             .controlUIElement, .clickScreen, .controlApplication, .getClipboardText,
-            .getClipboardHistory, .computerDesktop, .computerBrowser, .localAnalyze
+            .getClipboardHistory, .computerDesktop, .computerBrowser, .localAnalyze, .fileUtility
         ].contains(operation)
     }
 
     private static func timeoutClass(for operation: CommandType) -> RovaOperationTimeoutClass {
         switch operation {
-        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles, .sendFileToPhone, .convertFile, .runFilePlan, .computerDesktop, .computerBrowser, .localAnalyze:
+        case .readDocument, .editDocument, .saveArtifact, .executeCode, .runShortcut, .searchFiles, .sendFileToPhone, .convertFile, .runFilePlan, .computerDesktop, .computerBrowser, .localAnalyze, .fileUtility, .systemUtility:
             return .long
         case .listCalendarEvents, .createCalendarEvent, .listReminders, .createReminder,
              .completeReminder, .listDesktopFiles, .readDesktopFile, .listFiles, .readFile,
@@ -235,6 +239,8 @@ public enum RovaOperationManifest {
         case .controlUIElement, .clickScreen, .computerDesktop: return "ui_observation"
         case .computerBrowser, .endBrowserTask: return "browser_state"
         case .localAnalyze: return "structured_local_result"
+        case .fileUtility: return "filesystem_state"
+        case .systemUtility: return "system_state"
         default: return "provider_acknowledgement"
         }
     }
@@ -243,7 +249,7 @@ public enum RovaOperationManifest {
         switch operation {
         case .sendMessage, .listCalendarEvents,
              .createCalendarEvent, .listReminders, .createReminder, .completeReminder,
-             .createNote, .sendEmail, .runShortcut:
+             .createNote, .sendEmail, .runShortcut, .fileUtility, .systemUtility:
             return true
         default:
             return false

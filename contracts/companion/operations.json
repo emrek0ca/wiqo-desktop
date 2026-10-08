@@ -736,6 +736,32 @@
       ],
       "timeoutClass" : "long",
       "verificationRule" : "structured_local_result"
+    },
+    {
+      "authority" : "device.files.utility",
+      "capability" : "device.files.utility",
+      "isDestructive" : false,
+      "operation" : "fileUtility",
+      "payloadKind" : "fileUtility",
+      "requiresUserPresence" : true,
+      "supportedPlatforms" : [
+        "macOS"
+      ],
+      "timeoutClass" : "long",
+      "verificationRule" : "filesystem_state"
+    },
+    {
+      "authority" : "device.system.utility",
+      "capability" : "device.system.utility",
+      "isDestructive" : false,
+      "operation" : "systemUtility",
+      "payloadKind" : "systemUtility",
+      "requiresUserPresence" : false,
+      "supportedPlatforms" : [
+        "macOS"
+      ],
+      "timeoutClass" : "long",
+      "verificationRule" : "system_state"
     }
   ],
   "version" : 3

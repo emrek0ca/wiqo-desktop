@@ -77,4 +77,37 @@ final class OwnFoldersTests: XCTestCase {
         let encoded = try? JSONEncoder().encode(FileSearchPayload(query: "notlar"))
         XCTAssertEqual(encoded.flatMap { String(data: $0, encoding: .utf8) }, #"{"query":"notlar"}"#)
     }
+
+    func testOneTaskApprovalCoversReversibleFileWorkInTheOwnFoldersOnly() {
+        func move(_ from: String, _ to: String, overwrite: Bool = false) -> CommandPayload { .fileOperation(LocalFileOperationPayload(path: from, destination: to, overwrite: overwrite)) }
+        func utility(_ action: FileUtilityAction, path: String? = nil, paths: [String]? = nil, destination: String? = nil, name: String? = nil) -> CommandPayload {
+            .fileUtility(FileUtilityPayload(action: action, path: path, paths: paths, destination: destination, name: name))
+        }
+        let covered: [(CommandType, CommandPayload)] = [
+            (.moveFile, move("~/Downloads/a.pdf", "~/Documents/Faturalar/a.pdf")),
+            (.copyFile, move("~/Desktop/a.docx", "~/Documents/a.docx")),
+            (.convertFile, .fileOperation(LocalFileOperationPayload(path: "~/Desktop/CV.docx"))),
+            (.renameDesktopFile, .fileMove(DesktopFileMovePayload(source: "a.pdf", destination: "b.pdf"))),
+            (.fileUtility, utility(.createFolder, path: "~/Desktop/Raporlar")),
+            (.fileUtility, utility(.organize, path: "~/Downloads")),
+            (.fileUtility, utility(.mergePDF, paths: ["~/Downloads/a.pdf", "~/Downloads/b.pdf"], destination: "~/Downloads/Birleşik.pdf")),
+            (.fileUtility, utility(.restoreFromTrash, name: "eski fatura"))
+        ]
+        for (type, payload) in covered { XCTAssertTrue(RovaOwnFolders.isTaskWritable(type: type, payload: payload), "\(type)") }
+        let asks: [(CommandType, CommandPayload)] = [
+            (.deleteFile, file("~/Desktop/a.pdf")),
+            (.writeFile, file("~/Desktop/a.txt")),
+            (.sendFileToPhone, file("~/Desktop/a.pdf")),
+            (.moveFile, move("~/Downloads/a.pdf", "~/Documents/a.pdf", overwrite: true)),
+            (.moveFile, move("~/Library/Mail/x", "~/Desktop/x")),
+            (.moveFile, move("~/Desktop/a.pdf", "/etc/a.pdf")),
+            (.copyFile, move("~/Documents/id_rsa", "~/Desktop/id_rsa")),
+            (.fileUtility, utility(.print, path: "~/Desktop/a.pdf")),
+            (.fileUtility, utility(.createFolder, path: "~/Library/Raporlar")),
+            (.fileUtility, utility(.archive, path: "~/Documents/parola listesi.txt")),
+            (.executeCode, .none),
+            (.controlApplication, .none)
+        ]
+        for (type, payload) in asks { XCTAssertFalse(RovaOwnFolders.isTaskWritable(type: type, payload: payload), "\(type)") }
+    }
 }

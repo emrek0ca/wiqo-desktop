@@ -204,6 +204,7 @@ public enum RovaValidation {
         case .saveArtifact:
             guard case .artifactFile(let artifact) = request.payload,
                   isValidDesktopFilename(artifact.filename),
+                  isValidArtifactDirectory(artifact.destinationDirectory),
                   artifact.artifactID.range(of: "^[0-9a-f-]{20,128}$", options: .regularExpression) != nil,
                   artifact.mimeType.count <= 160, !artifact.mimeType.contains(where: { $0.isWhitespace || $0 == "\0" }),
                   artifact.byteCount.map({ $0 > 0 && $0 <= 25 * 1024 * 1024 }) ?? true,
@@ -512,12 +513,71 @@ public enum RovaValidation {
                     return RovaError(code: "INVALID_PAYLOAD", message: "Çalışma alanı yolu geçersiz.", category: "validation")
                 }
             }
+        case .fileUtility:
+            guard case .fileUtility(let utility) = request.payload, let message = fileUtilityError(utility) else { break }
+            return RovaError(code: "INVALID_PAYLOAD", message: message, category: "validation")
+        case .systemUtility:
+            guard case .systemUtility(let utility) = request.payload else {
+                return RovaError(code: "INVALID_PAYLOAD", message: "Sistem işlemi geçersiz.", category: "validation")
+            }
+            let valid: Bool
+            switch utility.action {
+            case .darkMode: valid = ["on", "off", "toggle"].contains(utility.mode ?? "toggle")
+            case .arrangeWindows: valid = ["split", "maximize"].contains(utility.mode ?? "")
+            case .speak: valid = utility.text.map { isSafeText($0, maxLength: 4_000) && !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? false
+            case .topProcesses, .battery: valid = (1...50).contains(utility.limit)
+            }
+            if !valid { return RovaError(code: "INVALID_PAYLOAD", message: "Sistem işlemi için gereken bilgi eksik ya da geçersiz.", category: "validation") }
         }
         return nil
     }
 
+    /// The reason a file chore cannot run as asked, or nil. Each action names the fields it needs; every path is a safe local path.
+    public static func fileUtilityError(_ utility: FileUtilityPayload) -> String? {
+        guard (1...500).contains(utility.limit) else { return "Sınır 1-500 arasında olmalı." }
+        if let path = utility.path, !isValidLocalPath(path) { return "Yol güvenli bir yerel yol değil." }
+        if let destination = utility.destination, !isValidLocalPath(destination) { return "Hedef yol güvenli bir yerel yol değil." }
+        if let paths = utility.paths, paths.count > 50 || !paths.allSatisfy(isValidLocalPath) { return "Dosya listesi geçersiz." }
+        if let name = utility.name, !isSafeText(name, maxLength: 120) { return "Ad geçersiz." }
+        if let tags = utility.tags, tags.count > 10 || !tags.allSatisfy({ isSafeText($0, maxLength: 40) && !$0.isEmpty }) { return "Etiketler geçersiz." }
+        let hasPath = utility.path != nil
+        switch utility.action {
+        case .createFolder, .extract, .splitPDF, .compressImage, .findDuplicates, .diskUsage, .reveal, .print, .ocr:
+            return hasPath ? nil : "Bu işlem için path gerekli."
+        case .archive:
+            return hasPath || !(utility.paths ?? []).isEmpty ? nil : "Arşivlenecek path ya da paths gerekli."
+        case .mergePDF:
+            return (utility.paths?.count ?? 0) >= 2 && utility.destination != nil ? nil : "Birleştirme için en az iki PDF (paths) ve destination gerekli."
+        case .recentFiles:
+            return nil
+        case .restoreFromTrash:
+            return utility.name?.isEmpty == false ? nil : "Çöpten geri getirilecek dosyanın adı (name) gerekli."
+        case .openWith:
+            return hasPath && utility.name?.isEmpty == false ? nil : "Dosya (path) ve uygulama adı (name) gerekli."
+        case .setTags:
+            return hasPath && utility.tags != nil ? nil : "Dosya (path) ve etiketler (tags) gerekli."
+        case .organize:
+            return hasPath && ["type", "month"].contains(utility.mode ?? "type") ? nil : "Düzenlenecek klasör (path) gerekli; mode type ya da month olmalı."
+        case .batchRename:
+            return hasPath && (utility.name?.contains("{n}") ?? false) ? nil : "Klasör (path) ve {n} içeren ad kalıbı (name) gerekli."
+        }
+    }
+
+    /// File chores that only look (nothing on disk changes).
+    public static func fileUtilityIsReadOnly(_ action: FileUtilityAction) -> Bool {
+        [.findDuplicates, .diskUsage, .recentFiles, .reveal, .ocr].contains(action)
+    }
+
     /// A single path component with no separators or traversal - this is appended directly to
     /// the Desktop folder URL, so it must never be able to escape that directory.
+    public static func isValidArtifactDirectory(_ directory: String?) -> Bool {
+        guard let directory, !directory.isEmpty else { return true }
+        return directory.count <= 500 && !directory.hasPrefix("~")
+            && directory.split(separator: "/", omittingEmptySubsequences: false).allSatisfy {
+                isValidDesktopFilename(String($0)) && $0 != "." && $0 != ".."
+            }
+    }
+
     public static func isValidDesktopFilename(_ name: String) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 255, trimmed != ".", trimmed != ".." else { return false }
@@ -853,6 +913,8 @@ public enum RovaCommandAuthority {
         case .listRunningApplications: return "device.app.list"
         case .computerBrowser, .endBrowserTask: return "device.browser.control"
         case .localAnalyze: return "local.analysis"
+        case .fileUtility: return "device.files.utility"
+        case .systemUtility: return "device.system.utility"
         }
     }
 
@@ -889,6 +951,10 @@ public enum RovaCommandAuthority {
             return false
         case .localAnalyze:
             return false
+        case .fileUtility:
+            // Moving many files at once or putting paper through a printer is a decision the person makes.
+            guard case .fileUtility(let utility) = payload else { return true }
+            return [.organize, .batchRename, .print].contains(utility.action)
         default:
             return false
         }
@@ -927,6 +993,10 @@ public enum RovaCommandAuthority {
         case .localAnalyze:
             guard case .localAnalysis(let analysis) = payload else { return true }
             return analysis.action != .dependencyStatus && analysis.action != .solveSymbolic
+        case .fileUtility:
+            guard case .fileUtility(let utility) = payload else { return true }
+            if utility.action == .reveal || utility.action == .recentFiles { return false }
+            return true
         default:
             return false
         }
@@ -938,7 +1008,7 @@ public enum RovaCommandAuthority {
     public static func permitsUnattended(type: CommandType, payload: CommandPayload) -> Bool {
         if requiresUserPresence(type: type, payload: payload) { return false }
         switch type {
-        case .readDocument, .listFiles, .searchFiles, .readFile, .sendFileToPhone, .captureScreen, .controlUIElement, .clickScreen, .computerDesktop, .computerBrowser, .endBrowserTask, .localAnalyze:
+        case .readDocument, .listFiles, .searchFiles, .readFile, .sendFileToPhone, .captureScreen, .controlUIElement, .clickScreen, .computerDesktop, .computerBrowser, .endBrowserTask, .localAnalyze, .fileUtility:
             return false
         case .controlApplication, .quitApplication, .runShortcut:
             return false
@@ -1190,6 +1260,31 @@ public enum RovaOwnFolders {
         return sensitiveWords.contains(where: { lowered.contains($0) })
     }
 
+    /// Reversible file work inside the own folders that ONE "bu görev boyunca" approval may cover: a new folder, a copy, a move, a rename, a PDF,
+    /// a zip, a tidy-up. Never a delete, never an overwrite, nothing that leaves the Mac (send, print), nothing outside Desktop, Documents and
+    /// Downloads, no sensitive name - and it holds even when the task has read outside text, because none of these can hurt more than a move can undo.
+    public static func isTaskWritable(type: CommandType, payload: CommandPayload) -> Bool {
+        func safe(_ path: String?) -> Bool { path.map { isOwnFolder($0) && !isSensitive($0) } ?? true }
+        switch (type, payload) {
+        case (.moveFile, .fileOperation(let operation)), (.copyFile, .fileOperation(let operation)):
+            return !operation.overwrite && operation.destination != nil && safe(operation.path) && safe(operation.destination)
+        case (.convertFile, .fileOperation(let operation)):
+            return !operation.overwrite && safe(operation.path) && safe(operation.destination)
+        case (.moveDesktopFile, .fileMove(let move)), (.renameDesktopFile, .fileMove(let move)):
+            return !isSensitive(move.source) && !isSensitive(move.destination)
+        case (.saveArtifact, .artifactFile(let artifact)):
+            return !artifact.overwrite && !isSensitive(artifact.filename) && (artifact.destinationDirectory.map { !isSensitive($0) } ?? true)
+        case (.fileUtility, .fileUtility(let utility)):
+            guard [.createFolder, .archive, .extract, .mergePDF, .splitPDF, .compressImage, .organize, .batchRename, .setTags, .restoreFromTrash, .openWith, .reveal].contains(utility.action) else { return false }
+            let paths = [utility.path, utility.destination].compactMap { $0 } + (utility.paths ?? [])
+            guard paths.allSatisfy({ isOwnFolder($0) && !isSensitive($0) }) else { return false }
+            // Restoring from the Trash names a file, not a path; everything else works on paths.
+            return utility.action == .restoreFromTrash || !paths.isEmpty
+        default:
+            return false
+        }
+    }
+
     /// Finding, listing and reading inside the own folders, when the name is not sensitive.
     public static func isAutoReadable(type: CommandType, payload: CommandPayload) -> Bool {
         switch (type, payload) {
@@ -1197,6 +1292,9 @@ public enum RovaOwnFolders {
             return isOwnFolder(operation.path) && !isSensitive(operation.path)
         case (.readDocument, .fileName(let name)):
             return !isSensitive(name)
+        case (.fileUtility, .fileUtility(let utility)):
+            guard RovaValidation.fileUtilityIsReadOnly(utility.action), let path = utility.path else { return false }
+            return isOwnFolder(path) && !isSensitive(path)
         case (.searchFiles, .fileSearch(let search)):
             if search.everywhere == true { return false }
             guard let folder = search.folder else { return true }

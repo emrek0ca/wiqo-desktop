@@ -64,6 +64,8 @@ public enum CommandType: String, Codable, CaseIterable, Sendable {
     case computerBrowser
     case endBrowserTask
     case localAnalyze
+    case fileUtility
+    case systemUtility
 }
 
 public enum MediaAction: String, Codable, CaseIterable, Sendable {
@@ -387,6 +389,61 @@ public struct LocalAnalysisPayload: Codable, Equatable, Sendable {
     }
 }
 
+/// File chores a person asks for in one sentence ("klasör aç", "zip'le", "PDF'leri birleştir"): one operation with a fixed set of
+/// actions, so a new chore is one Swift function instead of a new command type through every layer.
+public enum FileUtilityAction: String, Codable, CaseIterable, Sendable {
+    case createFolder, archive, extract, mergePDF, splitPDF, compressImage, findDuplicates, diskUsage, recentFiles
+    case restoreFromTrash, reveal, openWith, print, ocr, setTags, organize, batchRename
+}
+
+public struct FileUtilityPayload: Codable, Equatable, Sendable {
+    public let action: FileUtilityAction
+    /// The file or folder the action works on.
+    public let path: String?
+    /// Several sources (merge, archive).
+    public let paths: [String]?
+    /// Where the result goes (a folder, or a file path for archive/merge).
+    public let destination: String?
+    /// A name: the new folder, the app for openWith, the file in the Trash, the rename pattern ("Fatura {n}").
+    public let name: String?
+    /// Tags for setTags; for organize "type" or "month"; for compressImage the longest edge in pixels.
+    public let tags: [String]?
+    public let mode: String?
+    public let limit: Int
+
+    public init(action: FileUtilityAction, path: String? = nil, paths: [String]? = nil, destination: String? = nil, name: String? = nil, tags: [String]? = nil, mode: String? = nil, limit: Int = 50) {
+        self.action = action
+        self.path = path
+        self.paths = paths
+        self.destination = destination
+        self.name = name
+        self.tags = tags
+        self.mode = mode
+        self.limit = limit
+    }
+}
+
+/// Small system chores with a fixed vocabulary; nothing here runs a model-written command.
+public enum SystemUtilityAction: String, Codable, CaseIterable, Sendable {
+    case darkMode, topProcesses, battery, arrangeWindows, speak
+}
+
+public struct SystemUtilityPayload: Codable, Equatable, Sendable {
+    public let action: SystemUtilityAction
+    /// darkMode: on/off/toggle; arrangeWindows: split/maximize.
+    public let mode: String?
+    /// speak: the text to turn into an audio file.
+    public let text: String?
+    public let limit: Int
+
+    public init(action: SystemUtilityAction, mode: String? = nil, text: String? = nil, limit: Int = 10) {
+        self.action = action
+        self.mode = mode
+        self.text = text
+        self.limit = limit
+    }
+}
+
 public struct MessagePayload: Codable, Equatable, Sendable {
     public let recipient: String
     public let body: String
@@ -600,8 +657,9 @@ public struct ArtifactFilePayload: Codable, Equatable, Sendable {
     public let overwrite: Bool
     public let byteCount: Int64?
     public let sha256: String?
+    public let destinationDirectory: String?
 
-    public init(artifactID: String, filename: String, mimeType: String, downloadURL: String, overwrite: Bool = false, byteCount: Int64? = nil, sha256: String? = nil) {
+    public init(artifactID: String, filename: String, mimeType: String, downloadURL: String, overwrite: Bool = false, byteCount: Int64? = nil, sha256: String? = nil, destinationDirectory: String? = nil) {
         self.artifactID = artifactID
         self.filename = filename
         self.mimeType = mimeType
@@ -609,6 +667,7 @@ public struct ArtifactFilePayload: Codable, Equatable, Sendable {
         self.overwrite = overwrite
         self.byteCount = byteCount
         self.sha256 = sha256
+        self.destinationDirectory = destinationDirectory
     }
 }
 
@@ -1311,13 +1370,15 @@ public enum CommandPayload: Codable, Equatable, Sendable {
     case computerBrowser(ComputerBrowserPayload)
     case browserTask(BrowserTaskPayload)
     case localAnalysis(LocalAnalysisPayload)
+    case fileUtility(FileUtilityPayload)
+    case systemUtility(SystemUtilityPayload)
     case reminder(ReminderPayload)
     case completeReminder(CompleteReminderPayload)
     case note(NotePayload)
     case email(EmailPayload)
 
     private enum CodingKeys: String, CodingKey { case kind, value }
-    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, fileSearch, filePlan, agentGrant, codeExecution, screenCapture, shortcut, uiElement, screenClick, computerDesktop, computerBrowser, browserTask, localAnalysis, reminder, completeReminder, note, email }
+    private enum Kind: String, Codable { case none, application, applicationQuery, applicationControl, url, volume, media, brightness, clipboardText, textFile, message, calendarEvent, fileName, fileMove, document, artifactFile, fileOperation, fileSearch, filePlan, agentGrant, codeExecution, screenCapture, shortcut, uiElement, screenClick, computerDesktop, computerBrowser, browserTask, localAnalysis, fileUtility, systemUtility, reminder, completeReminder, note, email }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -1381,6 +1442,10 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             self = .browserTask(try container.decode(BrowserTaskPayload.self, forKey: .value))
         case .localAnalysis:
             self = .localAnalysis(try container.decode(LocalAnalysisPayload.self, forKey: .value))
+        case .fileUtility:
+            self = .fileUtility(try container.decode(FileUtilityPayload.self, forKey: .value))
+        case .systemUtility:
+            self = .systemUtility(try container.decode(SystemUtilityPayload.self, forKey: .value))
         case .reminder:
             self = .reminder(try container.decode(ReminderPayload.self, forKey: .value))
         case .completeReminder:
@@ -1477,6 +1542,12 @@ public enum CommandPayload: Codable, Equatable, Sendable {
             try container.encode(payload, forKey: .value)
         case .browserTask(let payload):
             try container.encode(Kind.browserTask, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .fileUtility(let payload):
+            try container.encode(Kind.fileUtility, forKey: .kind)
+            try container.encode(payload, forKey: .value)
+        case .systemUtility(let payload):
+            try container.encode(Kind.systemUtility, forKey: .kind)
             try container.encode(payload, forKey: .value)
         case .localAnalysis(let payload):
             try container.encode(Kind.localAnalysis, forKey: .kind)
@@ -1715,6 +1786,27 @@ public struct CommandResult: Codable, Equatable, Sendable {
         self.finishedAt = finishedAt
         self.data = data
         self.error = error
+    }
+}
+
+extension CommandResult {
+    /// A successful transport/status cannot override a failed postcondition.
+    public var isConfirmedSuccess: Bool {
+        status == .completed && error == nil && data?.hasFailedVerification != true
+    }
+}
+
+extension CommandData {
+    public var hasFailedVerification: Bool {
+        switch self {
+        case .applicationControl(let value): return !value.verified
+        case .shortcutResult(let value): return !value.verified
+        case .uiElement(let value): return !value.verified
+        case .computerDesktop(let value): return !value.verified
+        case .computerBrowser(let value), .browserTask(let value): return value.verified == false
+        case .processOutput(let value): return value.exitCode != 0
+        default: return false
+        }
     }
 }
 

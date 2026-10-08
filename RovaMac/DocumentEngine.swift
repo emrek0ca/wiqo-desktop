@@ -1,6 +1,7 @@
 import AppKit
 import CoreText
 import Foundation
+import Darwin
 import PDFKit
 
 /// Local document adapter for the Mac companion.
@@ -98,24 +99,76 @@ enum DocumentEngine {
     }
 
     /// Used by the artifact downloader after the backend has authenticated the request.
-    static func commitArtifact(_ data: Data, filename: String, overwrite: Bool) -> RovaError? {
-        guard data.count > 0, Int64(data.count) <= maxFileBytes else {
-            return makeError("ARTIFACT_TOO_LARGE", "İndirilen dosya desteklenen boyut sınırını aşıyor.")
+    /// Folder descriptors prevent a symlink swap from redirecting the final write.
+    static func commitArtifact(_ data: Data, filename: String, overwrite: Bool, destinationDirectory: String? = nil) -> (data: CommandData?, message: String, error: RovaError?) {
+        func fail(_ code: String, _ message: String) -> (data: CommandData?, message: String, error: RovaError?) { (nil, message, makeError(code, message)) }
+        guard !data.isEmpty, Int64(data.count) <= maxFileBytes,
+              RovaValidation.isValidDesktopFilename(filename),
+              RovaValidation.isValidArtifactDirectory(destinationDirectory), let desktop = desktopURL() else {
+            return fail("INVALID_ARTIFACT_TARGET", "Dosya veya hedef klasör geçersiz.")
         }
-        guard RovaValidation.isValidDesktopFilename(filename),
-              let desktop = desktopURL(),
-              let destination = safeDesktopURL(filename, desktop: desktop),
-              isDirectDesktopEntry(destination, desktop: desktop) else {
-            return makeError("INVALID_FILENAME", "Artifact dosya adı geçersiz.")
+        var directoryFD = open(desktop.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard directoryFD >= 0 else { return fail("DESKTOP_UNAVAILABLE", "Masaüstüne erişilemedi.") }
+        defer { close(directoryFD) }
+        var directory = desktop
+        for component in (destinationDirectory ?? "").split(separator: "/") {
+            let name = String(component)
+            if mkdirat(directoryFD, name, 0o700) != 0 && errno != EEXIST {
+                return fail("DIRECTORY_CREATE_FAILED", "Hedef klasör oluşturulamadı.")
+            }
+            let next = openat(directoryFD, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+            guard next >= 0 else { return fail("UNSAFE_ARTIFACT_TARGET", "Hedef klasör bir bağlantı veya erişilemeyen bir konum.") }
+            close(directoryFD)
+            directoryFD = next
+            directory.appendPathComponent(name, isDirectory: true)
         }
+        let temporary = ".rova-\(UUID().uuidString).tmp"
+        let fd = openat(directoryFD, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+        guard fd >= 0 else { return fail("FILE_WRITE_FAILED", "Geçici dosya oluşturulamadı.") }
+        defer { close(fd); unlinkat(directoryFD, temporary, 0) }
+        let wrote = data.withUnsafeBytes { buffer -> Bool in
+            guard let base = buffer.baseAddress else { return false }
+            var offset = 0
+            while offset < buffer.count {
+                let count = Darwin.write(fd, base.advanced(by: offset), buffer.count - offset)
+                if count < 0 && errno == EINTR { continue }
+                guard count > 0 else { return false }
+                offset += count
+            }
+            return fsync(fd) == 0
+        }
+        guard wrote else { return fail("FILE_WRITE_FAILED", "Dosya bütünüyle yazılamadı.") }
+        var info = stat()
+        let exists = fstatat(directoryFD, filename, &info, AT_SYMLINK_NOFOLLOW) == 0
+        if exists {
+            guard overwrite else { return fail("FILE_EXISTS", "Aynı adlı dosya zaten var; üzerine yazılmadı.") }
+            guard (info.st_mode & S_IFMT) == S_IFREG else { return fail("UNSAFE_ARTIFACT_TARGET", "Hedef normal bir dosya değil.") }
+            // Atomic exchange retains the exact displaced file under the temporary name.
+            guard renameatx_np(directoryFD, temporary, directoryFD, filename, UInt32(RENAME_SWAP)) == 0 else {
+                return fail("FILE_WRITE_FAILED", "Dosya değiştirilemedi; önceki sürüm korundu.")
+            }
+            let backup = ".wiqo-backup-\(UUID().uuidString)"
+            guard renameat(directoryFD, temporary, directoryFD, backup) == 0 else {
+                // Undo the exchange while both names are still pinned to this directory.
+                _ = renameatx_np(directoryFD, temporary, directoryFD, filename, UInt32(RENAME_SWAP))
+                return fail("BACKUP_FAILED", "Yedek saklanamadı; işlem tamamlandı sayılmadı.")
+            }
+        } else {
+            // linkat is exclusive: a competing writer never gets overwritten.
+            guard linkat(directoryFD, temporary, directoryFD, filename, 0) == 0 else {
+                return fail(errno == EEXIST ? "FILE_EXISTS" : "FILE_WRITE_FAILED", "Dosya kaydedilemedi; mevcut dosyanın üzerine yazılmadı.")
+            }
+        }
+        let checkFD = openat(directoryFD, filename, O_RDONLY | O_NOFOLLOW)
+        guard checkFD >= 0 else { return fail("FILE_VERIFICATION_FAILED", "Dosya tekrar okunamadı; otomatik tekrar yapılmadı.") }
+        let handle = FileHandle(fileDescriptor: checkFD, closeOnDealloc: true)
         do {
-            try commit(data, to: destination, overwrite: overwrite)
-            return nil
-        } catch let failure as DocumentFailure {
-            return failure.error
-        } catch {
-            return makeError("FILE_WRITE_FAILED", "Artifact Desktop'a kaydedilemedi.")
-        }
+            guard try handle.readToEnd() == data else { return fail("FILE_VERIFICATION_FAILED", "Kaydedilen içerik doğrulanamadı.") }
+        } catch { return fail("FILE_VERIFICATION_FAILED", "Kaydedilen içerik okunamadı.") }
+        let digest = RovaCrypto.sha256Hex(data)
+        let destination = directory.appendingPathComponent(filename)
+        let entry = FileSystemEntry(path: destination.path, name: filename, byteCount: Int64(data.count), modifiedAt: nil, isDirectory: false, fileType: destination.pathExtension)
+        return (.files([entry]), "Doğrulandı: \(destination.path) · \(data.count) bayt · SHA-256: \(digest)", nil)
     }
 
     private static func createOutput(payload: DocumentPayload, filename: String, temporaryDirectory: URL) throws -> URL {
