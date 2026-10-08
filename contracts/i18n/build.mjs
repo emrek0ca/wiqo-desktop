@@ -3,6 +3,7 @@
 // translations.json is { "<language>": { "<Turkish key as Swift extracts it>": "<translation>" } }; it is produced by the backend's
 // `npm run i18n:catalog` from the keys Xcode extracts (see README.md in this folder). Edit a translation there, run this, commit both.
 import { readFileSync, writeFileSync } from "node:fs";
+import { argv, exit } from "node:process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,5 +26,20 @@ for (const key of [...keys].sort()) {
   }
   strings[key] = { extractionState: "manual", localizations };
 }
-writeFileSync(join(here, "..", "..", "RovaIOS", "Localizable.xcstrings"), `${JSON.stringify({ sourceLanguage: "tr", strings, version: "1.0" }, null, 2)}\n`);
+const output = join(here, "..", "..", "RovaIOS", "Localizable.xcstrings");
+const rendered = `${JSON.stringify({ sourceLanguage: "tr", strings, version: "1.0" }, null, 2)}\n`;
+
+// --check (CI): the catalog in the repo is exactly what translations.json builds, and no key lacks a language.
+if (argv.includes("--check")) {
+  const languages = Object.keys(translations);
+  const missing = keys.filter((key) => languages.some((language) => !translations[language][key]));
+  let current = "";
+  try { current = readFileSync(output, "utf8"); } catch { /* reported below */ }
+  if (current !== rendered) { console.error("RovaIOS/Localizable.xcstrings is stale: run node contracts/i18n/build.mjs and commit it."); exit(1); }
+  if (missing.length > 0) { console.error(`${missing.length} keys lack a translation, e.g. ${JSON.stringify(missing[0])}`); exit(1); }
+  console.log(`catalog current: ${keys.length} strings, ${languages.length} languages`);
+  exit(0);
+}
+
+writeFileSync(output, rendered);
 console.log(`${Object.keys(strings).length} strings, ${Object.keys(translations).length} languages`);

@@ -1,0 +1,49 @@
+name: Wiqo Apple apps
+
+on:
+  push:
+    paths:
+      - "RovaIOS/**"
+      - "RovaMac/**"
+      - "RovaShared/**"
+      - "Tests/**"
+      - "Rova.xcodeproj/**"
+      - "contracts/**"
+      - ".github/workflows/apple.yml"
+  pull_request:
+    paths:
+      - "RovaIOS/**"
+      - "RovaMac/**"
+      - "RovaShared/**"
+      - "Tests/**"
+      - "Rova.xcodeproj/**"
+      - "contracts/**"
+      - ".github/workflows/apple.yml"
+
+jobs:
+  # What is generated from contracts/ is current in the repo: the translations' String Catalog and the inline-app kit embedded in the iPhone app.
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: String Catalog is built from translations.json and complete
+        run: node contracts/i18n/build.mjs --check
+      - name: Inline-app kit embedded in WiqoInlineApp.swift is current
+        run: |
+          node contracts/inline-app/sync.mjs
+          git diff --exit-code RovaIOS/WiqoInlineApp.swift
+
+  # Unsigned builds of both apps and the shared tests. The Xcode on the runner must know the iOS 26 SDK (the app uses its glass effects).
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: iPhone app
+        run: xcodebuild -project Rova.xcodeproj -scheme Wiqo -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+      - name: Mac app
+        run: xcodebuild -project Rova.xcodeproj -scheme RovaMac -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+      - name: Shared tests
+        run: xcodebuild -project Rova.xcodeproj -scheme RovaMac -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test -only-testing:RovaSharedTests
