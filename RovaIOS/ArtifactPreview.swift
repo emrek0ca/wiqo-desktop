@@ -79,10 +79,10 @@ struct InlineArtifactPreview: View {
                 // the file is still perfectly openable, it just won't preview inline.
                 ArtifactFileRow(artifact: artifact, isBusy: false, action: onOpenFullscreen)
             } else {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color(.secondarySystemBackground))
-                    .frame(height: 160)
-                    .overlay(ProgressView())
+                    .frame(height: 96)
+                    .overlay(ProgressView().controlSize(.small))
             }
         }
         .task(id: artifact.id) {
@@ -104,9 +104,9 @@ struct InlineArtifactPreview: View {
                     Image(uiImage: uiImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity)
-                        .frame(maxHeight: 520)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .frame(maxWidth: 360, maxHeight: 300)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Görseli büyüt")
@@ -122,12 +122,14 @@ struct InlineArtifactPreview: View {
             if let data = try? Data(contentsOf: url) {
                 // Generated SVGs may have their own interactions (for example, chart values),
                 // so keep the vector surface free of a competing wrapping button.
+                // Compact: never wider than a phone card nor taller than 280 pt, so a chart sits in the conversation instead of taking the screen.
                 SVGView(data: data)
                     .aspectRatio(svgAspectRatio(from: data), contentMode: .fit)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: 420, maxHeight: 280)
                     .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(.separator).opacity(0.35), lineWidth: 0.5))
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 ArtifactFileRow(artifact: artifact, isBusy: false, action: onOpenFullscreen)
             }
@@ -139,10 +141,10 @@ struct InlineArtifactPreview: View {
                     ZStack(alignment: .bottomTrailing) {
                         PDFPagePreview(page: page)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 220)
+                            .frame(height: 170)
                             .background(Color(.secondarySystemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5))
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(.separator).opacity(0.35), lineWidth: 0.5))
                         if document.pageCount > 1 {
                             Text("\(document.pageCount) sayfa")
                                 .font(.caption2.weight(.semibold))
@@ -188,15 +190,15 @@ struct ArtifactFileRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .font(.title3)
+                    .font(.body)
                     .foregroundStyle(tint)
-                    .frame(width: 40, height: 40)
-                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .frame(width: 32, height: 32)
+                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(artifact.filename)
-                        .font(.subheadline.weight(.medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -208,11 +210,11 @@ struct ArtifactFileRow: View {
                 if isBusy {
                     ProgressView().controlSize(.small)
                 } else {
-                    Text("Aç").font(.subheadline.weight(.semibold)).foregroundStyle(.tint)
+                    Text("Aç").font(.footnote.weight(.semibold)).foregroundStyle(.tint)
                 }
             }
-            .padding(10)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(8)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

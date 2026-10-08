@@ -12,10 +12,10 @@ enum DeviceOutcomeNarrator {
         for step in steps where step.type != .executeCode {
             guard let result = results[step.id] else { continue }
             let line: String
-            if result.status == .completed, result.error == nil {
+            if result.isConfirmedSuccess {
                 line = successLine(step: step, result: result)
             } else {
-                line = result.error?.message ?? result.message
+                line = result.error?.message ?? (result.data?.hasFailedVerification == true ? "Beklenen sonuç doğrulanamadı." : result.message)
             }
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty, !lines.contains(trimmed) { lines.append(trimmed) }
@@ -26,7 +26,7 @@ enum DeviceOutcomeNarrator {
     /// File evidence renders locally, without paying for another model turn.
     static func fileWidget(step: PlannedCommand, result: CommandResult) -> RovaBackendClient.CopilotResultWidget? {
         guard [.saveTextFile, .writeFile, .saveArtifact, .editDocument].contains(step.type),
-              result.status == .completed, result.error == nil,
+              result.isConfirmedSuccess,
               case .files(let files) = result.data, !files.isEmpty else { return nil }
         let object: [String: Any] = [
             "type": "list", "domain": "files", "title": "Doğrulanan dosya",

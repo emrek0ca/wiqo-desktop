@@ -48,10 +48,7 @@ struct ConnectedAccountsView: View {
     @State private var errorMessage: String?
     @State private var runner = OAuthSessionRunner()
 
-    private let providers: [(id: String, name: String, icon: String)] = [
-        ("google", "Google", "calendar"),
-        ("notion", "Notion", "doc.text")
-    ]
+    @State private var providers: [RovaBackendClient.OAuthProviderInfo] = RovaBackendClient.OAuthProviderInfo.builtIn
 
     private func connection(for provider: String) -> RovaBackendClient.OAuthConnection? {
         connections.first { $0.provider == provider }
@@ -96,25 +93,32 @@ struct ConnectedAccountsView: View {
             .padding(RovaDesign.screenPadding)
             .wiqoAnimation(WiqoMotion.slide(), value: errorMessage)
         }
-        .background(RovaDesign.canvas)
-        .navigationTitle("Bağlı Hesaplar")
+        .background(WiqoSettingsStyle.canvas)
+        .navigationTitle("Uygulamalar")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
     }
 
-    private func row(for provider: (id: String, name: String, icon: String), isLast: Bool) -> some View {
+    private func row(for provider: RovaBackendClient.OAuthProviderInfo, isLast: Bool) -> some View {
         let connected = connection(for: provider.id)
+        let needsReconnect = connected?.status == "needs_reconnect"
         return WiqoRow(
-            systemImage: provider.icon,
+            systemImage: provider.symbol,
+            tint: needsReconnect ? WiqoTheme.red : WiqoTheme.ink,
             title: provider.name,
-            subtitle: connected != nil ? (connected?.accountLabel ?? "Bağlı") : "Bağlı değil",
+            subtitle: needsReconnect ? "Bağlantının süresi doldu" : connected != nil ? (connected?.accountLabel ?? "Bağlı") : (provider.summary ?? "Bağlı değil"),
             showsDivider: !isLast
         ) {
             if connectingProvider == provider.id {
                 ProgressView().controlSize(.small)
             } else if isLoading && connections.isEmpty {
                 WiqoSkeleton(width: 56, height: 28)
+            } else if needsReconnect {
+                Button("Yeniden bağla") {
+                    Task { await connect(provider.id) }
+                }
+                .buttonStyle(.wiqoPill(.accent))
             } else if connected != nil {
                 Button("Kes") {
                     Task { await disconnect(provider.id) }
@@ -133,7 +137,9 @@ struct ConnectedAccountsView: View {
         isLoading = true
         defer { isLoading = false }
         do {
+            async let catalogue = RovaBackendClient.fetchOAuthProviders()
             connections = try await RovaBackendClient.fetchOAuthConnections()
+            providers = await catalogue
             errorMessage = nil
         } catch {
             errorMessage = "Bağlı hesaplar yüklenemedi. Yeniden denemek için aşağı çek."

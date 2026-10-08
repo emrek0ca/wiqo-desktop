@@ -100,6 +100,8 @@ extension RovaBackendClient.CopilotResultWidget {
             return "sources"
         case .artifact:
             return "artifact:\(artifactId ?? "unknown")"
+        case .task_plan:
+            return "plan:\(taskId ?? widgetId ?? "unknown")"
         case .task_result:
             return "task:\(taskId ?? widgetId ?? "unknown")"
         case .approval:
@@ -112,6 +114,8 @@ extension RovaBackendClient.CopilotResultWidget {
             return "table:\((title ?? "").lowercased())"
         case .inline_app:
             return "inlineapp:\((title ?? "").lowercased()):\(html?.count ?? 0)"
+        case .act_handoff:
+            return "act:\(operation ?? ""):\(String((request ?? "").prefix(80)).lowercased())"
         case .card:
             return "card:\(kind ?? ""):\((title ?? "").lowercased())|\((query ?? contactQuery ?? original ?? expression ?? seconds.map { String(Int($0)) } ?? "").lowercased())"
         case .map:
@@ -136,7 +140,7 @@ enum CopilotWidgetCatalog {
             let key = stableKey(for: widget)
             if let index = indexes[key] {
                 result[index] = widget
-            } else if result.count < 8 {
+            } else if result.count < 8 || widget.type == .task_plan {
                 indexes[key] = result.count
                 result.append(widget)
             }
@@ -165,6 +169,8 @@ enum CopilotWidgetCatalog {
             return "sources"
         case .artifact:
             return "artifact:\(widget.artifactId ?? "unknown")"
+        case .task_plan:
+            return "plan:\(widget.taskId ?? widget.widgetId ?? "unknown")"
         case .task_result:
             return "task:\(widget.taskId ?? widget.widgetId ?? "unknown")"
         case .approval:
@@ -177,6 +183,8 @@ enum CopilotWidgetCatalog {
             return "table:\((widget.title ?? "").lowercased())"
         case .inline_app:
             return "inlineapp:\((widget.title ?? "").lowercased()):\(widget.html?.count ?? 0)"
+        case .act_handoff:
+            return "act:\(widget.operation ?? ""):\(String((widget.request ?? "").prefix(80)).lowercased())"
         case .card:
             return "card:\(widget.kind ?? ""):\((widget.title ?? "").lowercased())|\((widget.query ?? widget.contactQuery ?? widget.original ?? widget.expression ?? widget.seconds.map { String(Int($0)) } ?? "").lowercased())"
         case .map:

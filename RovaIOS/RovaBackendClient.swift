@@ -284,7 +284,7 @@ enum RovaBackendClient {
 
     struct CopilotResultWidget: Codable, Hashable, Sendable {
         enum Kind: String, Codable {
-            case created_resource, code_change, weather, sources, artifact, task_result, approval, error, list, table, map, card, inline_app, unknown
+            case created_resource, code_change, weather, sources, artifact, task_result, task_plan, approval, error, list, table, map, card, inline_app, act_handoff, unknown
 
             init(from decoder: Decoder) throws {
                 let value = try decoder.singleValueContainer().decode(String.self)
@@ -384,6 +384,15 @@ enum RovaBackendClient {
         let tablePreview: TablePreview?
         let taskId: String?
         let capability: String?
+        struct PlanRow: Codable, Hashable, Sendable, Identifiable {
+            let id: String
+            let title: String
+            let expectedResult: String
+            let dependsOn: [String]
+            let status: String
+            let message: String?
+        }
+        let planSteps: [PlanRow]?
         let taskStatus: String?
         let completedSteps: Int?
         let totalSteps: Int?
@@ -436,6 +445,17 @@ enum RovaBackendClient {
         /// inline_app: one self-contained HTML document the phone runs in an isolated sandbox, and its preferred height.
         let html: String?
         let height: Double?
+        /// inline_app: JSON handed to the page as `wiqo.data`, the libraries the phone injects, the card this one replaces and the key of its saved state.
+        let data: String?
+        let libs: [String]?
+        let replaces: String?
+        let stateKey: String?
+        /// act_handoff: what to start in Act (a new project or a change to the open one) and which project it applies to.
+        let request: String?
+        let operation: String?
+        let projectId: String?
+        let projectKind: String?
+        let projectName: String?
     }
 
     struct CardQuote: Codable, Hashable, Sendable {
@@ -866,6 +886,7 @@ enum RovaBackendClient {
         authorities: [DeviceCapabilityAuthority] = [],
         deviceID: UUID? = nil,
         conversationID: String = "default",
+        taskID: UUID? = nil,
         turnCount: Int? = nil,
         deviceResults: [DeviceExecutionResult] = [],
         requestID: UUID = UUID(),
@@ -880,6 +901,7 @@ enum RovaBackendClient {
         onReset: @escaping @MainActor @Sendable () -> Void = {},
         onConfirmationNeeded: @escaping @MainActor @Sendable ([PlannedCommand], [BackendConfirmation]) -> Void = { _, _ in },
         onStepUpdate: @escaping @MainActor @Sendable (ExecutionStepUpdate) -> Void = { _ in },
+        onWidgetUpdate: @escaping @MainActor @Sendable (CopilotResultWidget) -> Void = { _ in },
         onActivity: @escaping @MainActor @Sendable (ActivityUpdate) -> Void = { _ in },
         onLocationRequired: @escaping @MainActor @Sendable (String) async -> Void = { _ in },
         /// Today's message count as the server has just counted it (used, limit).
@@ -898,7 +920,7 @@ enum RovaBackendClient {
         // The backend keeps the result in its request ledger; this timeout only bounds the live
         // stream. A dropped stream is resumed through copilot/requests below.
         request.timeoutInterval = 90
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "messages": messages.map { ["role": $0.role, "content": $0.content] },
             "availableApps": availableApps.map(\.rawValue),
             "applicationTargets": applicationTargets.map { target in
@@ -910,6 +932,7 @@ enum RovaBackendClient {
                 ] as [String: Any]
             },
             "availableCapabilities": availableCapabilities,
+            "clientFeatures": ["artifact-directory-v1"],
             "authorities": authorities.map { authority in
                 [
                     "capability": authority.capability,
@@ -980,6 +1003,7 @@ enum RovaBackendClient {
            let object = try? JSONSerialization.jsonObject(with: hint) {
             requestBody["intentHint"] = object
         }
+        if let taskID { requestBody["taskId"] = taskID.uuidString }
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [.fragmentsAllowed])
         guard (request.httpBody?.count ?? 0) <= Self.maxCopilotRequestBodyBytes else {
             throw RovaBackendError.copilotPayloadTooLarge
@@ -1025,6 +1049,7 @@ enum RovaBackendClient {
         struct StepUpdateEvent: Decodable {
             let step: ExecutionStepUpdate
         }
+        struct WidgetUpdateEvent: Decodable { let widget: CopilotResultWidget }
         struct ActivityEvent: Decodable {
             let activity: ActivityUpdate
         }
@@ -1069,6 +1094,10 @@ enum RovaBackendClient {
                             backendConfirmations: event.backendConfirmations ?? []
                         )
                         await onConfirmationNeeded(partial.steps, partial.backendConfirmations)
+                    }
+                case "widget_update":
+                    if let event = try? decoder.decode(WidgetUpdateEvent.self, from: json) {
+                        await onWidgetUpdate(event.widget)
                     }
                 case "step_update":
                     if let event = try? decoder.decode(StepUpdateEvent.self, from: json) {
@@ -1306,6 +1335,7 @@ enum RovaBackendClient {
                 ] as [String: Any]
             },
             "availableCapabilities": availableCapabilities,
+            "clientFeatures": ["artifact-directory-v1"],
             "authorities": authorities.map { authority in
                 [
                     "capability": authority.capability,
@@ -1692,6 +1722,31 @@ enum RovaBackendClient {
         let accountLabel: String?
         let connectedAt: String
         let accessLevel: String?
+        /// "needs_reconnect" when the provider refused the stored authorisation (older servers send nothing).
+        let status: String?
+    }
+
+    /// An app the person can connect, as the server lists it: a provider added on the server shows up here without an app update.
+    struct OAuthProviderInfo: Decodable, Identifiable, Equatable {
+        let id: String
+        let name: String
+        let symbol: String
+        let summary: String?
+        let available: Bool?
+
+        static let builtIn: [OAuthProviderInfo] = [
+            OAuthProviderInfo(id: "google", name: "Google", symbol: "envelope.badge", summary: "Gmail, Takvim ve Drive", available: true),
+            OAuthProviderInfo(id: "notion", name: "Notion", symbol: "doc.text", summary: "Sayfalar ve notlar", available: true)
+        ]
+    }
+
+    /// The server's catalogue, or the built-in pair when the server is older or unreachable.
+    static func fetchOAuthProviders() async -> [OAuthProviderInfo] {
+        struct Response: Decodable { let providers: [OAuthProviderInfo] }
+        guard let providers = try? await authorizedGet("oauth/providers", as: Response.self).providers, !providers.isEmpty else {
+            return OAuthProviderInfo.builtIn
+        }
+        return providers.filter { $0.available != false }
     }
 
     static func fetchOAuthConnections() async throws -> [OAuthConnection] {

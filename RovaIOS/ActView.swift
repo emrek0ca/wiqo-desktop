@@ -116,6 +116,33 @@ struct ActView: View {
             await model.syncAll()
             await model.watchChanges()
         }
+        // A chat card sent a request: a new project starts from it (the same consent and privacy steps as typing it here),
+        // a change to an open project is applied to that project.
+        .onReceive(NotificationCenter.default.publisher(for: .wiqoOpenInAct)) { note in
+            guard let open = note.object as? ActOpenRequest else { return }
+            handle(open)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .wiqoOpenProjectInAct)) { note in
+            if let id = note.object as? String, model.project(id) != nil { openedID = id }
+        }
+    }
+
+    private func handle(_ open: ActOpenRequest) {
+        if let id = open.projectID, let project = model.project(id) {
+            openedID = id
+            if open.operation == "edit" {
+                if model.needsConsent(for: project) {
+                    model.notice = "Değişikliği başlatmak için projeye bir kez izin ver, sonra isteği buraya yaz."
+                } else {
+                    Task { await model.edit(id, request: open.request) }
+                }
+            }
+            return
+        }
+        guard model.job == nil else { model.notice = "Act'te bir iş sürüyor; bitince yeniden dene."; return }
+        openedID = nil
+        draft = open.request
+        requestCreate()
     }
 
     /// Wide room (a phone held sideways, a split view, a folded-open device): the list on the left, a new project on the right.

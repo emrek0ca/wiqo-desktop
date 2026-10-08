@@ -6,10 +6,10 @@ struct WiqoSettingsGroup<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             if let title {
                 Text(title)
-                    .font(.footnote.weight(.medium))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
             }
@@ -18,7 +18,27 @@ struct WiqoSettingsGroup<Content: View>: View {
             }
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: WiqoTheme.cardRadius, style: .continuous))
-            .wiqoCard()
+            .wiqoGlass()
+        }
+    }
+}
+
+/// The settings surfaces sit on the chat screen's own background; cards are Liquid Glass on iOS 26 and a quiet grouped fill before it.
+enum WiqoSettingsStyle {
+    static let canvas = Color(uiColor: .systemBackground)
+}
+
+extension View {
+    @ViewBuilder
+    func wiqoGlass(radius: CGFloat = WiqoTheme.cardRadius) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .strokeBorder(WiqoTheme.line, lineWidth: 0.5)
+                }
+        } else {
+            self.background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
         }
     }
 }
@@ -67,7 +87,7 @@ struct WiqoRow<Trailing: View>: View {
             Image(systemName: systemImage)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(accent)
-                .frame(width: 30, height: 30)
+                .frame(width: 28, height: 28)
                 .background(WiqoTheme.tint(accent), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -85,15 +105,15 @@ struct WiqoRow<Trailing: View>: View {
             trailing
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(minHeight: 52)
+        .padding(.vertical, 8)
+        .frame(minHeight: 48)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) {
             if showsDivider {
                 Rectangle()
                     .fill(WiqoTheme.line)
                     .frame(height: 0.5)
-                    .padding(.leading, 56)
+                    .padding(.leading, 54)
             }
         }
         .contentShape(Rectangle())

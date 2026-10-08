@@ -1080,6 +1080,8 @@ final class IOSConnectionModel: ObservableObject {
         case .computerBrowser: return "Tarayıcıda gezin"
         case .endBrowserTask: return "Tarayıcı oturumunu kapat"
         case .localAnalyze: return "Yerel analiz"
+        case .fileUtility: return "Dosya işlemi"
+        case .systemUtility: return "Sistem işlemi"
         }
     }
 

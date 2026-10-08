@@ -94,6 +94,9 @@ struct CopilotView: View {
     /// The bubble currently awaiting confirmation, if any - drives a native bottom sheet instead
     /// of an inline card, so the confirmation is never missed by being scrolled past.
     @State private var confirmationBubbleID: UUID?
+    @State private var taskReadApprovalBubbleID: UUID?
+    /// The same task approval also covers reversible file work in the own folders (RovaOwnFolders.isTaskWritable); set only by its own button.
+    @State private var taskWriteApproved = false
     /// Set right before `confirmationBubbleID` is cleared by an explicit button, so the sheet's
     /// `onDismiss` (which also fires for a plain swipe-down) can tell the two apart.
     @State private var confirmationHandledExplicitly = false
@@ -234,6 +237,18 @@ struct CopilotView: View {
             }
         )) {
             confirmationSheetContent
+        }
+        .environment(\.replacedInlineApps, Set(bubbles.flatMap { $0.widgets.compactMap { $0.type == .inline_app ? $0.replaces : nil } }))
+        // A card's page offered a text for the composer: it lands there, and the person decides whether to send it.
+        .onReceive(NotificationCenter.default.publisher(for: .wiqoInlineAppAsk)) { note in
+            guard let text = note.object as? String, !isSending else { return }
+            inputText = text
+            isComposerFocused = true
+        }
+        // A card that ran into a problem asks Wiqo to fix it: one tap, sent as the person's own message.
+        .onReceive(NotificationCenter.default.publisher(for: .wiqoInlineAppFix)) { note in
+            guard let text = note.object as? String else { return }
+            Task { await sendMessage(textOverride: text) }
         }
         .sheet(item: $widgetDestination) { destination in
             NavigationStack {
@@ -589,6 +604,15 @@ struct CopilotView: View {
                 artifactCard(for: legacyArtifacts, awaitingSave: bubble.needsConfirmation)
             }
             if bubble.role == .assistant && !bubble.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Only the latest question can still be answered: older ones keep just their copy button.
+                if !isSending, bubbles.last(where: { $0.role != .system })?.id == bubble.id {
+                    let quickReplies = bubbleAwaitingApproval?.id == bubble.id ? ["Onayla", "Vazgeç"] : QuickReplyChips.options(for: bubble.text)
+                    if !quickReplies.isEmpty {
+                        QuickReplyChips(options: quickReplies) { option in
+                            Task { await sendMessage(textOverride: option) }
+                        }
+                    }
+                }
                 CopyReplyButton(text: bubble.text)
             }
         }
@@ -659,7 +683,7 @@ struct CopilotView: View {
                         }
                     }
 
-                    if !rows.isEmpty {
+                    if !rows.isEmpty && !bubble.widgets.contains(where: { $0.type == .task_plan }) {
                         WiqoToolChips(rows: rows, summary: toolSummary(rows))
                     }
 
@@ -737,7 +761,7 @@ struct CopilotView: View {
         let localDone = deviceSteps.allSatisfy { bubble.executedStepIDs.contains($0.id) }
         let backendDone = bubble.backendConfirmations.allSatisfy { $0.status == .completed }
         let liveDone = liveOnlyUpdates.allSatisfy { $0.status == LiveExecutionStatus.succeeded.rawValue }
-        if localDone && backendDone && liveDone { return "İstediklerini yaptım." }
+        if localDone && backendDone && liveDone { return bubble.replyIsProgress == true ? "Adım sonucu alındı; görev kontrol ediliyor." : "Adım sonuçları hazır." }
         return "İstediklerini sırayla yapıyorum."
     }
 
@@ -918,6 +942,8 @@ struct CopilotView: View {
         case .captureScreen, .clickScreen, .controlUIElement, .computerDesktop: return "rectangle.inset.filled.and.person.filled"
         case .computerBrowser, .endBrowserTask: return "safari.fill"
         case .localAnalyze: return "waveform.path.ecg.rectangle"
+        case .fileUtility: return "folder.badge.gearshape"
+        case .systemUtility: return "gearshape"
         case .getSystemStatus, .ping: return "desktopcomputer"
         default: return "bolt.fill"
         }
@@ -1076,8 +1102,20 @@ struct CopilotView: View {
     }
 
     private func presentConfirmation(for bubbleID: UUID) {
+        isComposerFocused = false
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         confirmationHandledExplicitly = false
         confirmationBubbleID = bubbleID
+    }
+
+    private func presentPlanBubble(_ widget: RovaBackendClient.CopilotResultWidget) -> UUID {
+        if let existing = bubbles.last(where: { $0.widgets.contains(where: { $0.stableID == widget.stableID }) }) {
+            return existing.id
+        }
+        var bubble = ChatBubble(role: .assistant, text: "")
+        bubble.widgets = [widget]
+        bubbles.append(bubble)
+        return bubble.id
     }
 
     private func presentLiveExecutionBubble(
@@ -1142,7 +1180,8 @@ struct CopilotView: View {
         backendConfirmations: [RovaBackendClient.BackendConfirmation],
         existingBubbleID: UUID?
     ) -> UUID? {
-        let needsDeviceConfirmation = steps.contains { $0.isDestructive || $0.requiresUserPresence }
+        let needsDeviceConfirmation = steps.contains(where: requiresLocalConfirmation)
+        if needsDeviceConfirmation || !backendConfirmations.isEmpty { isComposerFocused = false }
         guard needsDeviceConfirmation || !backendConfirmations.isEmpty else { return existingBubbleID }
 
         if let existingBubbleID {
@@ -1216,6 +1255,21 @@ struct CopilotView: View {
                     },
                     onConfirm: {
                         Task { await confirmAndExecute(bubbleID: bubbleID) }
+                    },
+                    onConfirmTaskReads: {
+                        Task {
+                            await confirmAndExecute(bubbleID: bubbleID, reason: "Bu görev boyunca Masaüstü, Belgeler ve İndirilenler içindeki hassas olmayan dosyaları okumaya izin ver") {
+                                taskReadApprovalBubbleID = bubbleID
+                            }
+                        }
+                    },
+                    onConfirmTaskFiles: {
+                        Task {
+                            await confirmAndExecute(bubbleID: bubbleID, reason: "Bu görev boyunca Masaüstü, Belgeler ve İndirilenler'de dosya okuma, klasör açma, taşıma, kopyalama ve yeniden adlandırmaya izin ver. Silme ve üzerine yazma hariç.") {
+                                taskReadApprovalBubbleID = bubbleID
+                                taskWriteApproved = true
+                            }
+                        }
                     },
                     onConfirmAndAlwaysAllow: {
                         Task { await grantTrustThenExecute(bubbleID: bubbleID) }
@@ -1605,6 +1659,10 @@ struct CopilotView: View {
             : !typedText.isEmpty || !pendingAttachments.isEmpty || !pendingFiles.isEmpty
         guard !isSending, confirmationBubbleID == nil, !hasInFlightDeviceWork,
               hasInput else { return }
+        if !createAgent, pendingAttachments.isEmpty, pendingFiles.isEmpty, answerPendingConfirmation(with: typedText) {
+            inputText = ""
+            return
+        }
         let files = pendingFiles
         let text = !typedText.isEmpty ? typedText
             : !files.isEmpty ? (files.count > 1 ? "Bu dosyaları incele." : "Bu dosyayı incele.")
@@ -1612,6 +1670,7 @@ struct CopilotView: View {
         let attachments = pendingAttachments
         let previews = attachmentPreviews
         let thumbnails = attachmentPreviews.compactMap(makeThumbnailData)
+        isComposerFocused = false
         inputText = ""
         isCreatingAgent = false
         clearAttachments()
@@ -1627,6 +1686,8 @@ struct CopilotView: View {
         // Results belong to the turn that produced them; never let an older device outcome alter
         // the model's interpretation of a new user message.
         recentDeviceResults.removeAll(keepingCapacity: true)
+        taskReadApprovalBubbleID = nil
+        taskWriteApproved = false
         localRecoveryAttemptsRemaining = 1
         scrollToLatestRequest += 1
         defer { isSending = false }
@@ -1658,6 +1719,7 @@ struct CopilotView: View {
                 authorities: model.deviceInfo?.authorities ?? [],
                 deviceID: model.pairedDeviceIDForTransfer,
                 conversationID: conversationID,
+                taskID: responseBubble.id,
                 turnCount: turnCount,
                 deviceResults: recentDeviceResults,
                 requestID: requestID,
@@ -1688,6 +1750,12 @@ struct CopilotView: View {
                         for: update,
                         existingBubbleID: earlyConfirmationBubbleID
                     )
+                },
+                onWidgetUpdate: { widget in
+                    let targetID = earlyConfirmationBubbleID ?? liveReplyBubbleID ?? presentPlanBubble(widget)
+                    earlyConfirmationBubbleID = targetID
+                    setBubble(targetID) { $0.widgets = CopilotWidgetCatalog.merging($0.widgets, with: [widget]) }
+                    persistConversation()
                 },
                 onActivity: { activity in
                     thinking.apply(
@@ -1742,7 +1810,7 @@ struct CopilotView: View {
                     history: history,
                     initialReply: result.reply,
                     bubbleID: replyBubbleID,
-                    remainingRounds: activeBrowserTaskIDs.isEmpty ? 3 : 8,
+                    remainingRounds: 8,
                     recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
                 )
             } else {
@@ -1799,7 +1867,14 @@ struct CopilotView: View {
     }
 
     private func requiresLocalConfirmation(_ step: PlannedCommand) -> Bool {
-        step.isDestructive || step.requiresUserPresence
+        if let approvedID = taskReadApprovalBubbleID,
+           liveReplyBubbleID == approvedID || bubbles.first(where: { $0.id == approvedID })?.steps.contains(where: { $0.id == step.id }) == true {
+            // One approval for this task: reading in the own folders, and (when the person gave it) reversible file work there. Delete, overwrite and
+            // anything that leaves the Mac still ask, step by step.
+            if !step.isDestructive, RovaOwnFolders.isAutoReadable(type: step.type, payload: step.payload) { return false }
+            if taskWriteApproved, RovaOwnFolders.isTaskWritable(type: step.type, payload: step.payload) { return false }
+        }
+        return step.isDestructive || step.requiresUserPresence
     }
 
     private func isForceQuitStep(_ step: PlannedCommand) -> Bool {
@@ -1821,10 +1896,6 @@ struct CopilotView: View {
     /// gets silently bundled into the previous approval.
     private func advanceLocalExecution(bubbleID: UUID) async -> LocalExecutionAdvanceResult {
         guard let bubble = bubbles.first(where: { $0.id == bubbleID }) else { return .failed }
-        guard bubble.failedSteps.isEmpty else {
-            setBubble(bubbleID) { $0.needsConfirmation = false }
-            return .failed
-        }
         let pending = pendingLocalSteps(in: bubble)
         guard !pending.isEmpty else {
             setBubble(bubbleID) { $0.needsConfirmation = false }
@@ -1861,7 +1932,10 @@ struct CopilotView: View {
     private func confirmAndExecute(bubbleID: UUID, reason: String = "Bu eylemi PC'de çalıştırmak için kimliğinizi doğrulayın", beforeExecute: () async -> Void = {}) async {
         guard !isConfirming else { return }
         isConfirming = true
+        let wasSending = isSending
+        isSending = true
         defer {
+            isSending = wasSending
             isConfirming = false
             isGrantingTrust = false
         }
@@ -1896,7 +1970,7 @@ struct CopilotView: View {
                 history: history,
                 initialReply: initialReply,
                 bubbleID: bubbleID,
-                remainingRounds: activeBrowserTaskIDs.isEmpty ? 3 : 8,
+                remainingRounds: 8,
                 recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
             )
         } else {
@@ -1932,7 +2006,7 @@ struct CopilotView: View {
                     setBubble(bubbleID) { bubble in
                         bubble.inFlightStepIDs.remove(step.id)
                         bubble.executedStepIDs.insert(step.id)
-                        bubble.failedSteps[step.id] = result.error?.message ?? result.message
+                        bubble.failedSteps[step.id] = result.error?.message ?? (result.data?.hasFailedVerification == true ? "Beklenen sonuç doğrulanamadı." : result.message)
                         bubble.stepResults[step.id] = result
                 if let evidence = DeviceOutcomeNarrator.fileWidget(step: step, result: result),
                    !bubble.widgets.contains(where: { $0.widgetId == evidence.widgetId }) {
@@ -1973,9 +2047,9 @@ struct CopilotView: View {
                 stepID: step.id,
                 type: step.type,
                 summary: step.summary,
-                status: result.status,
+                status: result.isConfirmedSuccess ? .completed : (result.status == .completed ? .failed : result.status),
                 message: result.message,
-                error: result.error,
+                error: result.error ?? (result.data?.hasFailedVerification == true ? RovaError(code: "POSTCONDITION_FAILED", message: "Beklenen sonuç doğrulanamadı; işlem otomatik tekrarlanmadı.") : nil),
                 dataText: encodedCommandData(result.data),
                 imageBase64: screenshotBase64(result.data),
                 fileBase64: delivery?.base64,
@@ -2004,14 +2078,14 @@ struct CopilotView: View {
                    !bubble.widgets.contains(where: { $0.widgetId == evidence.widgetId }) {
                     bubble.widgets.append(evidence)
                 }
-                if result.status != .completed {
-                    bubble.failedSteps[step.id] = result.error?.message ?? result.message
+                if !result.isConfirmedSuccess {
+                    bubble.failedSteps[step.id] = result.error?.message ?? (result.data?.hasFailedVerification == true ? "Beklenen sonuç doğrulanamadı." : result.message)
                 }
                 if case .processOutput(let output) = result.data {
                     bubble.codeRuns[step.id] = output
                 }
             }
-            if result.status != .completed { break }
+            if !result.isConfirmedSuccess { break }
         }
         // The full per-step breakdown (detail/onay/sonuç) is executionWidget, reading `steps` +
         // `stepResults` live for as long as this session runs - none of that survives a restart
@@ -2044,7 +2118,7 @@ struct CopilotView: View {
         let relevant = bubble.steps.filter { $0.type != .executeCode }
         guard !relevant.isEmpty, relevant.allSatisfy({ bubble.executedStepIDs.contains($0.id) }) else { return nil }
         let failedCount = relevant.filter { bubble.failedSteps[$0.id] != nil }.count
-        if failedCount == 0 { return "İstediklerini yaptım." }
+        if failedCount == 0 { return "Mac adımlarının sonuçları alındı; görevin kalanını kontrol ediyorum." }
         if failedCount == relevant.count { return "Bu isteği tamamlayamadım." }
         return "İşin bir kısmını yaptım; kalanını tamamlayamadım."
     }
@@ -2061,6 +2135,8 @@ struct CopilotView: View {
         recoveryAttemptsRemaining: Int
     ) async {
         guard remainingRounds > 0 else {
+            setBubble(bubbleID) { $0.text = "Bu turdaki adım sınırına ulaştım. Görevin tamamlandığı doğrulanmadı; devam etmemi isteyebilirsin." }
+            persistConversation()
             return
         }
         guard !recentDeviceResults.isEmpty else {
@@ -2074,7 +2150,9 @@ struct CopilotView: View {
         }
         let nextRecoveryBudget = hasFailure ? recoveryAttemptsRemaining - 1 : recoveryAttemptsRemaining
         localRecoveryAttemptsRemaining = nextRecoveryBudget
-        let continuationHistory = history + [
+        let taskStart = history.lastIndex { $0.role == "user" && !$0.content.hasPrefix("Yerel PC sonuçları hazır.") }
+        let taskHistory = taskStart.map { Array(history[$0...]).filter { !$0.content.hasPrefix("Yerel PC sonuçları hazır.") } } ?? history
+        let continuationHistory = Array(taskHistory.prefix(1)) + [
             RovaBackendClient.ChatTurn(role: "assistant", content: initialReply),
             RovaBackendClient.ChatTurn(role: "user", content: "Yerel PC sonuçları hazır. Bu sonuçları kullanarak önceki isteği şimdi tamamla; belge içeriğini yeniden isteme.")
         ]
@@ -2097,6 +2175,7 @@ struct CopilotView: View {
                 authorities: model.deviceInfo?.authorities ?? [],
                 deviceID: model.pairedDeviceIDForTransfer,
                 conversationID: conversationID,
+                taskID: bubbleID,
                 turnCount: turnCount,
                 deviceResults: localResults,
                 requestID: UUID(),
@@ -2120,6 +2199,12 @@ struct CopilotView: View {
                         for: update,
                         existingBubbleID: earlyConfirmationBubbleID
                     )
+                },
+                onWidgetUpdate: { widget in
+                    let targetID = earlyConfirmationBubbleID ?? liveReplyBubbleID ?? presentPlanBubble(widget)
+                    earlyConfirmationBubbleID = targetID
+                    setBubble(targetID) { $0.widgets = CopilotWidgetCatalog.merging($0.widgets, with: [widget]) }
+                    persistConversation()
                 },
                 onActivity: { activity in
                     thinking.apply(
@@ -2159,6 +2244,9 @@ struct CopilotView: View {
                     recoveryAttemptsRemaining: nextRecoveryBudget
                 )
             } else {
+                if remainingRounds <= 1 && !result.steps.isEmpty {
+                    setBubble(bubbleID) { $0.text = "Adım sınırına ulaştım. Son Mac sonucu alındı ancak görevin bütünü henüz doğrulanmadı; devam etmemi isteyebilirsin." }
+                }
                 recentDeviceResults.removeAll(keepingCapacity: true)
             }
             persistConversation()
@@ -2209,6 +2297,12 @@ struct CopilotView: View {
                     bubble.stepResults.removeValue(forKey: id)
                     bubble.failedSteps.removeValue(forKey: id)
                     bubble.executedStepIDs.remove(id)
+                }
+            }
+            if !bubble.failedSteps.isEmpty && !result.steps.isEmpty {
+                for step in bubble.steps where !bubble.executedStepIDs.contains(step.id) && !result.steps.contains(where: { $0.id == step.id }) {
+                    bubble.executedStepIDs.insert(step.id)
+                    bubble.failedSteps[step.id] = "Önceki hata nedeniyle çalıştırılmadı."
                 }
             }
             let existingStepIDs = Set(bubble.steps.map(\.id))
@@ -2584,16 +2678,9 @@ struct CopilotView: View {
     }
 
     private func needsLocalResultFollowUp(_ step: PlannedCommand) -> Bool {
-        switch step.type {
-        // Every step whose result the model has to read before it can answer. A missing type here
-        // ended the turn on "Masaüstüne bakıyorum" with the listing never shown to the model.
-        case .readDocument, .readDesktopFile, .readFile, .sendFileToPhone, .searchFiles, .listFiles, .listDesktopFiles, .captureScreen,
-             .runShortcut, .controlUIElement, .clickScreen, .listRunningApplications, .getSystemStatus,
-             .listCalendarEvents, .listReminders, .getClipboardText, .getClipboardHistory, .computerDesktop, .computerBrowser:
-            return true
-        default:
-            return false
-        }
+        // Every device result returns to the same task, including writes. A successful write
+        // may be only the first part of a longer request; the UI cannot finalize the goal.
+        step.type != .executeCode
     }
 
     private func markSuggestion(_ id: Int, action: String) async {
@@ -2642,7 +2729,38 @@ struct CopilotView: View {
         executionNoticeFreeText(text)
     }
 
+    /// The latest reply's PC step that still waits for approval (also one whose sheet was dismissed), if the conversation has not moved on.
+    private var bubbleAwaitingApproval: ChatBubble? {
+        guard let last = bubbles.last(where: { $0.role != .system }), last.role == .assistant else { return nil }
+        if last.needsConfirmation { return last }
+        return currentLocalConfirmationStep(in: last) == nil ? nil : last
+    }
+
+    /// "devam et", "evet", "onayla" typed while a PC step waits for approval is that approval: the approval sheet comes back, instead of a new
+    /// request that cannot see the waiting step (it answered "Bu sonuç önceki bir göreve ait"). "vazgeç" / "iptal" cancels it.
+    private func answerPendingConfirmation(with text: String) -> Bool {
+        let folded = text.lowercased().trimmingCharacters(in: .punctuationCharacters.union(.whitespacesAndNewlines))
+        let approve: Set<String> = ["devam", "devam et", "devam edelim", "kaldığın yerden devam et", "evet", "onayla", "onaylıyorum", "tamam", "olur", "yap", "başla", "evet devam et"]
+        let decline: Set<String> = ["vazgeç", "iptal", "iptal et", "hayır", "dur", "yapma"]
+        guard approve.contains(folded) || decline.contains(folded), let bubble = bubbleAwaitingApproval else { return false }
+        if decline.contains(folded) {
+            if bubble.needsConfirmation { cancelConfirmation(for: bubble.id) }
+            return true
+        }
+        if !bubble.needsConfirmation, let step = currentLocalConfirmationStep(in: bubble) {
+            setBubble(bubble.id) { reopened in
+                reopened.failedSteps[step.id] = nil
+                reopened.needsConfirmation = true
+                reopened.text = reopened.text.replacingOccurrences(of: "\n\nİşlem iptal edildi.", with: "")
+            }
+        }
+        confirmationBubbleID = bubble.id
+        return true
+    }
+
     private func cancelConfirmation(for bubbleID: UUID) {
+        isComposerFocused = false
+        if taskReadApprovalBubbleID == bubbleID { taskReadApprovalBubbleID = nil; taskWriteApproved = false }
         setBubble(bubbleID) { bubble in
             bubble.needsConfirmation = false
             if let step = bubble.steps.first(where: { step in
@@ -2741,6 +2859,8 @@ private struct CopilotResultWidgetView: View {
             sourcesCard
         case .artifact:
             artifactResultCard
+        case .task_plan:
+            TaskPlanMiniCard(widget: widget)
         case .task_result:
             taskResultCard
         case .error:
@@ -2755,6 +2875,8 @@ private struct CopilotResultWidgetView: View {
             WiqoCardView(widget: widget)
         case .inline_app:
             WiqoInlineAppCard(widget: widget)
+        case .act_handoff:
+            WiqoActHandoffCard(widget: widget)
         case .approval:
             // Pending confirmations are rendered by the existing execution card, which owns
             // the live confirmation ID and approve/reject actions. Rendering this projection
@@ -2771,7 +2893,8 @@ private struct CopilotResultWidgetView: View {
         let status = widget.taskStatus ?? "completed"
         let label = status == "completed" ? "Tamamlandı" : status == "partial" ? "Kısmen tamamlandı" : "Tamamlanamadı"
         let symbol = widget.capability == "browser" ? "safari"
-            : widget.capability == "desktop" ? "macwindow" : "desktopcomputer"
+            : widget.capability == "desktop" ? "macwindow"
+            : widget.capability == "backend" ? "checkmark.seal" : "desktopcomputer"
         let tint: Color = status == "failed" ? .red : status == "partial" ? .orange : .green
 
         return VStack(alignment: .leading, spacing: 10) {
@@ -2788,7 +2911,7 @@ private struct CopilotResultWidgetView: View {
                     Text(widget.summary ?? "\(completed)/\(total) adım tamamlandı")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(3)
                 }
                 Spacer(minLength: 4)
                 Text(label)
@@ -2812,27 +2935,24 @@ private struct CopilotResultWidgetView: View {
     }
 
     private var errorResultCard: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Label(widget.title ?? "İşlem tamamlanamadı", systemImage: "exclamationmark.triangle.fill")
-                .font(.subheadline.weight(.semibold))
+        // The reason, not a code: the technical code stays out of sight (it is in the accessibility value and the server's task timeline), the card stays small.
+        VStack(alignment: .leading, spacing: 3) {
+            Label(widget.title ?? "İşlem tamamlanamadı", systemImage: "exclamationmark.circle.fill")
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(.red)
             if let message = widget.message, !message.isEmpty {
                 Text(message)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let code = widget.code, !code.isEmpty {
-                Text(code)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-            }
         }
-        .padding(12)
+        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.red.opacity(0.14), lineWidth: 1))
+        .background(Color.red.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.red.opacity(0.12), lineWidth: 0.5))
         .accessibilityElement(children: .combine)
+        .accessibilityValue(widget.code ?? "")
     }
 
     @ViewBuilder
@@ -2884,42 +3004,29 @@ private struct CopilotResultWidgetView: View {
     }
 
     private func tablePreview(_ preview: RovaBackendClient.CopilotResultWidget.TablePreview) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                if !preview.columns.isEmpty {
-                    HStack(spacing: 0) {
-                        ForEach(Array(preview.columns.enumerated()), id: \.offset) { _, cell in
-                            Text(cell)
-                                .font(.caption.weight(.semibold))
-                                .lineLimit(2)
-                                .frame(width: 120, alignment: .leading)
-                                .padding(8)
-                                .background(Color.primary.opacity(0.04))
-                        }
+        let columnCount = max(preview.columns.count, preview.rows.map(\.count).max() ?? 1, 1)
+        return VStack(alignment: .leading, spacing: 4) {
+            FlexTable(columnCount: columnCount) {
+                ForEach(0..<columnCount, id: \.self) { column in
+                    FlexTableCell(isHeader: true, isFirstColumn: column == 0) {
+                        Text(preview.columns[safe: column] ?? "").font(.caption.weight(.semibold))
                     }
                 }
                 ForEach(Array(preview.rows.enumerated()), id: \.offset) { _, row in
-                    HStack(spacing: 0) {
-                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            Text(cell.isEmpty ? "—" : cell)
-                                .font(.caption)
-                                .lineLimit(2)
-                                .frame(width: 120, alignment: .leading)
-                                .padding(8)
+                    ForEach(0..<columnCount, id: \.self) { column in
+                        let cell = row[safe: column] ?? ""
+                        FlexTableCell(isFirstColumn: column == 0) {
+                            Text(cell.isEmpty ? "—" : cell).font(.caption)
                         }
                     }
-                    Divider()
-                }
-                if preview.totalRows > preview.rows.count {
-                    Text("\(preview.totalRows - preview.rows.count) satır daha")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(8)
                 }
             }
-            .fixedSize(horizontal: true, vertical: false)
+            if preview.totalRows > preview.rows.count {
+                Text("\(preview.totalRows - preview.rows.count) satır daha")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityLabel("Tablo önizlemesi, \(preview.totalRows) satır")
     }
 

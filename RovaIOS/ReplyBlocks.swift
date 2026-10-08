@@ -650,7 +650,7 @@ enum SyntaxHighlighter {
     }
 }
 
-private extension Array {
+extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
@@ -669,6 +669,9 @@ private struct TableBlockView: View {
     @State private var sortColumn: Int?
     @State private var sortAscending = true
     @State private var filterText = ""
+    /// A long table shows its first rows and a single line to open the rest: the conversation stays readable and the table is still all there.
+    @State private var showsAllRows = false
+    private static let collapsedRowCount = 6
 
     /// Plain-text mirror of `rows`, computed once per render rather than per comparison - sorting
     /// and filtering both need to compare raw text, not AttributedString runs.
@@ -700,29 +703,28 @@ private struct TableBlockView: View {
         }
     }
 
-    private var isFilterable: Bool { rows.count > 5 }
+    private var isFilterable: Bool { rows.count > 8 }
+    private var isCollapsed: Bool { rows.count > Self.collapsedRowCount + 2 && !showsAllRows && filterText.isEmpty }
+    private var visibleIndices: [Int] { isCollapsed ? Array(sortedIndices.prefix(Self.collapsedRowCount)) : sortedIndices }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             if isFilterable {
                 filterField
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
-                    GridRow {
-                        ForEach(Array(headers.enumerated()), id: \.offset) { index, header in
-                            headerCell(header, column: index)
-                        }
-                    }
-                    .background(Color(uiColor: .tertiarySystemFill))
-                    ForEach(Array(sortedIndices.enumerated()), id: \.offset) { position, rowIndex in
-                        Divider().gridCellColumns(max(headers.count, 1))
-                        GridRow {
-                            ForEach(Array(rows[rowIndex].enumerated()), id: \.offset) { _, value in
-                                cell(value, isHeader: false)
+            FlexTable(columnCount: max(headers.count, 1)) {
+                ForEach(Array(headers.enumerated()), id: \.offset) { index, header in
+                    headerCell(header, column: index)
+                }
+                ForEach(Array(visibleIndices.enumerated()), id: \.offset) { _, rowIndex in
+                    ForEach(0..<max(headers.count, 1), id: \.self) { column in
+                        FlexTableCell(alignment: numericColumns.contains(column) ? .trailing : .leading, isFirstColumn: column == 0) {
+                            if let value = rows[rowIndex][safe: column] {
+                                cellText(value, isHeader: false)
+                            } else {
+                                Text("")
                             }
                         }
-                        .background(position.isMultiple(of: 2) ? Color.clear : Color(uiColor: .quaternarySystemFill))
                     }
                 }
             }
@@ -730,13 +732,28 @@ private struct TableBlockView: View {
                 Text("\(sortedIndices.count) / \(rows.count) satır")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 2)
+            } else if rows.count > Self.collapsedRowCount + 2 {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { showsAllRows.toggle() }
+                } label: {
+                    Text(showsAllRows ? "Daralt" : "Tümünü göster (\(rows.count) satır)")
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 28)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
             }
         }
-        .padding(isFilterable ? 10 : 0)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color(uiColor: .separator).opacity(0.5), lineWidth: 0.5))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Columns whose every filled cell is a number (population, price, percent) are right-aligned so the digits line up.
+    private var numericColumns: Set<Int> {
+        let values = plainRows
+        return Set(headers.indices.filter { column in
+            let cells = values.compactMap { $0[safe: column] }.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            return !cells.isEmpty && cells.allSatisfy { $0.range(of: #"^[\s\-+~≈$€₺£]*[\d.,\s]+\s*(%|[A-Za-zİıÖöÜüÇçŞşĞğ]{0,3})?\s*$"#, options: .regularExpression) != nil }
+        })
     }
 
     private var filterField: some View {
@@ -759,37 +776,27 @@ private struct TableBlockView: View {
     }
 
     private func headerCell(_ value: ReplyBlock.InlineContent, column: Int) -> some View {
-        Button {
-            if sortColumn == column {
-                sortAscending.toggle()
-            } else {
-                sortColumn = column
-                sortAscending = true
-            }
-        } label: {
-            HStack(spacing: 3) {
-                cellText(value, isHeader: true)
+        FlexTableCell(alignment: numericColumns.contains(column) ? .trailing : .leading, isHeader: true, isFirstColumn: column == 0) {
+            Button {
                 if sortColumn == column {
-                    Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.caption2.weight(.bold))
+                    sortAscending.toggle()
+                } else {
+                    sortColumn = column
+                    sortAscending = true
                 }
+            } label: {
+                HStack(spacing: 3) {
+                    cellText(value, isHeader: true)
+                    if sortColumn == column {
+                        Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
+                            .font(.caption2.weight(.bold))
+                    }
+                }
+                .contentShape(Rectangle())
             }
-            .frame(minWidth: 72, maxWidth: 240, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.primary)
-    }
-
-    private func cell(_ value: ReplyBlock.InlineContent, isHeader: Bool) -> some View {
-        cellText(value, isHeader: isHeader)
-            .frame(minWidth: 72, maxWidth: 240, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
     }
 
     @ViewBuilder
@@ -797,10 +804,10 @@ private struct TableBlockView: View {
         switch value {
         case .markdown(let text):
             Text(text)
-                .font(isHeader ? .footnote.weight(.semibold) : .footnote)
+                .font(isHeader ? .caption.weight(.semibold) : .caption)
                 .textSelection(.enabled)
         case .math(let raw):
-            RichMathTextView(raw: raw, artifacts: artifacts, fontSize: 13)
+            RichMathTextView(raw: raw, artifacts: artifacts, fontSize: 12)
         }
     }
 }
@@ -1116,5 +1123,113 @@ final class LiveReplyText: ObservableObject {
         displayed += pending
         pending = ""
         publishTask = nil
+    }
+}
+
+
+/// A table that sits on the page and fits the screen: every column takes the width its text needs, the leftover is shared, long text wraps,
+/// and the table scrolls sideways only when even the narrowest wrapping is wider than the screen. Callers hand over cells row by row
+/// (each row padded to `columnCount`) and draw their own separators inside the cells.
+struct FlexTable<Content: View>: View {
+    let columnCount: Int
+    @ViewBuilder var content: Content
+    @State private var available: CGFloat = 0
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            FlexTableLayout(columnCount: columnCount, available: available) { content }
+        }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .background(GeometryReader { proxy in Color.clear.preference(key: FlexTableWidthKey.self, value: proxy.size.width) })
+        .onPreferenceChange(FlexTableWidthKey.self) { available = $0 }
+    }
+}
+
+private struct FlexTableWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+struct FlexTableLayout: Layout {
+    var columnCount: Int
+    /// The width the table may use without scrolling; 0 until the first measurement.
+    var available: CGFloat
+
+    private var columns: Int { max(columnCount, 1) }
+
+    private func columnWidths(_ subviews: Subviews) -> [CGFloat] {
+        var ideal = [CGFloat](repeating: 0, count: columns)
+        for (index, subview) in subviews.enumerated() {
+            let column = index % columns
+            ideal[column] = max(ideal[column], subview.sizeThatFits(.unspecified).width)
+        }
+        // Short cells never wrap and long ones wrap between words: measured, a zero-width probe breaks inside words, so the floor is a fixed width.
+        let narrowest = ideal.map { min($0, 112) }
+        let idealTotal = ideal.reduce(0, +)
+        guard available > 0 else { return ideal.map { min($0, 240) } }
+        if idealTotal <= available {
+            let spare = available - idealTotal
+            return ideal.enumerated().map { $0.element + (idealTotal > 0 ? spare * $0.element / idealTotal : 0) }
+        }
+        let narrowestTotal = narrowest.reduce(0, +)
+        if narrowestTotal >= available { return narrowest }
+        let need = zip(ideal, narrowest).map { $0 - $1 }
+        let needTotal = need.reduce(0, +)
+        let room = available - narrowestTotal
+        return zip(narrowest, need).map { $0 + (needTotal > 0 ? room * $1 / needTotal : 0) }
+    }
+
+    private func rowHeights(_ subviews: Subviews, widths: [CGFloat]) -> [CGFloat] {
+        let rowCount = (subviews.count + columns - 1) / columns
+        var heights = [CGFloat](repeating: 0, count: rowCount)
+        for (index, subview) in subviews.enumerated() {
+            let row = index / columns
+            heights[row] = max(heights[row], subview.sizeThatFits(ProposedViewSize(width: widths[index % columns], height: nil)).height)
+        }
+        return heights
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        let widths = columnWidths(subviews)
+        return CGSize(width: widths.reduce(0, +), height: rowHeights(subviews, widths: widths).reduce(0, +))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard !subviews.isEmpty else { return }
+        let widths = columnWidths(subviews)
+        let heights = rowHeights(subviews, widths: widths)
+        var y = bounds.minY
+        for row in 0..<heights.count {
+            var x = bounds.minX
+            for column in 0..<columns {
+                let index = row * columns + column
+                guard index < subviews.count else { break }
+                subviews[index].place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(width: widths[column], height: heights[row]))
+                x += widths[column]
+            }
+            y += heights[row]
+        }
+    }
+}
+
+/// One table cell: text on the page background with a hairline under it (a heavier one under the header).
+struct FlexTableCell<Content: View>: View {
+    var alignment: Alignment = .leading
+    var isHeader = false
+    var isFirstColumn = false
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .padding(.leading, isFirstColumn ? 0 : 6)
+            .padding(.trailing, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Color(uiColor: .separator).opacity(isHeader ? 0.9 : 0.45))
+                    .frame(height: isHeader ? 1 : 0.5)
+            }
     }
 }

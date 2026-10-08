@@ -492,6 +492,8 @@ struct WiqoHomeView: View {
 
     private enum HomeMode: Hashable { case chat, act }
     @State private var mode: HomeMode = .chat
+    private var actHandoffs: NotificationCenter.Publisher { NotificationCenter.default.publisher(for: .wiqoOpenInAct) }
+    private var actProjectOpens: NotificationCenter.Publisher { NotificationCenter.default.publisher(for: .wiqoOpenProjectInAct) }
 
     var body: some View {
         NavigationStack {
@@ -502,6 +504,8 @@ struct WiqoHomeView: View {
                     .allowsHitTesting(mode == .chat)
                     .accessibilityHidden(mode != .chat)
                 ActView()
+                    .onReceive(actHandoffs) { _ in mode = .act }
+                    .onReceive(actProjectOpens) { _ in mode = .act }
                     .opacity(mode == .act ? 1 : 0)
                     .allowsHitTesting(mode == .act)
                     .accessibilityHidden(mode != .act)
@@ -1143,15 +1147,28 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
+    @State private var oauthProviders: [RovaBackendClient.OAuthProviderInfo] = RovaBackendClient.OAuthProviderInfo.builtIn
+    @State private var oauthConnections: [RovaBackendClient.OAuthConnection] = []
+    @State private var showingApps = false
+    @State private var showingPaywall = false
+    @State private var showingSignOutConfirmation = false
+    @State private var styleError: String?
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 22) {
-                    settingsNavigation
+                VStack(spacing: 18) {
+                    profileCard
+                    connectionsGroup
+                    styleGroup
+                    workGroup
+                    supportGroup
                 }
-                .padding(RovaDesign.screenPadding)
+                .padding(.horizontal, RovaDesign.screenPadding)
+                .padding(.top, 6)
+                .padding(.bottom, 28)
             }
-            .background(RovaDesign.canvas)
+            .background(WiqoSettingsStyle.canvas)
             .navigationTitle("Ayarlar")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1159,97 +1176,275 @@ struct SettingsView: View {
                     Button { dismiss() } label: { Text("Kapat").font(.body.weight(.medium)) }
                 }
             }
+            .sheet(isPresented: $showingApps, onDismiss: { Task { await loadConnections() } }) {
+                NavigationStack {
+                    ConnectedAccountsView()
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Bitti") { showingApps = false }.fontWeight(.medium)
+                            }
+                        }
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showingPaywall) {
+                PaywallView(subscriptionStore: subscriptionStore)
+            }
+            .wiqoConfirmation("Wiqo hesabından çıkmak istediğine emin misin?", isPresented: $showingSignOutConfirmation) {
+                Button("Çıkış yap", role: .destructive) { authSession.signOut(); dismiss() }
+            }
         }
         .wiqoToastHost(level: 1)
         .task {
-            await loadTasksAndAutomations()
-            await subscriptionStore.refreshIfStale(maxAge: 60)
+            async let work: Void = loadTasksAndAutomations()
+            async let connections: Void = loadConnections()
+            async let plan: Void = subscriptionStore.refreshIfStale(maxAge: 60)
+            _ = await (work, connections, plan)
         }
     }
 
-    private var settingsNavigation: some View {
-        WiqoSettingsGroup {
-            NavigationLink {
-                PCSettingsView(model: model, subscriptionStore: subscriptionStore)
-            } label: {
-                settingsNavigationRow(title: "PC", systemImage: "laptopcomputer", value: model.isPaired ? model.userFacingConnectionLabel : "Bağla")
-            }
-            .buttonStyle(WiqoRowButtonStyle())
+    // MARK: Profile and plan
 
-            NavigationLink {
-                tasksSettingsPage
-            } label: {
-                settingsNavigationRow(title: "Görevler", systemImage: "checklist", value: taskNavigationValue)
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-
-            NavigationLink {
-                WiqoActivityView(model: model)
-            } label: {
-                settingsNavigationRow(title: "Etkinlik", systemImage: "clock.arrow.circlepath", value: "Yapılanlar ve bekleyenler")
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-
-            NavigationLink {
-                WiqoMemoryView()
-            } label: {
-                settingsNavigationRow(title: "Hafıza", systemImage: "brain.head.profile", value: "Gör ve yönet")
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-
-            NavigationLink {
-                WiqoGoalsView()
-            } label: {
-                settingsNavigationRow(title: "Hedefler", systemImage: "target", value: "İlerlemeyi gör")
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-
+    private var profileCard: some View {
+        let info = subscriptionStore.info
+        return VStack(spacing: 12) {
             NavigationLink {
                 AccountSettingsView(profileStore: profileStore, authSession: authSession, subscriptionStore: subscriptionStore)
             } label: {
-                settingsNavigationRow(title: "Hesap", systemImage: "person.crop.circle", value: profileStore.profile.visibleName)
+                HStack(spacing: 12) {
+                    AvatarView(profile: profileStore.profile, image: profileStore.avatarImage, size: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(profileStore.profile.visibleName)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(profileStore.profile.email)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    Text(info.label)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(WiqoTheme.tint(Color.accentColor), in: Capsule())
+                    WiqoChevron()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 14) {
+                compactUsage("Mesaj", info.usage.messages)
+                compactUsage("Görsel", info.usage.images)
+                if info.tier == "free" {
+                    Button("Yükselt") { showingPaywall = true }
+                        .buttonStyle(.wiqoPill(.accent))
+                }
+            }
+        }
+        .padding(14)
+        .wiqoGlass()
+    }
+
+    private func compactUsage(_ title: String, _ counter: SubscriptionInfo.UsageCounter) -> some View {
+        let ratio = counter.limit > 0 ? min(1, Double(counter.used) / Double(counter.limit)) : 0
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(title).font(.caption2).foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Text("\(counter.used)/\(counter.limit)").font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            ProgressView(value: ratio)
+                .tint(ratio > 0.85 ? WiqoTheme.orange : Color.accentColor)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Bugünkü \(title.lowercased()) kullanımı \(counter.used) / \(counter.limit)")
+    }
+
+    // MARK: Connections
+
+    private var connectionsGroup: some View {
+        WiqoSettingsGroup(title: "Bağlantılar") {
+            NavigationLink {
+                PCSettingsView(model: model, subscriptionStore: subscriptionStore)
+            } label: {
+                WiqoRow(systemImage: "laptopcomputer", title: "PC", showsDivider: true) {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(model.isPaired && model.userFacingConnectionLabel != "PC kapalı" ? WiqoTheme.green : Color.secondary.opacity(0.4))
+                            .frame(width: 7, height: 7)
+                        Text(model.isPaired ? model.userFacingConnectionLabel : "Bağla")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        WiqoChevron()
+                    }
+                }
             }
             .buttonStyle(WiqoRowButtonStyle())
 
-            NavigationLink {
-                advancedSettingsPage
-            } label: {
-                settingsNavigationRow(title: "Gelişmiş", systemImage: "slider.horizontal.3", value: "Yasal ve destek")
+            Button { showingApps = true } label: {
+                WiqoRow(systemImage: "square.grid.2x2", title: "Uygulamalar", showsDivider: false) {
+                    HStack(spacing: 6) {
+                        if appsNeedingReconnect > 0 {
+                            Text("Yeniden bağla")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(WiqoTheme.red)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(WiqoTheme.tint(WiqoTheme.red), in: Capsule())
+                        } else {
+                            Text(appsSummary)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        WiqoChevron()
+                    }
+                }
             }
             .buttonStyle(WiqoRowButtonStyle())
         }
     }
 
-    private func settingsNavigationRow(title: String, systemImage: String, value: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 24)
-            Text(title)
-                .font(.body.weight(.medium))
-                .foregroundStyle(.primary)
-            Spacer(minLength: 8)
-            Text(value)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            WiqoChevron()
+    private var appsNeedingReconnect: Int {
+        oauthConnections.filter { $0.status == "needs_reconnect" }.count
+    }
+
+    private var appsSummary: String {
+        let connected = oauthConnections.count
+        let names = oauthProviders.filter { provider in oauthConnections.contains { $0.provider == provider.id } }.map(\.name)
+        if connected == 0 { return "\(oauthProviders.count) uygulama" }
+        return names.count <= 2 ? names.joined(separator: ", ") : "\(connected) bağlı"
+    }
+
+    private func loadConnections() async {
+        async let providers = RovaBackendClient.fetchOAuthProviders()
+        async let connections = try? RovaBackendClient.fetchOAuthConnections()
+        oauthProviders = await providers
+        oauthConnections = (await connections) ?? oauthConnections
+    }
+
+    // MARK: Style (saved as it changes)
+
+    private var styleGroup: some View {
+        WiqoSettingsGroup(title: "Wiqo'nun tarzı") {
+            WiqoRow(systemImage: "text.bubble", title: "Yanıt tonu", showsDivider: true) {
+                Picker("Yanıt tonu", selection: styleBinding(\.tone, key: "tone")) {
+                    Text("Varsayılan").tag(String?.none)
+                    Text("Samimi").tag(String?.some("samimi"))
+                    Text("Profesyonel").tag(String?.some("profesyonel"))
+                    Text("Kısa ve öz").tag(String?.some("kisa"))
+                    Text("Detaylı").tag(String?.some("detayli"))
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .tint(.secondary)
+            }
+            WiqoRow(systemImage: "globe", title: "Yanıt dili", showsDivider: true) {
+                Picker("Yanıt dili", selection: styleBinding(\.language, key: "language")) {
+                    Text("Otomatik").tag(String?.none)
+                    Text("Türkçe").tag(String?.some("tr"))
+                    Text("English").tag(String?.some("en"))
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .tint(.secondary)
+            }
+            WiqoRow(systemImage: "lightbulb", title: "Proaktif öneriler", showsDivider: false) {
+                Toggle("Proaktif öneriler", isOn: Binding(
+                    get: { profileStore.profile.proactiveEnabled },
+                    set: { value in saveStyle(["proactiveEnabled": value]) }
+                ))
+                .labelsHidden()
+            }
+            if let styleError {
+                Text(styleError)
+                    .font(.caption)
+                    .foregroundStyle(WiqoTheme.red)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 52)
-        .contentShape(Rectangle())
+    }
+
+    private func styleBinding(_ keyPath: KeyPath<UserProfile, String?>, key: String) -> Binding<String?> {
+        Binding(
+            get: { profileStore.profile[keyPath: keyPath] },
+            set: { value in saveStyle([key: value ?? NSNull()]) }
+        )
+    }
+
+    private func saveStyle(_ changes: [String: Any]) {
+        Task {
+            do {
+                try await profileStore.update(changes)
+                styleError = nil
+                UISelectionFeedbackGenerator().selectionChanged()
+            } catch {
+                styleError = "Kaydedilemedi. Bağlantını kontrol edip tekrar dene."
+            }
+        }
+    }
+
+    // MARK: Wiqo's work
+
+    private var workGroup: some View {
+        WiqoSettingsGroup(title: "Wiqo'nun işleri") {
+            NavigationLink { WiqoMemoryView() } label: {
+                WiqoRow(systemImage: "brain.head.profile", title: "Hafıza", showsDivider: true)
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+            NavigationLink { tasksSettingsPage } label: {
+                WiqoRow(systemImage: "checklist", title: "Görevler ve otomasyonlar", showsDivider: true) {
+                    HStack(spacing: 6) {
+                        Text(taskNavigationValue).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        WiqoChevron()
+                    }
+                }
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+            NavigationLink { WiqoGoalsView() } label: {
+                WiqoRow(systemImage: "target", title: "Hedefler", showsDivider: true)
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+            NavigationLink { WiqoActivityView(model: model) } label: {
+                WiqoRow(systemImage: "clock.arrow.circlepath", title: "Etkinlik", showsDivider: false)
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+        }
     }
 
     private var taskNavigationValue: String {
         if !reviewItems.isEmpty { return "İncele" }
-        if !activeAutomations.isEmpty { return "(activeAutomations.count) otomasyon" }
-        return pendingTasks.isEmpty ? "Boş" : "(pendingTasks.count) bekliyor"
+        if !activeAutomations.isEmpty { return "\(activeAutomations.count) aktif" }
+        return pendingTasks.isEmpty ? "" : "\(pendingTasks.count) bekliyor"
+    }
+
+    // MARK: Support and sign-out
+
+    private var supportGroup: some View {
+        WiqoSettingsGroup {
+            NavigationLink { legalPage } label: {
+                WiqoRow(systemImage: "questionmark.circle", title: "Destek ve yasal", showsDivider: true)
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+            Button { showingSignOutConfirmation = true } label: {
+                WiqoRow(systemImage: "rectangle.portrait.and.arrow.right", title: "Çıkış yap", isDestructive: true, showsDivider: false) { EmptyView() }
+            }
+            .buttonStyle(WiqoRowButtonStyle())
+        }
     }
 
     private var tasksSettingsPage: some View {
         ScrollView {
-            VStack(spacing: 22) {
+            VStack(spacing: 18) {
                 if taskAutomationError != nil || !pendingTasks.isEmpty || !activeAutomations.isEmpty || !reviewItems.isEmpty {
                     tasksAutomationsSection
                 } else {
@@ -1259,23 +1454,18 @@ struct SettingsView: View {
             }
             .padding(RovaDesign.screenPadding)
         }
-        .background(RovaDesign.canvas)
-        .navigationTitle("Görevler")
+        .background(WiqoSettingsStyle.canvas)
+        .navigationTitle("Görevler ve otomasyonlar")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var advancedSettingsPage: some View {
+    private var legalPage: some View {
         ScrollView {
-            VStack(spacing: 22) {
-                legalSection
-                WiqoSettingsGroup(title: "Sürüm") {
-                    versionFooter
-                }
-            }
-            .padding(RovaDesign.screenPadding)
+            legalSection
+                .padding(RovaDesign.screenPadding)
         }
-        .background(RovaDesign.canvas)
-        .navigationTitle("Gelişmiş")
+        .background(WiqoSettingsStyle.canvas)
+        .navigationTitle("Destek ve yasal")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -1457,17 +1647,6 @@ struct SettingsView: View {
         .buttonStyle(WiqoRowButtonStyle())
     }
 
-    private var versionFooter: some View {
-        let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "-"
-        let build = info?["CFBundleVersion"] as? String ?? "-"
-        return Text("Wiqo \(version) (\(build))")
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-            .frame(maxWidth: .infinity)
-            .padding(.bottom, 8)
-    }
-
     private func loadTasksAndAutomations() async {
         do {
             async let fetchedTasks = RovaBackendClient.fetchTasks()
@@ -1526,6 +1705,9 @@ struct PCSettingsView: View {
     @State private var renamingDeviceID: String?
     @State private var renameText = ""
     @State private var trustGrants: [RovaBackendClient.TrustGrant] = []
+    /// Remote control and PC settings are two different jobs: one tab each, instead of one long page with a "Gelişmiş" fold.
+    @State private var pcTab: PCTab = .control
+    private enum PCTab: Hashable { case control, settings }
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
 
@@ -1540,10 +1722,26 @@ struct PCSettingsView: View {
                     if subscriptionStore.info.pcAllowed {
                         if model.isPaired {
                             statusCard
-                            quickActionsCard
-                            mediaCard
-                            displayCard
-                            advancedPCSettingsSection
+                            Picker("Bölüm", selection: $pcTab) {
+                                Text("Kontrol").tag(PCTab.control)
+                                Text("Ayarlar").tag(PCTab.settings)
+                            }
+                            .pickerStyle(.segmented)
+                            if pcTab == .control {
+                                quickActionsCard
+                                mediaCard
+                                displayCard
+                                appsCard
+                                clipboardCard
+                                urlCard
+                            } else {
+                                if !backendDevices.isEmpty { devicesCard }
+                                capabilitiesCard
+                                connectionActionsCard
+                                if !trustGrants.isEmpty { trustGrantsCard }
+                                activityCard
+                            }
+                            if let error = model.lastError { errorCard(error) }
                         } else {
                             pairingPromptCard
                         }
@@ -1553,8 +1751,8 @@ struct PCSettingsView: View {
                 }
                 .padding(RovaDesign.screenPadding)
             }
-            .background(RovaDesign.canvas)
-            .navigationTitle("PC Ayarları")
+            .background(WiqoSettingsStyle.canvas)
+            .navigationTitle("PC")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -1791,28 +1989,6 @@ struct PCSettingsView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var advancedPCSettingsSection: some View {
-        RovaCard {
-            DisclosureGroup {
-                VStack(spacing: RovaDesign.cardSpacing) {
-                    if !backendDevices.isEmpty { devicesCard }
-                    capabilitiesCard
-                    appsCard
-                    clipboardCard
-                    urlCard
-                    connectionActionsCard
-                    if !trustGrants.isEmpty { trustGrantsCard }
-                    activityCard
-                    if let error = model.lastError { errorCard(error) }
-                }
-                .padding(.top, 8)
-            } label: {
-                Label("Gelişmiş PC ayarları", systemImage: "slider.horizontal.3")
-                    .font(.subheadline.weight(.semibold))
             }
         }
     }

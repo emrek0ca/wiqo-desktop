@@ -114,7 +114,25 @@ struct ConfirmationSheetView: View {
     let isProcessing: Bool
     let onCancel: () -> Void
     let onConfirm: () -> Void
+    let onConfirmTaskReads: () -> Void
+    let onConfirmTaskFiles: () -> Void
     let onConfirmAndAlwaysAllow: () -> Void
+
+    /// Everything still waiting, in order: the person sees the whole job, not one step at a time.
+    private var waitingSteps: [PlannedCommand] {
+        bubble.steps.filter { !bubble.executedStepIDs.contains($0.id) && ($0.isDestructive || $0.requiresUserPresence) }
+    }
+
+    private func isReversible(_ step: PlannedCommand) -> Bool {
+        !step.isDestructive && RovaOwnFolders.isAutoReadable(type: step.type, payload: step.payload)
+            || RovaOwnFolders.isTaskWritable(type: step.type, payload: step.payload)
+    }
+
+    /// The task approval for file work is offered when this step is reversible file work and nothing waiting is a delete, an overwrite or a send.
+    private var offersTaskFiles: Bool {
+        guard let step = currentStep, RovaOwnFolders.isTaskWritable(type: step.type, payload: step.payload) else { return false }
+        return true
+    }
 
     private var currentStep: PlannedCommand? {
         bubble.steps.first { step in
@@ -161,8 +179,30 @@ struct ConfirmationSheetView: View {
                             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
                         }
 
+                        if waitingSteps.count > 1 {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Bu işte onay bekleyen \(waitingSteps.count) adım var")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                ForEach(Array(waitingSteps.prefix(8).enumerated()), id: \.element.id) { index, step in
+                                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                        Text("\(index + 1).").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                        Text(step.summary).font(.footnote).foregroundStyle(.primary)
+                                        Spacer(minLength: 4)
+                                        Text(isReversible(step) ? "geri alınabilir" : "geri alınamaz")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(isReversible(step) ? Color.green : Color.orange)
+                                    }
+                                }
+                                if waitingSteps.count > 8 { Text("… ve \(waitingSteps.count - 8) adım daha").font(.caption).foregroundStyle(.secondary) }
+                            }
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
+                        }
+
                         Text(laterConfirmationCount > 0
-                             ? "İşlem sırayla ilerleyecek. Sonraki izin gerektiğinde ayrıca sorulacak."
+                             ? "İşlem sırayla ilerleyecek. Aynı türden geri alınabilir adımlar için aşağıdan bu görev boyunca izin verebilirsin; silme ve üzerine yazma yine ayrıca sorulur."
                              : "Onayından sonra bu adım çalıştırılacak.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -191,6 +231,19 @@ struct ConfirmationSheetView: View {
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 8) {
                     WiqoActionButton(title: "Onayla", isLoading: isProcessing) { onConfirm() }
+                    if let step = currentStep, !step.isDestructive, RovaOwnFolders.isAutoReadable(type: step.type, payload: step.payload) {
+                        WiqoActionButton(title: "Bu görev boyunca dosya okumaya izin ver", kind: .secondary, isLoading: isGranting) { onConfirmTaskReads() }
+                            .disabled(isProcessing)
+                        Text("Masaüstü, Belgeler ve İndirilenler. Yazma, silme ve gönderme dahil değil.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if offersTaskFiles {
+                        WiqoActionButton(title: "Bu görev boyunca dosya işlerine izin ver", kind: .secondary, isLoading: isGranting) { onConfirmTaskFiles() }
+                            .disabled(isProcessing)
+                        Text("Okuma, klasör açma, taşıma, kopyalama, yeniden adlandırma ve PDF/zip. Silme, üzerine yazma ve dışarı gönderme hariç; görev bitince izin biter.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+
 
                     if qualifiesForAlwaysAllow {
                         WiqoActionButton(title: "Onayla, her zaman izin ver", kind: .secondary, isLoading: isGranting) {
@@ -208,5 +261,76 @@ struct ConfirmationSheetView: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(isProcessing)
+    }
+}
+
+/// A durable task plan: one stable row per goal, updated in place from backend receipts.
+struct TaskPlanMiniCard: View {
+    let widget: RovaBackendClient.CopilotResultWidget
+    @State private var expanded: Set<String> = []
+
+    var body: some View {
+        let rows = widget.planSteps ?? []
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Görev adımları", systemImage: "list.number")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(rows.filter { $0.status == "verified" }.count)/\(rows.count)")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                let active = ["running", "awaiting_confirmation", "waiting_device", "failed"].contains(row.status)
+                Button {
+                    if expanded.contains(row.id) { expanded.remove(row.id) } else { expanded.insert(row.id) }
+                } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        ZStack {
+                            Circle().fill(color(row.status).opacity(0.12)).frame(width: 26, height: 26)
+                            if row.status == "verified" {
+                                Image(systemName: "checkmark").font(.caption.weight(.semibold))
+                            } else if row.status == "running" {
+                                ProgressView().controlSize(.mini)
+                            } else { Text("\(index + 1)").font(.caption.monospacedDigit()) }
+                        }.foregroundStyle(color(row.status))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(row.title).font(.subheadline).foregroundStyle(.primary)
+                            Text(label(row.status)).font(.caption2.weight(.medium)).foregroundStyle(color(row.status))
+                            if active || expanded.contains(row.id) {
+                                Text(row.message ?? row.expectedResult)
+                                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(index + 1). \(row.title). \(label(row.status))")
+            }
+        }
+        .padding(12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
+    }
+
+    private func color(_ status: String) -> Color {
+        switch status {
+        case "verified": return .green
+        case "failed": return .red
+        case "awaiting_confirmation", "waiting_device": return .orange
+        case "running": return .accentColor
+        default: return .secondary
+        }
+    }
+    private func label(_ status: String) -> String {
+        switch status {
+        case "verified": return "Doğrulandı"
+        case "failed": return "Tamamlanamadı"
+        case "awaiting_confirmation": return "Onay bekliyor"
+        case "waiting_device": return "Mac bekleniyor"
+        case "running": return "Çalışıyor"
+        default: return "Bekliyor"
+        }
     }
 }

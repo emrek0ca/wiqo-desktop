@@ -405,36 +405,24 @@ struct ConnectorTableCard: View {
             }
             .padding(12)
             Divider().padding(.horizontal, 12)
-            ScrollView(.horizontal, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    if !columns.isEmpty {
-                        HStack(spacing: 0) {
-                            ForEach(Array(columns.enumerated()), id: \.offset) { _, cell in
-                                Text(cell)
-                                    .font(.caption.weight(.semibold))
-                                    .lineLimit(2)
-                                    .frame(width: 112, alignment: .leading)
-                                    .padding(8)
-                                    .background(Color.primary.opacity(0.04))
-                            }
-                        }
-                    }
-                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                        HStack(spacing: 0) {
-                            ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                                Text(cell.isEmpty ? "—" : cell)
-                                    .font(.caption)
-                                    .lineLimit(2)
-                                    .frame(width: 112, alignment: .leading)
-                                    .padding(8)
-                            }
-                        }
-                        Divider()
+            let columnCount = max(columns.count, rows.map(\.count).max() ?? 1, 1)
+            FlexTable(columnCount: columnCount) {
+                ForEach(0..<columnCount, id: \.self) { column in
+                    FlexTableCell(isHeader: true, isFirstColumn: column == 0) {
+                        Text(columns[safe: column] ?? "").font(.caption.weight(.semibold))
                     }
                 }
-                .fixedSize(horizontal: true, vertical: false)
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    ForEach(0..<columnCount, id: \.self) { column in
+                        let cell = row[safe: column] ?? ""
+                        FlexTableCell(isFirstColumn: column == 0) {
+                            Text(cell.isEmpty ? "—" : cell).font(.caption)
+                        }
+                    }
+                }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
             if totalRows > rows.count {
                 Text("\(totalRows - rows.count) satır daha")
                     .font(.caption2)

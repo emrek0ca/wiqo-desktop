@@ -1388,3 +1388,130 @@ struct NamedAgentsView: View {
         }
     }
 }
+
+/// One-tap answers under Wiqo's last question: "Google Chrome'u mu kapatayım?" gets Evet / Hayır, and a question that names candidates
+/// ("fatura-eylul.pdf mi, fatura-agustos.pdf mi?") gets one chip per candidate. Typing still works; the chips only save the typing.
+struct QuickReplyChips: View {
+    let options: [String]
+    let onPick: (String) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(options, id: \.self) { option in
+                    Button {
+                        WiqoHaptics.selection()
+                        onPick(option)
+                    } label: {
+                        Text(option)
+                            .font(.subheadline.weight(.medium))
+                            .lineLimit(1)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .wiqoGlass(radius: 18)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .accessibilityLabel("Hızlı yanıtlar")
+    }
+
+    /// The answers a reply invites, or none when it asks nothing that a chip can answer.
+    static func options(for reply: String) -> [String] {
+        let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let questionEnd = text.lastIndex(of: "?") else { return [] }
+        let question = String(text[..<questionEnd])
+        // Sentences end at ". ", "!" or a line break; a dot inside "fatura-eylul.pdf" does not end one.
+        let lastSentence = question.components(separatedBy: "\n").last?
+            .replacingOccurrences(of: #"^.*[.!]\s+"#, with: "", options: .regularExpression) ?? question
+        // Candidates the reply names (quoted, bold or file names), read from the whole short reply: "(örneğin “a.pdf” veya “b.pdf”)" follows the "?".
+        let scope = text.count <= 400 ? text : lastSentence
+        var candidates: [String] = []
+        let patterns = [#"[“"«]([^”"»]{2,60})[”"»]"#, #"\*\*([^*]{2,60})\*\*"#, #"([\p{L}\p{N}_.\-\u2011]+\.(?:pdf|docx?|xlsx?|pptx?|csv|txt|png|jpe?g))"#]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(scope.startIndex..., in: scope)
+            for match in regex.matches(in: scope, range: range) {
+                guard let found = Range(match.range(at: 1), in: scope) else { continue }
+                let value = String(scope[found]).trimmingCharacters(in: .whitespaces)
+                if !candidates.contains(where: { $0.caseInsensitiveCompare(value) == .orderedSame }) { candidates.append(value) }
+            }
+        }
+        if candidates.count >= 2 { return Array(candidates.prefix(3)) }
+        // A yes/no question: Turkish asks it with the mı/mi/mu/mü particle. A polite sign-off ("başka bir şey ister misin?") is not a decision.
+        let folded = lastSentence.lowercased()
+        if folded.contains("başka bir") || folded.contains("yardımcı olabilir") { return [] }
+        if folded.range(of: #"\b(m[ıiuü])(y[ıiuü]m|s[ıiuü]n|y[ıiuü]z|s[ıiuü]n[ıiuü]z)?\s*$"#, options: .regularExpression) != nil
+            || folded.range(of: #"\b(m[ıiuü])\b"#, options: .regularExpression) != nil && folded.count < 160 {
+            return ["Evet", "Hayır"]
+        }
+        return []
+    }
+}
+
+
+extension Notification.Name {
+    /// A chat card asks to start (or change) something in Act: the Home screen switches to Act and the Act tab takes the request.
+    static let wiqoOpenInAct = Notification.Name("wiqo.openInAct")
+    /// Open an existing Act project (a card that was just turned into one).
+    static let wiqoOpenProjectInAct = Notification.Name("wiqo.openProjectInAct")
+}
+
+/// What a handoff card sends Act.
+struct ActOpenRequest {
+    let request: String
+    let operation: String
+    let projectID: String?
+
+    init(request: String, operation: String, projectID: String?) {
+        self.request = request
+        self.operation = operation
+        self.projectID = projectID
+    }
+}
+
+/// The reply was a project, not a small tool: one card, one button, and Act takes it from there (backend: groq/turnBranches.ts, act_handoff).
+struct WiqoActHandoffCard: View {
+    let widget: RovaBackendClient.CopilotResultWidget
+    @State private var started = false
+
+    private var isNew: Bool { (widget.operation ?? "create") == "create" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "hammer.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(WiqoTheme.ink)
+                    .frame(width: 34, height: 34)
+                    .background(WiqoTheme.tint(WiqoTheme.ink), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isNew ? "Proje olarak hazır" : (widget.projectName.map { "“\($0)” projesi" } ?? "Açık proje"))
+                        .font(.subheadline.weight(.semibold))
+                    Text(widget.request ?? "")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+                Spacer(minLength: 0)
+            }
+            Button {
+                started = true
+                WiqoHaptics.selection()
+                NotificationCenter.default.post(name: .wiqoOpenInAct, object: ActOpenRequest(
+                    request: widget.request ?? "", operation: widget.operation ?? "create", projectID: widget.projectId))
+            } label: {
+                Label(started ? "Act'te açıldı" : (isNew ? "Act'te başlat" : "Act'te uygula"), systemImage: started ? "checkmark" : "arrow.up.right")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.wiqoPill(.accent))
+            .disabled(started)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wiqoGlass(radius: 16)
+        .accessibilityElement(children: .contain)
+    }
+}

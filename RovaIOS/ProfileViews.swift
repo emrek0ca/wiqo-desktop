@@ -188,31 +188,15 @@ struct AccountSettingsView: View {
                 Text("Wiqo sana bu şekilde hitap eder.")
             }
 
-            Section("Wiqo'nun tarzı") {
-                Picker("Yanıt tonu", selection: $draft.tone) {
-                    Text("Varsayılan").tag(String?.none)
-                    Text("Samimi").tag(String?.some("samimi"))
-                    Text("Profesyonel").tag(String?.some("profesyonel"))
-                    Text("Kısa ve öz").tag(String?.some("kisa"))
-                    Text("Detaylı").tag(String?.some("detayli"))
-                }
-                Picker("Yanıt dili", selection: $draft.language) {
-                    Text("Otomatik").tag(String?.none)
-                    Text("Türkçe").tag(String?.some("tr"))
-                    Text("English").tag(String?.some("en"))
-                }
-            }
-
             Section {
                 LabeledContent("Konum") {
                     TextField("Örn. İstanbul", text: binding(\.location))
                         .multilineTextAlignment(.trailing)
                 }
-                Toggle("Proaktif öneriler", isOn: $draft.proactiveEnabled)
             } header: {
                 Text("Kişiselleştirme")
             } footer: {
-                Text("Konum; hava durumu ve yakındaki öneriler için kullanılır. Proaktif öneriler açıkken Wiqo sana uygun zamanda fikir sunar.")
+                Text("Konum; hava durumu ve yakındaki öneriler için kullanılır.")
             }
 
             Section("Hesap") {
@@ -220,22 +204,6 @@ struct AccountSettingsView: View {
                 if let joined = joinedText {
                     LabeledContent("Üyelik", value: joined)
                 }
-            }
-
-            Section("Plan") {
-                let info = subscriptionStore.info
-                HStack {
-                    Text(info.label)
-                    Spacer()
-                    Button(info.tier == "free" ? "Yükselt" : "Planlar") { showingPaywall = true }
-                        .buttonStyle(.wiqoPill(info.tier == "free" ? .accent : .secondary))
-                }
-                WiqoUsageBar(title: "Bugünkü mesajlar", used: info.usage.messages.used, limit: info.usage.messages.limit)
-                WiqoUsageBar(title: "Bugünkü görseller", used: info.usage.images.used, limit: info.usage.images.limit)
-            }
-
-            Section("Bağlantılar") {
-                NavigationLink("Bağlı hesaplar") { ConnectedAccountsView() }
             }
 
             if accountInfo?.isFoundingMember == true || firstUnusedInviteCode != nil {
@@ -252,10 +220,6 @@ struct AccountSettingsView: View {
             }
 
             Section {
-                Button("Çıkış yap", role: .destructive) { showingSignOutConfirmation = true }
-            }
-
-            Section {
                 Button("Hesabı sil", role: .destructive) {
                     deletePassword = ""
                     showingDeleteAccount = true
@@ -266,7 +230,9 @@ struct AccountSettingsView: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
-        .navigationTitle("Hesap")
+        .scrollContentBackground(.hidden)
+        .background(WiqoSettingsStyle.canvas)
+        .navigationTitle("Profil")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
