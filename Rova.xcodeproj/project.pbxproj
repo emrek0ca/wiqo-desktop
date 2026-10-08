@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E8A78E777F3A43B7342F5D66 /* CopilotResultWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E735A78E777F3A43B7342F5D /* CopilotResultWidgetView.swift */; };
 		E88948E2CA54BB90FD8C7B27 /* PCSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7178948E2CA54BB90FD8C7B /* PCSettingsView.swift */; };
 		E8DE96C56CBAC202420A47BC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7EEDE96C56CBAC202420A47 /* SettingsView.swift */; };
 		E8F77020CC2C2C338D2F0365 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7F5F77020CC2C2C338D2F03 /* PairingView.swift */; };
@@ -194,6 +195,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E735A78E777F3A43B7342F5D /* CopilotResultWidgetView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotResultWidgetView.swift; sourceTree = "<group>"; };
 		E7178948E2CA54BB90FD8C7B /* PCSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PCSettingsView.swift; sourceTree = "<group>"; };
 		E7EEDE96C56CBAC202420A47 /* SettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E7F5F77020CC2C2C338D2F03 /* PairingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
@@ -532,6 +534,7 @@
 				AAAFA55B3331D4116B3819B3 /* ArtifactPreview.swift */,
 				395FF78233CB35CC80BB3B64 /* Billing.swift */,
 				91687FA6CF10762A30145E6C /* PaywallView.swift */,
+				E735A78E777F3A43B7342F5D /* CopilotResultWidgetView.swift */,
 				E7178948E2CA54BB90FD8C7B /* PCSettingsView.swift */,
 				E7EEDE96C56CBAC202420A47 /* SettingsView.swift */,
 				E7F5F77020CC2C2C338D2F03 /* PairingView.swift */,
@@ -922,6 +925,7 @@
 				9D4EB581866295D210CBC5E7 /* ArtifactPreview.swift in Sources */,
 				61D8FCE0A1D986DE1A0BF730 /* Billing.swift in Sources */,
 				3B3989760AB287C6DF759DA5 /* PaywallView.swift in Sources */,
+				E8A78E777F3A43B7342F5D66 /* CopilotResultWidgetView.swift in Sources */,
 				E88948E2CA54BB90FD8C7B27 /* PCSettingsView.swift in Sources */,
 				E8DE96C56CBAC202420A47BC /* SettingsView.swift in Sources */,
 				E8F77020CC2C2C338D2F0365 /* PairingView.swift in Sources */,
