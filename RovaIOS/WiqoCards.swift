@@ -20,7 +20,7 @@ private enum WiqoTimerEngine {
         _ = try? await center.requestAuthorization(options: [.alert, .sound])
         let content = UNMutableNotificationContent()
         content.title = title
-        content.body = "Süre doldu."
+        content.body = String(localized: "Süre doldu.")
         content.sound = .default
         content.interruptionLevel = .timeSensitive
         try? await center.add(UNNotificationRequest(identifier: "wiqo.timer.\(key)", content: content, trigger: UNTimeIntervalNotificationTrigger(timeInterval: max(1, seconds), repeats: false)))
@@ -99,7 +99,7 @@ private struct WiqoTimerCard: View {
     private var total: TimeInterval { widget.seconds ?? 60 }
 
     var body: some View {
-        CardFrame(icon: "timer", title: widget.title ?? "Zamanlayıcı", subtitle: "\(WiqoTimerEngine.clock(total)) süreli") {
+        CardFrame(icon: "timer", title: widget.title ?? String(localized: "Zamanlayıcı"), subtitle: String(localized: "\(WiqoTimerEngine.clock(total)) süreli")) {
             TimelineView(.periodic(from: .now, by: 0.5)) { context in
                 let remaining = end.map { $0.timeIntervalSince(context.date) } ?? total
                 let finished = end != nil && remaining <= 0
@@ -112,10 +112,10 @@ private struct WiqoTimerCard: View {
                     }
                     .frame(width: 78, height: 78)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(finished ? "Süre doldu" : WiqoTimerEngine.clock(remaining))
+                        Text(finished ? String(localized: "Süre doldu") : WiqoTimerEngine.clock(remaining))
                             .font(.system(size: finished ? 22 : 34, weight: .bold, design: .rounded).monospacedDigit())
                         if end == nil {
-                            Button("Başlat") { Task { end = await WiqoTimerEngine.start(key: widget.stableID, seconds: total, title: widget.title ?? "Zamanlayıcı") } }
+                            Button("Başlat") { Task { end = await WiqoTimerEngine.start(key: widget.stableID, seconds: total, title: widget.title ?? String(localized: "Zamanlayıcı")) } }
                                 .buttonStyle(.wiqoPill(.accent))
                         } else {
                             Button(finished ? "Sıfırla" : "İptal") { WiqoTimerEngine.cancel(key: widget.stableID); end = nil }
@@ -157,7 +157,7 @@ private struct WiqoQuotesCard: View {
     let widget: RovaBackendClient.CopilotResultWidget
 
     var body: some View {
-        CardFrame(icon: "chart.line.uptrend.xyaxis", title: widget.title ?? "Piyasalar", subtitle: widget.subtitle) {
+        CardFrame(icon: "chart.line.uptrend.xyaxis", title: widget.title ?? String(localized: "Piyasalar"), subtitle: widget.subtitle) {
             VStack(spacing: 0) {
                 ForEach(Array((widget.quotes ?? []).enumerated()), id: \.offset) { index, quote in
                     let up = (quote.changePercent ?? 0) >= 0
@@ -199,7 +199,7 @@ private struct WiqoScoreCard: View {
     let widget: RovaBackendClient.CopilotResultWidget
 
     var body: some View {
-        CardFrame(icon: "sportscourt", title: widget.title ?? "Maçlar", subtitle: widget.subtitle) {
+        CardFrame(icon: "sportscourt", title: widget.title ?? String(localized: "Maçlar"), subtitle: widget.subtitle) {
             VStack(spacing: 0) {
                 ForEach(Array((widget.matches ?? []).enumerated()), id: \.offset) { index, match in
                     VStack(spacing: 4) {
@@ -266,7 +266,7 @@ private struct WiqoCalcCard: View {
     @State private var copied = false
 
     var body: some View {
-        CardFrame(icon: "equal.circle", title: widget.title ?? "Sonuç", subtitle: widget.subtitle?.capitalized) {
+        CardFrame(icon: "equal.circle", title: widget.title ?? String(localized: "Sonuç"), subtitle: widget.subtitle?.capitalized) {
             VStack(alignment: .leading, spacing: 6) {
                 if let expression = widget.expression { Text(expression).font(.subheadline).foregroundStyle(.secondary) }
                 HStack(alignment: .firstTextBaseline) {
@@ -288,7 +288,7 @@ private struct WiqoRecipeCard: View {
     @State private var running: [Int: Date] = [:]
 
     var body: some View {
-        CardFrame(icon: "fork.knife", title: widget.title ?? "Tarif", subtitle: [widget.servings.map { "\(Int($0)) kişilik" }, widget.minutes.map { "\(Int($0)) dk" }].compactMap { $0 }.joined(separator: " · ")) {
+        CardFrame(icon: "fork.knife", title: widget.title ?? String(localized: "Tarif"), subtitle: [widget.servings.map { String(localized: "\(Int($0)) kişilik") }, widget.minutes.map { "\(Int($0)) dk" }].compactMap { $0 }.joined(separator: " · ")) {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Malzemeler").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
@@ -329,13 +329,13 @@ private struct WiqoRecipeCard: View {
                 let remaining = end.timeIntervalSince(context.date)
                 HStack(spacing: 8) {
                     Image(systemName: "timer")
-                    Text(remaining > 0 ? WiqoTimerEngine.clock(remaining) : "Süre doldu").font(.footnote.weight(.semibold).monospacedDigit())
+                    Text(remaining > 0 ? WiqoTimerEngine.clock(remaining) : String(localized: "Süre doldu")).font(.footnote.weight(.semibold).monospacedDigit())
                     Button("İptal") { WiqoTimerEngine.cancel(key: key); running[index] = nil }.font(.footnote).buttonStyle(.plain).foregroundStyle(.secondary)
                 }
             }
         } else {
             Button {
-                Task { running[index] = await WiqoTimerEngine.start(key: key, seconds: seconds, title: "\(widget.title ?? "Tarif"): \(index + 1). adım") }
+                Task { running[index] = await WiqoTimerEngine.start(key: key, seconds: seconds, title: String(localized: "\(widget.title ?? "Tarif"): \(index + 1). adım")) }
             } label: { Label("\(max(1, Int((seconds / 60).rounded()))) dk zamanlayıcı", systemImage: "timer").font(.footnote.weight(.medium)) }
             .buttonStyle(.plain)
             .foregroundStyle(WiqoTheme.ink)
@@ -350,7 +350,7 @@ private struct WiqoTripCard: View {
     @State private var open: Set<Int> = [0]
 
     var body: some View {
-        CardFrame(icon: "suitcase", title: widget.title ?? "Gezi planı", subtitle: widget.subtitle) {
+        CardFrame(icon: "suitcase", title: widget.title ?? String(localized: "Gezi planı"), subtitle: widget.subtitle) {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array((widget.tripDays ?? []).enumerated()), id: \.offset) { index, day in
                     Button {
@@ -402,14 +402,14 @@ private struct WiqoMediaCard: View {
     private var encoded: String { query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query }
 
     private var services: [(id: String, name: String, icon: String, url: URL?)] {
-        [("apple_music", "Apple Music", "music.note", URL(string: "https://music.apple.com/tr/search?term=\(encoded)")),
+        [("apple_music", String(localized: "Apple Music"), "music.note", URL(string: "https://music.apple.com/tr/search?term=\(encoded)")),
          ("spotify", "Spotify", "waveform", URL(string: "https://open.spotify.com/search/\(encoded)")),
          ("youtube", "YouTube", "play.rectangle.fill", URL(string: "https://www.youtube.com/results?search_query=\(encoded)"))]
     }
 
     var body: some View {
         let preferred = widget.service ?? "apple_music"
-        CardFrame(icon: "music.note", title: query, subtitle: "Dinlemek için bir uygulama seç") {
+        CardFrame(icon: "music.note", title: query, subtitle: String(localized: "Dinlemek için bir uygulama seç")) {
             VStack(spacing: 8) {
                 ForEach(services.sorted { $0.id == preferred && $1.id != preferred }, id: \.id) { service in
                     Button { if let url = service.url { openURL(url) } } label: {
@@ -430,7 +430,7 @@ private struct WiqoChecklistCard: View {
 
     var body: some View {
         let items = widget.checklist ?? []
-        CardFrame(icon: "checklist", title: widget.title ?? "Liste", subtitle: "\(checked.count)/\(items.count) tamamlandı") {
+        CardFrame(icon: "checklist", title: widget.title ?? String(localized: "Liste"), subtitle: String(localized: "\(checked.count)/\(items.count) tamamlandı")) {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                     Button {
@@ -471,7 +471,7 @@ private struct WiqoContactCard: View {
     @State private var phase: Phase = .loading
 
     var body: some View {
-        CardFrame(icon: "person.crop.circle", title: widget.contactQuery ?? widget.title ?? "Kişi", subtitle: "Rehberinden") {
+        CardFrame(icon: "person.crop.circle", title: widget.contactQuery ?? widget.title ?? String(localized: "Kişi"), subtitle: String(localized: "Rehberinden")) {
             switch phase {
             case .loading:
                 ProgressView().frame(maxWidth: .infinity)

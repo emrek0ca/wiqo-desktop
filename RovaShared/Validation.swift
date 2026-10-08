@@ -102,59 +102,59 @@ public enum RovaValidation {
         switch request.type {
         case .getSystemStatus, .ping, .lockMac, .sleepMac, .displaySleep, .toggleMute, .listCalendarEvents, .listDesktopFiles, .listReminders, .getClipboardText, .getClipboardHistory, .listRunningApplications:
             guard request.payload == .none else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Bu komut payload kabul etmiyor.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Bu komut payload kabul etmiyor."))
             }
         case .openApplication:
             guard case .application = request.payload else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Uygulama seçimi geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Uygulama seçimi geçersiz."))
             }
         case .openApplicationByName:
             guard case .applicationQuery(let query) = request.payload,
                   isSafeText(query, maxLength: 200) else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Uygulama arama adı geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Uygulama arama adı geçersiz."))
             }
         case .controlApplication:
             guard case .applicationControl(let application) = request.payload,
                   isSafeText(application.target, maxLength: 200),
                   application.bundleIdentifier.map(isValidBundleIdentifier) ?? true,
                   !application.force || application.action == .quit else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Uygulama eylemi veya hedefi geçersiz.", category: "validation")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Uygulama eylemi veya hedefi geçersiz."), category: "validation")
             }
         case .quitApplication:
             guard case .application = request.payload else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Kapatılacak uygulama seçimi geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Kapatılacak uygulama seçimi geçersiz."))
             }
         case .openURL:
             guard case .url(let value) = request.payload, isAllowedURL(value) else {
-                return RovaError(code: "INVALID_URL", message: "Yalnızca geçerli http veya https URL’leri açılabilir.")
+                return RovaError(code: "INVALID_URL", message: String(localized: "Yalnızca geçerli http veya https URL’leri açılabilir."))
             }
         case .setVolume:
             guard case .volume(let level) = request.payload, (0...100).contains(level) else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Ses seviyesi 0 ile 100 arasında olmalıdır.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Ses seviyesi 0 ile 100 arasında olmalıdır."))
             }
         case .setBrightness:
             guard case .brightness(let level) = request.payload, (0...100).contains(level) else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Parlaklık 0 ile 100 arasında olmalıdır.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Parlaklık 0 ile 100 arasında olmalıdır."))
             }
         case .setClipboardText:
             guard case .clipboardText(let text) = request.payload, !text.isEmpty, text.count <= 10_000 else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Pano metni 1 ile 10.000 karakter arasında olmalıdır.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Pano metni 1 ile 10.000 karakter arasında olmalıdır."))
             }
         case .mediaControl:
             guard case .media = request.payload else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Medya komutu geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Medya komutu geçersiz."))
             }
         case .saveTextFile:
             guard case .textFile(let file) = request.payload, isValidDesktopFilename(file.filename),
                   !file.content.isEmpty, file.content.count <= 200_000 else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Dosya adı veya içeriği geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Dosya adı veya içeriği geçersiz."))
             }
         case .sendMessage:
             guard case .message(let message) = request.payload,
                   isSafeText(message.recipient, maxLength: 320),
                   !message.body.isEmpty, message.body.count <= 10_000,
                   !message.body.contains("\0") else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Mesaj alıcısı veya içeriği geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Mesaj alıcısı veya içeriği geçersiz."))
             }
         case .createCalendarEvent:
             guard case .calendarEvent(let event) = request.payload,
@@ -163,43 +163,43 @@ public enum RovaValidation {
                   event.endAt.timeIntervalSince(event.startAt) <= 7 * 24 * 60 * 60,
                   event.notes.map({ $0.count <= 4_000 && !$0.contains("\0") }) ?? true,
                   event.location.map({ $0.count <= 1_000 && !$0.contains("\0") }) ?? true else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Takvim etkinliği bilgileri geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Takvim etkinliği bilgileri geçersiz."))
             }
         case .createNote:
             guard case .note(let note) = request.payload,
                   isSafeText(note.title, maxLength: 300),
                   note.body.count <= 50_000, !note.body.contains("\0"),
                   note.folderName.map({ isSafeText($0, maxLength: 200) }) ?? true else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Not bilgileri geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Not bilgileri geçersiz."))
             }
         case .sendEmail:
             guard case .email(let email) = request.payload,
                   isSafeText(email.to, maxLength: 320), email.to.contains("@"),
                   isSafeText(email.subject, maxLength: 300),
                   !email.body.isEmpty, email.body.count <= 50_000, !email.body.contains("\0") else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "E-posta alıcısı, konusu veya içeriği geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "E-posta alıcısı, konusu veya içeriği geçersiz."))
             }
         case .createReminder:
             guard case .reminder(let reminder) = request.payload,
                   isSafeText(reminder.title, maxLength: 300),
                   reminder.notes.map({ $0.count <= 4_000 && !$0.contains("\0") }) ?? true,
                   reminder.listName.map({ isSafeText($0, maxLength: 200) }) ?? true else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Hatırlatıcı bilgileri geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Hatırlatıcı bilgileri geçersiz."))
             }
         case .completeReminder:
             guard case .completeReminder(let payload) = request.payload,
                   !payload.identifier.isEmpty, payload.identifier.count <= 300 else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Hatırlatıcı kimliği geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Hatırlatıcı kimliği geçersiz."))
             }
         case .readDesktopFile:
             guard case .fileName(let filename) = request.payload, isValidDesktopFilename(filename) else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Okunacak dosya adı geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Okunacak dosya adı geçersiz."))
             }
         case .moveDesktopFile, .renameDesktopFile:
             guard case .fileMove(let move) = request.payload,
                   isValidDesktopFilename(move.source), isValidDesktopFilename(move.destination),
                   move.source != move.destination else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Kaynak veya hedef dosya adı geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Kaynak veya hedef dosya adı geçersiz."))
             }
         case .saveArtifact:
             guard case .artifactFile(let artifact) = request.payload,
@@ -210,29 +210,29 @@ public enum RovaValidation {
                   artifact.byteCount.map({ $0 > 0 && $0 <= 25 * 1024 * 1024 }) ?? true,
                   artifact.sha256.map({ $0.count == 64 && $0.allSatisfy(\.isHexDigit) }) ?? true,
                   isAllowedArtifactURL(artifact.downloadURL) else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Artifact kaydetme isteği geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Artifact kaydetme isteği geçersiz."))
             }
         case .readDocument:
             guard case .fileName(let filename) = request.payload, isValidDesktopFilename(filename) else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Okunacak belge adı geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Okunacak belge adı geçersiz."))
             }
         case .editDocument:
             guard case .document(let document) = request.payload,
                   isValidDesktopFilename(document.filename),
                   document.content.count > 0, document.content.count <= 500_000 else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Belge düzenleme isteği geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Belge düzenleme isteği geçersiz."))
             }
         case .listFiles, .readFile:
             guard case .fileOperation(let operation) = request.payload,
                   isValidLocalPath(operation.path),
                   operation.page >= 0, operation.page <= 10_000,
                   operation.pageSize > 0, operation.pageSize <= 500 else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolu veya listeleme aralığı geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Dosya yolu veya listeleme aralığı geçersiz."))
             }
         case .sendFileToPhone:
             guard case .fileOperation(let operation) = request.payload,
                   isValidLocalPath(operation.path) || isValidWindowsLocalPath(operation.path) else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolu geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Dosya yolu geçersiz."))
             }
         case .searchFiles:
             guard case .fileSearch(let search) = request.payload,
@@ -246,14 +246,14 @@ public enum RovaValidation {
                   search.kind.map({ FileSearchPayload.kinds.contains($0) }) ?? true,
                   search.modifiedWithinDays.map({ (1...3_650).contains($0) }) ?? true,
                   search.sort.map({ FileSearchPayload.sorts.contains($0) }) ?? true else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Dosya arama isteği geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Dosya arama isteği geçersiz."))
             }
         case .writeFile:
             guard case .fileOperation(let operation) = request.payload,
                   isValidLocalPath(operation.path),
                   let content = operation.content,
                   content.count <= 500_000, !content.contains("\0") else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Dosya yazma isteği geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Dosya yazma isteği geçersiz."))
             }
         case .grantAgentAccess:
             guard case .agentGrant(let grant) = request.payload,
@@ -262,7 +262,7 @@ public enum RovaValidation {
                   grant.minutes == 0 || !grant.folders.isEmpty,
                   grant.folders.allSatisfy(isValidLocalPath),
                   grant.label.count <= 160, !grant.label.contains(where: { $0.isNewline || $0 == "\0" }) else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Görev izni geçersiz: en çok \(AgentGrantPayload.maxMinutes) dakika, \(AgentGrantPayload.maxFolders) klasör.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Görev izni geçersiz: en çok \(AgentGrantPayload.maxMinutes) dakika, \(AgentGrantPayload.maxFolders) klasör."))
             }
         case .runFilePlan:
             guard case .filePlan(let plan) = request.payload, filePlanError(plan) == nil else {
@@ -274,7 +274,7 @@ public enum RovaValidation {
                   isValidLocalPath(operation.path),
                   RovaFileConversion.canConvert(path: operation.path),
                   operation.destination.map({ isValidLocalPath($0) && $0.lowercased().hasSuffix(".pdf") && $0 != operation.path }) ?? true else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Bu dosya PDF'e çevrilemez veya yol geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Bu dosya PDF'e çevrilemez veya yol geçersiz."))
             }
         case .moveFile, .copyFile:
             guard case .fileOperation(let operation) = request.payload,
@@ -282,12 +282,12 @@ public enum RovaValidation {
                   let destination = operation.destination,
                   isValidLocalPath(destination),
                   operation.path != destination else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Kaynak veya hedef dosya yolu geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Kaynak veya hedef dosya yolu geçersiz."))
             }
         case .deleteFile:
             guard case .fileOperation(let operation) = request.payload,
                   isValidLocalPath(operation.path) else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Silinecek dosya yolu geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Silinecek dosya yolu geçersiz."))
             }
         case .executeCode:
             guard case .codeExecution(let execution) = request.payload,
@@ -299,17 +299,17 @@ public enum RovaValidation {
                   ["sandbox", "computer"].contains(execution.scope.lowercased()),
                   execution.shell.map({ ["default", "zsh", "bash", "powershell", "cmd"].contains($0.lowercased()) }) ?? true,
                   execution.workingDirectory.map(isValidTerminalWorkingDirectory) ?? true else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Kod çalıştırma isteği geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Kod çalıştırma isteği geçersiz."))
             }
         case .captureScreen:
             guard case .screenCapture(let capture) = request.payload,
                   (400...2_400).contains(capture.maxWidth) else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Ekran görüntüsü ayarları geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Ekran görüntüsü ayarları geçersiz."))
             }
         case .runShortcut:
             guard case .shortcut(let shortcut) = request.payload,
                   (1...30).contains(shortcut.timeoutSeconds) else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Shortcut isteği veya zaman aşımı geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Shortcut isteği veya zaman aşımı geçersiz."))
             }
         case .controlUIElement:
             guard case .uiElement(let element) = request.payload,
@@ -320,7 +320,7 @@ public enum RovaValidation {
                   element.value.map({ isSafeText($0, maxLength: 2_000) }) ?? true,
                   element.expectedValue.map({ isSafeText($0, maxLength: 2_000) }) ?? true,
                   element.action != .setValue || element.value != nil else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Accessibility hedefi veya değeri geçersiz.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Accessibility hedefi veya değeri geçersiz."))
             }
         case .clickScreen:
             guard case .screenClick(let click) = request.payload,
@@ -329,7 +329,7 @@ public enum RovaValidation {
                   (400...2_400).contains(click.screenshotWidth),
                   (400...2_400).contains(click.screenshotHeight),
                   click.expectedTarget.map({ isSafeText($0, maxLength: 240) }) ?? false else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Ekran tıklaması koordinat veya hedef doğrulamasından geçmedi.")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Ekran tıklaması koordinat veya hedef doğrulamasından geçmedi."))
             }
         case .computerDesktop:
             guard case .computerDesktop(let desktop) = request.payload,
@@ -342,19 +342,19 @@ public enum RovaValidation {
                   desktop.normalizedY.map({ (0...1).contains($0) }) ?? true,
                   desktop.text.map({ !$0.contains("\0") && $0.count <= 4_000 }) ?? true,
                   desktop.keys.map({ !$0.isEmpty && $0.count <= 4 && $0.allSatisfy(isAllowedDesktopKey) }) ?? true else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Masaüstü görevi veya hedefi geçersiz.", category: "validation")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Masaüstü görevi veya hedefi geçersiz."), category: "validation")
             }
             if desktop.action == .runSteps {
                 guard desktop.snapshotId == nil, desktop.targetRef == nil, desktop.sourceRef == nil,
                       desktop.destinationRef == nil, desktop.normalizedX == nil, desktop.normalizedY == nil,
                       desktop.direction == nil, desktop.amount == nil, desktop.text == nil, desktop.keys == nil,
                       let steps = desktop.steps, (1...8).contains(steps.count), steps.allSatisfy(isValidDesktopStep) else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Toplu masaüstü adımları geçersiz.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Toplu masaüstü adımları geçersiz."), category: "validation")
                 }
                 break
             }
             guard desktop.steps == nil else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Masaüstü adımları yalnızca runSteps ile kullanılabilir.", category: "validation")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Masaüstü adımları yalnızca runSteps ile kullanılabilir."), category: "validation")
             }
             let hasPoint = desktop.normalizedX != nil && desktop.normalizedY != nil
             let hasTarget = desktop.targetRef != nil
@@ -363,12 +363,12 @@ public enum RovaValidation {
                 guard desktop.targetRef == nil, desktop.sourceRef == nil, desktop.destinationRef == nil,
                       desktop.normalizedX == nil, desktop.normalizedY == nil, desktop.direction == nil,
                       desktop.amount == nil, desktop.text == nil, desktop.keys == nil else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Bu masaüstü eylemi ek parametre kabul etmiyor.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Bu masaüstü eylemi ek parametre kabul etmiyor."), category: "validation")
                 }
             case .move, .click, .doubleClick, .rightClick:
                 guard hasTarget != hasPoint, desktop.sourceRef == nil, desktop.destinationRef == nil,
                       desktop.direction == nil, desktop.amount == nil, desktop.text == nil, desktop.keys == nil else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Masaüstü hedefi tek bir referans veya koordinat olmalıdır.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Masaüstü hedefi tek bir referans veya koordinat olmalıdır."), category: "validation")
                 }
             case .scroll:
                 guard desktop.direction == "up" || desktop.direction == "down",
@@ -376,32 +376,32 @@ public enum RovaValidation {
                       desktop.sourceRef == nil, desktop.destinationRef == nil,
                       desktop.normalizedX == nil, desktop.normalizedY == nil,
                       desktop.text == nil, desktop.keys == nil else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Kaydırma yönü veya miktarı geçersiz.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Kaydırma yönü veya miktarı geçersiz."), category: "validation")
                 }
             case .dragDrop:
                 guard desktop.sourceRef != nil, desktop.destinationRef != nil,
                       desktop.targetRef == nil, desktop.normalizedX == nil, desktop.normalizedY == nil,
                       desktop.direction == nil, desktop.amount == nil, desktop.text == nil, desktop.keys == nil else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Sürükleme için kaynak ve hedef referansı gerekli.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Sürükleme için kaynak ve hedef referansı gerekli."), category: "validation")
                 }
             case .type:
                 guard hasTarget, desktop.text != nil, desktop.sourceRef == nil, desktop.destinationRef == nil,
                       desktop.normalizedX == nil, desktop.normalizedY == nil, desktop.direction == nil,
                       desktop.amount == nil, desktop.keys == nil else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Yazma eylemi için güvenli hedef ve metin gerekli.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Yazma eylemi için güvenli hedef ve metin gerekli."), category: "validation")
                 }
             case .hotkey:
                 guard desktop.keys != nil, desktop.targetRef == nil, desktop.sourceRef == nil, desktop.destinationRef == nil,
                       desktop.normalizedX == nil, desktop.normalizedY == nil, desktop.direction == nil,
                       desktop.amount == nil, desktop.text == nil else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Klavye kısayolu geçersiz.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Klavye kısayolu geçersiz."), category: "validation")
                 }
             case .wait:
                 guard desktop.amount.map({ (50...5_000).contains($0) }) == true,
                       desktop.targetRef == nil, desktop.sourceRef == nil, desktop.destinationRef == nil,
                       desktop.normalizedX == nil, desktop.normalizedY == nil, desktop.direction == nil,
                       desktop.text == nil, desktop.keys == nil else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Bekleme süresi geçersiz.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Bekleme süresi geçersiz."), category: "validation")
                 }
             case .runSteps:
                 break
@@ -413,19 +413,19 @@ public enum RovaValidation {
                   browser.submit == nil || browser.action == "fill",
                   browser.key == nil || browser.action == "press",
                   browser.offset == nil || (browser.action == "read" && (0...2_000_000).contains(browser.offset!)) else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Tarayıcı görevi veya eylemi geçersiz.", category: "validation")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Tarayıcı görevi veya eylemi geçersiz."), category: "validation")
             }
             if browser.action == "run_steps" {
                 guard browser.url == nil, browser.targetRef == nil, browser.targetBy == nil, browser.target == nil,
                       browser.role == nil, browser.value == nil, browser.direction == nil, browser.scrollAmount == nil,
                       browser.submit == nil, browser.key == nil, browser.offset == nil,
                       let steps = browser.steps, (1...8).contains(steps.count), steps.allSatisfy(isValidBrowserStep) else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Toplu tarayıcı adımları geçersiz.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Toplu tarayıcı adımları geçersiz."), category: "validation")
                 }
                 break
             }
             guard browser.steps == nil else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Tarayıcı adımları yalnızca run_steps ile kullanılabilir.", category: "validation")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Tarayıcı adımları yalnızca run_steps ile kullanılabilir."), category: "validation")
             }
             let validRef = browser.targetRef.map {
                 isValidBrowserTargetRef($0)
@@ -444,26 +444,26 @@ public enum RovaValidation {
             switch browser.action {
             case "navigate":
                 guard let url = browser.url, isAllowedBrowserURL(url), noTarget, noValue, noDirection, noScrollAmount else {
-                    return RovaError(code: "BROWSER_URL_BLOCKED", message: "Yalnızca herkese açık http/https adresleri açılabilir.", category: "permission")
+                    return RovaError(code: "BROWSER_URL_BLOCKED", message: String(localized: "Yalnızca herkese açık http/https adresleri açılabilir."), category: "permission")
                 }
             case "read":
                 guard browser.url == nil, noTarget, noValue, noDirection, noScrollAmount else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Sayfa okuma ek parametre kabul etmiyor.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Sayfa okuma ek parametre kabul etmiyor."), category: "validation")
                 }
             case "press":
                 guard browser.url == nil, noTarget, noValue, noDirection, noScrollAmount,
                       ["Enter", "Escape", "Tab", "ArrowDown", "ArrowUp"].contains(browser.key ?? "") else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Tuş desteklenmiyor.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Tuş desteklenmiyor."), category: "validation")
                 }
             case "observe", "observe_diff", "back":
                 guard browser.url == nil, noTarget, noValue, noDirection, noScrollAmount else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Sayfa gözlemi ek parametre kabul etmiyor.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Sayfa gözlemi ek parametre kabul etmiyor."), category: "validation")
                 }
             case "scroll":
                 guard browser.url == nil, noTarget, noValue,
                       browser.direction == "up" || browser.direction == "down",
                       browser.scrollAmount.map({ (1...3).contains($0) }) ?? true else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Kaydırma yönü geçersiz.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Kaydırma yönü geçersiz."), category: "validation")
                 }
             case "click", "fill", "select", "submit":
                 guard browser.url == nil,
@@ -473,44 +473,44 @@ public enum RovaValidation {
                       ["fill", "select"].contains(browser.action) || noValue,
                       browser.action != "submit" || validRef || (browser.targetBy == "role" && browser.role == "button"),
                       noDirection, noScrollAmount else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Erişilebilir tarayıcı hedefi veya değeri geçersiz.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Erişilebilir tarayıcı hedefi veya değeri geçersiz."), category: "validation")
                 }
             default:
-                return RovaError(code: "INVALID_PAYLOAD", message: "Tarayıcı eylemi desteklenmiyor.", category: "validation")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Tarayıcı eylemi desteklenmiyor."), category: "validation")
             }
         case .endBrowserTask:
             guard case .browserTask(let task) = request.payload, UUID(uuidString: task.taskId) != nil else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Tarayıcı görevi geçersiz.", category: "validation")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Tarayıcı görevi geçersiz."), category: "validation")
             }
         case .localAnalyze:
             guard case .localAnalysis(let analysis) = request.payload,
                   (1...500).contains(analysis.limit),
                   analysis.variables.map({ !$0.isEmpty && $0.count <= 12 && $0.allSatisfy { $0.range(of: "^[A-Za-z][A-Za-z0-9]{0,31}$", options: .regularExpression) != nil } }) ?? true else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Yerel analiz isteği geçersiz.", category: "validation")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Yerel analiz isteği geçersiz."), category: "validation")
             }
             switch analysis.action {
             case .dependencyStatus:
                 guard analysis.path == nil, analysis.query == nil, analysis.expression == nil, analysis.variables == nil else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Bağımlılık denetimi ek parametre kabul etmiyor.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Bağımlılık denetimi ek parametre kabul etmiyor."), category: "validation")
                 }
             case .extractDocument:
                 guard analysis.path.map(isValidLocalPath) == true, analysis.query == nil, analysis.expression == nil, analysis.variables == nil else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Belge çıkarımı için geçerli bir yerel dosya yolu gerekli.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Belge çıkarımı için geçerli bir yerel dosya yolu gerekli."), category: "validation")
                 }
             case .queryData:
                 guard analysis.path.map(isValidLocalPath) == true,
                       analysis.query.map(isSafeReadOnlyQuery) == true,
                       analysis.expression == nil, analysis.variables == nil else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Veri sorgusu yalnızca güvenli bir SELECT/WITH sorgusu kabul eder.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Veri sorgusu yalnızca güvenli bir SELECT/WITH sorgusu kabul eder."), category: "validation")
                 }
             case .solveSymbolic:
                 guard analysis.path == nil, analysis.query == nil,
                       analysis.expression.map(isSafeSymbolicExpression) == true else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Sembolik ifade geçersiz.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Sembolik ifade geçersiz."), category: "validation")
                 }
             case .workspaceDiff:
                 guard analysis.path.map(isValidLocalPath) == true, analysis.query == nil, analysis.expression == nil, analysis.variables == nil else {
-                    return RovaError(code: "INVALID_PAYLOAD", message: "Çalışma alanı yolu geçersiz.", category: "validation")
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Çalışma alanı yolu geçersiz."), category: "validation")
                 }
             }
         case .fileUtility:
@@ -518,7 +518,7 @@ public enum RovaValidation {
             return RovaError(code: "INVALID_PAYLOAD", message: message, category: "validation")
         case .systemUtility:
             guard case .systemUtility(let utility) = request.payload else {
-                return RovaError(code: "INVALID_PAYLOAD", message: "Sistem işlemi geçersiz.", category: "validation")
+                return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Sistem işlemi geçersiz."), category: "validation")
             }
             let valid: Bool
             switch utility.action {
@@ -527,7 +527,7 @@ public enum RovaValidation {
             case .speak: valid = utility.text.map { isSafeText($0, maxLength: 4_000) && !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? false
             case .topProcesses, .battery: valid = (1...50).contains(utility.limit)
             }
-            if !valid { return RovaError(code: "INVALID_PAYLOAD", message: "Sistem işlemi için gereken bilgi eksik ya da geçersiz.", category: "validation") }
+            if !valid { return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Sistem işlemi için gereken bilgi eksik ya da geçersiz."), category: "validation") }
         }
         return nil
     }
@@ -535,17 +535,17 @@ public enum RovaValidation {
     /// The reason a file chore cannot run as asked, or nil. Each action names the fields it needs; every path is a safe local path.
     public static func fileUtilityError(_ utility: FileUtilityPayload) -> String? {
         guard (1...500).contains(utility.limit) else { return "Sınır 1-500 arasında olmalı." }
-        if let path = utility.path, !isValidLocalPath(path) { return "Yol güvenli bir yerel yol değil." }
-        if let destination = utility.destination, !isValidLocalPath(destination) { return "Hedef yol güvenli bir yerel yol değil." }
-        if let paths = utility.paths, paths.count > 50 || !paths.allSatisfy(isValidLocalPath) { return "Dosya listesi geçersiz." }
-        if let name = utility.name, !isSafeText(name, maxLength: 120) { return "Ad geçersiz." }
-        if let tags = utility.tags, tags.count > 10 || !tags.allSatisfy({ isSafeText($0, maxLength: 40) && !$0.isEmpty }) { return "Etiketler geçersiz." }
+        if let path = utility.path, !isValidLocalPath(path) { return String(localized: "Yol güvenli bir yerel yol değil.") }
+        if let destination = utility.destination, !isValidLocalPath(destination) { return String(localized: "Hedef yol güvenli bir yerel yol değil.") }
+        if let paths = utility.paths, paths.count > 50 || !paths.allSatisfy(isValidLocalPath) { return String(localized: "Dosya listesi geçersiz.") }
+        if let name = utility.name, !isSafeText(name, maxLength: 120) { return String(localized: "Ad geçersiz.") }
+        if let tags = utility.tags, tags.count > 10 || !tags.allSatisfy({ isSafeText($0, maxLength: 40) && !$0.isEmpty }) { return String(localized: "Etiketler geçersiz.") }
         let hasPath = utility.path != nil
         switch utility.action {
         case .createFolder, .extract, .splitPDF, .compressImage, .findDuplicates, .diskUsage, .reveal, .print, .ocr:
-            return hasPath ? nil : "Bu işlem için path gerekli."
+            return hasPath ? nil : String(localized: "Bu işlem için path gerekli.")
         case .archive:
-            return hasPath || !(utility.paths ?? []).isEmpty ? nil : "Arşivlenecek path ya da paths gerekli."
+            return hasPath || !(utility.paths ?? []).isEmpty ? nil : String(localized: "Arşivlenecek path ya da paths gerekli.")
         case .mergePDF:
             return (utility.paths?.count ?? 0) >= 2 && utility.destination != nil ? nil : "Birleştirme için en az iki PDF (paths) ve destination gerekli."
         case .recentFiles:
@@ -614,9 +614,9 @@ public enum RovaValidation {
                       step.modifiedWithinDays.map({ (1...3_650).contains($0) }) ?? true,
                       step.sort.map({ FileSearchPayload.sorts.contains($0) }) ?? true else { return "Arama adımı geçersiz (\(step.id))." }
             case "list":
-                guard let path = step.path, isValidLocalPath(path) else { return "Listeleme adımı bir klasör yolu ister (\(step.id))." }
+                guard let path = step.path, isValidLocalPath(path) else { return String(localized: "Listeleme adımı bir klasör yolu ister (\(step.id)).") }
             case "read":
-                guard pathOK(step.path) else { return "read adımı geçerli bir dosya yolu ya da önceki adıma bağ ister (\(step.id))." }
+                guard pathOK(step.path) else { return String(localized: "read adımı geçerli bir dosya yolu ya da önceki adıma bağ ister (\(step.id)).") }
             case "send":
                 guard pathOK(step.path), let transfer = step.transferId, UUID(uuidString: transfer) != nil else { return "send adımı bir dosya yolu (ya da bağ) ve aktarım kimliği ister (\(step.id))." }
             case "convert":
@@ -634,8 +634,8 @@ public enum RovaValidation {
     }
 
     private static func filePlanErrorMessage(_ payload: CommandPayload) -> String {
-        if case .filePlan(let plan) = payload { return filePlanError(plan) ?? "Plan geçersiz." }
-        return "Plan isteği geçersiz."
+        if case .filePlan(let plan) = payload { return filePlanError(plan) ?? String(localized: "Plan geçersiz.") }
+        return String(localized: "Plan isteği geçersiz.")
     }
 
     private static func isSafeText(_ value: String, maxLength: Int) -> Bool {
@@ -671,7 +671,7 @@ public enum RovaValidation {
     /// Shared with the Mac's AX layer and intentionally small. A matching label makes a generic
     /// UI action presence-gated even when a caller incorrectly marks it as harmless.
     public static let destructiveUIKeywords = [
-        "sil", "kaldır", "format", "sıfırla", "delete", "remove", "erase", "reset"
+        "sil", String(localized: "kaldır"), "format", String(localized: "sıfırla"), "delete", "remove", "erase", "reset"
     ]
 
     public static func uiElementRequiresUserPresence(_ payload: UIElementPayload) -> Bool {
@@ -1226,7 +1226,7 @@ public enum RovaOwnFolders {
         "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "keychain", "keychains", "wallet", "1password", "bitwarden", "lastpass"
     ]
     private static let sensitiveExtensions: Set<String> = ["pem", "key", "p12", "p8", "pfx", "kdbx", "keystore", "jks", "ovpn", "gpg", "asc", "ppk"]
-    private static let sensitiveWords: [String] = ["password", "parola", "sifre", "şifre", "passwd", "credential", "secret", "recovery code", "backup code", "seed phrase", "private key"]
+    private static let sensitiveWords: [String] = ["password", "parola", "sifre", String(localized: "şifre"), "passwd", "credential", "secret", "recovery code", "backup code", "seed phrase", "private key"]
 
     private static func components(_ raw: String) -> [String]? {
         var path = raw.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\\", with: "/")

@@ -105,6 +105,8 @@ extension MacSystem {
             authority("device.files.move", "Dosya taşıma", .confirmation, permissions: fullDisk ? [] : ["Full Disk Access"]),
             authority("device.files.copy", "Dosya kopyalama", .confirmation, permissions: fullDisk ? [] : ["Full Disk Access"]),
             authority("device.files.delete", "Dosya silme", .confirmation, permissions: fullDisk ? [] : ["Full Disk Access"]),
+            authority("device.files.utility", "Dosya işleri (klasör, arşiv, PDF, çöp)", .confirmation, permissions: fullDisk ? [] : ["Full Disk Access"]),
+            authority("device.system.utility", "Sistem işleri (koyu mod, odak, ağ, pil, yazdırma)", .confirmation),
             authority("document.read", "Belge okuma", .confirmation, permissions: fullDisk ? [] : ["Full Disk Access"]),
             authority("document.edit", "Belge düzenleme", .confirmation, permissions: fullDisk ? [] : ["Full Disk Access"]),
             authority("artifact.save", "Dosya kaydetme", .confirmation),

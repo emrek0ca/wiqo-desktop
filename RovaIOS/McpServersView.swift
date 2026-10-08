@@ -13,15 +13,15 @@ struct McpServersSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            WiqoSettingsGroup(title: "MCP sunucuları") {
+            WiqoSettingsGroup(title: String(localized: "MCP sunucuları")) {
                 if isLoading && servers.isEmpty {
-                    WiqoRow(systemImage: "server.rack", title: "Yükleniyor", showsDivider: false) { WiqoSkeleton(width: 56, height: 28) }
+                    WiqoRow(systemImage: "server.rack", title: String(localized: "Yükleniyor"), showsDivider: false) { WiqoSkeleton(width: 56, height: 28) }
                 }
                 ForEach(Array(servers.enumerated()), id: \.element.id) { index, server in
                     WiqoRow(
                         systemImage: "server.rack",
                         title: server.name,
-                        subtitle: Self.host(server.url) + (server.hasToken ? " · anahtarlı" : ""),
+                        subtitle: Self.host(server.url) + (server.hasToken ? String(localized: " · anahtarlı") : ""),
                         showsDivider: true
                     ) {
                         if removingID == server.id {
@@ -34,8 +34,8 @@ struct McpServersSection: View {
                 }
                 WiqoRow(
                     systemImage: "plus",
-                    title: "Sunucu ekle",
-                    subtitle: servers.isEmpty ? "Bir MCP sunucusunu adını söyleyerek kullan" : nil,
+                    title: String(localized: "Sunucu ekle"),
+                    subtitle: servers.isEmpty ? String(localized: "Bir MCP sunucusunu adını söyleyerek kullan") : nil,
                     showsDivider: false
                 ) {
                     Button("Ekle") { showsForm = true }
@@ -67,7 +67,7 @@ struct McpServersSection: View {
             servers = try await RovaBackendClient.fetchMcpServers()
             errorMessage = nil
         } catch {
-            errorMessage = "MCP sunucuları yüklenemedi."
+            errorMessage = String(localized: "MCP sunucuları yüklenemedi.")
         }
     }
 
@@ -77,9 +77,9 @@ struct McpServersSection: View {
         do {
             try await RovaBackendClient.deleteMcpServer(id: server.id)
             servers.removeAll { $0.id == server.id }
-            WiqoToastCenter.shared.show("Sunucu kaldırıldı")
+            WiqoToastCenter.shared.show(String(localized: "Sunucu kaldırıldı"))
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Sunucu kaldırılamadı."
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? String(localized: "Sunucu kaldırılamadı.")
         }
     }
 }
@@ -143,7 +143,7 @@ private struct McpServerForm: View {
                         .transition(.wiqoBlur)
                 }
 
-                WiqoActionButton(title: "Bağlan ve ekle", isLoading: isAdding) { Task { await add() } }
+                WiqoActionButton(title: String(localized: "Bağlan ve ekle"), isLoading: isAdding) { Task { await add() } }
                     .disabled(!canAdd)
                     .opacity(canAdd ? 1 : 0.45)
             }
@@ -169,10 +169,10 @@ private struct McpServerForm: View {
                 authToken: token.trimmingCharacters(in: .whitespaces)
             )
             await onAdded()
-            WiqoToastCenter.shared.show("Bağlandı · \(toolCount) araç", kind: .success)
+            WiqoToastCenter.shared.show(String(localized: "Bağlandı · \(toolCount) araç"), kind: .success)
             dismiss()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Sunucuya bağlanılamadı."
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? String(localized: "Sunucuya bağlanılamadı.")
         }
     }
 }

@@ -14,7 +14,7 @@ struct TelegramChannelSection: View {
             VStack(alignment: .leading, spacing: 8) {
                 WiqoSettingsGroup(title: "Telegram") {
                     ForEach(status.links.filter { $0.channel == "telegram" }) { link in
-                        WiqoRow(systemImage: "paperplane.fill", title: link.label ?? "Telegram sohbeti", subtitle: "Bağlı", showsDivider: true) {
+                        WiqoRow(systemImage: "paperplane.fill", title: link.label ?? String(localized: "Telegram sohbeti"), subtitle: String(localized: "Bağlı"), showsDivider: true) {
                             Button("Kaldır") { Task { await unlink(link) } }
                                 .buttonStyle(.wiqoPill(.secondary))
                         }
@@ -22,7 +22,7 @@ struct TelegramChannelSection: View {
                     WiqoRow(
                         systemImage: "plus",
                         title: "Telegram'dan yaz",
-                        subtitle: "Botu aç, Başlat'a dokun; sohbet hesabına bağlanır",
+                        subtitle: String(localized: "Botu aç, Başlat'a dokun; sohbet hesabına bağlanır"),
                         showsDivider: false
                     ) {
                         if isWorking {
@@ -57,7 +57,7 @@ struct TelegramChannelSection: View {
             openURL(try await RovaBackendClient.startTelegramLink())
             errorMessage = nil
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Telegram bağlantısı başlatılamadı."
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? String(localized: "Telegram bağlantısı başlatılamadı.")
         }
     }
 
@@ -65,9 +65,9 @@ struct TelegramChannelSection: View {
         do {
             try await RovaBackendClient.unlinkChannel(id: link.id)
             await load()
-            WiqoToastCenter.shared.show("Bağlantı kaldırıldı")
+            WiqoToastCenter.shared.show(String(localized: "Bağlantı kaldırıldı"))
         } catch {
-            errorMessage = "Bağlantı kaldırılamadı."
+            errorMessage = String(localized: "Bağlantı kaldırılamadı.")
         }
     }
 }

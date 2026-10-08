@@ -104,7 +104,7 @@ struct CanvasView: View {
         case "python": return "# Python kodunu buraya yaz\nprint(\"merhaba\")"
         case "javascript": return "// JavaScript kodunu buraya yaz\nconsole.log(\"merhaba\")"
         case "html": return "<!doctype html>\n<html>\n  <body>\n    <h1>Merhaba</h1>\n  </body>\n</html>"
-        default: return "# Shell komutlarını buraya yaz\necho merhaba"
+        default: return String(localized: "# Shell komutlarını buraya yaz\necho merhaba")
         }
     }
 
@@ -215,7 +215,7 @@ struct CanvasView: View {
                 packagesSection
             }
             if opensNativeWindow {
-                notice("Bu kod bilgisayarda pencere açıyor. Telefonda göstermek için arayüzün web olarak (HTML) yazılması gerekir.", systemImage: "desktopcomputer")
+                notice(String(localized: "Bu kod bilgisayarda pencere açıyor. Telefonda göstermek için arayüzün web olarak (HTML) yazılması gerekir."), systemImage: "desktopcomputer")
             }
         }
     }
@@ -364,7 +364,7 @@ struct CanvasView: View {
             }
 
             if opensNativeWindow, previewHTML == nil {
-                notice("Bu kod bilgisayarda pencere açıyor; telefonda gösterilemez. Arayüzün web olarak (HTML) yazılmasını iste.", systemImage: "desktopcomputer")
+                notice(String(localized: "Bu kod bilgisayarda pencere açıyor; telefonda gösterilemez. Arayüzün web olarak (HTML) yazılmasını iste."), systemImage: "desktopcomputer")
             }
 
             if let artifactErrorMessage {
@@ -405,7 +405,7 @@ struct CanvasView: View {
             rows.append(WiqoToolRow(
                 id: "packages",
                 icon: "shippingbox",
-                label: "Kütüphaneleri hazırla",
+                label: String(localized: "Kütüphaneleri hazırla"),
                 chip: packages.joined(separator: ", "),
                 tone: phase == .preparing ? .active : (past ? .success : .neutral)
             ))
@@ -419,11 +419,11 @@ struct CanvasView: View {
         } else if let result {
             runTone = result.timedOut ? .attention : (result.exitCode == 0 ? .success : .failure)
             runStatus = result.timedOut
-                ? "Beklenenden uzun sürdü, durdurdum."
+                ? String(localized: "Beklenenden uzun sürdü, durdurdum.")
                 : (result.exitCode == 0 ? nil : "Kod çalışmadı; ayrıntı aşağıda.")
         } else if errorMessage != nil {
             runTone = .failure
-            runStatus = "Çalıştırma durdu."
+            runStatus = String(localized: "Çalıştırma durdu.")
         } else {
             runTone = previewHTML == nil ? .neutral : .success
             runStatus = nil
@@ -438,7 +438,7 @@ struct CanvasView: View {
         ))
 
         if previewHTML != nil, !isRunning {
-            rows.append(WiqoToolRow(id: "preview", icon: "rectangle.on.rectangle", label: "Arayüzü aç", tone: .success))
+            rows.append(WiqoToolRow(id: "preview", icon: "rectangle.on.rectangle", label: String(localized: "Arayüzü aç"), tone: .success))
         }
         return rows
     }
@@ -507,7 +507,7 @@ struct CanvasView: View {
                 outputBlocks(result)
             }
         } else if previewHTML == nil, result.exitCode == 0, result.artifacts.isEmpty {
-            notice("Kod çalıştı ama görüntülenecek bir çıktı üretmedi.", systemImage: "checkmark.circle")
+            notice(String(localized: "Kod çalıştı ama görüntülenecek bir çıktı üretmedi."), systemImage: "checkmark.circle")
         }
 
         ForEach(result.artifacts) { artifact in
@@ -530,10 +530,10 @@ struct CanvasView: View {
     private func outputBlocks(_ result: RovaBackendClient.CanvasRunResult) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if !result.stdout.isEmpty {
-                WiqoCodeBlock(code: result.stdout, title: "Çıktı")
+                WiqoCodeBlock(code: result.stdout, title: String(localized: "Çıktı"))
             }
             if !result.stderr.isEmpty {
-                WiqoCodeBlock(code: result.stderr, title: "Ayrıntı")
+                WiqoCodeBlock(code: result.stderr, title: String(localized: "Ayrıntı"))
             }
             if result.truncated {
                 Text("Çıktının uzun bölümünü kısalttım.")
@@ -598,7 +598,7 @@ struct CanvasView: View {
         previewHTML = nil
         errorMessage = nil
         artifactErrorMessage = nil
-        runMessage = requested.isEmpty ? "Kodu çalıştırıyorum…" : "Kütüphaneleri hazırlıyorum…"
+        runMessage = requested.isEmpty ? String(localized: "Kodu çalıştırıyorum…") : String(localized: "Kütüphaneleri hazırlıyorum…")
         defer { if isRunning { phase = .done } }
 
         do {
@@ -625,10 +625,10 @@ struct CanvasView: View {
             errorMessage = message
             phase = .done
         } catch is CancellationError {
-            runMessage = "Çalıştırmayı durdurdum."
+            runMessage = String(localized: "Çalıştırmayı durdurdum.")
             phase = .done
         } catch {
-            errorMessage = "Kod çalıştırılamadı."
+            errorMessage = String(localized: "Kod çalıştırılamadı.")
             phase = .done
         }
         activeTaskID = nil
@@ -649,14 +649,14 @@ struct CanvasView: View {
     @MainActor
     private func cancelRun() async {
         guard let taskID = activeTaskID else {
-            runMessage = "Çalıştırmayı durduruyorum…"
+            runMessage = String(localized: "Çalıştırmayı durduruyorum…")
             return
         }
         do {
             try await RovaBackendClient.cancelCanvasRun(taskID: taskID)
-            runMessage = "Çalıştırmayı durduruyorum…"
+            runMessage = String(localized: "Çalıştırmayı durduruyorum…")
         } catch {
-            errorMessage = "Çalıştırma durdurulamadı."
+            errorMessage = String(localized: "Çalıştırma durdurulamadı.")
         }
     }
 
@@ -667,7 +667,7 @@ struct CanvasView: View {
             previewHTML = try String(contentsOf: url, encoding: .utf8)
             reloadToken += 1
         } catch {
-            artifactErrorMessage = "Uygulama önizlemesi açılamadı."
+            artifactErrorMessage = String(localized: "Uygulama önizlemesi açılamadı.")
         }
     }
 
@@ -675,7 +675,7 @@ struct CanvasView: View {
         do {
             previewURL = try await RovaBackendClient.downloadArtifact(artifact)
         } catch {
-            await MainActor.run { artifactErrorMessage = "Dosya açılamadı." }
+            await MainActor.run { artifactErrorMessage = String(localized: "Dosya açılamadı.") }
         }
     }
 
@@ -687,6 +687,6 @@ struct CanvasView: View {
         let lowercased = message.lowercased()
         if lowercased.contains("kütüphane") { return "Kütüphaneleri hazırlıyorum…" }
         if lowercased.contains("çıktı") || lowercased.contains("dosya") { return "Çıktıyı düzenliyorum…" }
-        return "Kodu çalıştırıyorum…"
+        return String(localized: "Kodu çalıştırıyorum…")
     }
 }

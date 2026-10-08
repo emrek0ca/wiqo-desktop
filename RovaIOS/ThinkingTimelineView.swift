@@ -8,7 +8,7 @@ import SwiftUI
 /// a while the current line says so, so a long PC wait never looks frozen.
 struct ThinkingTimelineView: View {
     let trace: ThinkingTrace
-    var fallbackLabel = "Bakıyorum…"
+    var fallbackLabel = String(localized: "Bakıyorum…")
 
     /// Only this many finished lines stay visible above the current one; older ones fold into "+N".
     private static let visibleHistory = 4

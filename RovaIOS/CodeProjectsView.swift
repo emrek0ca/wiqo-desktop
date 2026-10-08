@@ -112,7 +112,7 @@ struct CodeProjectDetailView: View {
                         .foregroundStyle(entry.verified ? Color.green : Color.orange)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(entry.summary).font(.subheadline)
-                        Text("\(entry.source) · \(entry.date.formatted(date: .abbreviated, time: .shortened))" + (entry.verified ? "" : " · çalışmıyor olabilir"))
+                        Text("\(entry.source) · \(entry.date.formatted(date: .abbreviated, time: .shortened))" + (entry.verified ? "" : String(localized: " · çalışmıyor olabilir")))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

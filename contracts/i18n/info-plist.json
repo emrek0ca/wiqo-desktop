@@ -1,0 +1,67 @@
+{
+ "values": {
+  "NSCameraUsageDescription": "Wiqo, PC eşleşme QR kodunu ve belgelerini taramak için kamerayı kullanır. Taranan sayfalar telefonda okunur.",
+  "NSLocalNetworkUsageDescription": "Wiqo, aynı ağdaki PC’nizi bulup komut göndermek için yerel ağınızı kullanır.",
+  "NSLocationWhenInUseUsageDescription": "Wiqo, hava durumu için şehir adını, haritada da rota ve yakındaki yerleri bulmak için konumunu kullanır. Koordinatlar sunucuya gönderilmez; harita sonuçları telefonda Apple Haritalar ile hesaplanır.",
+  "NSPhotoLibraryAddUsageDescription": "Wiqo, ürettiği görselleri istersen Fotoğraflar'a kaydetmek için erişim ister. Fotoğraflarını okumaz.",
+  "NSContactsUsageDescription": "Wiqo, \"Ali'yi ara\" gibi isteklerde rehberinde o kişiyi bulmak için rehberine bakar. Rehber telefonda kalır, sunucuya gönderilmez.",
+  "NSMicrophoneUsageDescription": "Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır.",
+  "NSSpeechRecognitionUsageDescription": "Wiqo, sesli komutunuzu iPhone’unuzda metne dönüştürmek için konuşma tanımayı kullanır."
+ },
+ "translations": {
+  "en": {
+   "Wiqo, \"Ali'yi ara\" gibi isteklerde rehberinde o kişiyi bulmak için rehberine bakar. Rehber telefonda kalır, sunucuya gönderilmez.": "Wiqo, when you request something like \"Call Ali,\" it looks up that person in your contacts. The contacts stay on the phone and are not sent to the server.",
+   "Wiqo, PC eşleşme QR kodunu ve belgelerini taramak için kamerayı kullanır. Taranan sayfalar telefonda okunur.": "Wiqo uses the camera to scan the PC pairing QR code and documents. The scanned pages are read on the phone.",
+   "Wiqo, aynı ağdaki PC’nizi bulup komut göndermek için yerel ağınızı kullanır.": "Wiqo finds your PC on the same network and uses the local network to send commands.",
+   "Wiqo, hava durumu için şehir adını, haritada da rota ve yakındaki yerleri bulmak için konumunu kullanır. Koordinatlar sunucuya gönderilmez; harita sonuçları telefonda Apple Haritalar ile hesaplanır.": "Wiqo uses the city name for weather and your location to find routes and nearby places on the map. Coordinates are not sent to the server; map results are calculated on the phone with Apple Maps.",
+   "Wiqo, sesli komutunuzu iPhone’unuzda metne dönüştürmek için konuşma tanımayı kullanır.": "Wiqo uses speech recognition on your iPhone to convert your voice command to text.",
+   "Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır.": "Wiqo uses the microphone to transcribe your voice command to text.",
+   "Wiqo, ürettiği görselleri istersen Fotoğraflar'a kaydetmek için erişim ister. Fotoğraflarını okumaz.": "Wiqo requests access to save the images it generates to Photos. It does not read your photos."
+  },
+  "de": {
+   "Wiqo, \"Ali'yi ara\" gibi isteklerde rehberinde o kişiyi bulmak için rehberine bakar. Rehber telefonda kalır, sunucuya gönderilmez.": "Wiqo sucht in Ihrem Telefonbuch nach der Person, wenn Sie z. B. \"Rufe Ali an\" verlangen. Das Telefonbuch bleibt auf dem Gerät, wird nicht an den Server gesendet.",
+   "Wiqo, PC eşleşme QR kodunu ve belgelerini taramak için kamerayı kullanır. Taranan sayfalar telefonda okunur.": "Wiqo nutzt die Kamera, um den QR‑Code und die Dokumente für die PC‑Koppelung zu scannen. Die gescannten Seiten werden auf dem Gerät gelesen.",
+   "Wiqo, aynı ağdaki PC’nizi bulup komut göndermek için yerel ağınızı kullanır.": "Wiqo verwendet Ihr lokales Netzwerk, um Ihren PC im selben Netzwerk zu finden und Befehle zu senden.",
+   "Wiqo, hava durumu için şehir adını, haritada da rota ve yakındaki yerleri bulmak için konumunu kullanır. Koordinatlar sunucuya gönderilmez; harita sonuçları telefonda Apple Haritalar ile hesaplanır.": "Wiqo nutzt den Stadtnamen für das Wetter und Ihren Standort, um Routen und nahegelegene Orte zu finden. Die Koordinaten werden nicht an den Server gesendet; die Kartenergebnisse werden auf dem Gerät mit Apple Maps berechnet.",
+   "Wiqo, sesli komutunuzu iPhone’unuzda metne dönüştürmek için konuşma tanımayı kullanır.": "Wiqo verwendet die Spracherkennung auf Ihrem iPhone, um Ihre Sprachbefehle in Text umzuwandeln.",
+   "Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır.": "Wiqo nutzt das Mikrofon, um Ihre Sprachbefehle in Text umzuwandeln.",
+   "Wiqo, ürettiği görselleri istersen Fotoğraflar'a kaydetmek için erişim ister. Fotoğraflarını okumaz.": "Wiqo bittet um Zugriff, um erstellte Bilder in die Fotos zu speichern. Es liest Ihre Fotos nicht."
+  },
+  "es": {
+   "Wiqo, \"Ali'yi ara\" gibi isteklerde rehberinde o kişiyi bulmak için rehberine bakar. Rehber telefonda kalır, sunucuya gönderilmez.": "Wiqo, al solicitar algo como \"Llamar a Ali\", busca a esa persona en tu agenda. La agenda permanece en el teléfono, no se envía al servidor.",
+   "Wiqo, PC eşleşme QR kodunu ve belgelerini taramak için kamerayı kullanır. Taranan sayfalar telefonda okunur.": "Wiqo, utiliza la cámara para escanear el código QR de emparejamiento de PC y los documentos. Las páginas escaneadas se leen en el teléfono.",
+   "Wiqo, aynı ağdaki PC’nizi bulup komut göndermek için yerel ağınızı kullanır.": "Wiqo, encuentra tu PC en la misma red y usa la red local para enviar comandos.",
+   "Wiqo, hava durumu için şehir adını, haritada da rota ve yakındaki yerleri bulmak için konumunu kullanır. Koordinatlar sunucuya gönderilmez; harita sonuçları telefonda Apple Haritalar ile hesaplanır.": "Wiqo, usa el nombre de la ciudad para el clima y tu ubicación para encontrar rutas y lugares cercanos en el mapa. Las coordenadas no se envían al servidor; los resultados del mapa se calculan en el teléfono con Apple Maps.",
+   "Wiqo, sesli komutunuzu iPhone’unuzda metne dönüştürmek için konuşma tanımayı kullanır.": "Wiqo, convierte tu comando de voz en texto en tu iPhone usando el reconocimiento de voz.",
+   "Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır.": "Wiqo, convierte tu comando de voz en texto usando el micrófono.",
+   "Wiqo, ürettiği görselleri istersen Fotoğraflar'a kaydetmek için erişim ister. Fotoğraflarını okumaz.": "Wiqo, solicita acceso para guardar las imágenes que genera en Fotos. No lee tus fotos."
+  },
+  "fr": {
+   "Wiqo, \"Ali'yi ara\" gibi isteklerde rehberinde o kişiyi bulmak için rehberine bakar. Rehber telefonda kalır, sunucuya gönderilmez.": "Wiqo, lorsqu’il effectue des requêtes comme « Appelle Ali », consulte votre répertoire pour trouver la personne. Le répertoire reste sur votre téléphone, il n’est pas envoyé au serveur.",
+   "Wiqo, PC eşleşme QR kodunu ve belgelerini taramak için kamerayı kullanır. Taranan sayfalar telefonda okunur.": "Wiqo, utilise l’appareil photo pour scanner le code QR de jumelage PC et les documents. Les pages scannées sont lues sur votre téléphone.",
+   "Wiqo, aynı ağdaki PC’nizi bulup komut göndermek için yerel ağınızı kullanır.": "Wiqo, trouve votre PC sur le même réseau et utilise le réseau local pour envoyer des commandes.",
+   "Wiqo, hava durumu için şehir adını, haritada da rota ve yakındaki yerleri bulmak için konumunu kullanır. Koordinatlar sunucuya gönderilmez; harita sonuçları telefonda Apple Haritalar ile hesaplanır.": "Wiqo, utilise le nom de la ville pour la météo et votre position pour trouver des itinéraires et des lieux proches. Les coordonnées ne sont pas envoyées au serveur ; les résultats de la carte sont calculés sur votre téléphone avec Apple Maps.",
+   "Wiqo, sesli komutunuzu iPhone’unuzda metne dönüştürmek için konuşma tanımayı kullanır.": "Wiqo, utilise la reconnaissance vocale pour convertir votre commande vocale en texte sur votre iPhone.",
+   "Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır.": "Wiqo, utilise le microphone pour convertir votre commande vocale en texte.",
+   "Wiqo, ürettiği görselleri istersen Fotoğraflar'a kaydetmek için erişim ister. Fotoğraflarını okumaz.": "Wiqo, demande l’accès pour enregistrer les images qu’il génère dans Photos, si vous le souhaitez. Il ne lit pas vos photos."
+  },
+  "ar": {
+   "Wiqo, \"Ali'yi ara\" gibi isteklerde rehberinde o kişiyi bulmak için rehberine bakar. Rehber telefonda kalır, sunucuya gönderilmez.": "ويكو، عند طلبات مثل \"اتصل بألي\"، يبحث في دليل الاتصال الخاص بك للعثور على الشخص. يبقى الدليل على الهاتف ولا يُرسل إلى الخادم.",
+   "Wiqo, PC eşleşme QR kodunu ve belgelerini taramak için kamerayı kullanır. Taranan sayfalar telefonda okunur.": "ويكو يستخدم الكاميرا لمسح رمز QR ومستندات التوافق على الكمبيوتر الشخصي. تُقرأ الصفحات الممسوحة على الهاتف.",
+   "Wiqo, aynı ağdaki PC’nizi bulup komut göndermek için yerel ağınızı kullanır.": "ويكو يكتشف جهاز الكمبيوتر الشخصي على نفس الشبكة ويستخدم الشبكة المحلية لإرسال الأوامر.",
+   "Wiqo, hava durumu için şehir adını, haritada da rota ve yakındaki yerleri bulmak için konumunu kullanır. Koordinatlar sunucuya gönderilmez; harita sonuçları telefonda Apple Haritalar ile hesaplanır.": "ويكو يستخدم اسم المدينة للطقس، وموقعك للعثور على الطرق والأماكن القريبة على الخريطة. لا تُرسل الإحداثيات إلى الخادم؛ تُحسب نتائج الخريطة على الهاتف باستخدام خرائط Apple.",
+   "Wiqo, sesli komutunuzu iPhone’unuzda metne dönüştürmek için konuşma tanımayı kullanır.": "ويكو يستخدم التعرف على الكلام لتحويل أوامرك الصوتية إلى نص على هاتفك iPhone.",
+   "Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır.": "ويكو يستخدم الميكروفون لتحويل أوامرك الصوتية إلى نص.",
+   "Wiqo, ürettiği görselleri istersen Fotoğraflar'a kaydetmek için erişim ister. Fotoğraflarını okumaz.": "ويكو يطلب إذنًا لحفظ الصور التي ينتجها في تطبيق الصور إذا رغبت. لا يقرأ صورك."
+  },
+  "ru": {
+   "Wiqo, \"Ali'yi ara\" gibi isteklerde rehberinde o kişiyi bulmak için rehberine bakar. Rehber telefonda kalır, sunucuya gönderilmez.": "Wiqo, при запросах типа \"Позвонить Али\" просматривает ваш адресный список, чтобы найти этого человека. Список остаётся на телефоне, не отправляется на сервер.",
+   "Wiqo, PC eşleşme QR kodunu ve belgelerini taramak için kamerayı kullanır. Taranan sayfalar telefonda okunur.": "Wiqo использует камеру для сканирования QR‑кода и документов при сопряжении с ПК. Сканированные страницы читаются на телефоне.",
+   "Wiqo, aynı ağdaki PC’nizi bulup komut göndermek için yerel ağınızı kullanır.": "Wiqo использует локальную сеть для поиска вашего ПК в той же сети и отправки команд.",
+   "Wiqo, hava durumu için şehir adını, haritada da rota ve yakındaki yerleri bulmak için konumunu kullanır. Koordinatlar sunucuya gönderilmez; harita sonuçları telefonda Apple Haritalar ile hesaplanır.": "Wiqo использует название города для погоды и ваше местоположение для поиска маршрутов и ближайших мест на карте. Координаты не отправляются на сервер; результаты карты рассчитываются на телефоне в Apple Картах.",
+   "Wiqo, sesli komutunuzu iPhone’unuzda metne dönüştürmek için konuşma tanımayı kullanır.": "Wiqo использует распознавание речи на вашем iPhone для преобразования голосовой команды в текст.",
+   "Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır.": "Wiqo использует микрофон для преобразования голосовой команды в текст.",
+   "Wiqo, ürettiği görselleri istersen Fotoğraflar'a kaydetmek için erişim ister. Fotoğraflarını okumaz.": "Wiqo запрашивает доступ к сохранению сгенерированных изображений в Фотоальбом, если вы захотите. Он не читает ваши фотографии."
+  }
+ }
+}

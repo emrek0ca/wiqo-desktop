@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CC224180A9C29B5B70DB3EC1 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D40ECA86D390584A080B2810 /* InfoPlist.xcstrings */; };
 		0389568031C30301F5AA9324 /* AutomationDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 700F9BED6A26B2075241440C /* AutomationDetailView.swift */; };
 		134499258EDC4B29A14A8CBA /* WiqoAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B328EA9F210844F1BEFB3599 /* WiqoAppIntents.swift */; };
 		1D26C79A99868523A4ECB1D0 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3316E23CDB65A96A8283CF08 /* AuthView.swift */; };
@@ -65,7 +66,7 @@
 		C107 /* WiqoWiFiOff.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C117 /* WiqoWiFiOff.shortcut */; };
 		C108 /* WiqoBluetoothOn.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C118 /* WiqoBluetoothOn.shortcut */; };
 		C109 /* WiqoBluetoothOff.shortcut in Resources */ = {isa = PBXBuildFile; fileRef = C119 /* WiqoBluetoothOff.shortcut */; };
-		CC224180A9C29B5B70DB3EC0 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = D40ECA86D390584A080B280F /* Localizable.strings */; };
+		CC224180A9C29B5B70DB3EC0 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D40ECA86D390584A080B280F /* Localizable.xcstrings */; };
 		D10000000000000000000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* OnboardingView.swift */; };
 		D20000000000000000000002 /* WiqoTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* WiqoTheme.swift */; };
 		D20000000000000000000004 /* WiqoToolChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000005 /* WiqoToolChips.swift */; };
@@ -180,11 +181,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		D40ECA86D390584A080B2810 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
+		D40ECA86D390584A080B280F /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		05E4E100FCB3F1A506A081F9 /* DesignSystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		06A62B7FB2C6453A366C1B38 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		091A0246C8FBB0187F43BC49 /* RovaBackendClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RovaBackendClient.swift; sourceTree = "<group>"; };
 		0EDEB5E8610087C8CA0CC13D /* AuthSessionStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AuthSessionStore.swift; sourceTree = "<group>"; };
-		1A06D4F2764954EF2BCC3AEF /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		1A19CF80E5304FC2A06CD0CA /* DeviceCapabilitiesView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceCapabilitiesView.swift; sourceTree = "<group>"; };
 		3072ACE850F6012D34640ABF /* MacBackendChannel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MacBackendChannel.swift; sourceTree = "<group>"; };
 		316BBB8D46F54C18809ADCAD /* DiscoveryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiscoveryView.swift; sourceTree = "<group>"; };
@@ -199,7 +201,6 @@
 		8E470424BA1B9926C7F1169F /* CanvasView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CanvasView.swift; sourceTree = "<group>"; };
 		91687FA6CF10762A30145E6C /* PaywallView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
 		9455A32B68BDA0E97B92804B /* ProfileViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProfileViews.swift; sourceTree = "<group>"; };
-		A3518EEF288C92C6435BA855 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		A5C0DE000000000000000001 /* WiqoSpeechPermissionBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoSpeechPermissionBridge.swift; sourceTree = "<group>"; };
 		AAAFA55B3331D4116B3819B3 /* ArtifactPreview.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ArtifactPreview.swift; sourceTree = "<group>"; };
 		B328EA9F210844F1BEFB3599 /* WiqoAppIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoAppIntents.swift; sourceTree = "<group>"; };
@@ -506,7 +507,8 @@
 				395FF78233CB35CC80BB3B64 /* Billing.swift */,
 				91687FA6CF10762A30145E6C /* PaywallView.swift */,
 				8E470424BA1B9926C7F1169F /* CanvasView.swift */,
-				D40ECA86D390584A080B280F /* Localizable.strings */,
+				D40ECA86D390584A080B280F /* Localizable.xcstrings */,
+				D40ECA86D390584A080B2810 /* InfoPlist.xcstrings */,
 				F10000000000000000000014 /* Fonts */,
 				F10000000000000000000015 /* KaTeX */,
 				D30000000000000000000074 /* StoreKit */,
@@ -685,6 +687,12 @@
 			knownRegions = (
 				en,
 				tr,
+				de,
+				es,
+				fr,
+				ar,
+				ru,
+				Base,
 			);
 			mainGroup = G000;
 			productRefGroup = G005 /* Products */;
@@ -725,7 +733,8 @@
 			files = (
 				701B311C77C0CDA1CAFCAB78 /* Assets.xcassets in Resources */,
 				9D40EDE574A60751916C8895 /* wiqo.icon in Resources */,
-				CC224180A9C29B5B70DB3EC0 /* Localizable.strings in Resources */,
+				CC224180A9C29B5B70DB3EC0 /* Localizable.xcstrings in Resources */,
+				CC224180A9C29B5B70DB3EC1 /* InfoPlist.xcstrings in Resources */,
 				D20000000000000000000028 /* PrivacyInfo.xcprivacy in Resources */,
 				F10000000000000000000001 /* Fonts in Resources */,
 				F10000000000000000000002 /* KaTeX in Resources */,
@@ -930,15 +939,6 @@
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
-		D40ECA86D390584A080B280F /* Localizable.strings */ = {
-			isa = PBXVariantGroup;
-			children = (
-				1A06D4F2764954EF2BCC3AEF /* en */,
-				A3518EEF288C92C6435BA855 /* tr */,
-			);
-			name = Localizable.strings;
-			sourceTree = "<group>";
-		};
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */

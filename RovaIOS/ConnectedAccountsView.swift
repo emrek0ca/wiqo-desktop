@@ -142,7 +142,7 @@ struct ConnectedAccountsView: View {
             providers = await catalogue
             errorMessage = nil
         } catch {
-            errorMessage = "Bağlı hesaplar yüklenemedi. Yeniden denemek için aşağı çek."
+            errorMessage = String(localized: "Bağlı hesaplar yüklenemedi. Yeniden denemek için aşağı çek.")
         }
     }
 
@@ -157,15 +157,15 @@ struct ConnectedAccountsView: View {
             let status = components?.queryItems?.first(where: { $0.name == "status" })?.value
             if status == "success" {
                 await load()
-                WiqoToastCenter.shared.show("Hesap bağlandı", kind: .success)
+                WiqoToastCenter.shared.show(String(localized: "Hesap bağlandı"), kind: .success)
             } else {
                 let message = components?.queryItems?.first(where: { $0.name == "message" })?.value
-                errorMessage = message ?? "Bağlantı tamamlanamadı."
+                errorMessage = message ?? String(localized: "Bağlantı tamamlanamadı.")
             }
         } catch let authError as ASWebAuthenticationSessionError where authError.code == .canceledLogin {
             // The user closed the sheet themselves - not an error worth showing.
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Bağlantı başlatılamadı."
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? String(localized: "Bağlantı başlatılamadı.")
         }
     }
 
@@ -174,9 +174,9 @@ struct ConnectedAccountsView: View {
         do {
             try await RovaBackendClient.disconnectOAuth(provider: provider)
             connections.removeAll { $0.provider == provider }
-            WiqoToastCenter.shared.show("Bağlantı kesildi")
+            WiqoToastCenter.shared.show(String(localized: "Bağlantı kesildi"))
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "Bağlantı kesilemedi."
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? String(localized: "Bağlantı kesilemedi.")
         }
     }
 
@@ -186,7 +186,7 @@ struct ConnectedAccountsView: View {
             try await RovaBackendClient.setOAuthAccessLevel(provider: provider, level: level)
             await load()
         } catch {
-            errorMessage = "Erişim seviyesi değiştirilemedi. Tekrar dene."
+            errorMessage = String(localized: "Erişim seviyesi değiştirilemedi. Tekrar dene.")
         }
     }
 }

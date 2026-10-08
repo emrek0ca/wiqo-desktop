@@ -84,11 +84,11 @@ struct ActView: View {
     @FocusState private var composerFocused: Bool
 
     private static let suggestions: [(title: String, prompt: String)] = [
-        ("Sayaç", "Artır, azalt ve sıfırla butonları olan bir sayaç uygulaması yap"),
-        ("Yapılacaklar", "Görev ekleme, silme ve tamamlandı işaretleme olan bir yapılacaklar listesi yap"),
-        ("Hafıza oyunu", "4x4 kartlı basit bir hafıza kartı eşleştirme oyunu yap"),
-        ("Kişisel site", "Kişisel tanıtım sayfası yap: adım, mesleğim ve iletişim bölümü olsun"),
-        ("Python", "Python ile 1'den 100'e kadar asal sayıları yazdıran bir program yap")
+        (String(localized: "Sayaç"), String(localized: "Artır, azalt ve sıfırla butonları olan bir sayaç uygulaması yap")),
+        (String(localized: "Yapılacaklar"), String(localized: "Görev ekleme, silme ve tamamlandı işaretleme olan bir yapılacaklar listesi yap")),
+        (String(localized: "Hafıza oyunu"), String(localized: "4x4 kartlı basit bir hafıza kartı eşleştirme oyunu yap")),
+        (String(localized: "Kişisel site"), String(localized: "Kişisel tanıtım sayfası yap: adım, mesleğim ve iletişim bölümü olsun")),
+        ("Python", String(localized: "Python ile 1'den 100'e kadar asal sayıları yazdıran bir program yap"))
     ]
 
     private static let importTypes = ["html", "htm", "css", "js", "json", "txt", "md", "py", "svg", "csv"].compactMap { UTType(filenameExtension: $0) }
@@ -132,7 +132,7 @@ struct ActView: View {
             openedID = id
             if open.operation == "edit" {
                 if model.needsConsent(for: project) {
-                    model.notice = "Değişikliği başlatmak için projeye bir kez izin ver, sonra isteği buraya yaz."
+                    model.notice = String(localized: "Değişikliği başlatmak için projeye bir kez izin ver, sonra isteği buraya yaz.")
                 } else {
                     Task { await model.edit(id, request: open.request) }
                 }
@@ -153,7 +153,7 @@ struct ActView: View {
             if geo.size.width >= Self.wideWidth { wideHome(geo.size) } else { narrowHome }
         }
         .background(Color(.systemBackground))
-        .wiqoConfirmation(item: $pendingDelete, title: { _ in "Proje silinsin mi?" }) { project in
+        .wiqoConfirmation(item: $pendingDelete, title: { _ in String(localized: "Proje silinsin mi?") }) { project in
             Button("Sil", role: .destructive) { Task { await model.delete(project.id) } }
         } message: { project in
             Text("\"\(project.name)\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.")
@@ -322,7 +322,7 @@ struct ActView: View {
             }
             ActComposerBar(
                 text: $draft,
-                placeholder: "Ne yapalım?",
+                placeholder: String(localized: "Ne yapalım?"),
                 busy: creating,
                 canSend: canCreate,
                 focus: $composerFocused,
@@ -376,12 +376,12 @@ struct ActView: View {
                   ActSync.isSyncable(path: name, content: text) else { skipped += 1; continue }
             files[name] = text
         }
-        let base = urls.first?.deletingPathExtension().lastPathComponent ?? "Proje"
+        let base = urls.first?.deletingPathExtension().lastPathComponent ?? String(localized: "Proje")
         if let id = model.importProject(name: base, files: files, mode: mode) {
             openedID = id
-            model.notice = skipped > 0 ? "\(skipped) dosya alınamadı (metin olmalı, en çok 100 KB)." : nil
+            model.notice = skipped > 0 ? String(localized: "\(skipped) dosya alınamadı (metin olmalı, en çok 100 KB).") : nil
         } else {
-            model.notice = "Dosyalar alınamadı. Türler: html, css, js, json, txt, md, py, svg, csv; en çok 100 KB."
+            model.notice = String(localized: "Dosyalar alınamadı. Türler: html, css, js, json, txt, md, py, svg, csv; en çok 100 KB.")
         }
     }
 }
@@ -441,15 +441,15 @@ private struct ActPrivacySheet: View {
         NavigationStack {
             List {
                 Section {
-                    row("lock.icloud", "Şifreli senkron", "Projelerin cihazların arasında şifreli gider; anahtar yalnız sende, sunucu içeriği okuyamaz.")
-                    row("iphone", "Yalnız bu cihaz", "Seçtiğin projeler hiçbir yere gönderilmez.")
-                    row("text.badge.checkmark", "Yazar model", "Bir istek yazılırken o isteğin dosyaları gider, saklanmaz.")
+                    row("lock.icloud", String(localized: "Şifreli senkron"), String(localized: "Projelerin cihazların arasında şifreli gider; anahtar yalnız sende, sunucu içeriği okuyamaz."))
+                    row("iphone", String(localized: "Yalnız bu cihaz"), String(localized: "Seçtiğin projeler hiçbir yere gönderilmez."))
+                    row("text.badge.checkmark", String(localized: "Yazar model"), String(localized: "Bir istek yazılırken o isteğin dosyaları gider, saklanmaz."))
                 }
 
                 Section {
                     if revealed {
                         Text(model.recoveryCode).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
-                        Button("Kopyala") { UIPasteboard.general.string = model.recoveryCode; message = "Kopyalandı." }
+                        Button("Kopyala") { UIPasteboard.general.string = model.recoveryCode; message = String(localized: "Kopyalandı.") }
                     } else {
                         Button("Kurtarma kodunu göster") { revealed = true }
                     }
@@ -465,11 +465,11 @@ private struct ActPrivacySheet: View {
                             .font(.system(.callout, design: .monospaced))
                         Button("Kullan") {
                             if model.useRecoveryCode(code) {
-                                message = "Anahtar değişti; projeler yeniden eşitleniyor."
+                                message = String(localized: "Anahtar değişti; projeler yeniden eşitleniyor.")
                                 code = ""
                                 Task { await model.syncAll() }
                             } else {
-                                message = "Kod geçersiz; 55 karakteri kontrol et."
+                                message = String(localized: "Kod geçersiz; 55 karakteri kontrol et.")
                             }
                         }
                         .disabled(code.count < 20)
@@ -549,11 +549,11 @@ struct CodeProjectWorkspaceView: View {
     }
 
     private static let starters: [(title: String, icon: String, prompt: String)] = [
-        ("Mobilde daha iyi göster", "iphone", "Sayfayı telefon ekranına göre düzenle: boşlukları, hizayı ve dokunma alanlarını iyileştir"),
-        ("Daha sade yap", "minus.circle", "Tasarımı daha sade ve düzenli yap; gereksiz süsleri ve kalabalığı kaldır"),
-        ("Hataları ara ve düzelt", "ladybug", "Kodu gözden geçir, çalışmayan veya hatalı yerleri bul ve düzelt"),
-        ("Erişilebilirliği artır", "accessibility", "Kontrastı, yazı okunurluğunu ve buton boyutlarını erişilebilirlik için iyileştir"),
-        ("Kısa açıklama ekle", "text.alignleft", "Sayfanın en üstüne ne işe yaradığını anlatan kısa bir açıklama ekle")
+        (String(localized: "Mobilde daha iyi göster"), "iphone", String(localized: "Sayfayı telefon ekranına göre düzenle: boşlukları, hizayı ve dokunma alanlarını iyileştir")),
+        (String(localized: "Daha sade yap"), "minus.circle", String(localized: "Tasarımı daha sade ve düzenli yap; gereksiz süsleri ve kalabalığı kaldır")),
+        (String(localized: "Hataları ara ve düzelt"), "ladybug", String(localized: "Kodu gözden geçir, çalışmayan veya hatalı yerleri bul ve düzelt")),
+        (String(localized: "Erişilebilirliği artır"), "accessibility", String(localized: "Kontrastı, yazı okunurluğunu ve buton boyutlarını erişilebilirlik için iyileştir")),
+        (String(localized: "Kısa açıklama ekle"), "text.alignleft", String(localized: "Sayfanın en üstüne ne işe yaradığını anlatan kısa bir açıklama ekle"))
     ]
 
     private var project: ActLocalProject? { model.project(projectID) }
@@ -585,14 +585,14 @@ struct CodeProjectWorkspaceView: View {
             .frame(width: geo.size.width, height: geo.size.height)
         }
         .background(Color(.systemBackground))
-        .navigationTitle(embedded ? "" : (project?.name ?? "Proje"))
+        .navigationTitle(embedded ? "" : (project?.name ?? String(localized: "Proje")))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { if !embedded { ToolbarItem(placement: .topBarTrailing) { menu } } }
         .sheet(item: $exporter.shared) { file in ActShareSheet(url: file.url).presentationDetents([.medium, .large]) }
         .onChange(of: draft) { _, text in if text != "Sayfadaki konsol hatalarını düzelt" { pendingErrors = [] } }
         .sheet(isPresented: $showingDetails) { NavigationStack { CodeProjectDetailView(projectID: projectID) } }
         .fullScreenCover(isPresented: $showingFullScreen) { fullScreenPreview }
-        .wiqoConfirmation("Proje silinsin mi?", isPresented: $confirmingDelete) {
+        .wiqoConfirmation(String(localized: "Proje silinsin mi?"), isPresented: $confirmingDelete) {
             Button("Sil", role: .destructive) { Task { await deleteProject() } }
         } message: {
             Text("Dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.")
@@ -624,7 +624,7 @@ struct CodeProjectWorkspaceView: View {
             Button { onBack?() } label: { Label("Projeler", systemImage: "chevron.left") }
                 .buttonStyle(.plain)
                 .foregroundStyle(WiqoTheme.ink)
-            Text(project?.name ?? "Proje")
+            Text(project?.name ?? String(localized: "Proje"))
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
             Image(systemName: project?.mode.systemImage ?? "lock.icloud").font(.caption).foregroundStyle(.secondary)
@@ -668,7 +668,7 @@ struct CodeProjectWorkspaceView: View {
         if wide && short {
             // Little height: two small buttons instead of the sliding pill.
             HStack(spacing: 6) {
-                ForEach([(WorkspaceTab.code, "Kod", "chevron.left.forwardslash.chevron.right"), (.history, "Geçmiş", "clock.arrow.circlepath")], id: \.1) { item in
+                ForEach([(WorkspaceTab.code, "Kod", "chevron.left.forwardslash.chevron.right"), (.history, String(localized: "Geçmiş"), "clock.arrow.circlepath")], id: \.1) { item in
                     let selected = (tab == .history ? WorkspaceTab.history : .code) == item.0
                     Button { tab = item.0 } label: {
                         Label(item.1, systemImage: item.2)
@@ -688,7 +688,7 @@ struct CodeProjectWorkspaceView: View {
             WiqoPillTabs<WorkspaceTab>(
                 options: [
                     WiqoPillTabs<WorkspaceTab>.Option(value: .code, title: "Kod", systemImage: "chevron.left.forwardslash.chevron.right"),
-                    WiqoPillTabs<WorkspaceTab>.Option(value: .history, title: "Geçmiş", systemImage: "clock.arrow.circlepath")
+                    WiqoPillTabs<WorkspaceTab>.Option(value: .history, title: String(localized: "Geçmiş"), systemImage: "clock.arrow.circlepath")
                 ],
                 selection: Binding(get: { tab == .history ? .history : .code }, set: { tab = $0 })
             )
@@ -697,9 +697,9 @@ struct CodeProjectWorkspaceView: View {
         } else {
             WiqoPillTabs<WorkspaceTab>(
                 options: [
-                    WiqoPillTabs<WorkspaceTab>.Option(value: .preview, title: isWeb ? "Önizleme" : "Çıktı", systemImage: isWeb ? "iphone" : "play.rectangle"),
+                    WiqoPillTabs<WorkspaceTab>.Option(value: .preview, title: isWeb ? String(localized: "Önizleme") : String(localized: "Çıktı"), systemImage: isWeb ? "iphone" : "play.rectangle"),
                     WiqoPillTabs<WorkspaceTab>.Option(value: .code, title: "Kod", systemImage: "chevron.left.forwardslash.chevron.right"),
-                    WiqoPillTabs<WorkspaceTab>.Option(value: .history, title: "Geçmiş", systemImage: "clock.arrow.circlepath")
+                    WiqoPillTabs<WorkspaceTab>.Option(value: .history, title: String(localized: "Geçmiş"), systemImage: "clock.arrow.circlepath")
                 ],
                 selection: $tab
             )
@@ -920,7 +920,7 @@ struct CodeProjectWorkspaceView: View {
     private func saveEdit(_ path: String) {
         editing = false
         focused = false
-        model.saveFiles(projectID, set: [path: editorText], summary: "\(path) elle düzenlendi")
+        model.saveFiles(projectID, set: [path: editorText], summary: String(localized: "\(path) elle düzenlendi"))
         reloadToken += 1
         WiqoHaptics.selection()
     }
@@ -944,7 +944,7 @@ struct CodeProjectWorkspaceView: View {
 
     private func validFileName(_ name: String) -> Bool {
         let ok = !name.isEmpty && !name.hasPrefix("/") && !name.contains("..") && ActSync.isSyncable(path: name, content: "") && project?.files[name] == nil
-        if !ok { model.notice = "Dosya adı geçersiz ya da zaten var (türler: html, css, js, json, txt, md, py, svg, csv)." }
+        if !ok { model.notice = String(localized: "Dosya adı geçersiz ya da zaten var (türler: html, css, js, json, txt, md, py, svg, csv).") }
         return ok
     }
 
@@ -1108,7 +1108,7 @@ struct CodeProjectWorkspaceView: View {
             _ = try await model.readyPage(for: current)
             reloadToken += 1
         } catch {
-            packageError = (error as? LocalizedError)?.errorDescription ?? "Paketler indirilemedi."
+            packageError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Paketler indirilemedi.")
         }
     }
 
@@ -1119,10 +1119,10 @@ struct CodeProjectWorkspaceView: View {
                     .buttonStyle(.wiqoPill(.accent))
                     .disabled(running || model.job != nil)
                 if let pcOutput, !pcOutput.isEmpty {
-                    outputCard("Mac çıktısı", pcOutput, error: nil)
+                    outputCard(String(localized: "Mac çıktısı"), pcOutput, error: nil)
                 }
                 if let runResult {
-                    outputCard("Çıktı", runResult.stdout.isEmpty ? (runResult.timedOut ? "Program zamanında bitmedi." : "Çıktı yok.") : runResult.stdout, error: runResult.stderr.isEmpty ? nil : runResult.stderr)
+                    outputCard(String(localized: "Çıktı"), runResult.stdout.isEmpty ? (runResult.timedOut ? String(localized: "Program zamanında bitmedi.") : String(localized: "Çıktı yok.")) : runResult.stdout, error: runResult.stderr.isEmpty ? nil : runResult.stderr)
                 } else {
                     Text("Programı çalıştırınca çıktısı burada görünür. Çalıştırma için dosyalar bu istek boyunca sunucudaki güvenli ortama gider ve saklanmaz.")
                         .font(.footnote)
@@ -1186,7 +1186,7 @@ struct CodeProjectWorkspaceView: View {
             if !short, let latest = project?.history.first { changeStrip(latest) }
             ActComposerBar(
                 text: $draft,
-                placeholder: "Ne değiştirelim?",
+                placeholder: String(localized: "Ne değiştirelim?"),
                 busy: model.job != nil,
                 canSend: canSend,
                 focus: $focused,
@@ -1284,7 +1284,7 @@ struct CodeProjectWorkspaceView: View {
             }
             Spacer(minLength: 6)
             if let notes = entry.notes, !notes.isEmpty, entry.verified {
-                Button { draft = "Tasarım sorunlarını düzelt, başka bir şey değiştirme: " + notes.joined(separator: "; "); focused = true } label: { Label("Düzelt", systemImage: "wand.and.stars").font(.footnote.weight(.medium)) }
+                Button { draft = String(localized: "Tasarım sorunlarını düzelt, başka bir şey değiştirme: ") + notes.joined(separator: "; "); focused = true } label: { Label("Düzelt", systemImage: "wand.and.stars").font(.footnote.weight(.medium)) }
                     .buttonStyle(.plain)
                     .foregroundStyle(WiqoTheme.ink)
                     .disabled(model.job != nil)
@@ -1308,12 +1308,12 @@ struct CodeProjectWorkspaceView: View {
             }
             Section("Mac'te") {
                 if isWeb {
-                    Button { Task { await handOff("open_preview", "Mac'te önizleme açılıyor…") } } label: { Label("Mac'te önizle", systemImage: "macwindow") }
+                    Button { Task { await handOff("open_preview", String(localized: "Mac'te önizleme açılıyor…")) } } label: { Label("Mac'te önizle", systemImage: "macwindow") }
                 } else {
-                    Button { Task { await handOff("run", "Mac'te çalıştırılıyor…") } } label: { Label("Mac'te çalıştır", systemImage: "play.rectangle") }
+                    Button { Task { await handOff("run", String(localized: "Mac'te çalıştırılıyor…")) } } label: { Label("Mac'te çalıştır", systemImage: "play.rectangle") }
                 }
-                Button { Task { await handOff("open_editor", "Editörde açılıyor…") } } label: { Label("Mac'te editörde aç", systemImage: "chevron.left.forwardslash.chevron.right") }
-                Button { Task { await handOff("open_folder", "Klasör açılıyor…") } } label: { Label("Klasörü Mac'te aç", systemImage: "folder") }
+                Button { Task { await handOff("open_editor", String(localized: "Editörde açılıyor…")) } } label: { Label("Mac'te editörde aç", systemImage: "chevron.left.forwardslash.chevron.right") }
+                Button { Task { await handOff("open_folder", String(localized: "Klasör açılıyor…")) } } label: { Label("Klasörü Mac'te aç", systemImage: "folder") }
             }
             Section("Gizlilik") {
                 ForEach([ActPrivacyMode.devices, .deviceOnly], id: \.self) { option in
@@ -1374,13 +1374,13 @@ struct CodeProjectWorkspaceView: View {
     private func fixConsoleErrors(_ errors: [(level: String, text: String)]) {
         guard !errors.isEmpty else { return }
         pendingErrors = Array(errors.prefix(20))
-        draft = "Sayfadaki konsol hatalarını düzelt"
+        draft = String(localized: "Sayfadaki konsol hatalarını düzelt")
         requestSend()
     }
 
     private func shareProgramText() {
         do { exporter.shared = ActExporter.SharedFile(url: try model.exportURL(projectID)) }
-        catch { exporter.error = (error as? LocalizedError)?.errorDescription ?? "Dışa aktarılamadı." }
+        catch { exporter.error = (error as? LocalizedError)?.errorDescription ?? String(localized: "Dışa aktarılamadı.") }
     }
 
     private func undo() {
@@ -1393,7 +1393,7 @@ struct CodeProjectWorkspaceView: View {
         running = true
         defer { running = false }
         do { runResult = try await model.runPython(projectID) }
-        catch { model.notice = (error as? LocalizedError)?.errorDescription ?? "Program çalıştırılamadı." }
+        catch { model.notice = (error as? LocalizedError)?.errorDescription ?? String(localized: "Program çalıştırılamadı.") }
     }
 
     private func handOff(_ action: String, _ message: String) async {

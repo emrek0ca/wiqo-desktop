@@ -26,8 +26,8 @@ struct PaywallView: View {
                     header
                     planCard(
                         title: "Free",
-                        price: "Ücretsiz",
-                        features: ["Günde 10 mesaj", "Günde 1 görsel", "Mac bağlantısı"],
+                        price: String(localized: "Ücretsiz"),
+                        features: [String(localized: "Günde 10 mesaj"), String(localized: "Günde 1 görsel"), String(localized: "Mac bağlantısı")],
                         isCurrent: currentTier == "free"
                     )
                     proCard
@@ -35,7 +35,7 @@ struct PaywallView: View {
                         planCard(
                             title: "Business",
                             price: nil,
-                            features: ["Günde 200 mesaj", "Günde 20 görsel", "PC bağlantısı"],
+                            features: [String(localized: "Günde 200 mesaj"), String(localized: "Günde 20 görsel"), String(localized: "PC bağlantısı")],
                             isCurrent: true
                         )
                     }
@@ -84,7 +84,7 @@ struct PaywallView: View {
             title: "Pro",
             price: storeKit.proProduct?.displayPrice,
             priceSuffix: "/ay",
-            features: ["Günde 100 mesaj", "Günde 10 görsel", "PC bağlantısı"],
+            features: [String(localized: "Günde 100 mesaj"), String(localized: "Günde 10 görsel"), String(localized: "PC bağlantısı")],
             isCurrent: currentTier == "pro"
         ) {
             switch storeKit.productLoadState {
@@ -100,7 +100,7 @@ struct PaywallView: View {
                 }
             case .available:
                 if currentTier != "pro" {
-                    WiqoActionButton(title: "Pro'ya geç", isLoading: storeKit.isPurchasing) {
+                    WiqoActionButton(title: String(localized: "Pro'ya geç"), isLoading: storeKit.isPurchasing) {
                         Task { await purchasePro() }
                     }
                     .disabled(storeKit.isPurchasing)
@@ -112,7 +112,7 @@ struct PaywallView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    WiqoActionButton(title: "Tekrar dene", kind: .secondary) {
+                    WiqoActionButton(title: String(localized: "Tekrar dene"), kind: .secondary) {
                         Task { await storeKit.retryLoadingProducts() }
                     }
                     .padding(.top, 2)
@@ -147,7 +147,7 @@ struct PaywallView: View {
     /// purchase flow itself, plus working links to the Privacy Policy and Terms of Use right next
     /// to the purchase buttons - not just somewhere else in the app.
     private var legalFooter: some View {
-        let priceClause = storeKit.proProduct.map { "aylık \($0.displayPrice) karşılığında" } ?? "aylık ücret karşılığında"
+        let priceClause = storeKit.proProduct.map { String(localized: "aylık \($0.displayPrice) karşılığında") } ?? String(localized: "aylık ücret karşılığında")
         return VStack(spacing: 10) {
             Text("Pro, \(priceClause) otomatik yenilenen bir abonelik ürünüdür. Ödeme, satın alma onayıyla Apple ID hesabınızdan tahsil edilir; mevcut dönemin bitiminden en az 24 saat önce iptal etmediğiniz sürece abonelik aynı ücretle otomatik olarak yenilenir. Aboneliğinizi Ayarlar > [Adınız] > Abonelikler yolundan istediğiniz zaman yönetebilirsiniz.")
                 .font(.caption2)
@@ -238,9 +238,9 @@ struct PaywallView: View {
             switch outcome {
             case .purchased:
                 dismiss()
-                WiqoToastCenter.shared.show("Pro aktif. Hoş geldin!", kind: .success)
+                WiqoToastCenter.shared.show(String(localized: "Pro aktif. Hoş geldin!"), kind: .success)
             case .pending:
-                errorMessage = "Satın alma onay bekliyor (Ask to Buy). Onaylanınca otomatik aktif olacak."
+                errorMessage = String(localized: "Satın alma onay bekliyor (Ask to Buy). Onaylanınca otomatik aktif olacak.")
             case .cancelled:
                 break
             }
@@ -255,7 +255,7 @@ struct PaywallView: View {
         do {
             try await storeKit.restore()
             dismiss()
-            WiqoToastCenter.shared.show("Satın alımların geri yüklendi", kind: .success)
+            WiqoToastCenter.shared.show(String(localized: "Satın alımların geri yüklendi"), kind: .success)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }

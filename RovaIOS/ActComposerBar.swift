@@ -22,7 +22,7 @@ struct ActComposerBar<Leading: View>: View {
         HStack(alignment: .bottom, spacing: 4) {
             leading()
                 .frame(width: 34, height: 34)
-            TextField(recorder.isRecording ? "Dinliyorum…" : placeholder, text: $text, axis: .vertical)
+            TextField(recorder.isRecording ? String(localized: "Dinliyorum…") : placeholder, text: $text, axis: .vertical)
                 .lineLimit(1...5)
                 .focused(focus)
                 .disabled(busy || recorder.isRecording)

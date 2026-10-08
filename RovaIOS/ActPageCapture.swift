@@ -8,10 +8,10 @@ enum ActExportKind: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .zip: return "Kaynak ZIP"
-        case .html: return "Tek HTML dosyası"
+        case .zip: return String(localized: "Kaynak ZIP")
+        case .html: return String(localized: "Tek HTML dosyası")
         case .pdf: return "PDF"
-        case .png: return "Ekran görüntüsü"
+        case .png: return String(localized: "Ekran görüntüsü")
         }
     }
     var systemImage: String {
@@ -24,10 +24,10 @@ enum ActExportKind: String, CaseIterable, Identifiable {
     }
     var busyText: String {
         switch self {
-        case .zip: return "ZIP hazırlanıyor…"
-        case .html: return "Tek HTML hazırlanıyor…"
-        case .pdf: return "PDF hazırlanıyor…"
-        case .png: return "Ekran görüntüsü hazırlanıyor…"
+        case .zip: return String(localized: "ZIP hazırlanıyor…")
+        case .html: return String(localized: "Tek HTML hazırlanıyor…")
+        case .pdf: return String(localized: "PDF hazırlanıyor…")
+        case .png: return String(localized: "Ekran görüntüsü hazırlanıyor…")
         }
     }
     /// Only web projects have a page to print or photograph.
@@ -102,7 +102,7 @@ enum ActPageCapture {
             view.loadHTMLString(html, baseURL: nil)
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(15))
-                loader.finish(CaptureError("Sayfa zamanında açılamadı."))
+                loader.finish(CaptureError(String(localized: "Sayfa zamanında açılamadı.")))
             }
         }
         // Scripts run and charts draw before the picture is taken.
@@ -119,13 +119,13 @@ enum ActPageCapture {
             snapshot.rect = view.bounds
             snapshot.snapshotWidth = NSNumber(value: min(width, 1600))
             let image = try await view.takeSnapshot(configuration: snapshot)
-            guard let data = image.pngData() else { throw CaptureError("Ekran görüntüsü oluşturulamadı.") }
+            guard let data = image.pngData() else { throw CaptureError(String(localized: "Ekran görüntüsü oluşturulamadı.")) }
             return data
         case .pdf:
             let pdf = WKPDFConfiguration()
             pdf.rect = view.bounds
             let data = try await view.pdf(configuration: pdf)
-            guard data.count > 100 else { throw CaptureError("PDF oluşturulamadı.") }
+            guard data.count > 100 else { throw CaptureError(String(localized: "PDF oluşturulamadı.")) }
             return data
         }
     }
@@ -150,7 +150,7 @@ final class ActExporter: ObservableObject {
         Task {
             defer { busy = nil }
             do { shared = SharedFile(url: try await ActModel.shared.export(kind, id: projectID, width: width)) }
-            catch { self.error = (error as? LocalizedError)?.errorDescription ?? "Dışa aktarılamadı." }
+            catch { self.error = (error as? LocalizedError)?.errorDescription ?? String(localized: "Dışa aktarılamadı.") }
         }
     }
 }

@@ -65,8 +65,8 @@ public struct ActHub: Sendable {
                 guard let retryAfter else { return message }
                 return "\(message) \(retryAfter) sn sonra tekrar dene."
             case .network(let message): return message
-            case .notSignedIn: return "Wiqo hesabına bağlı değil."
-            case .badResponse: return "Sunucudan geçersiz yanıt geldi."
+            case .notSignedIn: return String(localized: "Wiqo hesabına bağlı değil.")
+            case .badResponse: return String(localized: "Sunucudan geçersiz yanıt geldi.")
             }
         }
         public var status: Int? {
@@ -137,7 +137,7 @@ public struct ActHub: Sendable {
         let (data, status) = try await raw("POST", "code-sync/projects/\(id)/push", body: payload, acceptable: [409])
         let response = try decode(Response.self, data)
         if status == 409, response.conflict == true { return .conflict(paths: response.paths ?? [], version: response.version ?? baseVersion) }
-        guard response.ok, let version = response.version else { throw HubError.server(status: status, message: response.error ?? "Değişiklikler gönderilemedi.") }
+        guard response.ok, let version = response.version else { throw HubError.server(status: status, message: response.error ?? String(localized: "Değişiklikler gönderilemedi.")) }
         return .ok(version: version, merged: response.merged ?? false)
     }
 
@@ -225,7 +225,7 @@ public struct ActHub: Sendable {
         guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else { throw HubError.badResponse }
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = method
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(String(localized: "Bearer \(accessToken)"), forHTTPHeaderField: String(localized: "Authorization"))
         if let body {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -233,11 +233,11 @@ public struct ActHub: Sendable {
         let data: Data
         let response: URLResponse
         do { (data, response) = try await session.data(for: request) }
-        catch { throw HubError.network((error as? URLError)?.localizedDescription ?? "Sunucuya ulaşılamadı.") }
+        catch { throw HubError.network((error as? URLError)?.localizedDescription ?? String(localized: "Sunucuya ulaşılamadı.")) }
         guard let http = response as? HTTPURLResponse else { throw HubError.badResponse }
         guard (200..<300).contains(http.statusCode) || acceptable.contains(http.statusCode) else {
             let error = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]).flatMap { $0["error"] as? [String: Any] }
-            let message = (error?["message"] as? String) ?? "Sunucu \(http.statusCode) döndürdü."
+            let message = (error?["message"] as? String) ?? String(localized: "Sunucu \(http.statusCode) döndürdü.")
             if let code = error?["code"] as? String {
                 throw HubError.rejected(status: http.statusCode, code: code, message: message, retryAfter: http.value(forHTTPHeaderField: "Retry-After").flatMap { Int($0) })
             }

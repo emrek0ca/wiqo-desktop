@@ -63,9 +63,9 @@ private struct WiqoActivityView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     if let error { Text(error).font(.footnote).foregroundStyle(WiqoTheme.red) }
                     if let feed {
-                        section("İlgi bekleyen", items: feed.needsAttention)
-                        section("Yaklaşan", items: feed.upcoming)
-                        section("Son etkinlik", items: feed.recent)
+                        section(String(localized: "İlgi bekleyen"), items: feed.needsAttention)
+                        section(String(localized: "Yaklaşan"), items: feed.upcoming)
+                        section(String(localized: "Son etkinlik"), items: feed.recent)
                     } else if error == nil {
                         ProgressView().frame(maxWidth: .infinity)
                     }
@@ -97,7 +97,7 @@ private struct WiqoActivityView: View {
                 task.ref?.type == "project" ? "Proje iptal edilsin mi?"
                     : task.ref?.type == "agent_task" ? "Arka plan görevi durdurulsun mu?"
                     : task.ref?.type == "terminal_grant" ? "Terminal oturumu kapatılsın mı?"
-                    : "PC işi iptal edilsin mi?"
+                    : String(localized: "PC işi iptal edilsin mi?")
             },
             actions: { item in
                 Button(item.ref?.type == "project" ? "Projeyi iptal et"
@@ -220,7 +220,7 @@ private struct WiqoActivityView: View {
         case "watching": return "İzleniyor"
         case "done": return "Tamamlandı"
         case "failed": return "Başarısız"
-        default: return "Sonuç belirsiz"
+        default: return String(localized: "Sonuç belirsiz")
         }
     }
 
@@ -254,16 +254,16 @@ private struct WiqoActivityView: View {
             guard let root = details["wiqoGrantRoot"], let mode = details["wiqoGrantMode"],
                   let expiresAt = terminalGrantExpiresAt ?? details["wiqoGrantExpiresAt"].flatMap(Int.init),
                   let signature = model.signTerminalGrant(grantId: grantId, rootDirectory: root, mode: mode, expiresAt: expiresAt, deviceId: details["wiqoGrantDeviceId"]) else {
-                cancelNotice = "Terminal izni bu telefonda imzalanamadı. PC eşleşmesini kontrol et."
+                cancelNotice = String(localized: "Terminal izni bu telefonda imzalanamadı. PC eşleşmesini kontrol et.")
                 return
             }
             terminalGrant = (grantId, signature)
         }
         do {
             _ = try await RovaBackendClient.resolveBackendConfirmation(id: confirmation.id, approved: approved, terminalGrant: terminalGrant, terminalGrantExpiresAt: terminalGrantExpiresAt, terminalGrantScope: terminalGrantScope)
-            cancelNotice = approved ? "Onaylandı; işlem çalıştırıldı." : "Reddedildi."
+            cancelNotice = approved ? String(localized: "Onaylandı; işlem çalıştırıldı.") : String(localized: "Reddedildi.")
         } catch {
-            cancelNotice = (error as? LocalizedError)?.errorDescription ?? "Onay iletilemedi."
+            cancelNotice = (error as? LocalizedError)?.errorDescription ?? String(localized: "Onay iletilemedi.")
         }
         await load()
     }
@@ -286,9 +286,9 @@ private struct WiqoActivityView: View {
             defer { cancellingTaskID = nil }
             do {
                 try await RovaBackendClient.cancelAgentTask(id: id)
-                cancelNotice = "Arka plan görevi durduruldu."
+                cancelNotice = String(localized: "Arka plan görevi durduruldu.")
             } catch {
-                cancelNotice = "Görev durdurulamadı; zaten bitmiş olabilir."
+                cancelNotice = String(localized: "Görev durdurulamadı; zaten bitmiş olabilir.")
             }
             await load()
             return
@@ -299,10 +299,10 @@ private struct WiqoActivityView: View {
             do {
                 let result = try await RovaBackendClient.revokeTerminalGrant(id: reference.id)
                 cancelNotice = result.unknownJobCount == 0
-                    ? "Terminal oturumu kapatıldı."
-                    : "Terminal oturumu kapatıldı; PC çevrimdışı olduğu için \(result.unknownJobCount) başlamış işin durduğu doğrulanamadı."
+                    ? String(localized: "Terminal oturumu kapatıldı.")
+                    : String(localized: "Terminal oturumu kapatıldı; PC çevrimdışı olduğu için \(result.unknownJobCount) başlamış işin durduğu doğrulanamadı.")
             } catch {
-                cancelNotice = "Oturum kapatılamadı. Etkinlik'i yenileyip durumu tekrar kontrol et."
+                cancelNotice = String(localized: "Oturum kapatılamadı. Etkinlik'i yenileyip durumu tekrar kontrol et.")
             }
             await load()
             return
@@ -313,12 +313,12 @@ private struct WiqoActivityView: View {
             do {
                 let result = try await RovaBackendClient.cancelTerminalJob(id: reference.id)
                 cancelNotice = result.state == "cancelled"
-                    ? "Terminal işi durduruldu."
+                    ? String(localized: "Terminal işi durduruldu.")
                     : result.state == "completed" || result.state == "failed"
                         ? "Terminal işi zaten \(result.state == "completed" ? "tamamlandı" : "başarısız oldu")."
-                        : "İşin durduğu doğrulanamadı; sonucu belirsiz olarak Etkinlik'te gösteriliyor."
+                        : String(localized: "İşin durduğu doğrulanamadı; sonucu belirsiz olarak Etkinlik'te gösteriliyor.")
             } catch {
-                cancelNotice = "Terminal işi iptal edilemedi veya sonucu belirsiz. Etkinlik'i yenileyip durumu kontrol et."
+                cancelNotice = String(localized: "Terminal işi iptal edilemedi veya sonucu belirsiz. Etkinlik'i yenileyip durumu kontrol et.")
             }
             await load()
             return
@@ -329,13 +329,13 @@ private struct WiqoActivityView: View {
         do {
             let result = try await RovaBackendClient.cancelDeferredTask(id: id)
             if result.cancelled == true && result.outcomeUnknown == false {
-                cancelNotice = "PC işi iptal edildi."
+                cancelNotice = String(localized: "PC işi iptal edildi.")
             } else {
-                cancelNotice = "Wiqo işi kuyruktan aldı; PC'ye gönderilmiş bir adımın sonucu doğrulanamadı. Etkinlik'teki kontrol uyarısına bak."
+                cancelNotice = String(localized: "Wiqo işi kuyruktan aldı; PC'ye gönderilmiş bir adımın sonucu doğrulanamadı. Etkinlik'teki kontrol uyarısına bak.")
             }
             await load()
         } catch {
-            cancelNotice = "İptal isteğinin sonucu belirsiz. Etkinlik'i yenileyip PC işinin durumunu kontrol et."
+            cancelNotice = String(localized: "İptal isteğinin sonucu belirsiz. Etkinlik'i yenileyip PC işinin durumunu kontrol et.")
             await load()
         }
     }
@@ -346,16 +346,16 @@ private struct WiqoActivityView: View {
         defer { cancellingTaskID = nil }
         do {
             _ = try await RovaBackendClient.cancelProject(id: id)
-            cancelNotice = "Proje iptal edildi."
+            cancelNotice = String(localized: "Proje iptal edildi.")
         } catch {
-            cancelNotice = "Proje iptal edilemedi; bitmiş ya da zaten durmuş olabilir. Listeyi yeniledim."
+            cancelNotice = String(localized: "Proje iptal edilemedi; bitmiş ya da zaten durmuş olabilir. Listeyi yeniledim.")
         }
         await load()
     }
 
     private func load() async {
         do { feed = try await RovaBackendClient.fetchActivity(); error = nil }
-        catch { self.error = "Etkinlikler yüklenemedi. Yeniden denemek için aşağı çek." }
+        catch { self.error = String(localized: "Etkinlikler yüklenemedi. Yeniden denemek için aşağı çek.") }
     }
 }
 
@@ -395,10 +395,10 @@ private struct WiqoMemoryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
-        .wiqoConfirmation(item: $selected, title: { _ in "Bu hafıza kaydı silinsin mi?" }) { memory in
+        .wiqoConfirmation(item: $selected, title: { _ in String(localized: "Bu hafıza kaydı silinsin mi?") }) { memory in
             Button("Kaydı sil", role: .destructive) { Task { await remove(memory.id) } }
         } message: { _ in EmptyView() }
-        .wiqoConfirmation("Tüm hafıza silinsin mi?", isPresented: $confirmAll) {
+        .wiqoConfirmation(String(localized: "Tüm hafıza silinsin mi?"), isPresented: $confirmAll) {
             Button("Tümünü sil", role: .destructive) { Task { await removeAll() } }
         }
     }
@@ -407,17 +407,17 @@ private struct WiqoMemoryView: View {
         isLoading = true
         defer { isLoading = false }
         do { memories = try await RovaBackendClient.fetchStoredMemories(); error = nil }
-        catch { self.error = "Hafıza yüklenemedi. Yeniden denemek için aşağı çek." }
+        catch { self.error = String(localized: "Hafıza yüklenemedi. Yeniden denemek için aşağı çek.") }
     }
 
     private func remove(_ id: Int) async {
         do { try await RovaBackendClient.deleteStoredMemory(id: id); memories.removeAll { $0.id == id }; selected = nil; error = nil }
-        catch { self.error = "Kayıt silinemedi. Tekrar dene." }
+        catch { self.error = String(localized: "Kayıt silinemedi. Tekrar dene.") }
     }
 
     private func removeAll() async {
         do { try await RovaBackendClient.deleteAllStoredMemories(); memories = []; error = nil }
-        catch { self.error = "Hafıza silinemedi. Tekrar dene." }
+        catch { self.error = String(localized: "Hafıza silinemedi. Tekrar dene.") }
     }
 }
 
@@ -462,7 +462,7 @@ private struct WiqoGoalsView: View {
         isLoading = true
         defer { isLoading = false }
         do { goals = try await RovaBackendClient.fetchGoals(); error = nil }
-        catch { self.error = "Hedefler yüklenemedi. Yeniden denemek için aşağı çek." }
+        catch { self.error = String(localized: "Hedefler yüklenemedi. Yeniden denemek için aşağı çek.") }
     }
 }
 
@@ -516,8 +516,8 @@ struct WiqoHomeView: View {
                     ToolbarItem(placement: .principal) {
                         WiqoPillTabs<HomeMode>(
                             options: [
-                                WiqoPillTabs<HomeMode>.Option(value: .chat, title: "Chat"),
-                                WiqoPillTabs<HomeMode>.Option(value: .act, title: "Act")
+                                WiqoPillTabs<HomeMode>.Option(value: .chat, title: String(localized: "Chat")),
+                                WiqoPillTabs<HomeMode>.Option(value: .act, title: String(localized: "Act"))
                             ],
                             selection: $mode,
                             horizontalPadding: 8
@@ -713,7 +713,7 @@ struct WiqoHomeView: View {
             UserDefaults.standard.set(true, forKey: key)
         }
         conversations = CopilotConversationStore.all()
-        draftPrompt = "Sesi kıs"
+        draftPrompt = String(localized: "Sesi kıs")
         conversationID = CopilotConversationStore.newIdentifier()
     }
 
@@ -944,7 +944,7 @@ private struct SidebarOverlay: View {
             else if conversation.updatedAt > weekAgo { week.append(conversation) }
             else { older.append(conversation) }
         }
-        return [("Bugün", today), ("Dün", yesterday), ("Son 7 gün", week), ("Daha eski", older)].filter { !$0.1.isEmpty }
+        return [(String(localized: "Bugün"), today), (String(localized: "Dün"), yesterday), (String(localized: "Son 7 gün"), week), (String(localized: "Daha eski"), older)].filter { !$0.1.isEmpty }
     }
 }
 
@@ -1008,7 +1008,7 @@ struct PairingView: View {
                 .buttonStyle(.wiqoPill(.accent))
                 .wiqoRiseIn(delay: 0.24)
                 if model.isPairing {
-                    WiqoStatusLine(text: "PC'yi bağlıyorum…")
+                    WiqoStatusLine(text: String(localized: "PC'yi bağlıyorum…"))
                         .font(.subheadline)
                 }
                 if let error = scanError ?? model.lastError {
@@ -1034,7 +1034,7 @@ struct PairingView: View {
                         }
                         scanError = nil
                     } catch {
-                        scanError = "Geçersiz Wiqo QR kodu."
+                        scanError = String(localized: "Geçersiz Wiqo QR kodu.")
                     }
                 } onCancel: {
                     showingScanner = false
@@ -1101,7 +1101,7 @@ private struct PairingCelebrationView: View {
                 .padding(.horizontal, 24)
                 .wiqoRiseIn(delay: 0.5)
             Spacer()
-            WiqoActionButton(title: "Harika!") { dismiss() }
+            WiqoActionButton(title: String(localized: "Harika!")) { dismiss() }
                 .padding(.horizontal, 24)
         }
         .padding(.vertical, 32)
@@ -1191,7 +1191,7 @@ struct SettingsView: View {
             .sheet(isPresented: $showingPaywall) {
                 PaywallView(subscriptionStore: subscriptionStore)
             }
-            .wiqoConfirmation("Wiqo hesabından çıkmak istediğine emin misin?", isPresented: $showingSignOutConfirmation) {
+            .wiqoConfirmation(String(localized: "Wiqo hesabından çıkmak istediğine emin misin?"), isPresented: $showingSignOutConfirmation) {
                 Button("Çıkış yap", role: .destructive) { authSession.signOut(); dismiss() }
             }
         }
@@ -1238,8 +1238,8 @@ struct SettingsView: View {
             .buttonStyle(.plain)
 
             HStack(spacing: 14) {
-                compactUsage("Mesaj", info.usage.messages)
-                compactUsage("Görsel", info.usage.images)
+                compactUsage(String(localized: "Mesaj"), info.usage.messages)
+                compactUsage(String(localized: "Görsel"), info.usage.images)
                 if info.tier == "free" {
                     Button("Yükselt") { showingPaywall = true }
                         .buttonStyle(.wiqoPill(.accent))
@@ -1269,7 +1269,7 @@ struct SettingsView: View {
     // MARK: Connections
 
     private var connectionsGroup: some View {
-        WiqoSettingsGroup(title: "Bağlantılar") {
+        WiqoSettingsGroup(title: String(localized: "Bağlantılar")) {
             NavigationLink {
                 PCSettingsView(model: model, subscriptionStore: subscriptionStore)
             } label: {
@@ -1278,7 +1278,7 @@ struct SettingsView: View {
                         Circle()
                             .fill(model.isPaired && model.userFacingConnectionLabel != "PC kapalı" ? WiqoTheme.green : Color.secondary.opacity(0.4))
                             .frame(width: 7, height: 7)
-                        Text(model.isPaired ? model.userFacingConnectionLabel : "Bağla")
+                        Text(model.isPaired ? model.userFacingConnectionLabel : String(localized: "Bağla"))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -1289,7 +1289,7 @@ struct SettingsView: View {
             .buttonStyle(WiqoRowButtonStyle())
 
             Button { showingApps = true } label: {
-                WiqoRow(systemImage: "square.grid.2x2", title: "Uygulamalar", showsDivider: false) {
+                WiqoRow(systemImage: "square.grid.2x2", title: String(localized: "Uygulamalar"), showsDivider: false) {
                     HStack(spacing: 6) {
                         if appsNeedingReconnect > 0 {
                             Text("Yeniden bağla")
@@ -1320,7 +1320,7 @@ struct SettingsView: View {
         let connected = oauthConnections.count
         let names = oauthProviders.filter { provider in oauthConnections.contains { $0.provider == provider.id } }.map(\.name)
         if connected == 0 { return "\(oauthProviders.count) uygulama" }
-        return names.count <= 2 ? names.joined(separator: ", ") : "\(connected) bağlı"
+        return names.count <= 2 ? names.joined(separator: ", ") : String(localized: "\(connected) bağlı")
     }
 
     private func loadConnections() async {
@@ -1333,8 +1333,8 @@ struct SettingsView: View {
     // MARK: Style (saved as it changes)
 
     private var styleGroup: some View {
-        WiqoSettingsGroup(title: "Wiqo'nun tarzı") {
-            WiqoRow(systemImage: "text.bubble", title: "Yanıt tonu", showsDivider: true) {
+        WiqoSettingsGroup(title: String(localized: "Wiqo'nun tarzı")) {
+            WiqoRow(systemImage: "text.bubble", title: String(localized: "Yanıt tonu"), showsDivider: true) {
                 Picker("Yanıt tonu", selection: styleBinding(\.tone, key: "tone")) {
                     Text("Varsayılan").tag(String?.none)
                     Text("Samimi").tag(String?.some("samimi"))
@@ -1346,7 +1346,7 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .tint(.secondary)
             }
-            WiqoRow(systemImage: "globe", title: "Yanıt dili", showsDivider: true) {
+            WiqoRow(systemImage: "globe", title: String(localized: "Yanıt dili"), showsDivider: true) {
                 Picker("Yanıt dili", selection: styleBinding(\.language, key: "language")) {
                     Text("Otomatik").tag(String?.none)
                     Text("Türkçe").tag(String?.some("tr"))
@@ -1356,7 +1356,7 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .tint(.secondary)
             }
-            WiqoRow(systemImage: "lightbulb", title: "Proaktif öneriler", showsDivider: false) {
+            WiqoRow(systemImage: "lightbulb", title: String(localized: "Proaktif öneriler"), showsDivider: false) {
                 Toggle("Proaktif öneriler", isOn: Binding(
                     get: { profileStore.profile.proactiveEnabled },
                     set: { value in saveStyle(["proactiveEnabled": value]) }
@@ -1388,7 +1388,7 @@ struct SettingsView: View {
                 styleError = nil
                 UISelectionFeedbackGenerator().selectionChanged()
             } catch {
-                styleError = "Kaydedilemedi. Bağlantını kontrol edip tekrar dene."
+                styleError = String(localized: "Kaydedilemedi. Bağlantını kontrol edip tekrar dene.")
             }
         }
     }
@@ -1396,13 +1396,13 @@ struct SettingsView: View {
     // MARK: Wiqo's work
 
     private var workGroup: some View {
-        WiqoSettingsGroup(title: "Wiqo'nun işleri") {
+        WiqoSettingsGroup(title: String(localized: "Wiqo'nun işleri")) {
             NavigationLink { WiqoMemoryView() } label: {
-                WiqoRow(systemImage: "brain.head.profile", title: "Hafıza", showsDivider: true)
+                WiqoRow(systemImage: "brain.head.profile", title: String(localized: "Hafıza"), showsDivider: true)
             }
             .buttonStyle(WiqoRowButtonStyle())
             NavigationLink { tasksSettingsPage } label: {
-                WiqoRow(systemImage: "checklist", title: "Görevler ve otomasyonlar", showsDivider: true) {
+                WiqoRow(systemImage: "checklist", title: String(localized: "Görevler ve otomasyonlar"), showsDivider: true) {
                     HStack(spacing: 6) {
                         Text(taskNavigationValue).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                         WiqoChevron()
@@ -1411,18 +1411,18 @@ struct SettingsView: View {
             }
             .buttonStyle(WiqoRowButtonStyle())
             NavigationLink { WiqoGoalsView() } label: {
-                WiqoRow(systemImage: "target", title: "Hedefler", showsDivider: true)
+                WiqoRow(systemImage: "target", title: String(localized: "Hedefler"), showsDivider: true)
             }
             .buttonStyle(WiqoRowButtonStyle())
             NavigationLink { WiqoActivityView(model: model) } label: {
-                WiqoRow(systemImage: "clock.arrow.circlepath", title: "Etkinlik", showsDivider: false)
+                WiqoRow(systemImage: "clock.arrow.circlepath", title: String(localized: "Etkinlik"), showsDivider: false)
             }
             .buttonStyle(WiqoRowButtonStyle())
         }
     }
 
     private var taskNavigationValue: String {
-        if !reviewItems.isEmpty { return "İncele" }
+        if !reviewItems.isEmpty { return String(localized: "İncele") }
         if !activeAutomations.isEmpty { return "\(activeAutomations.count) aktif" }
         return pendingTasks.isEmpty ? "" : "\(pendingTasks.count) bekliyor"
     }
@@ -1432,11 +1432,11 @@ struct SettingsView: View {
     private var supportGroup: some View {
         WiqoSettingsGroup {
             NavigationLink { legalPage } label: {
-                WiqoRow(systemImage: "questionmark.circle", title: "Destek ve yasal", showsDivider: true)
+                WiqoRow(systemImage: "questionmark.circle", title: String(localized: "Destek ve yasal"), showsDivider: true)
             }
             .buttonStyle(WiqoRowButtonStyle())
             Button { showingSignOutConfirmation = true } label: {
-                WiqoRow(systemImage: "rectangle.portrait.and.arrow.right", title: "Çıkış yap", isDestructive: true, showsDivider: false) { EmptyView() }
+                WiqoRow(systemImage: "rectangle.portrait.and.arrow.right", title: String(localized: "Çıkış yap"), isDestructive: true, showsDivider: false) { EmptyView() }
             }
             .buttonStyle(WiqoRowButtonStyle())
         }
@@ -1480,17 +1480,17 @@ struct SettingsView: View {
     }
 
     private var tasksAutomationsSection: some View {
-        WiqoSettingsGroup(title: "Görevler ve otomasyonlar") {
+        WiqoSettingsGroup(title: String(localized: "Görevler ve otomasyonlar")) {
             NavigationLink {
                 AgentTasksView()
             } label: {
-                WiqoRow(systemImage: "point.3.connected.trianglepath.dotted", title: "Arka plan görevleri", subtitle: "Çalışan ve biten uzun işler", showsDivider: true) { EmptyView() }
+                WiqoRow(systemImage: "point.3.connected.trianglepath.dotted", title: String(localized: "Arka plan görevleri"), subtitle: String(localized: "Çalışan ve biten uzun işler"), showsDivider: true) { EmptyView() }
             }
             .buttonStyle(WiqoRowButtonStyle())
             NavigationLink {
                 NamedAgentsView()
             } label: {
-                WiqoRow(systemImage: "person.2.circle", title: "Ajanlarım", subtitle: "Rol, rutin ve hafıza", showsDivider: true) { EmptyView() }
+                WiqoRow(systemImage: "person.2.circle", title: String(localized: "Ajanlarım"), subtitle: String(localized: "Rol, rutin ve hafıza"), showsDivider: true) { EmptyView() }
             }
             .buttonStyle(WiqoRowButtonStyle())
             if let taskAutomationError {
@@ -1597,9 +1597,9 @@ struct SettingsView: View {
         do {
             try await RovaBackendClient.cancelAutomation(id: automation.id)
             await loadTasksAndAutomations()
-            WiqoToastCenter.shared.show("Otomasyon iptal edildi", kind: .success)
+            WiqoToastCenter.shared.show(String(localized: "Otomasyon iptal edildi"), kind: .success)
         } catch {
-            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Otomasyon iptal edilemedi."
+            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Otomasyon iptal edilemedi.")
         }
     }
 
@@ -1607,9 +1607,9 @@ struct SettingsView: View {
         do {
             _ = try await RovaBackendClient.runAutomationNow(id: automation.id)
             await loadTasksAndAutomations()
-            WiqoToastCenter.shared.show("Çalıştırıyorum", kind: .success)
+            WiqoToastCenter.shared.show(String(localized: "Çalıştırıyorum"), kind: .success)
         } catch {
-            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Otomasyon başlatılamadı."
+            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Otomasyon başlatılamadı.")
         }
     }
 
@@ -1617,9 +1617,9 @@ struct SettingsView: View {
         do {
             _ = try await RovaBackendClient.pauseAutomation(id: automation.id)
             await loadTasksAndAutomations()
-            WiqoToastCenter.shared.show("Otomasyon duraklatıldı", kind: .success)
+            WiqoToastCenter.shared.show(String(localized: "Otomasyon duraklatıldı"), kind: .success)
         } catch {
-            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Otomasyon duraklatılamadı."
+            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Otomasyon duraklatılamadı.")
         }
     }
 
@@ -1629,10 +1629,10 @@ struct SettingsView: View {
     /// Guideline 5.1.1 expects the same legal documents referenced at signup/purchase to also be
     /// reachable from within the app proper - not just at the point of purchase.
     private var legalSection: some View {
-        WiqoSettingsGroup(title: "Yasal ve destek") {
-            legalRow("Gizlilik Politikası", systemImage: "hand.raised", url: WiqoWebsite.privacyPolicyURL)
-            legalRow("Kullanım Şartları", systemImage: "doc.text", url: WiqoWebsite.termsOfServiceURL)
-            legalRow("Destek", systemImage: "questionmark.circle", url: WiqoWebsite.supportURL, showsDivider: false)
+        WiqoSettingsGroup(title: String(localized: "Yasal ve destek")) {
+            legalRow(String(localized: "Gizlilik Politikası"), systemImage: "hand.raised", url: WiqoWebsite.privacyPolicyURL)
+            legalRow(String(localized: "Kullanım Şartları"), systemImage: "doc.text", url: WiqoWebsite.termsOfServiceURL)
+            legalRow(String(localized: "Destek"), systemImage: "questionmark.circle", url: WiqoWebsite.supportURL, showsDivider: false)
         }
     }
 
@@ -1657,7 +1657,7 @@ struct SettingsView: View {
             reviewItems = (try? await fetchedReview) ?? []
             taskAutomationError = nil
         } catch {
-            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Görev ve otomasyonlar yüklenemedi."
+            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Görev ve otomasyonlar yüklenemedi.")
         }
     }
 
@@ -1665,9 +1665,9 @@ struct SettingsView: View {
         do {
             _ = try await RovaBackendClient.retryAutomationRun(automationID: item.automationId, runID: item.runId)
             await loadTasksAndAutomations()
-            WiqoToastCenter.shared.show("Tekrar deniyorum", kind: .success)
+            WiqoToastCenter.shared.show(String(localized: "Tekrar deniyorum"), kind: .success)
         } catch {
-            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Tekrar denenemedi."
+            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Tekrar denenemedi.")
         }
     }
 
@@ -1675,9 +1675,9 @@ struct SettingsView: View {
         do {
             _ = try await RovaBackendClient.resolveUnknownAutomationRun(automationID: item.automationId, runID: item.runId, resolution: resolution)
             await loadTasksAndAutomations()
-            WiqoToastCenter.shared.show("Kaydedildi", kind: .success)
+            WiqoToastCenter.shared.show(String(localized: "Kaydedildi"), kind: .success)
         } catch {
-            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? "Sonuç kaydedilemedi."
+            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Sonuç kaydedilemedi.")
         }
     }
 }
@@ -1811,12 +1811,12 @@ struct PCSettingsView: View {
             Button {
                 Task { _ = await model.send(.ping) }
             } label: {
-                settingsRow(title: "Bağlantıyı ölç", systemImage: "waveform.path.ecg")
+                settingsRow(title: String(localized: "Bağlantıyı ölç"), systemImage: "waveform.path.ecg")
             }
             Button {
                 Task { _ = await model.send(.getSystemStatus) }
             } label: {
-                settingsRow(title: "Durumu yenile", systemImage: "arrow.clockwise")
+                settingsRow(title: String(localized: "Durumu yenile"), systemImage: "arrow.clockwise")
             }
             Divider()
             Button(role: .destructive) {
@@ -1825,7 +1825,7 @@ struct PCSettingsView: View {
                 settingsRow(title: "PC'yi unut", systemImage: "laptopcomputer.slash", isDestructive: true)
             }
         }
-        .wiqoConfirmation("PC'yi unutmak istediğine emin misin?", isPresented: $showingForgetMacConfirmation) {
+        .wiqoConfirmation(String(localized: "PC'yi unutmak istediğine emin misin?"), isPresented: $showingForgetMacConfirmation) {
             Button("PC'yi unut", role: .destructive) { model.forgetPairing(); dismiss() }
         }
     }
@@ -1893,7 +1893,7 @@ struct PCSettingsView: View {
             }
             Button("Vazgeç", role: .cancel) {}
         }
-        .wiqoConfirmation(item: $deletingDeviceID, title: { _ in "Bu cihazı listeden kaldırmak istediğine emin misin?" }) { id in
+        .wiqoConfirmation(item: $deletingDeviceID, title: { _ in String(localized: "Bu cihazı listeden kaldırmak istediğine emin misin?") }) { id in
             Button("Cihazı sil", role: .destructive) {
                 backendDevices.removeAll { $0.id == id }
                 Task { try? await RovaBackendClient.deleteDevice(id: id) }
@@ -1964,7 +1964,7 @@ struct PCSettingsView: View {
                     Image(systemName: "wifi.exclamationmark")
                         .foregroundStyle(.orange)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(model.isReconnecting ? "Bağlantıyı yeniden kuruyorum…" : model.userFacingConnectionError)
+                        Text(model.isReconnecting ? String(localized: "Bağlantıyı yeniden kuruyorum…") : model.userFacingConnectionError)
                             .font(.caption.weight(.medium))
                     }
                     Spacer(minLength: 8)
@@ -1998,25 +1998,25 @@ struct PCSettingsView: View {
             Text("Hızlı Eylemler").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    RovaActionTile(title: "Kilitle", systemImage: "lock.fill", isDestructive: true) {
+                    RovaActionTile(title: String(localized: "Kilitle"), systemImage: "lock.fill", isDestructive: true) {
                         showingLockConfirmation = true
                     }
-                    RovaActionTile(title: "Uyku", systemImage: "moon.fill", isDestructive: true) {
+                    RovaActionTile(title: String(localized: "Uyku"), systemImage: "moon.fill", isDestructive: true) {
                         showingSleepConfirmation = true
                     }
-                    RovaActionTile(title: "Ekran Uyut", systemImage: "display", isDestructive: true) {
+                    RovaActionTile(title: String(localized: "Ekran Uyut"), systemImage: "display", isDestructive: true) {
                         showingDisplaySleepConfirmation = true
                     }
-                    RovaActionTile(title: "Geri", systemImage: "backward.fill") {
+                    RovaActionTile(title: String(localized: "Geri"), systemImage: "backward.fill") {
                         hapticImpact(); Task { _ = await model.mediaControl(.previousTrack) }
                     }
                     RovaActionTile(title: "Oynat/Duraklat", systemImage: "playpause.fill") {
                         hapticImpact(); Task { _ = await model.mediaControl(.playPause) }
                     }
-                    RovaActionTile(title: "İleri", systemImage: "forward.fill") {
+                    RovaActionTile(title: String(localized: "İleri"), systemImage: "forward.fill") {
                         hapticImpact(); Task { _ = await model.mediaControl(.nextTrack) }
                     }
-                    RovaActionTile(title: "Sessiz", systemImage: "speaker.slash.fill") {
+                    RovaActionTile(title: String(localized: "Sessiz"), systemImage: "speaker.slash.fill") {
                         hapticImpact(); Task { _ = await model.toggleMute() }
                     }
                 }
@@ -2027,21 +2027,21 @@ struct PCSettingsView: View {
             Button("PC'yi kilitle", role: .destructive) {
                 hapticImpact()
                 Task {
-                    let ok = await model.authenticateBiometrics(reason: "PC'yi kilitlemek için kimliğinizi doğrulayın")
+                    let ok = await model.authenticateBiometrics(reason: String(localized: "PC'yi kilitlemek için kimliğinizi doğrulayın"))
                     if ok { _ = await model.send(.lockMac) }
                 }
             }
         }
-        .wiqoConfirmation("PC uyku moduna alınacak. Devam et?", isPresented: $showingSleepConfirmation) {
+        .wiqoConfirmation(String(localized: "PC uyku moduna alınacak. Devam et?"), isPresented: $showingSleepConfirmation) {
             Button("PC'yi uyut", role: .destructive) {
                 hapticImpact()
                 Task {
-                    let ok = await model.authenticateBiometrics(reason: "PC'yi uykuya almak için kimliğinizi doğrulayın")
+                    let ok = await model.authenticateBiometrics(reason: String(localized: "PC'yi uykuya almak için kimliğinizi doğrulayın"))
                     if ok { _ = await model.sleepMac() }
                 }
             }
         }
-        .wiqoConfirmation("PC ekranı uyutulacak. Devam et?", isPresented: $showingDisplaySleepConfirmation) {
+        .wiqoConfirmation(String(localized: "PC ekranı uyutulacak. Devam et?"), isPresented: $showingDisplaySleepConfirmation) {
             Button("Ekranı uyut", role: .destructive) {
                 hapticImpact()
                 Task { _ = await model.displaySleep() }

@@ -41,11 +41,11 @@ enum RovaBackendError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notAuthenticated: return "Önce Wiqo hesabına giriş yap."
+        case .notAuthenticated: return String(localized: "Önce Wiqo hesabına giriş yap.")
         case .network(let message): return message
-        case .invalidResponse: return "Sunucudan geçersiz bir yanıt alındı. Lütfen tekrar dene."
+        case .invalidResponse: return String(localized: "Sunucudan geçersiz bir yanıt alındı. Lütfen tekrar dene.")
         case .declined(let reason): return reason
-        case .copilotPayloadTooLarge: return "Eklerin toplam boyutu çok büyük. Daha az dosya veya görsel ekleyip tekrar dene."
+        case .copilotPayloadTooLarge: return String(localized: "Eklerin toplam boyutu çok büyük. Daha az dosya veya görsel ekleyip tekrar dene.")
         }
     }
 }
@@ -160,7 +160,7 @@ enum RovaBackendClient {
         struct Response: Decodable { let ok: Bool; let message: String? }
         let decoded = try decode(Response.self, from: data, response: response)
         guard decoded.ok else {
-            throw RovaBackendError.declined(nonEmptyMessage(decoded.message, fallback: "Şifre sıfırlama isteği tamamlanamadı."))
+            throw RovaBackendError.declined(nonEmptyMessage(decoded.message, fallback: String(localized: "Şifre sıfırlama isteği tamamlanamadı.")))
         }
     }
 
@@ -915,8 +915,8 @@ enum RovaBackendClient {
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("copilot/chat"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("text/event-stream", forHTTPHeaderField: String(localized: "Accept"))
+        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
         // The backend keeps the result in its request ledger; this timeout only bounds the live
         // stream. A dropped stream is resumed through copilot/requests below.
         request.timeoutInterval = 90
@@ -1004,6 +1004,8 @@ enum RovaBackendClient {
             requestBody["intentHint"] = object
         }
         if let taskID { requestBody["taskId"] = taskID.uuidString }
+        // What the person reads (replies, cards, notifications) is written in the phone's language.
+        requestBody["locale"] = Locale.preferredLanguages.first ?? "tr"
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [.fragmentsAllowed])
         guard (request.httpBody?.count ?? 0) <= Self.maxCopilotRequestBodyBytes else {
             throw RovaBackendError.copilotPayloadTooLarge
@@ -1113,7 +1115,7 @@ enum RovaBackendClient {
                     }
                 case "location_required":
                     if let event = try? decoder.decode(LocationRequiredEvent.self, from: json) {
-                        await onStatus(event.prompt ?? "Hava durumu için konum izni bekleniyor…")
+                        await onStatus(event.prompt ?? String(localized: "Hava durumu için konum izni bekleniyor…"))
                         await requestLocationOnce(event.requestId)
                     }
                 case "reset":
@@ -1134,7 +1136,7 @@ enum RovaBackendClient {
                     )
                 case "error":
                     let event = try? decoder.decode(ErrorEvent.self, from: json)
-                    let message = nonEmptyMessage(event?.message, fallback: "İstek anlaşılamadı.")
+                    let message = nonEmptyMessage(event?.message, fallback: String(localized: "İstek anlaşılamadı."))
                     throw RovaBackendError.declined(appendingErrorCode(message, code: event?.code))
                 default:
                     continue
@@ -1218,7 +1220,7 @@ enum RovaBackendClient {
         onStatus: @escaping @MainActor @Sendable (String) -> Void,
         onLocationRequired: @escaping @MainActor @Sendable (String) async -> Void
     ) async throws -> ConverseResult {
-        await onStatus("Bağlantı koptu; Wiqo işlemin sonucunu koruyor…")
+        await onStatus(String(localized: "Bağlantı koptu; Wiqo işlemin sonucunu koruyor…"))
         let deadline = Date().addingTimeInterval(150)
         var missingCount = 0
         var locationRequestHandled = false
@@ -1242,17 +1244,17 @@ enum RovaBackendClient {
                         agentTask: response.agentTask
                     )
                 case "failed":
-                    throw RovaBackendError.declined(nonEmptyMessage(state.error?.message, fallback: "İşlem tamamlanamadı."))
+                    throw RovaBackendError.declined(nonEmptyMessage(state.error?.message, fallback: String(localized: "İşlem tamamlanamadı.")))
                 case "awaiting_weather_location":
                     if !locationRequestHandled, let required = state.response?.locationRequired {
                         locationRequestHandled = true
                         await onLocationRequired(required.requestId)
                     } else {
-                        await onStatus("Hava durumu isteği devam ediyor…")
+                        await onStatus(String(localized: "Hava durumu isteği devam ediyor…"))
                     }
                     try await Task.sleep(nanoseconds: 1_000_000_000)
                 default:
-                    await onStatus("İşlem bağlantıdan bağımsız devam ediyor…")
+                    await onStatus(String(localized: "İşlem bağlantıdan bağımsız devam ediyor…"))
                     try await Task.sleep(nanoseconds: 1_000_000_000)
                 }
             } catch RovaBackendError.network(let message) where message == "İşlem bulunamadı." {
@@ -1261,7 +1263,7 @@ enum RovaBackendClient {
                 try await Task.sleep(nanoseconds: 500_000_000)
             }
         }
-        throw RovaBackendError.network("İşlem sunucuda devam ediyor olabilir. Sohbete dönüp tekrar kontrol edebilirsin.")
+        throw RovaBackendError.network(String(localized: "İşlem sunucuda devam ediyor olabilir. Sohbete dönüp tekrar kontrol edebilirsin."))
     }
 
     struct DeviceExecutionResult: Codable {
@@ -1320,7 +1322,7 @@ enum RovaBackendClient {
         requestID: UUID = UUID(),
         respondWithAudio: Bool = true
     ) async throws -> AudioConverseResult {
-        guard !audioData.isEmpty, audioData.count <= 12_000_000 else { throw RovaBackendError.declined("Ses dosyası desteklenen boyut sınırını aşıyor.") }
+        guard !audioData.isEmpty, audioData.count <= 12_000_000 else { throw RovaBackendError.declined(String(localized: "Ses dosyası desteklenen boyut sınırını aşıyor.")) }
         var body: [String: Any] = [
             "audioBase64": audioData.base64EncodedString(),
             "mimeType": mimeType,
@@ -1620,15 +1622,15 @@ enum RovaBackendClient {
                 guard let result = task.result else { throw RovaBackendError.invalidResponse }
                 return result
             case "failed", "unknown":
-                throw RovaBackendError.declined(nonEmptyMessage(task.error, fallback: "Kod çalıştırma tamamlanamadı."))
+                throw RovaBackendError.declined(nonEmptyMessage(task.error, fallback: String(localized: "Kod çalıştırma tamamlanamadı.")))
             case "cancelled":
-                throw RovaBackendError.declined("Kod çalıştırma iptal edildi.")
+                throw RovaBackendError.declined(String(localized: "Kod çalıştırma iptal edildi."))
             default:
                 if let progress = task.progress, !progress.isEmpty { await onProgress(progress) }
                 try await Task.sleep(nanoseconds: 350_000_000)
             }
         }
-        throw RovaBackendError.network("Kod çalıştırma beklenenden uzun sürdü. İstersen tekrar deneyebilirsin.")
+        throw RovaBackendError.network(String(localized: "Kod çalıştırma beklenenden uzun sürdü. İstersen tekrar deneyebilirsin."))
     }
 
     private static func fetchQueueTask(id: Int) async throws -> QueueTask {
@@ -1674,8 +1676,8 @@ enum RovaBackendClient {
     static func observeDeviceEvents(_ onEvent: @escaping @MainActor @Sendable (DeviceEvent) -> Void) async throws {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent("devices/events"))
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
+        request.setValue("text/event-stream", forHTTPHeaderField: String(localized: "Accept"))
         request.timeoutInterval = 60
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw RovaBackendError.invalidResponse }
@@ -1736,7 +1738,7 @@ enum RovaBackendClient {
 
         static let builtIn: [OAuthProviderInfo] = [
             OAuthProviderInfo(id: "google", name: "Google", symbol: "envelope.badge", summary: "Gmail, Takvim ve Drive", available: true),
-            OAuthProviderInfo(id: "notion", name: "Notion", symbol: "doc.text", summary: "Sayfalar ve notlar", available: true)
+            OAuthProviderInfo(id: "notion", name: "Notion", symbol: "doc.text", summary: String(localized: "Sayfalar ve notlar"), available: true)
         ]
     }
 
@@ -2232,7 +2234,7 @@ enum RovaBackendClient {
     private static func authorizedGet<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
         return try decode(T.self, from: data, response: response)
@@ -2244,7 +2246,7 @@ enum RovaBackendClient {
         if let timeout { request.timeoutInterval = timeout }
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
@@ -2259,7 +2261,7 @@ enum RovaBackendClient {
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
@@ -2274,7 +2276,7 @@ enum RovaBackendClient {
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: RovaBackendConfig.baseURL.appendingPathComponent(path))
         request.httpMethod = method
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
         guard (200..<300).contains(response.statusCode) else {
@@ -2290,7 +2292,7 @@ enum RovaBackendClient {
         request.httpMethod = method
         request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
         request.httpBody = body
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
@@ -2323,14 +2325,14 @@ enum RovaBackendClient {
         }
         guard let token else { throw RovaBackendError.notAuthenticated }
         var request = URLRequest(url: artifact.downloadURL)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(String(localized: "Bearer \(token)"), forHTTPHeaderField: String(localized: "Authorization"))
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
         guard (200..<300).contains(response.statusCode) else {
             throw RovaBackendError.network(response.statusCode == 404 ? "Dosyanın süresi dolmuş; yeniden oluşturmamı isteyebilirsin." : "Dosya indirilemedi.")
         }
         guard sha256Hex(data) == artifact.sha256.lowercased() else {
-            throw RovaBackendError.network("Dosya bütünlük doğrulamasını geçemedi.")
+            throw RovaBackendError.network(String(localized: "Dosya bütünlük doğrulamasını geçemedi."))
         }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try data.write(to: destination, options: [.atomic])
@@ -2393,40 +2395,40 @@ enum RovaBackendClient {
 
     private static func userFacingNetworkMessage(for error: Error) -> String {
         guard let urlError = error as? URLError else {
-            return "Wiqo sunucusuna ulaşılamadı. Lütfen internet bağlantını kontrol edip tekrar dene."
+            return String(localized: "Wiqo sunucusuna ulaşılamadı. Lütfen internet bağlantını kontrol edip tekrar dene.")
         }
         switch urlError.code {
         case .notConnectedToInternet:
-            return "İnternet bağlantısı yok. Bağlantını kontrol edip tekrar dene."
+            return String(localized: "İnternet bağlantısı yok. Bağlantını kontrol edip tekrar dene.")
         case .timedOut:
-            return "Wiqo sunucusu zamanında yanıt vermedi. Biraz sonra tekrar dene."
+            return String(localized: "Wiqo sunucusu zamanında yanıt vermedi. Biraz sonra tekrar dene.")
         case .cannotFindHost, .cannotConnectToHost, .networkConnectionLost, .dnsLookupFailed:
-            return "Wiqo sunucusuna bağlanılamadı. Biraz sonra tekrar dene."
+            return String(localized: "Wiqo sunucusuna bağlanılamadı. Biraz sonra tekrar dene.")
         default:
-            return "Wiqo sunucusuna bağlanırken bir sorun oluştu. Lütfen tekrar dene."
+            return String(localized: "Wiqo sunucusuna bağlanırken bir sorun oluştu. Lütfen tekrar dene.")
         }
     }
 
     private static func userFacingHTTPMessage(for statusCode: Int) -> String {
         switch statusCode {
         case 400:
-            return "Gönderdiğin bilgiler geçersiz. Lütfen kontrol edip tekrar dene."
+            return String(localized: "Gönderdiğin bilgiler geçersiz. Lütfen kontrol edip tekrar dene.")
         case 401:
-            return "Oturumun geçersiz veya süresi dolmuş. Lütfen tekrar giriş yap."
+            return String(localized: "Oturumun geçersiz veya süresi dolmuş. Lütfen tekrar giriş yap.")
         case 403:
-            return "Bu işlem için yetkin yok."
+            return String(localized: "Bu işlem için yetkin yok.")
         case 404:
-            return "İstenen Wiqo kaydı bulunamadı."
+            return String(localized: "İstenen Wiqo kaydı bulunamadı.")
         case 409:
-            return "Bu istek zaten işleniyor. Biraz sonra tekrar dene."
+            return String(localized: "Bu istek zaten işleniyor. Biraz sonra tekrar dene.")
         case 429:
-            return "Çok fazla istek yapıldı. Biraz sonra tekrar dene."
+            return String(localized: "Çok fazla istek yapıldı. Biraz sonra tekrar dene.")
         case 500:
-            return "Wiqo sunucusunda beklenmeyen bir hata oluştu. Lütfen tekrar dene."
+            return String(localized: "Wiqo sunucusunda beklenmeyen bir hata oluştu. Lütfen tekrar dene.")
         case 502, 503, 504:
-            return "Wiqo sunucusu şu anda kullanılamıyor. Biraz sonra tekrar dene."
+            return String(localized: "Wiqo sunucusu şu anda kullanılamıyor. Biraz sonra tekrar dene.")
         default:
-            return "Wiqo sunucusu isteği tamamlayamadı. Lütfen tekrar dene."
+            return String(localized: "Wiqo sunucusu isteği tamamlayamadı. Lütfen tekrar dene.")
         }
     }
 
@@ -2729,20 +2731,20 @@ enum WiqoOnDeviceIntentModel {
 
     @Generable
     struct Decision {
-        @Guide(description: "İsteğin türü. Tekrarlı zamanlama veya hatırlatma automation_setup'tır; belge adı bunu değiştirmez.")
+        @Guide(description: String(localized: "İsteğin türü. Tekrarlı zamanlama veya hatırlatma automation_setup'tır; belge adı bunu değiştirmez."))
         let intentClass: IntentClass
-        @Guide(description: "İşin yürütüleceği yer.")
+        @Guide(description: String(localized: "İşin yürütüleceği yer."))
         let target: Target
-        @Guide(description: "Güncel/canlı bilgi gerekiyorsa current.")
+        @Guide(description: String(localized: "Güncel/canlı bilgi gerekiyorsa current."))
         let freshness: Freshness
         let sideEffect: SideEffect
-        @Guide(description: "Gerekli araç grupları; en az olanı seç.", .maximumCount(4))
+        @Guide(description: String(localized: "Gerekli araç grupları; en az olanı seç."), .maximumCount(4))
         let candidateToolGroups: [ToolGroup]
-        @Guide(description: "PC isteğinin dar semantik işlemi: açık uygulamaları sorma=list_running_applications; normal uygulama kontrolü=control_application; Wiqo görev tarayıcısını veya Google Chrome for Testing'i kapatma=close_managed_browser; diğerleri=none.")
+        @Guide(description: String(localized: "PC isteğinin dar semantik işlemi: açık uygulamaları sorma=list_running_applications; normal uygulama kontrolü=control_application; Wiqo görev tarayıcısını veya Google Chrome for Testing'i kapatma=close_managed_browser; diğerleri=none."))
         let deviceOperation: DeviceOperation
-        @Guide(description: "Çok uzun belge, sunum, web sitesi veya görsel seti ise türü; değilse none.")
+        @Guide(description: String(localized: "Çok uzun belge, sunum, web sitesi veya görsel seti ise türü; değilse none."))
         let projectKind: ProjectKind
-        @Guide(description: "Karardan ne kadar eminsin.", .range(0.0...1.0))
+        @Guide(description: String(localized: "Karardan ne kadar eminsin."), .range(0.0...1.0))
         let confidence: Double
     }
 

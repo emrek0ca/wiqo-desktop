@@ -105,14 +105,14 @@ final class WiqoMapModel: ObservableObject {
         } catch let error as MapError {
             phase = .failed(error.message)
         } catch {
-            phase = .failed("Harita şu an hesaplanamadı. İnternet bağlantını kontrol edip tekrar dene.")
+            phase = .failed(String(localized: "Harita şu an hesaplanamadı. İnternet bağlantını kontrol edip tekrar dene."))
         }
     }
 
     func reroute(transport newTransport: String) async {
         guard let widget, destination != nil else { return }
         transport = newTransport
-        do { try await loadRoute(origin: widget.origin, destination: widget.destination ?? widget.query ?? "", keepDestination: true); phase = .ready } catch { phase = .failed("Bu ulaşım türüyle rota bulunamadı.") }
+        do { try await loadRoute(origin: widget.origin, destination: widget.destination ?? widget.query ?? "", keepDestination: true); phase = .ready } catch { phase = .failed(String(localized: "Bu ulaşım türüyle rota bulunamadı.")) }
     }
 
     /// "Yol tarifi" on a nearby result: the same card turns into a route to it.
@@ -124,7 +124,7 @@ final class WiqoMapModel: ObservableObject {
         results = []
         selectedResult = nil
         place = nil
-        do { try await calculate(); phase = .ready } catch { phase = .failed("Rota hesaplanamadı.") }
+        do { try await calculate(); phase = .ready } catch { phase = .failed(String(localized: "Rota hesaplanamadı.")) }
     }
 
     struct MapError: Error { let message: String }
@@ -148,7 +148,7 @@ final class WiqoMapModel: ObservableObject {
 
     private func loadPlace(_ query: String) async throws {
         let item = await resolve(query, around: await hereIfAllowed())
-        guard let item else { throw MapError(message: "“\(query)” için haritada bir sonuç bulamadım.") }
+        guard let item else { throw MapError(message: String(localized: "“\(query)” için haritada bir sonuç bulamadım.")) }
         place = item
         routes = []; results = []; origin = nil; destination = nil
         title = item.name ?? title
@@ -159,13 +159,13 @@ final class WiqoMapModel: ObservableObject {
         let here = await hereIfAllowed()
         if !keepDestination || destination == nil {
             if let originText, !originText.isEmpty {
-                guard let start = await resolve(originText, around: here) else { throw MapError(message: "Başlangıç yerini (“\(originText)”) bulamadım.") }
+                guard let start = await resolve(originText, around: here) else { throw MapError(message: String(localized: "Başlangıç yerini (“\(originText)”) bulamadım.")) }
                 origin = start
             } else {
                 guard here != nil else { throw WiqoLocation.Failure.denied }
                 origin = MKMapItem.forCurrentLocation()
             }
-            guard let end = await resolve(destinationText, around: here ?? origin?.placemark.location) else { throw MapError(message: "Varış yerini (“\(destinationText)”) bulamadım.") }
+            guard let end = await resolve(destinationText, around: here ?? origin?.placemark.location) else { throw MapError(message: String(localized: "Varış yerini (“\(destinationText)”) bulamadım.")) }
             destination = end
         }
         place = nil; results = []
@@ -180,7 +180,7 @@ final class WiqoMapModel: ObservableObject {
         request.transportType = transport == "walking" ? .walking : transport == "transit" ? .transit : .automobile
         request.requestsAlternateRoutes = transport == "driving"
         let response = try await MKDirections(request: request).calculate()
-        guard !response.routes.isEmpty else { throw MapError(message: "Bu iki yer arasında rota bulunamadı.") }
+        guard !response.routes.isEmpty else { throw MapError(message: String(localized: "Bu iki yer arasında rota bulunamadı.")) }
         routes = Array(response.routes.prefix(3))
         selectedRoute = 0
         showsTraffic = transport == "driving"
@@ -190,7 +190,7 @@ final class WiqoMapModel: ObservableObject {
     private func loadSearch(_ query: String, near: String?) async throws {
         var center: CLLocation?
         if let near, !near.isEmpty {
-            guard let area = await resolve(near, around: await hereIfAllowed()) else { throw MapError(message: "“\(near)” bölgesini bulamadım.") }
+            guard let area = await resolve(near, around: await hereIfAllowed()) else { throw MapError(message: String(localized: "“\(near)” bölgesini bulamadım.")) }
             center = area.placemark.location
         } else {
             guard let here = await hereIfAllowed() else { throw WiqoLocation.Failure.denied }
@@ -203,7 +203,7 @@ final class WiqoMapModel: ObservableObject {
         request.resultTypes = [.pointOfInterest, .address]
         let found = try await MKLocalSearch(request: request).start().mapItems
         let sorted = found.sorted { ($0.placemark.location?.distance(from: center) ?? .greatestFiniteMagnitude) < ($1.placemark.location?.distance(from: center) ?? .greatestFiniteMagnitude) }
-        guard !sorted.isEmpty else { throw MapError(message: "Yakında “\(query)” bulamadım.") }
+        guard !sorted.isEmpty else { throw MapError(message: String(localized: "Yakında “\(query)” bulamadım.")) }
         results = Array(sorted.prefix(10))
         userLocation = userLocation ?? (near == nil ? center : nil)
         routes = []; place = nil; origin = nil; destination = nil
@@ -298,20 +298,20 @@ struct WiqoMapCard: View {
                     .stroke(index == model.selectedRoute ? Color.blue : Color.gray.opacity(0.55), lineWidth: index == model.selectedRoute ? 6 : 4)
             }
             if let origin = model.origin, !origin.isCurrentLocation {
-                Marker(origin.name ?? "Başlangıç", systemImage: "circle.fill", coordinate: origin.placemark.coordinate).tint(.green)
+                Marker(origin.name ?? String(localized: "Başlangıç"), systemImage: "circle.fill", coordinate: origin.placemark.coordinate).tint(.green)
             }
             if let destination = model.destination {
-                Marker(destination.name ?? "Varış", systemImage: "flag.fill", coordinate: destination.placemark.coordinate).tint(.red)
+                Marker(destination.name ?? String(localized: "Varış"), systemImage: "flag.fill", coordinate: destination.placemark.coordinate).tint(.red)
             }
             if let place = model.place {
-                Marker(place.name ?? "Yer", coordinate: place.placemark.coordinate).tint(.red)
+                Marker(place.name ?? String(localized: "Yer"), coordinate: place.placemark.coordinate).tint(.red)
             }
             ForEach(Array(model.results.enumerated()), id: \.offset) { index, item in
                 if index < 6 {
-                    Marker(item.name ?? "Yer", monogram: Text("\(index + 1)"), coordinate: item.placemark.coordinate)
+                    Marker(item.name ?? String(localized: "Yer"), monogram: Text("\(index + 1)"), coordinate: item.placemark.coordinate)
                         .tint(model.selectedResult == index ? .orange : .red)
                 } else {
-                    Marker(item.name ?? "Yer", systemImage: "mappin", coordinate: item.placemark.coordinate).tint(.red)
+                    Marker(item.name ?? String(localized: "Yer"), systemImage: "mappin", coordinate: item.placemark.coordinate).tint(.red)
                 }
             }
         }
@@ -387,7 +387,7 @@ struct WiqoMapCard: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: icon).font(.system(size: 14, weight: .semibold)).foregroundStyle(.secondary)
-            Text(model.title.isEmpty ? (widget.title ?? "Harita") : model.title)
+            Text(model.title.isEmpty ? (widget.title ?? String(localized: "Harita")) : model.title)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
             Spacer(minLength: 0)
@@ -475,7 +475,7 @@ struct WiqoMapCard: View {
 
     private var transportPicker: some View {
         HStack(spacing: 6) {
-            ForEach([("driving", "car.fill", "Araç"), ("walking", "figure.walk", "Yürüyüş"), ("transit", "bus.fill", "Toplu")], id: \.0) { item in
+            ForEach([("driving", "car.fill", String(localized: "Araç")), ("walking", "figure.walk", String(localized: "Yürüyüş")), ("transit", "bus.fill", String(localized: "Toplu"))], id: \.0) { item in
                 Button { Task { await model.reroute(transport: item.0) } } label: {
                     Label(item.2, systemImage: item.1)
                         .font(.caption.weight(.medium))
@@ -520,7 +520,7 @@ struct WiqoMapCard: View {
                         Text("\(index + 1)").font(.caption.weight(.bold)).foregroundStyle(.white)
                             .frame(width: 20, height: 20).background(model.selectedResult == index ? Color.orange : Color.red, in: Circle())
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(item.name ?? "Yer").font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                            Text(item.name ?? String(localized: "Yer")).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
                             Text(subtitle(for: item)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer(minLength: 6)

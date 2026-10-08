@@ -499,7 +499,7 @@ private struct CodeBlockView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if isDiff {
-                WiqoCodeBlock(diff: code, title: "değişiklik")
+                WiqoCodeBlock(diff: code, title: String(localized: "değişiklik"))
             } else {
                 WiqoCodeBlock(
                     code: code,

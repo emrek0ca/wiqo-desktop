@@ -22,10 +22,10 @@ enum RovaCapabilityCatalog {
             "device.app.open", "device.app.open_by_name", "device.app.quit", "device.app.control", "device.app.list"
         ]),
         CapabilityGroup(id: "system", title: "Sistem Kontrolü", icon: "power", capabilities: [
-            "device.system.power", "device.display", "device.audio", "device.media"
+            "device.system.power", "device.display", "device.audio", "device.media", "device.system.utility"
         ]),
         CapabilityGroup(id: "files", title: "Dosyalar", icon: "folder", capabilities: [
-            "device.files.list", "device.files.read", "device.files.write", "device.files.move", "device.files.copy", "device.files.delete"
+            "device.files.list", "device.files.read", "device.files.write", "device.files.move", "device.files.copy", "device.files.delete", "device.files.utility"
         ]),
         CapabilityGroup(id: "documents", title: "Belgeler", icon: "doc.text", capabilities: [
             "document.read", "document.edit", "artifact.save"

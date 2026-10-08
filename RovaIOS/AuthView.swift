@@ -195,7 +195,7 @@ struct AuthView: View {
                     .transition(.wiqoBlur)
             }
 
-            WiqoActionButton(title: isRegistering ? "Hesap oluştur" : "Giriş yap", isLoading: isSubmitting) {
+            WiqoActionButton(title: isRegistering ? String(localized: "Hesap oluştur") : String(localized: "Giriş yap"), isLoading: isSubmitting) {
                 focusedField = nil
                 Task { await submit() }
             }
@@ -227,14 +227,14 @@ struct AuthView: View {
     private var registrationConsents: some View {
         VStack(alignment: .leading, spacing: 10) {
             consentRow(
-                title: "Gizlilik Politikası'nı okudum. Mesaj, ses ve görsellerimin yanıt üretmek için Wiqo tarafından yapay zeka hizmet sağlayıcılarıyla işlenmesini kabul ediyorum.",
-                linkTitle: "Gizlilik Politikası'nı aç",
+                title: String(localized: "Gizlilik Politikası'nı okudum. Mesaj, ses ve görsellerimin yanıt üretmek için Wiqo tarafından yapay zeka hizmet sağlayıcılarıyla işlenmesini kabul ediyorum."),
+                linkTitle: String(localized: "Gizlilik Politikası'nı aç"),
                 destination: WiqoWebsite.privacyPolicyURL,
                 isAccepted: $acceptedPrivacyPolicy
             )
             consentRow(
-                title: "Kullanım Şartları'nı okudum ve kabul ediyorum.",
-                linkTitle: "Kullanım Şartları'nı aç",
+                title: String(localized: "Kullanım Şartları'nı okudum ve kabul ediyorum."),
+                linkTitle: String(localized: "Kullanım Şartları'nı aç"),
                 destination: WiqoWebsite.termsOfServiceURL,
                 isAccepted: $acceptedTerms
             )
@@ -289,7 +289,7 @@ struct AuthView: View {
             }
             onAuthenticated()
         } catch {
-            errorMessage = (error as? LocalizedError)?.errorDescription ?? "İşlem tamamlanamadı. Lütfen tekrar dene."
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? String(localized: "İşlem tamamlanamadı. Lütfen tekrar dene.")
             errorTick += 1
             WiqoHaptics.failure()
         }
@@ -403,7 +403,7 @@ struct ForgotPasswordView: View {
 
             errorText
 
-            WiqoActionButton(title: "Kod gönder", isLoading: isSubmitting) {
+            WiqoActionButton(title: String(localized: "Kod gönder"), isLoading: isSubmitting) {
                 Task { await requestCode() }
             }
             .disabled(!canRequestCode && !isSubmitting)
@@ -434,7 +434,7 @@ struct ForgotPasswordView: View {
 
             errorText
 
-            WiqoActionButton(title: "Şifreyi sıfırla", isLoading: isSubmitting) {
+            WiqoActionButton(title: String(localized: "Şifreyi sıfırla"), isLoading: isSubmitting) {
                 Task { await resetPassword() }
             }
             .disabled(!canResetPassword && !isSubmitting)
@@ -483,11 +483,11 @@ struct ForgotPasswordView: View {
         defer { isSubmitting = false }
         do {
             try await RovaBackendClient.forgotPassword(email: email)
-            infoMessage = "\(email) adresine bir kod gönderildi. Gelmediyse spam/gereksiz klasörünü kontrol et."
+            infoMessage = String(localized: "\(email) adresine bir kod gönderildi. Gelmediyse spam/gereksiz klasörünü kontrol et.")
             resendCooldownSecondsRemaining = 30
             step = .resetPassword
         } catch {
-            fail((error as? LocalizedError)?.errorDescription ?? "Şifre sıfırlama kodu istenemedi. Lütfen tekrar dene.")
+            fail((error as? LocalizedError)?.errorDescription ?? String(localized: "Şifre sıfırlama kodu istenemedi. Lütfen tekrar dene."))
         }
     }
 
@@ -500,7 +500,7 @@ struct ForgotPasswordView: View {
             WiqoHaptics.success()
             onCompleted()
         } catch {
-            fail((error as? LocalizedError)?.errorDescription ?? "Şifre sıfırlanamadı. Lütfen tekrar dene.")
+            fail((error as? LocalizedError)?.errorDescription ?? String(localized: "Şifre sıfırlanamadı. Lütfen tekrar dene."))
         }
     }
 }

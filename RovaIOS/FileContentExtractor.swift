@@ -41,10 +41,10 @@ enum FileContentError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unsupported: "Bu dosya türü desteklenmiyor. PDF, Word, Excel, PowerPoint, CSV, metin veya görsel ekleyebilirsin."
-        case .unreadable: "Dosya açılamadı; bozuk ya da parola korumalı olabilir."
-        case .empty: "Dosyada okunabilir içerik bulunamadı."
-        case .tooLarge: "Dosya 50 MB sınırını aşıyor. Daha küçük bir sürüm ekleyebilirsin."
+        case .unsupported: String(localized: "Bu dosya türü desteklenmiyor. PDF, Word, Excel, PowerPoint, CSV, metin veya görsel ekleyebilirsin.")
+        case .unreadable: String(localized: "Dosya açılamadı; bozuk ya da parola korumalı olabilir.")
+        case .empty: String(localized: "Dosyada okunabilir içerik bulunamadı.")
+        case .tooLarge: String(localized: "Dosya 50 MB sınırını aşıyor. Daha küçük bir sürüm ekleyebilirsin.")
         }
     }
 }
@@ -606,7 +606,7 @@ private final class WorkbookParser: NSObject, XMLPartParser {
 
     func parser(_ parser: XMLParser, didStartElement element: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
         guard element == "sheet" else { return }
-        sheets.append(Sheet(name: attributes["name"] ?? "Sayfa\(sheets.count + 1)", relationshipID: attributes["r:id"] ?? ""))
+        sheets.append(Sheet(name: attributes["name"] ?? String(localized: "Sayfa\(sheets.count + 1)"), relationshipID: attributes["r:id"] ?? ""))
     }
 }
 

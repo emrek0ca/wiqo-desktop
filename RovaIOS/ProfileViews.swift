@@ -26,7 +26,7 @@ struct UserProfile: Codable, Equatable {
     var visibleName: String {
         if let displayName, !displayName.isEmpty { return displayName }
         let local = email.split(separator: "@").first.map(String.init) ?? ""
-        return local.isEmpty ? "Wiqo hesabı" : local
+        return local.isEmpty ? String(localized: "Wiqo hesabı") : local
     }
 }
 
@@ -212,7 +212,7 @@ struct AccountSettingsView: View {
                         Label("Kurucu üye", systemImage: "seal.fill")
                     }
                     if let code = firstUnusedInviteCode {
-                        ShareLink(item: "Wiqo'yu deniyorum, davet kodumla katıl ve ikimiz de Pro kazanalım: \(code)") {
+                        ShareLink(item: String(localized: "Wiqo'yu deniyorum, davet kodumla katıl ve ikimiz de Pro kazanalım: \(code)")) {
                             Label(code, systemImage: "gift.fill")
                         }
                     }
@@ -258,7 +258,7 @@ struct AccountSettingsView: View {
         .sheet(isPresented: $showingPaywall) {
             PaywallView(subscriptionStore: subscriptionStore)
         }
-        .wiqoConfirmation("Wiqo hesabından çıkmak istediğine emin misin?", isPresented: $showingSignOutConfirmation) {
+        .wiqoConfirmation(String(localized: "Wiqo hesabından çıkmak istediğine emin misin?"), isPresented: $showingSignOutConfirmation) {
             Button("Çıkış yap", role: .destructive) { authSession.signOut(); dismiss() }
         }
         .onChange(of: profileStore.profile) { old, fresh in
@@ -391,7 +391,7 @@ struct AccountSettingsView: View {
               let image = UIImage(data: data),
               let square = Self.squareThumbnail(image, side: 256),
               let jpeg = square.jpegData(compressionQuality: 0.82) else {
-            errorMessage = "Fotoğraf yüklenemedi."
+            errorMessage = String(localized: "Fotoğraf yüklenemedi.")
             return
         }
         draft.avatarImage = jpeg.base64EncodedString()
@@ -428,7 +428,7 @@ struct AccountSettingsView: View {
         put("language", draft.language, original.language)
         put("location", draft.location, original.location)
         if draft.avatarKind == "photo" && draft.avatarImage == nil {
-            errorMessage = "Fotoğraf avatarı için önce bir fotoğraf seç."
+            errorMessage = String(localized: "Fotoğraf avatarı için önce bir fotoğraf seç.")
             return
         }
         if draft.avatarKind != original.avatarKind { changes["avatarKind"] = draft.avatarKind }
@@ -452,7 +452,7 @@ struct AccountSettingsView: View {
         let password = deletePassword
         deletePassword = ""
         guard !password.isEmpty else {
-            errorMessage = "Hesabı silmek için şifreni gir."
+            errorMessage = String(localized: "Hesabı silmek için şifreni gir.")
             return
         }
         isDeleting = true

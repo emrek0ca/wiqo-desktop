@@ -30,9 +30,9 @@ enum ConnectionQuality: Equatable, Sendable {
     var label: String {
         switch self {
         case .unknown: return ""
-        case .weak: return "Zayıf"
-        case .good: return "İyi"
-        case .excellent: return "Mükemmel"
+        case .weak: return String(localized: "Zayıf")
+        case .good: return String(localized: "İyi")
+        case .excellent: return String(localized: "Mükemmel")
         }
     }
 
@@ -82,14 +82,14 @@ final class IOSConnectionModel: ObservableObject {
 
     /// Transport details stay internal; the UI gets one small, stable vocabulary.
     var userFacingConnectionLabel: String {
-        guard isPaired else { return "PC kapalı" }
+        guard isPaired else { return String(localized: "PC kapalı") }
         if isReconnecting || state == .connecting { return "Yeniden bağlanıyor" }
         if state == .connected { return isUsingRelay ? "İnternet üzerinden bağlı" : "Bağlı" }
-        return "PC kapalı"
+        return String(localized: "PC kapalı")
     }
 
     var userFacingConnectionError: String {
-        "PC’ye ulaşılamıyor. Açık ve internete bağlı olduğundan emin olun."
+        String(localized: "PC’ye ulaşılamıyor. Açık ve internete bağlı olduğundan emin olun.")
     }
 
     private let deviceID: UUID
@@ -172,11 +172,11 @@ final class IOSConnectionModel: ObservableObject {
 
     func pair(using payload: PairingPayload) {
         guard RovaValidation.isPairingPayloadValid(payload) else {
-            fail("Geçersiz pairing QR kodu.")
+            fail(String(localized: "Geçersiz pairing QR kodu."))
             return
         }
         guard payload.expiresAt > Date() else {
-            fail("Eşleşme QR kodunun süresi doldu.")
+            fail(String(localized: "Eşleşme QR kodunun süresi doldu."))
             return
         }
         connectionGeneration += 1
@@ -205,8 +205,8 @@ final class IOSConnectionModel: ObservableObject {
         connection = nil
         authenticated = false
         state = .failed
-        lastError = "Eşleşme zaman aşımına uğradı."
-        appendActivity(title: "Eşleşme", detail: "Zaman aşımına uğradı")
+        lastError = String(localized: "Eşleşme zaman aşımına uğradı.")
+        appendActivity(title: String(localized: "Eşleşme"), detail: String(localized: "Zaman aşımına uğradı"))
     }
 
     func connect() {
@@ -306,7 +306,7 @@ final class IOSConnectionModel: ObservableObject {
     /// CommandRequest/CommandResult path for every later operation.
     func pair(using payload: RelayPairingPayload) {
         guard payload.expiresAt > Date() else {
-            fail("Eşleşme QR kodunun süresi doldu.")
+            fail(String(localized: "Eşleşme QR kodunun süresi doldu."))
             return
         }
         let previousState = state
@@ -343,7 +343,7 @@ final class IOSConnectionModel: ObservableObject {
                 isPairing = false
                 state = .connected
                 isReconnecting = false
-                appendActivity(title: "Eşleşme", detail: "İnternet bağlantısı hazır")
+                appendActivity(title: String(localized: "Eşleşme"), detail: String(localized: "İnternet bağlantısı hazır"))
                 startDeviceEvents()
                 scheduleRelayProbe()
             } catch {
@@ -374,7 +374,7 @@ final class IOSConnectionModel: ObservableObject {
         return false
     }
 
-    func authenticateBiometrics(reason: String = "Wiqo komutunu onaylayın") async -> Bool {
+    func authenticateBiometrics(reason: String = String(localized: "Wiqo komutunu onaylayın")) async -> Bool {
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) ||
@@ -390,7 +390,7 @@ final class IOSConnectionModel: ObservableObject {
 
     func send(_ type: CommandType, payload: CommandPayload = .none, commandID: UUID? = nil) async -> CommandResult {
         let resolvedCommandID = commandID ?? UUID()
-        guard isPaired else { return failureResult(id: resolvedCommandID, error: RovaError(code: "NOT_PAIRED", message: "Önce PC ile eşleşin.")) }
+        guard isPaired else { return failureResult(id: resolvedCommandID, error: RovaError(code: "NOT_PAIRED", message: String(localized: "Önce PC ile eşleşin."))) }
         guard authenticated, let connection else {
             connect()
             // Same local network isn't a hard requirement any more: if the PC is reachable
@@ -399,20 +399,20 @@ final class IOSConnectionModel: ObservableObject {
             return await sendViaBackendRelay(type: type, payload: payload, commandID: resolvedCommandID)
         }
         guard let pairingToken = token, let nonce = try? RovaCrypto.randomToken() else {
-            return failureResult(id: resolvedCommandID, error: RovaError(code: "PAIRING_KEY_UNAVAILABLE", message: "PC eşleşme anahtarı kullanılamıyor. Yeniden eşleşin."))
+            return failureResult(id: resolvedCommandID, error: RovaError(code: "PAIRING_KEY_UNAVAILABLE", message: String(localized: "PC eşleşme anahtarı kullanılamıyor. Yeniden eşleşin.")))
         }
         let request = RovaValidation.signedRequest(id: resolvedCommandID, type: type, payload: payload, nonce: nonce, token: pairingToken)
         if let validationError = RovaValidation.validate(request) {
             return failureResult(id: request.id, error: validationError)
         }
-        appendActivity(title: title(for: request), detail: "Çalışıyor…")
+        appendActivity(title: title(for: request), detail: String(localized: "Çalışıyor…"))
         let startTime = Date()
         do {
             let result = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CommandResult, Error>) in
                 pending[request.id] = continuation
                 guard let data = try? RovaWireCodec.encode(WireEnvelope(requestID: request.id, message: .command(request))) else {
                     pending.removeValue(forKey: request.id)
-                    continuation.resume(returning: self.failureResult(id: request.id, error: RovaError(code: "ENCODE_FAILED", message: "Komut hazırlanamadı.")))
+                    continuation.resume(returning: self.failureResult(id: request.id, error: RovaError(code: "ENCODE_FAILED", message: String(localized: "Komut hazırlanamadı."))))
                     return
                 }
                 connection.send(content: data, completion: .contentProcessed { [weak self] error in
@@ -425,7 +425,7 @@ final class IOSConnectionModel: ObservableObject {
                 }
                 Task { [weak self] in
                     try? await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
-                    self?.timeout(request.id, message: "Komut zaman aşımına uğradı.")
+                    self?.timeout(request.id, message: String(localized: "Komut zaman aşımına uğradı."))
                 }
             }
             // The socket looked alive (authenticated, non-nil connection) but a 10s timeout means
@@ -443,12 +443,12 @@ final class IOSConnectionModel: ObservableObject {
             if type == .ping {
                 if let error = result.error {
                     connectionQuality = .weak
-                    appendActivity(title: "Ping", detail: error.message)
+                    appendActivity(title: String(localized: "Ping"), detail: error.message)
                 } else {
                     let latencyMs = max(0, Int(Date().timeIntervalSince(startTime) * 1000))
                     lastPingLatencyMs = latencyMs
                     connectionQuality = .forLatency(ms: latencyMs)
-                    appendActivity(title: "Ping", detail: "Pong (\(latencyMs) ms)")
+                    appendActivity(title: String(localized: "Ping"), detail: String(localized: "Pong (\(latencyMs) ms)"))
                 }
             } else if case .systemStatus(let status) = result.data {
                 systemStatus = status
@@ -462,7 +462,7 @@ final class IOSConnectionModel: ObservableObject {
             if type != .ping, error is IOSConnectionError {
                 return await sendViaBackendRelay(type: type, payload: payload, commandID: resolvedCommandID, mayHaveExecuted: true)
             }
-            let rovaError = (error as? RovaError) ?? RovaError(code: "COMMAND_FAILED", message: error.localizedDescription.isEmpty ? "Komut başarısız oldu." : error.localizedDescription)
+            let rovaError = (error as? RovaError) ?? RovaError(code: "COMMAND_FAILED", message: error.localizedDescription.isEmpty ? String(localized: "Komut başarısız oldu.") : error.localizedDescription)
             let result = failureResult(id: request.id, error: rovaError)
             self.lastError = rovaError.message
             appendActivity(title: title(for: request), detail: rovaError.message)
@@ -511,7 +511,7 @@ final class IOSConnectionModel: ObservableObject {
 
     private func connect(host: String, port: UInt16, fingerprint: String) {
         guard let endpointPort = NWEndpoint.Port(rawValue: port) else {
-            fail("Port geçersiz.")
+            fail(String(localized: "Port geçersiz."))
             return
         }
         connect(to: .hostPort(host: NWEndpoint.Host(host), port: endpointPort), fingerprint: fingerprint)
@@ -633,7 +633,7 @@ final class IOSConnectionModel: ObservableObject {
             // later reconnect is automatic and silent - chat keeps working from the phone either
             // way, so "can't reach the PC right now" is a status, not an error to nag about.
             let isActivePairingAttempt: Bool = { if case .pairing = mode { return true } else { return false } }()
-            fail(error.localizedDescription.isEmpty ? "Bağlantı kurulamadı." : "PC bağlantısı kurulamadı.", silent: !isActivePairingAttempt)
+            fail(error.localizedDescription.isEmpty ? String(localized: "Bağlantı kurulamadı.") : String(localized: "PC bağlantısı kurulamadı."), silent: !isActivePairingAttempt)
             scheduleRelayProbe()
             scheduleReconnect()
         case .cancelled:
@@ -662,7 +662,7 @@ final class IOSConnectionModel: ObservableObject {
                             self.handle(try RovaWireCodec.decode(frame))
                         }
                     } catch {
-                        self.fail("Geçersiz servis mesajı.")
+                        self.fail(String(localized: "Geçersiz servis mesajı."))
                         self.connection?.cancel()
                         return
                     }
@@ -698,7 +698,7 @@ final class IOSConnectionModel: ObservableObject {
                 }
                 try RovaKeychainStore.save(Data(response.certificateFingerprint.utf8), account: "ios-certificate-fingerprint")
             } catch {
-                fail("Token güvenle saklanamadı.")
+                fail(String(localized: "Token güvenle saklanamadı."))
                 return
             }
             token = response.token
@@ -715,7 +715,7 @@ final class IOSConnectionModel: ObservableObject {
             state = .disconnected
             connection?.cancel()
             mode = .authenticated
-            appendActivity(title: "Eşleşme", detail: "Tamamlandı")
+            appendActivity(title: String(localized: "Eşleşme"), detail: String(localized: "Tamamlandı"))
             connect()
         case .authenticated(let response):
             authenticated = true
@@ -1026,62 +1026,62 @@ final class IOSConnectionModel: ObservableObject {
 
     private func title(for request: CommandRequest) -> String {
         switch request.type {
-        case .getSystemStatus: return "Sistem durumu"
-        case .openApplication: return "Uygulama aç"
-        case .controlApplication: return "Uygulama kontrolü"
-        case .quitApplication: return "Uygulamayı kapat"
-        case .openURL: return "URL aç"
+        case .getSystemStatus: return String(localized: "Sistem durumu")
+        case .openApplication: return String(localized: "Uygulama aç")
+        case .controlApplication: return String(localized: "Uygulama kontrolü")
+        case .quitApplication: return String(localized: "Uygulamayı kapat")
+        case .openURL: return String(localized: "URL aç")
         case .lockMac: return "PC'yi kilitle"
         case .sleepMac: return "PC'yi uyut"
-        case .displaySleep: return "Ekranı uyut"
-        case .setBrightness: return "Parlaklık"
+        case .displaySleep: return String(localized: "Ekranı uyut")
+        case .setBrightness: return String(localized: "Parlaklık")
         case .setVolume: return "Ses"
-        case .toggleMute: return "Sessiz"
-        case .mediaControl: return "Medya"
-        case .setClipboardText: return "Pano"
-        case .saveTextFile: return "Dosya kaydet"
-        case .ping: return "Bağlantı"
-        case .sendMessage: return "Mesaj gönder"
-        case .listCalendarEvents: return "Takvim listesi"
-        case .createCalendarEvent: return "Takvim etkinliği oluştur"
-        case .listReminders: return "Hatırlatıcılar"
-        case .createReminder: return "Hatırlatıcı oluştur"
-        case .completeReminder: return "Hatırlatıcıyı tamamla"
-        case .getClipboardText: return "Panoyu oku"
-        case .getClipboardHistory: return "Pano geçmişi"
-        case .createNote: return "Not oluştur"
-        case .sendEmail: return "E-posta gönder"
-        case .listDesktopFiles: return "Masaüstü dosyaları"
-        case .readDesktopFile: return "Masaüstü dosyası oku"
-        case .moveDesktopFile: return "Masaüstü dosyası taşı"
-        case .renameDesktopFile: return "Masaüstü dosyası adlandır"
-        case .saveArtifact: return "Belge kaydet"
-        case .readDocument: return "Belge oku"
-        case .editDocument: return "Belge düzenle"
-        case .openApplicationByName: return "Uygulama aç"
-        case .listFiles: return "Dosyaları listele"
-        case .readFile: return "Dosya oku"
-        case .searchFiles: return "Dosya ara"
-        case .sendFileToPhone: return "Dosya gönder"
-        case .writeFile: return "Dosya yaz"
-        case .moveFile: return "Dosya taşı"
-        case .copyFile: return "Dosya kopyala"
-        case .convertFile: return "PDF'e çevir"
-        case .runFilePlan: return "Dosya planı"
-        case .grantAgentAccess: return "PC görev izni"
-        case .deleteFile: return "Dosya sil"
-        case .executeCode: return "Kod çalıştır"
-        case .captureScreen: return "Ekran görüntüsü"
-        case .runShortcut: return "Shortcut çalıştır"
-        case .controlUIElement: return "Arayüz kontrolü"
-        case .clickScreen: return "Ekrana tıkla"
-        case .computerDesktop: return "Masaüstünü kullan"
-        case .listRunningApplications: return "Açık uygulamalar"
-        case .computerBrowser: return "Tarayıcıda gezin"
-        case .endBrowserTask: return "Tarayıcı oturumunu kapat"
-        case .localAnalyze: return "Yerel analiz"
-        case .fileUtility: return "Dosya işlemi"
-        case .systemUtility: return "Sistem işlemi"
+        case .toggleMute: return String(localized: "Sessiz")
+        case .mediaControl: return String(localized: "Medya")
+        case .setClipboardText: return String(localized: "Pano")
+        case .saveTextFile: return String(localized: "Dosya kaydet")
+        case .ping: return String(localized: "Bağlantı")
+        case .sendMessage: return String(localized: "Mesaj gönder")
+        case .listCalendarEvents: return String(localized: "Takvim listesi")
+        case .createCalendarEvent: return String(localized: "Takvim etkinliği oluştur")
+        case .listReminders: return String(localized: "Hatırlatıcılar")
+        case .createReminder: return String(localized: "Hatırlatıcı oluştur")
+        case .completeReminder: return String(localized: "Hatırlatıcıyı tamamla")
+        case .getClipboardText: return String(localized: "Panoyu oku")
+        case .getClipboardHistory: return String(localized: "Pano geçmişi")
+        case .createNote: return String(localized: "Not oluştur")
+        case .sendEmail: return String(localized: "E-posta gönder")
+        case .listDesktopFiles: return String(localized: "Masaüstü dosyaları")
+        case .readDesktopFile: return String(localized: "Masaüstü dosyası oku")
+        case .moveDesktopFile: return String(localized: "Masaüstü dosyası taşı")
+        case .renameDesktopFile: return String(localized: "Masaüstü dosyası adlandır")
+        case .saveArtifact: return String(localized: "Belge kaydet")
+        case .readDocument: return String(localized: "Belge oku")
+        case .editDocument: return String(localized: "Belge düzenle")
+        case .openApplicationByName: return String(localized: "Uygulama aç")
+        case .listFiles: return String(localized: "Dosyaları listele")
+        case .readFile: return String(localized: "Dosya oku")
+        case .searchFiles: return String(localized: "Dosya ara")
+        case .sendFileToPhone: return String(localized: "Dosya gönder")
+        case .writeFile: return String(localized: "Dosya yaz")
+        case .moveFile: return String(localized: "Dosya taşı")
+        case .copyFile: return String(localized: "Dosya kopyala")
+        case .convertFile: return String(localized: "PDF'e çevir")
+        case .runFilePlan: return String(localized: "Dosya planı")
+        case .grantAgentAccess: return String(localized: "PC görev izni")
+        case .deleteFile: return String(localized: "Dosya sil")
+        case .executeCode: return String(localized: "Kod çalıştır")
+        case .captureScreen: return String(localized: "Ekran görüntüsü")
+        case .runShortcut: return String(localized: "Shortcut çalıştır")
+        case .controlUIElement: return String(localized: "Arayüz kontrolü")
+        case .clickScreen: return String(localized: "Ekrana tıkla")
+        case .computerDesktop: return String(localized: "Masaüstünü kullan")
+        case .listRunningApplications: return String(localized: "Açık uygulamalar")
+        case .computerBrowser: return String(localized: "Tarayıcıda gezin")
+        case .endBrowserTask: return String(localized: "Tarayıcı oturumunu kapat")
+        case .localAnalyze: return String(localized: "Yerel analiz")
+        case .fileUtility: return String(localized: "Dosya işlemi")
+        case .systemUtility: return String(localized: "Sistem işlemi")
         }
     }
 
@@ -1098,19 +1098,19 @@ final class IOSConnectionModel: ObservableObject {
     /// account auth alone to stand in for device-pairing trust the Mac never actually granted it.
     private func sendViaBackendRelay(type: CommandType, payload: CommandPayload, commandID: UUID, mayHaveExecuted: Bool = false) async -> CommandResult {
         guard RovaBackendClient.isAuthenticated else {
-            return mayHaveExecuted ? uncertainResult(id: commandID) : failureResult(id: commandID, error: RovaError(code: "OFFLINE", message: "PC bağlı değil."))
+            return mayHaveExecuted ? uncertainResult(id: commandID) : failureResult(id: commandID, error: RovaError(code: "OFFLINE", message: String(localized: "PC bağlı değil.")))
         }
         guard let targetDeviceID = pairedMacDeviceID ?? deviceInfo?.id else {
-            return mayHaveExecuted ? uncertainResult(id: commandID) : failureResult(id: commandID, error: RovaError(code: "DEVICE_UNKNOWN", message: "Hedef PC belirlenemedi. PC ile yeniden eşleşin."))
+            return mayHaveExecuted ? uncertainResult(id: commandID) : failureResult(id: commandID, error: RovaError(code: "DEVICE_UNKNOWN", message: String(localized: "Hedef PC belirlenemedi. PC ile yeniden eşleşin.")))
         }
         guard let pairingToken = token, let nonce = try? RovaCrypto.randomToken() else {
-            return failureResult(id: commandID, error: RovaError(code: "PAIRING_KEY_UNAVAILABLE", message: "PC eşleşme anahtarı kullanılamıyor. Yeniden eşleşin."))
+            return failureResult(id: commandID, error: RovaError(code: "PAIRING_KEY_UNAVAILABLE", message: String(localized: "PC eşleşme anahtarı kullanılamıyor. Yeniden eşleşin.")))
         }
         let request = RovaValidation.signedRequest(id: commandID, type: type, payload: payload, nonce: nonce, token: pairingToken)
         if let validationError = RovaValidation.validate(request) {
             return failureResult(id: request.id, error: validationError)
         }
-        appendActivity(title: title(for: request), detail: "PC yerel ağda değil, sunucu üzerinden deneniyor…")
+        appendActivity(title: title(for: request), detail: String(localized: "PC yerel ağda değil, sunucu üzerinden deneniyor…"))
         do {
             let result = try await RovaBackendClient.sendDeviceCommand(request, deviceId: targetDeviceID.uuidString)
             isUsingRelay = result.status == .completed && result.error == nil
@@ -1125,7 +1125,7 @@ final class IOSConnectionModel: ObservableObject {
         } catch {
             isUsingRelay = false
             if mayHaveExecuted { return uncertainResult(id: commandID) }
-            let message = (error as? LocalizedError)?.errorDescription ?? "PC'ye ulaşılamadı."
+            let message = (error as? LocalizedError)?.errorDescription ?? String(localized: "PC'ye ulaşılamadı.")
             self.lastError = message
             appendActivity(title: title(for: request), detail: message)
             return failureResult(id: request.id, error: RovaError(code: "RELAY_FAILED", message: message))
@@ -1134,7 +1134,7 @@ final class IOSConnectionModel: ObservableObject {
 
     private func uncertainResult(id: UUID) -> CommandResult {
         let now = Date()
-        let message = "PC bağlantısı koptu; işlemin sonucu doğrulanamadı. Aynı komutu otomatik tekrar çalıştırmadım."
+        let message = String(localized: "PC bağlantısı koptu; işlemin sonucu doğrulanamadı. Aynı komutu otomatik tekrar çalıştırmadım.")
         let error = RovaError(code: "OUTCOME_UNCERTAIN", message: message, category: "timeout")
         return CommandResult(commandID: id, status: .unknown, message: message, startedAt: now, finishedAt: now, error: error)
     }
@@ -1168,7 +1168,7 @@ final class IOSConnectionModel: ObservableObject {
             if case let .service(serviceName, _, _, _) = endpoint {
                 name = serviceName
             } else {
-                name = "Wiqo PC"
+                name = String(localized: "Wiqo PC")
             }
             Task { @MainActor in
                 self?.handleDiscoveryResult(endpoint: endpoint, serviceName: name)
@@ -1228,8 +1228,8 @@ private enum IOSConnectionError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .disconnected: return "PC bağlantısı kesildi."
-        case .failed: return "PC ile bağlantı kurulamadı."
+        case .disconnected: return String(localized: "PC bağlantısı kesildi.")
+        case .failed: return String(localized: "PC ile bağlantı kurulamadı.")
         }
     }
 }

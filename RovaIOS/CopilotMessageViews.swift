@@ -149,7 +149,7 @@ struct DeferredTaskRow: View {
                 } catch {
                     if Task.isCancelled { return }
                     failures += 1
-                    refreshError = "Durum yenilenemedi; bağlantı gelince yeniden denenecek."
+                    refreshError = String(localized: "Durum yenilenemedi; bağlantı gelince yeniden denenecek.")
                 }
                 let seconds = failures > 0 ? min(60, 5 * (1 << min(failures, 4))) : (detail?.status == "waiting_for_pc" ? 30 : 5)
                 do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
@@ -167,13 +167,13 @@ struct DeferredTaskRow: View {
             return detail.status == "completed" ? "PC işi tamamlandı" : detail.status == "cancelled" ? "PC işi iptal edildi" : detail.status == "unknown" ? "PC sonucu doğrulanamadı" : "PC işi tamamlanamadı"
         }
         return switch state {
-        case .cancelled(outcomeUnknown: false): "PC işi iptal edildi"
-        case .cancelled(outcomeUnknown: true): "Kuyruktan alındı; PC sonucu belirsiz. Etkinlik'i kontrol et."
+        case .cancelled(outcomeUnknown: false): String(localized: "PC işi iptal edildi")
+        case .cancelled(outcomeUnknown: true): String(localized: "Kuyruktan alındı; PC sonucu belirsiz. Etkinlik'i kontrol et.")
         default:
             switch detail?.status ?? task.status {
             case "waiting_for_pc": "Kuyruğa alındı · Mac’e ulaşılamıyor; bağlanınca devam edecek"
             case "dispatched", "pending", "queued": "Mac işi sırada · sonuç burada görünecek"
-            default: "Mac işi yürütülüyor · sonuç burada görünecek"
+            default: String(localized: "Mac işi yürütülüyor · sonuç burada görünecek")
             }
         }
     }
@@ -193,7 +193,7 @@ struct DeferredTaskRow: View {
             let result = try await RovaBackendClient.cancelDeferredTask(id: task.id)
             state = .cancelled(outcomeUnknown: result.cancelled != true || result.outcomeUnknown != false)
         } catch {
-            state = .failed("İptal edilemedi. Bağlantıyı kontrol edip yeniden dene.")
+            state = .failed(String(localized: "İptal edilemedi. Bağlantıyı kontrol edip yeniden dene."))
         }
     }
 }
@@ -294,7 +294,7 @@ struct ProjectTaskCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .wiqoCard()
         .task(id: "\(task.id)-\(pollGeneration)") { await poll() }
-        .wiqoConfirmation("Proje iptal edilsin mi?", isPresented: $confirmingCancel) {
+        .wiqoConfirmation(String(localized: "Proje iptal edilsin mi?"), isPresented: $confirmingCancel) {
             Button("Projeyi iptal et", role: .destructive) { Task { await cancel() } }
         } message: {
             Text("Wiqo projeyi durdurur; yarım kalan iş teslim edilmez.")
@@ -482,8 +482,8 @@ struct ProjectTaskCard: View {
         let passed = detail.checks.filter(\.passed).count
         let steps = detail.steps.filter { $0.status == "done" }.count
         return detail.checks.isEmpty
-            ? "\(steps) adım · ayrıntıları göster"
-            : "\(steps) adım · \(passed)/\(detail.checks.count) kontrol geçti · ayrıntılar"
+            ? String(localized: "\(steps) adım · ayrıntıları göster")
+            : String(localized: "\(steps) adım · \(passed)/\(detail.checks.count) kontrol geçti · ayrıntılar")
     }
 
     private var kindLabel: String {
@@ -492,7 +492,7 @@ struct ProjectTaskCard: View {
         case "document": "Belge"
         case "presentation": "Sunum"
         case "images": "Görsel seti"
-        default: "Proje"
+        default: String(localized: "Proje")
         }
     }
 
@@ -512,7 +512,7 @@ struct ProjectTaskCard: View {
         case "done": "Hazır"
         case "failed": "Tamamlanamadı"
         case "cancelled": "İptal edildi"
-        default: "Durum bilinmiyor"
+        default: String(localized: "Durum bilinmiyor")
         }
     }
 
@@ -560,7 +560,7 @@ struct ProjectTaskCard: View {
                 return
             } catch {
                 failures += 1
-                if failures >= 2 { connectionNote = "Bağlantı bekleniyor; proje sunucuda çalışmaya devam ediyor." }
+                if failures >= 2 { connectionNote = String(localized: "Bağlantı bekleniyor; proje sunucuda çalışmaya devam ediyor.") }
             }
             let elapsed = Date().timeIntervalSince(started)
             let seconds: Double = failures > 0 ? min(15, 2 * Double(failures + 1)) : (elapsed < 60 ? 2 : elapsed < 300 ? 4 : 8)
@@ -577,7 +577,7 @@ struct ProjectTaskCard: View {
             detail = result
             onFinished(result)
         } catch {
-            actionError = "İptal edilemedi; proje bitmiş olabilir. Birazdan kart güncellenecek."
+            actionError = String(localized: "İptal edilemedi; proje bitmiş olabilir. Birazdan kart güncellenecek.")
             pollGeneration += 1
         }
     }
@@ -590,7 +590,7 @@ struct ProjectTaskCard: View {
             detail = try await RovaBackendClient.retryProject(id: task.id)
             pollGeneration += 1
         } catch {
-            actionError = "Yeniden başlatılamadı. Bağlantıyı kontrol edip tekrar dene."
+            actionError = String(localized: "Yeniden başlatılamadı. Bağlantıyı kontrol edip tekrar dene.")
         }
     }
 }
@@ -726,10 +726,10 @@ struct PendingFileChip: View {
         if let pages = file.pageCount, pages > 0 {
             parts.append(file.type == .xlsx ? "\(pages) sayfa" : file.type == .pptx ? "\(pages) slayt" : "\(pages) sayfa")
         }
-        if !file.tables.isEmpty { parts.append("\(file.tables.reduce(0) { $0 + $1.rows.count }) satır") }
+        if !file.tables.isEmpty { parts.append(String(localized: "\(file.tables.reduce(0) { $0 + $1.rows.count }) satır")) }
         if !file.text.isEmpty { parts.append("\(file.text.count.formatted()) karakter") }
         if file.source == .ocr { parts.append("OCR") }
-        if file.truncated { parts.append("kısaltıldı") }
+        if file.truncated { parts.append(String(localized: "kısaltıldı")) }
         return parts.joined(separator: " · ")
     }
 }
@@ -778,7 +778,7 @@ struct AgentTaskCard: View {
         }
         if !detail.steps.isEmpty {
             let completed = detail.steps.filter { $0.status == "done" }.count
-            parts.append("\(completed)/\(detail.steps.count) adım")
+            parts.append(String(localized: "\(completed)/\(detail.steps.count) adım"))
         }
         return parts.isEmpty ? detail.progress : parts.joined(separator: " · ")
     }
@@ -870,7 +870,7 @@ struct AgentTaskCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .wiqoCard()
         .task(id: "\(task.id)-\(pollGeneration)") { await poll() }
-        .wiqoConfirmation("Görev durdurulsun mu?", isPresented: $confirmingCancel) {
+        .wiqoConfirmation(String(localized: "Görev durdurulsun mu?"), isPresented: $confirmingCancel) {
             Button("Görevi durdur", role: .destructive) {
                 Task {
                     isBusy = true
@@ -879,7 +879,7 @@ struct AgentTaskCard: View {
                         try await RovaBackendClient.cancelAgentTask(id: task.id)
                         pollGeneration += 1
                     } catch {
-                        actionError = "Durdurulamadı; görev zaten bitmiş olabilir."
+                        actionError = String(localized: "Durdurulamadı; görev zaten bitmiş olabilir.")
                     }
                 }
             }
@@ -925,7 +925,7 @@ struct AgentTaskCard: View {
             steerSent = true
             actionError = nil
         } catch {
-            actionError = "Yönlendirme iletilemedi; görev bitmiş olabilir."
+            actionError = String(localized: "Yönlendirme iletilemedi; görev bitmiş olabilir.")
         }
     }
 
@@ -937,7 +937,7 @@ struct AgentTaskCard: View {
             actionError = nil
             pollGeneration += 1
         } catch {
-            actionError = (error as? LocalizedError)?.errorDescription ?? "Onay iletilemedi."
+            actionError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Onay iletilemedi.")
         }
     }
 
@@ -954,9 +954,9 @@ struct AgentTaskCard: View {
 
     private func footer(_ detail: RovaBackendClient.AgentTaskDetail) -> String {
         if let check = detail.verification {
-            return check.checked ? "Doğrulandı" : "Doğrulama yapılamadı"
+            return check.checked ? String(localized: "Doğrulandı") : String(localized: "Doğrulama yapılamadı")
         }
-        return "Doğrulanmadı"
+        return String(localized: "Doğrulanmadı")
     }
 
     private var statusLabel: String {
@@ -966,7 +966,7 @@ struct AgentTaskCard: View {
         case "done": return "tamamlandı"
         case "failed": return "tamamlanamadı"
         case "cancelled": return "durduruldu"
-        default: return "çalışıyor"
+        default: return String(localized: "çalışıyor")
         }
     }
 
@@ -1019,10 +1019,10 @@ struct WiqoAgentMascot: View {
 
         var label: String {
             switch self {
-            case .general: return "Genel ajan"
-            case .research: return "Araştırma ajanı"
-            case .developer: return "Geliştirici ajan"
-            case .execution: return "Yürütme ajanı"
+            case .general: return String(localized: "Genel ajan")
+            case .research: return String(localized: "Araştırma ajanı")
+            case .developer: return String(localized: "Geliştirici ajan")
+            case .execution: return String(localized: "Yürütme ajanı")
             }
         }
     }
@@ -1061,7 +1061,7 @@ struct WiqoAgentMascot: View {
             }
         }
         .accessibilityElement()
-        .accessibilityLabel(persona.label + (isWorking ? ", çalışıyor" : ""))
+        .accessibilityLabel(persona.label + (isWorking ? String(localized: ", çalışıyor") : ""))
     }
 
     private var mascot: some View {
@@ -1157,7 +1157,7 @@ struct AgentTasksView: View {
         case "failed": return "Tamamlanamadı"
         case "cancelled": return "Durduruldu"
         case "pending", "queued": return "Sırada"
-        default: return "Çalışıyor"
+        default: return String(localized: "Çalışıyor")
         }
     }
 }
@@ -1324,7 +1324,7 @@ struct NamedAgentsView: View {
         .navigationTitle("Ajanlarım")
         .task { await load() }
         .refreshable { await load() }
-        .wiqoConfirmation("Ajan silinsin mi?", isPresented: $confirmingDelete, onCancel: { agentToDelete = nil }) {
+        .wiqoConfirmation(String(localized: "Ajan silinsin mi?"), isPresented: $confirmingDelete, onCancel: { agentToDelete = nil }) {
             Button("Ajanı sil", role: .destructive) {
                 if let agentToDelete {
                     Task { await delete(agent: agentToDelete) }
@@ -1338,10 +1338,10 @@ struct NamedAgentsView: View {
     private func forgetMemory(for agent: RovaBackendClient.NamedAgent) async {
         do {
             try await RovaBackendClient.forgetAgentMemory(id: agent.id)
-            notice = "Hafıza silindi."
+            notice = String(localized: "Hafıza silindi.")
             await load()
         } catch {
-            notice = "Hafıza silinemedi."
+            notice = String(localized: "Hafıza silinemedi.")
         }
     }
 
@@ -1353,7 +1353,7 @@ struct NamedAgentsView: View {
             await load()
         } catch {
             agentToDelete = nil
-            notice = "Ajan silinemedi."
+            notice = String(localized: "Ajan silinemedi.")
         }
     }
 
@@ -1369,13 +1369,13 @@ struct NamedAgentsView: View {
 
     private func setPaused(_ paused: Bool) async {
         if let updated = try? await RovaBackendClient.setAgentPaused(paused) { budget = updated }
-        else { notice = "Ayar kaydedilemedi." }
+        else { notice = String(localized: "Ayar kaydedilemedi.") }
         auditEntries = (try? await RovaBackendClient.fetchAgentAudit()) ?? auditEntries
     }
 
     private func setWatch(_ source: String, enabled: Bool) async {
         if let updated = try? await RovaBackendClient.setWatchSource(source, enabled: enabled) { watch = updated }
-        else { notice = "Ayar kaydedilemedi." }
+        else { notice = String(localized: "Ayar kaydedilemedi.") }
     }
 
     private static func statusLabel(_ status: String) -> String {
@@ -1384,7 +1384,7 @@ struct NamedAgentsView: View {
         case "handled": return "Ajan üzerinde çalışıyor"
         case "noted": return "Not aldı"
         case "ignored": return "Önemsiz bulundu"
-        default: return "Bekliyor"
+        default: return String(localized: "Bekliyor")
         }
     }
 }
@@ -1445,7 +1445,7 @@ struct QuickReplyChips: View {
         if folded.contains("başka bir") || folded.contains("yardımcı olabilir") { return [] }
         if folded.range(of: #"\b(m[ıiuü])(y[ıiuü]m|s[ıiuü]n|y[ıiuü]z|s[ıiuü]n[ıiuü]z)?\s*$"#, options: .regularExpression) != nil
             || folded.range(of: #"\b(m[ıiuü])\b"#, options: .regularExpression) != nil && folded.count < 160 {
-            return ["Evet", "Hayır"]
+            return [String(localized: "Evet"), String(localized: "Hayır")]
         }
         return []
     }

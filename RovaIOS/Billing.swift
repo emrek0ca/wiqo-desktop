@@ -235,8 +235,8 @@ enum PurchaseError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .productUnavailable: return "Wiqo Pro şu anda App Store'dan alınamıyor. Az sonra tekrar dene."
-        case .verificationFailed: return "Satın alma Apple tarafından doğrulanamadı."
+        case .productUnavailable: return String(localized: "Wiqo Pro şu anda App Store'dan alınamıyor. Az sonra tekrar dene.")
+        case .verificationFailed: return String(localized: "Satın alma Apple tarafından doğrulanamadı.")
         case .backendRejected(let message): return message
         }
     }
@@ -282,13 +282,13 @@ final class StoreKitManager: ObservableObject {
     var productLoadMessage: String {
         switch lastProductLoadError {
         case .emptyCatalog:
-            return "Wiqo Pro bu Apple hesabının mağazasında henüz kullanılamıyor."
+            return String(localized: "Wiqo Pro bu Apple hesabının mağazasında henüz kullanılamıyor.")
         case .storefrontUnavailable:
-            return "Wiqo Pro bu mağaza bölgesinde kullanılamıyor."
+            return String(localized: "Wiqo Pro bu mağaza bölgesinde kullanılamıyor.")
         case .network:
-            return "App Store’a bağlanılamadı. Bağlantını kontrol edip tekrar dene."
+            return String(localized: "App Store’a bağlanılamadı. Bağlantını kontrol edip tekrar dene.")
         case .system, .none:
-            return "App Store fiyatı şu anda alınamadı. Az sonra tekrar dene."
+            return String(localized: "App Store fiyatı şu anda alınamadı. Az sonra tekrar dene.")
         }
     }
 
@@ -424,7 +424,7 @@ final class StoreKitManager: ObservableObject {
             try await apply(entitlement)
             return
         }
-        throw PurchaseError.backendRejected("Geri yüklenecek aktif bir Wiqo Pro aboneliği bulunamadı.")
+        throw PurchaseError.backendRejected(String(localized: "Geri yüklenecek aktif bir Wiqo Pro aboneliği bulunamadı."))
     }
 
     /// What StoreKit says this Apple ID is entitled to, checked at launch. An active Pro
@@ -454,7 +454,7 @@ final class StoreKitManager: ObservableObject {
         let before = subscriptionStore?.info.tier
         try? await apply(update)
         if before != "pro", subscriptionStore?.info.tier == "pro" {
-            WiqoToastCenter.shared.show("Pro aktif. Hoş geldin!", kind: .success)
+            WiqoToastCenter.shared.show(String(localized: "Pro aktif. Hoş geldin!"), kind: .success)
         }
     }
 

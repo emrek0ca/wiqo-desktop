@@ -109,10 +109,10 @@ struct AutomationDetailView: View {
         defer { isTrying = false }
         do {
             _ = try await RovaBackendClient.runAutomationNow(id: automation.id)
-            tryMessage = "Başlattım; sonucu aşağıda ve bildirimde göreceksin."
+            tryMessage = String(localized: "Başlattım; sonucu aşağıda ve bildirimde göreceksin.")
             await load(silent: true)
         } catch {
-            tryMessage = (error as? LocalizedError)?.errorDescription ?? "Şu an başlatılamadı."
+            tryMessage = (error as? LocalizedError)?.errorDescription ?? String(localized: "Şu an başlatılamadı.")
         }
     }
 
@@ -122,7 +122,7 @@ struct AutomationDetailView: View {
             runs = try await RovaBackendClient.fetchAutomationRuns(id: automation.id)
             loadError = nil
         } catch {
-            loadError = (error as? LocalizedError)?.errorDescription ?? "Çalışma geçmişi yüklenemedi."
+            loadError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Çalışma geçmişi yüklenemedi.")
         }
         isLoading = false
     }
@@ -267,7 +267,7 @@ private struct RunCard: View {
             journal = try await RovaBackendClient.fetchAutomationJournal(automationID: automationID, runID: run.id)
             journalError = nil
         } catch {
-            journalError = "İşlem kanıtı şu anda yüklenemedi."
+            journalError = String(localized: "İşlem kanıtı şu anda yüklenemedi.")
         }
     }
 
@@ -281,7 +281,7 @@ private struct RunCard: View {
         case "completed": return "Sonuç doğrulandı"
         case "unknown": return "Sonuç doğrulanamadı"
         case "failed": return "İşlem tamamlanamadı"
-        default: return "İşlem güncellendi"
+        default: return String(localized: "İşlem güncellendi")
         }
     }
 
@@ -312,7 +312,7 @@ private struct RunCard: View {
         case "running": return "Çalışıyor"
         case "pending": return "Bekliyor"
         case "unknown": return "Sonuç doğrulanamadı"
-        default: return "Bilinmeyen durum"
+        default: return String(localized: "Bilinmeyen durum")
         }
     }
 
@@ -344,7 +344,7 @@ private struct RunCard: View {
         case "completed": return "PC sonucu doğruladı"
         case "failed": return "PC komutu başarısız oldu"
         case "unknown": return "Komutun sonucu doğrulanamadı"
-        default: return "Cihaz durumu bilinmiyor"
+        default: return String(localized: "Cihaz durumu bilinmiyor")
         }
     }
 
@@ -352,7 +352,7 @@ private struct RunCard: View {
         switch state {
         case "accepted": return "Sonuç PC'ye iletildi"
         case "pending": return "Sonuç PC'ye iletilmeyi bekliyor"
-        default: return "Sonuç iletim durumu bilinmiyor"
+        default: return String(localized: "Sonuç iletim durumu bilinmiyor")
         }
     }
 
@@ -362,7 +362,7 @@ private struct RunCard: View {
         case "retrying": return "Bildirim gönderilemedi; tekrar denenecek."
         case "failed": return "Bildirim gönderilemedi."
         case "not_configured": return "Telefon bildirimi servisi yapılandırılmamış."
-        default: return "Bildirim durumu bilinmiyor."
+        default: return String(localized: "Bildirim durumu bilinmiyor.")
         }
     }
 }

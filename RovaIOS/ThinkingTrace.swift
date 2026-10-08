@@ -136,8 +136,8 @@ extension ThinkingTrace {
     var summary: String {
         let duration = Self.formatDuration(self.duration())
         if steps.contains(where: { $0.state == .failed }) {
-            return "\(steps.count) adım · \(duration) · bir adım tamamlanamadı"
+            return String(localized: "\(steps.count) adım · \(duration) · bir adım tamamlanamadı")
         }
-        return "\(steps.count) adımda tamamlandı · \(duration)"
+        return String(localized: "\(steps.count) adımda tamamlandı · \(duration)")
     }
 }

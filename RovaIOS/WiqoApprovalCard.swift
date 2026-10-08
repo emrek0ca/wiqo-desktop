@@ -18,8 +18,8 @@ struct WiqoApprovalCard: View {
     var stepCount: Int = 1
     var isDestructive = false
     var isProcessing = false
-    var approveTitle = "Onayla"
-    var declineTitle = "Reddet"
+    var approveTitle = String(localized: "Onayla")
+    var declineTitle = String(localized: "Reddet")
     let onApprove: () -> Void
     let onDecline: () -> Void
 

@@ -71,36 +71,36 @@ public enum ActQuickEdits {
         // Title: Başlığı 'X' yap
         if has(clause, #"basli[kg]"#) {
             guard let title = quoted(in: original) else { return nil }
-            return setTitle(title, in: files).map { ($0, "Başlık “\(title)” oldu") }
+            return setTitle(title, in: files).map { ($0, String(localized: "Başlık “\(title)” oldu")) }
         }
         // Theme
         if has(clause, #"\b(tema|mod|modu)\b"#) || has(clause, #"\btemay"#) {
-            if has(clause, #"\b(koyu|karanlik|gece|dark)\b"#) { return setPalette(dark: true, in: files).map { ($0, "Koyu tema") } }
-            if has(clause, #"\b(acik|aydinlik|gunduz|light)\b"#) { return setPalette(dark: false, in: files).map { ($0, "Açık tema") } }
+            if has(clause, #"\b(koyu|karanlik|gece|dark)\b"#) { return setPalette(dark: true, in: files).map { ($0, String(localized: "Koyu tema")) } }
+            if has(clause, #"\b(acik|aydinlik|gunduz|light)\b"#) { return setPalette(dark: false, in: files).map { ($0, String(localized: "Açık tema")) } }
             return nil
         }
         // Corners
         if has(clause, #"\b(yuvarlak|keskin|kare|kosesiz|yuvarlat)\w*"#) {
             let buttons = has(clause, #"\b(buton|tus|dugme)\w*"#)
             let sharp = has(clause, #"\b(keskin|kare|kosesiz)\w*"#)
-            if buttons { return setVariables(["--radius-btn": sharp ? "0px" : "999px"], in: files).map { ($0, sharp ? "Düğmeler köşeli" : "Düğmeler yuvarlak") } }
-            return setVariables(sharp ? ["--radius": "0px", "--radius-btn": "0px"] : ["--radius": "28px", "--radius-btn": "20px"], in: files).map { ($0, sharp ? "Köşeler keskin" : "Köşeler daha yuvarlak") }
+            if buttons { return setVariables(["--radius-btn": sharp ? "0px" : "999px"], in: files).map { ($0, sharp ? String(localized: "Düğmeler köşeli") : String(localized: "Düğmeler yuvarlak")) } }
+            return setVariables(sharp ? ["--radius": "0px", "--radius-btn": "0px"] : ["--radius": "28px", "--radius-btn": "20px"], in: files).map { ($0, sharp ? String(localized: "Köşeler keskin") : String(localized: "Köşeler daha yuvarlak")) }
         }
         // Text size
         if has(clause, #"\b(yazi|font|punto|boyut|puntosu|yazilar)\w*"#), has(clause, #"\b(buyut|artir|buyuk|kucult|azalt|kucuk)\w*"#) {
             let bigger = has(clause, #"\b(buyut|artir|buyuk)\w*"#)
             guard let current = variable("--text-size", in: files).flatMap({ Double($0.replacingOccurrences(of: "px", with: "").trimmingCharacters(in: .whitespaces)) }) else { return nil }
             let next = min(28, max(12, current + (bigger ? 2 : -2)))
-            return setVariables(["--text-size": "\(Int(next))px"], in: files).map { ($0, bigger ? "Yazı büyüdü" : "Yazı küçüldü") }
+            return setVariables(["--text-size": "\(Int(next))px"], in: files).map { ($0, bigger ? String(localized: "Yazı büyüdü") : String(localized: "Yazı küçüldü")) }
         }
         // Colour
         if let hex = hexColor(in: clause) {
-            if has(clause, #"arka\s*plan|zemin"#) { return setBackground(hex, in: files).map { ($0, "Arka plan rengi değişti") } }
-            if has(clause, #"yazi\s*renk|metin\s*renk|yazilar"#) { return setVariables(["--fg": hex], in: files).map { ($0, "Yazı rengi değişti") } }
+            if has(clause, #"arka\s*plan|zemin"#) { return setBackground(hex, in: files).map { ($0, String(localized: "Arka plan rengi değişti")) } }
+            if has(clause, #"yazi\s*renk|metin\s*renk|yazilar"#) { return setVariables(["--fg": hex], in: files).map { ($0, String(localized: "Yazı rengi değişti")) } }
             // "butonları kırmızı yap", "ana renk mavi", "vurgu rengi turuncu", or just "mavi yap"
             var values = ["--accent": hex, "--accent-fg": foreground(for: hex)]
             if has(clause, #"\b(arka|zemin)"#) { values = [:] }
-            return setVariables(values, in: files).map { ($0, "Ana renk değişti") }
+            return setVariables(values, in: files).map { ($0, String(localized: "Ana renk değişti")) }
         }
         return nil
     }

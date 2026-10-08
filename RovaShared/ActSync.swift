@@ -62,7 +62,7 @@ public enum ActSync {
     public static func conflictCopyName(_ path: String, device: String) -> String {
         let ns = path as NSString
         let ext = ns.pathExtension
-        return "\(ns.deletingPathExtension) - \(device) kopyası" + (ext.isEmpty ? "" : ".\(ext)")
+        return String(localized: "\(ns.deletingPathExtension) - \(device) kopyası") + (ext.isEmpty ? "" : ".\(ext)")
     }
 
     /// Makes the project exist on the hub (once) and returns its id.
@@ -75,7 +75,7 @@ public enum ActSync {
 
     /// One full pass: push local edits, then take whatever is newer on the hub.
     @discardableResult
-    public static func syncOnce(_ replica: inout ActReplica, hub: ActHub, keys: ActKeys, device: String, summary: String = "değişiklik") async throws -> ActSyncReport {
+    public static func syncOnce(_ replica: inout ActReplica, hub: ActHub, keys: ActKeys, device: String, summary: String = String(localized: "değişiklik")) async throws -> ActSyncReport {
         var report = ActSyncReport()
         // A project with nothing in it is not worth a hub entry (and an unfinished create must never leave one behind).
         if replica.hubId == nil && replica.files.isEmpty { return report }

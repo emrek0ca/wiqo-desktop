@@ -29,7 +29,7 @@ enum DeviceOutcomeNarrator {
               result.isConfirmedSuccess,
               case .files(let files) = result.data, !files.isEmpty else { return nil }
         let object: [String: Any] = [
-            "type": "list", "domain": "files", "title": "Doğrulanan dosya",
+            "type": "list", "domain": "files", "title": String(localized: "Doğrulanan dosya"),
             "widgetId": "file-evidence-\(step.id.uuidString)", "total": files.count,
             "items": files.map { file in ["id": file.path, "title": file.name, "subtitle": file.path, "meta": "\(file.byteCount) bayt"] }
         ]
@@ -40,18 +40,18 @@ enum DeviceOutcomeNarrator {
     private static func successLine(step: PlannedCommand, result: CommandResult) -> String {
         switch (step.type, step.payload) {
         case (.setVolume, .volume(let level)):
-            if level >= 100 { return "Sesi sonuna kadar açtım." }
-            if level <= 0 { return "Sesi kapattım." }
-            return "Sesi %\(level) yaptım."
+            if level >= 100 { return String(localized: "Sesi sonuna kadar açtım.") }
+            if level <= 0 { return String(localized: "Sesi kapattım.") }
+            return String(localized: "Sesi %\(level) yaptım.")
         case (.setBrightness, .brightness(let level)):
-            return level >= 100 ? "Parlaklığı sonuna kadar açtım." : "Parlaklığı %\(level) yaptım."
+            return level >= 100 ? String(localized: "Parlaklığı sonuna kadar açtım.") : String(localized: "Parlaklığı %\(level) yaptım.")
         case (.toggleMute, _):
-            return "Sessiz tuşuna bastım."
+            return String(localized: "Sessiz tuşuna bastım.")
         case (.mediaControl, .media(let action)):
             switch action {
-            case .nextTrack: return "Sonraki parçaya geçtim."
-            case .previousTrack: return "Önceki parçaya döndüm."
-            case .playPause: return "Oynat/duraklat tuşuna bastım."
+            case .nextTrack: return String(localized: "Sonraki parçaya geçtim.")
+            case .previousTrack: return String(localized: "Önceki parçaya döndüm.")
+            case .playPause: return String(localized: "Oynat/duraklat tuşuna bastım.")
             }
         case (.controlApplication, .applicationControl(let payload)):
             let name: String
@@ -64,15 +64,15 @@ enum DeviceOutcomeNarrator {
                 changed = true
             }
             switch payload.action {
-            case .open: return "\(name) açıldı."
-            case .activate: return "\(name) öne geldi."
-            case .quit: return changed ? "\(name) kapatıldı." : "\(name) zaten kapalıydı."
+            case .open: return String(localized: "\(name) açıldı.")
+            case .activate: return String(localized: "\(name) öne geldi.")
+            case .quit: return changed ? String(localized: "\(name) kapatıldı.") : String(localized: "\(name) zaten kapalıydı.")
             }
         case (.lockMac, _): return "PC'yi kilitledim."
-        case (.sleepMac, _): return "PC'yi uyku moduna aldım."
-        case (.displaySleep, _): return "Ekranı kapattım."
-        case (.openURL, _): return "Bağlantıyı açtım."
-        case (.setClipboardText, _): return "Panoya kopyaladım."
+        case (.sleepMac, _): return String(localized: "PC'yi uyku moduna aldım.")
+        case (.displaySleep, _): return String(localized: "Ekranı kapattım.")
+        case (.openURL, _): return String(localized: "Bağlantıyı açtım.")
+        case (.setClipboardText, _): return String(localized: "Panoya kopyaladım.")
         default:
             return result.message
         }

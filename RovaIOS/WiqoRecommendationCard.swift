@@ -6,7 +6,7 @@ struct WiqoRecommendationCard: View {
     let title: String
     let message: String
     let primaryTitle: String
-    var dismissTitle = "Kapat"
+    var dismissTitle = String(localized: "Kapat")
     let onPrimary: () -> Void
     let onDismiss: () -> Void
 

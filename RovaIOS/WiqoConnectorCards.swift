@@ -66,7 +66,7 @@ struct ConnectorListCard: View {
             case .calendar: return "etkinlik"
             case .drive: return "dosya"
             case .notion: return "sayfa"
-            case .contacts: return "kişi"
+            case .contacts: return String(localized: "kişi")
             case .files: return "dosya"
             }
         }
@@ -92,11 +92,11 @@ struct ConnectorListCard: View {
         .accessibilityElement(children: .contain)
         .wiqoConfirmation(item: $picked, title: { $0.title }) { item in
             if let path = item.id, item.badge != "Klasör" {
-                Button("Telefonuma gönder") { followUp?.send("\(path) dosyasını telefonuma gönder.") }
-                Button("Oku ve özetle") { followUp?.send("\(path) dosyasını oku ve özetle.") }
+                Button("Telefonuma gönder") { followUp?.send(String(localized: "\(path) dosyasını telefonuma gönder.")) }
+                Button("Oku ve özetle") { followUp?.send(String(localized: "\(path) dosyasını oku ve özetle.")) }
             }
             if let path = item.id {
-                Button("Bu klasörü listele") { followUp?.send("\(path) klasörünün içini listele.") }
+                Button("Bu klasörü listele") { followUp?.send(String(localized: "\(path) klasörünün içini listele.")) }
                     .disabled(item.badge != "Klasör")
             }
         } message: { _ in EmptyView() }
@@ -233,10 +233,10 @@ struct ConnectorListCard: View {
     }
 
     private static func dayLabel(for start: String?) -> String {
-        guard let date = date(from: start) else { return "Tarihsiz" }
+        guard let date = date(from: start) else { return String(localized: "Tarihsiz") }
         let calendar = Calendar.current
-        if calendar.isDateInToday(date) { return "Bugün" }
-        if calendar.isDateInTomorrow(date) { return "Yarın" }
+        if calendar.isDateInToday(date) { return String(localized: "Bugün") }
+        if calendar.isDateInTomorrow(date) { return String(localized: "Yarın") }
         return dayFormatter.string(from: date)
     }
 
@@ -394,7 +394,7 @@ struct ConnectorTableCard: View {
                     .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(widget.title ?? "Tablo")
+                    Text(widget.title ?? String(localized: "Tablo"))
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                     Text("\(totalRows) satır")

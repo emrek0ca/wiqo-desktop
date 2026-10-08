@@ -22,7 +22,7 @@ final class InlineAppBridge: NSObject, WKScriptMessageHandler {
         } else if let problem = body["err"] as? String {
             onProblem?(String(problem.prefix(200)))
         } else if let check = body["check"] as? [String: Any], check["blank"] as? Bool == true {
-            onProblem?("Sayfa boş göründü; hiçbir şey çizilmedi.")
+            onProblem?(String(localized: "Sayfa boş göründü; hiçbir şey çizilmedi."))
         } else {
             performAction(body)
         }
@@ -34,7 +34,7 @@ final class InlineAppBridge: NSObject, WKScriptMessageHandler {
         if let text = body["copy"] as? String {
             lastAction = Date()
             UIPasteboard.general.string = String(text.prefix(20_000))
-            WiqoToastCenter.shared.show("Kopyalandı")
+            WiqoToastCenter.shared.show(String(localized: "Kopyalandı"))
         } else if let text = body["share"] as? String {
             lastAction = Date()
             InlineAppActions.share(items: [String(text.prefix(20_000))])
@@ -314,7 +314,7 @@ struct WiqoInlineAppCard: View {
     /// From there it is changed with the writer like any other project.
     private func moveToAct() {
         let document = WiqoInlineAppWebView.exportDocument(html: html, data: widget.data, libs: libs)
-        guard let id = ActModel.shared.importProject(name: widget.title ?? "Uygulama", files: ["index.html": document], mode: .deviceOnly) else { return }
+        guard let id = ActModel.shared.importProject(name: widget.title ?? String(localized: "Uygulama"), files: ["index.html": document], mode: .deviceOnly) else { return }
         WiqoHaptics.selection()
         NotificationCenter.default.post(name: .wiqoOpenProjectInAct, object: id)
     }
@@ -331,7 +331,7 @@ struct WiqoInlineAppCard: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "lock.shield").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                Text(widget.title ?? "Uygulama").font(.footnote.weight(.semibold)).lineLimit(1)
+                Text(widget.title ?? String(localized: "Uygulama")).font(.footnote.weight(.semibold)).lineLimit(1)
                 Spacer(minLength: 0)
                 Menu {
                     Button { restart(clearingState: true) } label: { Label("Sıfırla", systemImage: "arrow.counterclockwise") }
@@ -391,7 +391,7 @@ struct WiqoInlineAppCard: View {
             NavigationStack {
                 WiqoInlineAppWebView(html: html, stateKey: stateKey, data: widget.data, libs: libs, scrolls: true)
                     .background(Color(.systemBackground))
-                    .navigationTitle(widget.title ?? "Uygulama")
+                    .navigationTitle(widget.title ?? String(localized: "Uygulama"))
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Kapat") { showingFullScreen = false } } }
             }

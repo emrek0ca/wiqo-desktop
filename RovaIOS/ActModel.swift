@@ -7,9 +7,9 @@ enum ActStage: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .writing: return "Yazılıyor"
-        case .verifying: return "Telefonda deneniyor"
-        case .saving: return "Kaydediliyor"
+        case .writing: return String(localized: "Yazılıyor")
+        case .verifying: return String(localized: "Telefonda deneniyor")
+        case .saving: return String(localized: "Kaydediliyor")
         }
     }
 }
@@ -111,14 +111,14 @@ final class ActModel: ObservableObject {
     func create(request: String, mode: ActPrivacyMode) async -> String? {
         guard job == nil else { return nil }
         notice = nil
-        job = ActJobState(projectID: nil, stage: .writing, message: "Sırada…")
+        job = ActJobState(projectID: nil, stage: .writing, message: String(localized: "Sırada…"))
         cancelRequested = false
         defer { job = nil }
         do {
             let result = try await runWriter(operation: "create", request: request, project: nil)
             return try await commit(result, request: request, project: nil, mode: mode)
         } catch {
-            if !cancelRequested { notice = (error as? LocalizedError)?.errorDescription ?? "Proje oluşturulamadı." }
+            if !cancelRequested { notice = (error as? LocalizedError)?.errorDescription ?? String(localized: "Proje oluşturulamadı.") }
             return nil
         }
     }
@@ -127,14 +127,14 @@ final class ActModel: ObservableObject {
     func edit(_ id: String, request: String, errors: [(level: String, text: String)] = []) async {
         guard job == nil, let project = project(id) else { return }
         notice = nil
-        job = ActJobState(projectID: id, stage: .writing, message: "Sırada…")
+        job = ActJobState(projectID: id, stage: .writing, message: String(localized: "Sırada…"))
         cancelRequested = false
         defer { job = nil }
         do {
             let result = try await runWriter(operation: "edit", request: request, project: project, errors: errors)
             _ = try await commit(result, request: request, project: project, mode: project.mode)
         } catch {
-            if !cancelRequested { notice = (error as? LocalizedError)?.errorDescription ?? "Değişiklik uygulanamadı; proje değişmedi." }
+            if !cancelRequested { notice = (error as? LocalizedError)?.errorDescription ?? String(localized: "Değişiklik uygulanamadı; proje değişmedi.") }
         }
     }
 
@@ -148,7 +148,7 @@ final class ActModel: ObservableObject {
         for (path, content) in result.files { files[path] = content }
         files = Self.remember(files, name: p.name, kind: p.kind, goal: nil, line: result.summary)
         p.replica.files = files
-        p.history = Array(([ActHistoryEntry(id: UUID(), summary: result.summary, date: Date(), verified: true, source: "Hızlı düzenleme", changes: diff(before, files))] + p.history).prefix(30))
+        p.history = Array(([ActHistoryEntry(id: UUID(), summary: result.summary, date: Date(), verified: true, source: String(localized: "Hızlı düzenleme"), changes: diff(before, files))] + p.history).prefix(30))
         notice = nil
         store(p)
         if p.mode == .devices { Task { await sync(id) } }
@@ -158,7 +158,7 @@ final class ActModel: ObservableObject {
     func cancel() async {
         cancelRequested = true
         if let id = job?.writerJobID { try? await hub.cancelWriter(id) }
-        notice = "Görev durduruldu; proje değişmedi."
+        notice = String(localized: "Görev durduruldu; proje değişmedi.")
     }
 
     /// What a writer refusal or failure code means when the server sent no sentence with it.
@@ -180,7 +180,7 @@ final class ActModel: ObservableObject {
         var writerID = ""
         var waits = 0
         while true {
-            if cancelRequested { throw ActError("Görev durduruldu.") }
+            if cancelRequested { throw ActError(String(localized: "Görev durduruldu.")) }
             do {
                 writerID = try await hub.startWriter(operation: operation, request: request, files: files, kind: project?.kind ?? "web", name: project?.name, errors: errors)
                 break
@@ -188,23 +188,23 @@ final class ActModel: ObservableObject {
                 guard error.code == "WRITER_BUSY", waits < 6 else { throw ActError(error.errorDescription ?? "Yazara ulaşılamadı.", code: error.code) }
                 waits += 1
                 let wait = min(max(error.retryAfter ?? 5, 2), 20)
-                job?.message = "Yazar şu an dolu; \(wait) sn sonra yeniden denenecek (\(waits)/6)."
+                job?.message = String(localized: "Yazar şu an dolu; \(wait) sn sonra yeniden denenecek (\(waits)/6).")
                 try? await Task.sleep(for: .seconds(wait))
             } catch {
-                throw ActError((error as? LocalizedError)?.errorDescription ?? "Yazara ulaşılamadı.")
+                throw ActError((error as? LocalizedError)?.errorDescription ?? String(localized: "Yazara ulaşılamadı."))
             }
         }
         job?.writerJobID = writerID
         var failures = 0
         for _ in 0..<150 {
-            if cancelRequested { throw ActError("Görev durduruldu.") }
+            if cancelRequested { throw ActError(String(localized: "Görev durduruldu.")) }
             do {
                 let state = try await hub.writerJob(writerID)
                 failures = 0
                 if state.finished {
                     await hub.acknowledgeWriter(writerID)
                     if state.errorCode == "RETRYABLE_RESTART", !restarted {
-                        job?.message = "Sunucu yeniden başladı; istek yeniden gönderiliyor."
+                        job?.message = String(localized: "Sunucu yeniden başladı; istek yeniden gönderiliyor.")
                         return try await runWriter(operation: operation, request: request, project: project, errors: errors, restarted: true)
                     }
                     guard state.status == "done", let result = state.result else {
@@ -220,12 +220,12 @@ final class ActModel: ObservableObject {
                 let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 if (error as? ActHub.HubError)?.status == 404 { throw ActError("Görev sunucuda kalmadı; isteği yeniden gönder.") }
                 failures += 1
-                if failures >= 15 { throw ActError("Sunucuya ulaşılamadı: \(message)") }
-                if failures >= 3 { job?.message = "Bağlantı zayıf, yeniden deneniyor…" }
+                if failures >= 15 { throw ActError(String(localized: "Sunucuya ulaşılamadı: \(message)")) }
+                if failures >= 3 { job?.message = String(localized: "Bağlantı zayıf, yeniden deneniyor…") }
             }
             try? await Task.sleep(for: .seconds(1.5))
         }
-        throw ActError("Görev beklenenden uzun sürdü; biraz sonra tekrar dene.")
+        throw ActError(String(localized: "Görev beklenenden uzun sürdü; biraz sonra tekrar dene."))
     }
 
     /// Tries a page on this phone, then saves the change (or refuses it) as the new version.
@@ -240,9 +240,9 @@ final class ActModel: ObservableObject {
         var notes: [String]?
         if result.needsDeviceCheck && result.kind != "python" {
             job?.stage = .verifying
-            job?.message = "Sayfa bu telefonun tarayıcısında açılıp deneniyor."
+            job?.message = String(localized: "Sayfa bu telefonun tarayıcısında açılıp deneniyor.")
             let list = files.sorted { $0.key < $1.key }.map { ActBundler.File(path: $0.key, content: $0.value) }
-            guard let raw = ActBundler.bundleWeb(list).map(ActBundler.ensureViewport) else { throw ActError("Projede açılacak bir sayfa yok.") }
+            guard let raw = ActBundler.bundleWeb(list).map(ActBundler.ensureViewport) else { throw ActError(String(localized: "Projede açılacak bir sayfa yok.")) }
             // A page that uses packages is tried with the device's verified copies; without them it is not verified.
             var page = raw
             var packageProblem: String?
@@ -255,15 +255,15 @@ final class ActModel: ObservableObject {
             }
             if let packageProblem {
                 verified = false
-                warning = "\(packageProblem). Değişiklik kaydedildi ama sayfa doğrulanmadı."
+                warning = String(localized: "\(packageProblem). Değişiklik kaydedildi ama sayfa doğrulanmadı.")
             } else {
                 switch await ActWebVerifier().verify(page) {
                 case .passed: break
                 case .passedWithNotes(let found): notes = found
-                case .problems(let problems): throw ActError(problems.first ?? "Sayfa doğrulanamadı; proje değişmedi.")
+                case .problems(let problems): throw ActError(problems.first ?? String(localized: "Sayfa doğrulanamadı; proje değişmedi."))
                 case .unavailable:
                     verified = false
-                    warning = "Telefonda denenemedi; değişiklik kaydedildi. Çalışmıyorsa geri alabilirsin."
+                    warning = String(localized: "Telefonda denenemedi; değişiklik kaydedildi. Çalışmıyorsa geri alabilirsin.")
                 }
             }
         }
@@ -310,8 +310,8 @@ final class ActModel: ObservableObject {
         if useCopy { files[original] = content }
         files.removeValue(forKey: copy)
         p.replica.files = files
-        let summary = useCopy ? "Çakışmada kopya seçildi: \(original)" : "Çakışma kopyası silindi: \(copy)"
-        p.history = Array(([ActHistoryEntry(id: UUID(), summary: summary, date: Date(), verified: true, source: "Çakışma", changes: diff(before, files))] + p.history).prefix(30))
+        let summary = useCopy ? String(localized: "Çakışmada kopya seçildi: \(original)") : String(localized: "Çakışma kopyası silindi: \(copy)")
+        p.history = Array(([ActHistoryEntry(id: UUID(), summary: summary, date: Date(), verified: true, source: String(localized: "Çakışma"), changes: diff(before, files))] + p.history).prefix(30))
         store(p)
         if p.mode == .devices { Task { await sync(id) } }
     }
@@ -328,7 +328,7 @@ final class ActModel: ObservableObject {
         let project = ActLocalProject(
             id: UUID().uuidString, mode: mode,
             replica: ActReplica(meta: ActProjectMeta(name: String(name.prefix(60)), kind: isPython ? "python" : "web"), files: files),
-            history: [ActHistoryEntry(id: UUID(), summary: "Dosyalardan içe aktarıldı", date: Date(), verified: true, source: "İçe aktarma", changes: diff([:], files))],
+            history: [ActHistoryEntry(id: UUID(), summary: String(localized: "Dosyalardan içe aktarıldı"), date: Date(), verified: true, source: String(localized: "İçe aktarma"), changes: diff([:], files))],
             updatedAt: Date()
         )
         store(project)
@@ -341,8 +341,8 @@ final class ActModel: ObservableObject {
         guard let source = project(id) else { return nil }
         let copy = ActLocalProject(
             id: UUID().uuidString, mode: source.mode,
-            replica: ActReplica(meta: ActProjectMeta(name: String(("\(source.name) kopyası").prefix(60)), kind: source.kind), files: source.files),
-            history: [ActHistoryEntry(id: UUID(), summary: "“\(source.name)” projesinin kopyası", date: Date(), verified: true, source: "Kopya", changes: diff([:], source.files))],
+            replica: ActReplica(meta: ActProjectMeta(name: String((String(localized: "\(source.name) kopyası")).prefix(60)), kind: source.kind), files: source.files),
+            history: [ActHistoryEntry(id: UUID(), summary: String(localized: "“\(source.name)” projesinin kopyası"), date: Date(), verified: true, source: String(localized: "Kopya"), changes: diff([:], source.files))],
             updatedAt: Date()
         )
         store(copy)
@@ -361,7 +361,7 @@ final class ActModel: ObservableObject {
         for path in remove where set[path] == nil { files.removeValue(forKey: path) }
         guard files != before else { return }
         p.replica.files = files
-        p.history = Array(([ActHistoryEntry(id: UUID(), summary: summary, date: Date(), verified: true, source: "Elle düzenleme", changes: diff(before, files))] + p.history).prefix(30))
+        p.history = Array(([ActHistoryEntry(id: UUID(), summary: summary, date: Date(), verified: true, source: String(localized: "Elle düzenleme"), changes: diff(before, files))] + p.history).prefix(30))
         notice = nil
         store(p)
         if p.mode == .devices { Task { await sync(id) } }
@@ -373,11 +373,11 @@ final class ActModel: ObservableObject {
         guard let current = project(id) else { return }
         let page: String
         do { page = try await readyPage(for: current) } catch {
-            notice = "\((error as? LocalizedError)?.errorDescription ?? "Sayfa hazırlanamadı"). Sayfa doğrulanmadı."
+            notice = String(localized: "\((error as? LocalizedError)?.errorDescription ?? "Sayfa hazırlanamadı"). Sayfa doğrulanmadı.")
             return
         }
         if case .problems(let problems) = await ActWebVerifier().verify(page) {
-            notice = "Kaydedildi ama sayfa hata veriyor: " + (problems.first ?? "açılamadı") + " Geri alabilirsin."
+            notice = String(localized: "Kaydedildi ama sayfa hata veriyor: ") + (problems.first ?? String(localized: "açılamadı")) + String(localized: " Geri alabilirsin.")
         }
     }
 
@@ -393,7 +393,7 @@ final class ActModel: ObservableObject {
         }
         guard files != before else { return }
         p.replica.files = files
-        p.history = Array(([ActHistoryEntry(id: UUID(), summary: "Sürüme dönüldü: \(p.history[index].summary)", date: Date(), verified: true, source: "Geri yükleme", changes: diff(before, files))] + p.history).prefix(30))
+        p.history = Array(([ActHistoryEntry(id: UUID(), summary: String(localized: "Sürüme dönüldü: \(p.history[index].summary)"), date: Date(), verified: true, source: String(localized: "Geri yükleme"), changes: diff(before, files))] + p.history).prefix(30))
         store(p)
         if p.mode == .devices { Task { await sync(id) } }
     }
@@ -410,7 +410,7 @@ final class ActModel: ObservableObject {
             if let restored = change.before { files[change.path] = restored } else { files.removeValue(forKey: change.path) }
         }
         p.replica.files = files
-        let entry = ActHistoryEntry(id: UUID(), summary: "Geri alındı: \(last.summary)", date: Date(), verified: true, source: "Geri alma", changes: diff(before, files))
+        let entry = ActHistoryEntry(id: UUID(), summary: String(localized: "Geri alındı: \(last.summary)"), date: Date(), verified: true, source: String(localized: "Geri alma"), changes: diff(before, files))
         p.history = Array(([entry] + p.history).prefix(30))
         store(p)
         if p.mode == .devices { Task { await sync(id) } }
@@ -421,7 +421,7 @@ final class ActModel: ObservableObject {
         if p.mode == .devices, let hubID = p.replica.hubId {
             do { try await hub.deleteProject(id: hubID) }
             catch {
-                notice = "Silinemedi (bağlantıyı kontrol et); proje diğer cihazlarda geri gelirdi."
+                notice = String(localized: "Silinemedi (bağlantıyı kontrol et); proje diğer cihazlarda geri gelirdi.")
                 return
             }
         }
@@ -432,7 +432,7 @@ final class ActModel: ObservableObject {
     func setMode(_ id: String, to mode: ActPrivacyMode) async {
         guard var p = project(id), p.mode != mode else { return }
         if mode == .deviceOnly, let hubID = p.replica.hubId {
-            do { try await hub.deleteProject(id: hubID) } catch { notice = "Sunucudaki şifreli kopya silinemedi; bağlantıyı kontrol et."; return }
+            do { try await hub.deleteProject(id: hubID) } catch { notice = String(localized: "Sunucudaki şifreli kopya silinemedi; bağlantıyı kontrol et."); return }
             p.replica.hubId = nil
             p.replica.version = 0
             p.replica.base = [:]
@@ -458,7 +458,7 @@ final class ActModel: ObservableObject {
             for hubProject in remote where !known.contains(hubProject.id) && hubProject.version > 0 {
                 guard let replica = try await ActSync.download(hubProject: hubProject, hub: hub, keys: keys) else { foreign += 1; continue }
                 let files = replica.files
-                let entry = ActHistoryEntry(id: UUID(), summary: "Başka cihazdan alındı", date: Date(), verified: true, source: "Başka cihaz", changes: diff([:], files))
+                let entry = ActHistoryEntry(id: UUID(), summary: String(localized: "Başka cihazdan alındı"), date: Date(), verified: true, source: String(localized: "Başka cihaz"), changes: diff([:], files))
                 store(ActLocalProject(id: UUID().uuidString, mode: .devices, replica: replica, history: [entry], updatedAt: Date()))
             }
             let remoteIDs = Set(remote.map(\.id))
@@ -468,7 +468,7 @@ final class ActModel: ObservableObject {
                     projects.removeAll { $0.id == p.id }
                 }
             }
-            syncNote = foreign > 0 ? "\(foreign) proje başka bir anahtarla şifrelenmiş; kurtarma kodunu girmeden açılamaz." : nil
+            syncNote = foreign > 0 ? String(localized: "\(foreign) proje başka bir anahtarla şifrelenmiş; kurtarma kodunu girmeden açılamaz.") : nil
             for p in projects where p.mode == .devices { await sync(p.id) }
         } catch {
             syncNote = (error as? LocalizedError)?.errorDescription
@@ -505,8 +505,8 @@ final class ActModel: ObservableObject {
             if report.pulled > 0 || !report.conflictCopies.isEmpty {
                 let changes = diff(before, replica.files)
                 if !changes.isEmpty {
-                    let summary = report.conflictCopies.isEmpty ? "Başka cihazdan gelen değişiklik" : "Çakışma: bu cihazın kopyası yanına kaydedildi"
-                    p.history = Array(([ActHistoryEntry(id: UUID(), summary: summary, date: Date(), verified: true, source: "Başka cihaz", changes: changes)] + p.history).prefix(30))
+                    let summary = report.conflictCopies.isEmpty ? String(localized: "Başka cihazdan gelen değişiklik") : String(localized: "Çakışma: bu cihazın kopyası yanına kaydedildi")
+                    p.history = Array(([ActHistoryEntry(id: UUID(), summary: summary, date: Date(), verified: true, source: String(localized: "Başka cihaz"), changes: changes)] + p.history).prefix(30))
                 }
             }
             if report.changed { store(p) } else if p.replica != project(id)?.replica { ActProjectStore.save(p); if let i = projects.firstIndex(where: { $0.id == id }) { projects[i] = p } }
@@ -525,14 +525,14 @@ final class ActModel: ObservableObject {
     // MARK: Run, export, hand-off
 
     func runPython(_ id: String) async throws -> ActHub.RunResult {
-        guard let p = project(id) else { throw ActError("Proje bulunamadı.") }
+        guard let p = project(id) else { throw ActError(String(localized: "Proje bulunamadı.")) }
         return try await hub.run(files: p.sortedFiles.map { (path: $0.path, content: $0.content) })
     }
 
     /// The page with its JavaScript packages put in from the device's verified cache (downloaded and checked first when
     /// they are not there yet). Throws `ActPackageError` (DEVICE_PACKAGE_MISSING) when that cannot be done.
     func readyPage(for project: ActLocalProject) async throws -> String {
-        guard let raw = project.bundle else { throw ActError("Projede açılacak bir sayfa (index.html) yok.") }
+        guard let raw = project.bundle else { throw ActError(String(localized: "Projede açılacak bir sayfa (index.html) yok.")) }
         try await ActPackages.shared.prepare(raw) { [hub] in try await hub.packages() }
         let packaged = ActPackages.shared.inlineCached(raw)
         guard packaged.missing.isEmpty else { throw ActPackageError("\(packaged.missing.joined(separator: ", ")) cihazda yok") }
@@ -541,9 +541,9 @@ final class ActModel: ObservableObject {
 
     /// A program's text as a file (a single .py as it is, several joined with headers).
     func exportURL(_ id: String) throws -> URL {
-        guard let p = project(id) else { throw ActError("Proje bulunamadı.") }
+        guard let p = project(id) else { throw ActError(String(localized: "Proje bulunamadı.")) }
         let files = p.sortedFiles
-        guard let first = files.first else { throw ActError("Projede dosya yok.") }
+        guard let first = files.first else { throw ActError(String(localized: "Projede dosya yok.")) }
         let single = files.count == 1
         let url = try Self.exportFolder().appendingPathComponent(single ? URL(fileURLWithPath: first.path).lastPathComponent : "\(Self.stem(p.name)).py")
         let text = single ? first.content : files.map { "# --- \($0.path) ---\n\($0.content)" }.joined(separator: "\n\n")
@@ -553,7 +553,7 @@ final class ActModel: ObservableObject {
 
     private static func stem(_ name: String) -> String {
         let cleaned = name.replacingOccurrences(of: "[/\\:*?\"<>|]", with: "-", options: .regularExpression).trimmingCharacters(in: .whitespaces)
-        return String((cleaned.isEmpty ? "Proje" : cleaned).prefix(60))
+        return String((cleaned.isEmpty ? String(localized: "Proje") : cleaned).prefix(60))
     }
 
     private static func exportFolder() throws -> URL {
@@ -567,7 +567,7 @@ final class ActModel: ObservableObject {
     /// and is refused (DEVICE_PACKAGE_MISSING) rather than shared incomplete. PDF and picture come from the page as this
     /// device shows it (packages from the device cache, the two public CDNs still allowed).
     func export(_ kind: ActExportKind, id: String, width: Int) async throws -> URL {
-        guard let p = project(id) else { throw ActError("Proje bulunamadı.") }
+        guard let p = project(id) else { throw ActError(String(localized: "Proje bulunamadı.")) }
         let name = Self.stem(p.name)
         let dir = try Self.exportFolder()
         switch kind {
@@ -579,13 +579,13 @@ final class ActModel: ObservableObject {
             try data.write(to: url, options: .atomic)
             return url
         case .html:
-            guard p.isWeb else { throw ActError("Tek HTML yalnız web projeleri için.") }
+            guard p.isWeb else { throw ActError(String(localized: "Tek HTML yalnız web projeleri için.")) }
             let page = try await readyPage(for: p)
             let url = dir.appendingPathComponent("\(name).html")
             try page.write(to: url, atomically: true, encoding: .utf8)
             return url
         case .pdf, .png:
-            guard p.isWeb else { throw ActError("PDF ve ekran görüntüsü yalnız web projeleri için.") }
+            guard p.isWeb else { throw ActError(String(localized: "PDF ve ekran görüntüsü yalnız web projeleri için.")) }
             let page = try await readyPage(for: p)
             let html = WiqoHTMLDocument.wrap(page, viewportWidth: width, reduceMotion: true)
             let data = try await ActPageCapture.capture(html: html, projectKey: p.id, width: width, output: kind == .pdf ? .pdf : .png)
@@ -597,7 +597,7 @@ final class ActModel: ObservableObject {
 
     /// Hands one of the fixed actions to the paired Mac and follows it to its answer.
     func handOff(_ id: String, action: String, progress: @escaping (String) -> Void) async -> (ok: Bool, text: String) {
-        guard let hubID = project(id)?.replica.hubId else { return (false, "Bu proje yalnız bu cihazda; Mac'e göndermek için 'Bağlı cihazlarım' gizliliğine geç.") }
+        guard let hubID = project(id)?.replica.hubId else { return (false, String(localized: "Bu proje yalnız bu cihazda; Mac'e göndermek için 'Bağlı cihazlarım' gizliliğine geç.")) }
         do {
             await sync(id)
             let task = try await hub.startPcTask(projectId: hubID, action: action)
@@ -605,9 +605,9 @@ final class ActModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(2))
                 let current = try await hub.pcTask(task.id)
                 if current.finished { return (current.status == "done", current.output) }
-                progress("Mac'in yanıtı bekleniyor…")
+                progress(String(localized: "Mac'in yanıtı bekleniyor…"))
             }
-            return (false, "Mac yanıt vermedi; açık ve internete bağlı mı?")
+            return (false, String(localized: "Mac yanıt vermedi; açık ve internete bağlı mı?"))
         } catch {
             return (false, (error as? LocalizedError)?.errorDescription ?? "Mac'e iletilemedi.")
         }
@@ -652,7 +652,7 @@ final class ActModel: ObservableObject {
             var files: [String: String] = [:]
             for file in snapshot.files { files[file.path] = file.content }
             if !files.isEmpty {
-                let entry = ActHistoryEntry(id: UUID(), summary: "Önceki sürümden aktarıldı", date: Date(), verified: true, source: "Wiqo", changes: diff([:], files))
+                let entry = ActHistoryEntry(id: UUID(), summary: String(localized: "Önceki sürümden aktarıldı"), date: Date(), verified: true, source: "Wiqo", changes: diff([:], files))
                 let local = ActLocalProject(id: UUID().uuidString, mode: .devices, replica: ActReplica(meta: ActProjectMeta(name: snapshot.project.name, kind: snapshot.project.kind), files: files), history: [entry], updatedAt: Date())
                 store(local)
                 // Remember the move before anything else can run again.

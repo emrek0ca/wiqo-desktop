@@ -15,14 +15,14 @@ private struct QuickSuggestion { let title: String; let icon: String; let requir
 private let allSuggestions: [QuickSuggestion] = [
     // Read-only on purpose: inside Desktop/Documents/Downloads these run without a Face ID prompt,
     // so the first thing a newly paired person sees is the Mac answering instantly.
-    QuickSuggestion(title: "Masaüstümdeki son dosyalar", icon: "doc.text.magnifyingglass", requiresDevice: true),
-    QuickSuggestion(title: "Bu hafta indirdiğim dosyalar", icon: "arrow.down.doc", requiresDevice: true),
-    QuickSuggestion(title: "Sesi kıs", icon: "speaker.wave.1.fill", requiresDevice: true),
-    QuickSuggestion(title: "Ekranı kısarak odaklan", icon: "moon.stars.fill", requiresDevice: true),
-    QuickSuggestion(title: "Bugün hava nasıl?", icon: "cloud.sun.fill", requiresDevice: false),
-    QuickSuggestion(title: "Basit bir hesap makinesi yap", icon: "function", requiresDevice: false),
-    QuickSuggestion(title: "Toplantıya hazırla", icon: "person.2.fill", requiresDevice: false),
-    QuickSuggestion(title: "Bu ayki bütçemi tabloya dök", icon: "tablecells.fill", requiresDevice: false)
+    QuickSuggestion(title: String(localized: "Masaüstümdeki son dosyalar"), icon: "doc.text.magnifyingglass", requiresDevice: true),
+    QuickSuggestion(title: String(localized: "Bu hafta indirdiğim dosyalar"), icon: "arrow.down.doc", requiresDevice: true),
+    QuickSuggestion(title: String(localized: "Sesi kıs"), icon: "speaker.wave.1.fill", requiresDevice: true),
+    QuickSuggestion(title: String(localized: "Ekranı kısarak odaklan"), icon: "moon.stars.fill", requiresDevice: true),
+    QuickSuggestion(title: String(localized: "Bugün hava nasıl?"), icon: "cloud.sun.fill", requiresDevice: false),
+    QuickSuggestion(title: String(localized: "Basit bir hesap makinesi yap"), icon: "function", requiresDevice: false),
+    QuickSuggestion(title: String(localized: "Toplantıya hazırla"), icon: "person.2.fill", requiresDevice: false),
+    QuickSuggestion(title: String(localized: "Bu ayki bütçemi tabloya dök"), icon: "tablecells.fill", requiresDevice: false)
 ]
 
 /// Wiqo's conversation surface. A real conversation, not a one-shot "type → plan → confirm" form - every
@@ -152,9 +152,9 @@ struct CopilotView: View {
             }
             if let openWork, !bubbles.isEmpty, !isSending {
                 WiqoRecommendationCard(
-                    title: "Yarım kalan iş",
+                    title: String(localized: "Yarım kalan iş"),
                     message: "\(openWork.goal)\n\(openWork.detail)",
-                    primaryTitle: "Devam et",
+                    primaryTitle: String(localized: "Devam et"),
                     onPrimary: {
                         self.openWork = nil
                         Task { await sendMessage(textOverride: "devam et") }
@@ -321,7 +321,7 @@ struct CopilotView: View {
                     }
                     .wiqoRiseIn(delay: 0.2 + Double(index) * 0.06)
                 }
-                suggestionChip(title: "Neler yapabilirim?", systemImage: "square.grid.2x2", isPrimary: false) {
+                suggestionChip(title: String(localized: "Neler yapabilirim?"), systemImage: "square.grid.2x2", isPrimary: false) {
                     showingDiscovery = true
                 }
                 .wiqoRiseIn(delay: 0.2 + Double(visibleSuggestions.count) * 0.06)
@@ -357,7 +357,7 @@ struct CopilotView: View {
                 WiqoRecommendationCard(
                     title: suggestion.title,
                     message: suggestion.body,
-                    primaryTitle: "Sor",
+                    primaryTitle: String(localized: "Sor"),
                     onPrimary: {
                         inputText = suggestion.prompt
                         proactiveSuggestions.removeAll { $0.id == suggestion.id }
@@ -377,9 +377,9 @@ struct CopilotView: View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(memoryCandidates) { candidate in
                 WiqoRecommendationCard(
-                    title: "Bunu hatırlayayım mı?",
+                    title: String(localized: "Bunu hatırlayayım mı?"),
                     message: candidate.content,
-                    primaryTitle: "Hatırla",
+                    primaryTitle: String(localized: "Hatırla"),
                     onPrimary: {
                         memoryCandidates.removeAll { $0.id == candidate.id }
                         Task {
@@ -742,12 +742,12 @@ struct CopilotView: View {
         let pendingConfirmation = bubble.needsConfirmation
             || bubble.backendConfirmations.contains { $0.status == .pending }
             || liveOnlyUpdates.contains { $0.status == LiveExecutionStatus.awaitingConfirmation.rawValue }
-        if pendingConfirmation { return "Bunu yapabilmem için senden onay almam gerekiyor." }
+        if pendingConfirmation { return String(localized: "Bunu yapabilmem için senden onay almam gerekiyor.") }
 
         let failed = !bubble.failedSteps.isEmpty
             || bubble.backendConfirmations.contains { $0.status == .failed || $0.status == .cancelled }
             || liveOnlyUpdates.contains { $0.status == LiveExecutionStatus.failed.rawValue || $0.status == LiveExecutionStatus.denied.rawValue }
-        if failed { return "İşlemi tamamlayamadım; ayrıntıyı açabilirsin." }
+        if failed { return String(localized: "İşlemi tamamlayamadım; ayrıntıyı açabilirsin.") }
 
         let processing = !bubble.inFlightStepIDs.isEmpty
             || bubble.backendConfirmations.contains { $0.status == .processing }
@@ -755,14 +755,14 @@ struct CopilotView: View {
         if processing {
             let summary = deviceSteps.first(where: { bubble.inFlightStepIDs.contains($0.id) })?.summary
                 ?? liveOnlyUpdates.first(where: { $0.status == LiveExecutionStatus.dispatching.rawValue || $0.status == LiveExecutionStatus.running.rawValue })?.summary
-            return summary.map { "Şimdi şunu yapıyorum: \($0)" } ?? "İstediklerini sırayla yapıyorum."
+            return summary.map { String(localized: "Şimdi şunu yapıyorum: \($0)") } ?? String(localized: "İstediklerini sırayla yapıyorum.")
         }
 
         let localDone = deviceSteps.allSatisfy { bubble.executedStepIDs.contains($0.id) }
         let backendDone = bubble.backendConfirmations.allSatisfy { $0.status == .completed }
         let liveDone = liveOnlyUpdates.allSatisfy { $0.status == LiveExecutionStatus.succeeded.rawValue }
         if localDone && backendDone && liveDone { return bubble.replyIsProgress == true ? "Adım sonucu alındı; görev kontrol ediliyor." : "Adım sonuçları hazır." }
-        return "İstediklerini sırayla yapıyorum."
+        return String(localized: "İstediklerini sırayla yapıyorum.")
     }
 
     private func standaloneExecutionUpdates(
@@ -831,11 +831,11 @@ struct CopilotView: View {
                     .padding(.horizontal, 4)
                 }
             case .completed:
-                WiqoApprovalOutcome(kind: .done, message: nonEmpty(row.resultText) ?? "Yaptım.")
+                WiqoApprovalOutcome(kind: .done, message: nonEmpty(row.resultText) ?? String(localized: "Yaptım."))
             case .cancelled:
-                WiqoApprovalOutcome(kind: .declined, message: "İşlemi yapmadım.")
+                WiqoApprovalOutcome(kind: .declined, message: String(localized: "İşlemi yapmadım."))
             case .failed:
-                WiqoApprovalOutcome(kind: .failed, message: nonEmpty(row.resultText) ?? "İşlem gerçekleşmedi.")
+                WiqoApprovalOutcome(kind: .failed, message: nonEmpty(row.resultText) ?? String(localized: "İşlem gerçekleşmedi."))
             }
 
             if let resultDetail = row.resultDetail, !resultDetail.isEmpty {
@@ -925,7 +925,7 @@ struct CopilotView: View {
     private func toolSummary(_ rows: [WiqoToolRow]) -> String {
         let finished = rows.filter { $0.tone == .success }.count
         if finished == rows.count { return "\(rows.count) işlem tamamlandı" }
-        return "\(rows.count) işlem"
+        return String(localized: "\(rows.count) işlem")
     }
 
     private func deviceToolIcon(_ type: CommandType) -> String {
@@ -989,7 +989,7 @@ struct CopilotView: View {
             return (localResultMessage(result), detail)
         }
         if let failure = bubble.failedSteps[step.id] {
-            return ("Bunu tamamlayamadım.", [failure])
+            return (String(localized: "Bunu tamamlayamadım."), [failure])
         }
         if let update = bubble.executionUpdates[step.id], let status = LiveExecutionStatus(rawValue: update.status) {
             return livePresentation(status, message: update.message)
@@ -1014,15 +1014,15 @@ struct CopilotView: View {
         case .ready:
             return (nil, [])
         case .awaitingConfirmation:
-            return ("Bunu yapabilmem için senden onay almam gerekiyor.", [])
+            return (String(localized: "Bunu yapabilmem için senden onay almam gerekiyor."), [])
         case .dispatching, .running:
-            return ("Şimdi yapıyorum…", [])
+            return (String(localized: "Şimdi yapıyorum…"), [])
         case .succeeded:
-            return ("Oldu.", [])
+            return (String(localized: "Oldu."), [])
         case .failed, .denied:
             return (friendlyExecutionFailure(status, message: message), detail)
         case .blocked:
-            return ("Önceki işlemi tamamlayınca buna geçeceğim.", detail)
+            return (String(localized: "Önceki işlemi tamamlayınca buna geçeceğim."), detail)
         }
     }
 
@@ -1036,7 +1036,7 @@ struct CopilotView: View {
     }
 
     private func contextChunk(from data: CommandData, id: String) -> WiqoContextChunk? {
-        let title = "Okunan içerik"
+        let title = String(localized: "Okunan içerik")
         switch data {
         case .fileContent(let content):
             guard !content.content.isEmpty else { return nil }
@@ -1059,28 +1059,28 @@ struct CopilotView: View {
             || normalized.contains("device_offline")
             || normalized.contains("pc'ye ulaşılamıyor")
             || normalized.contains("pc’ye ulaşılamıyor") {
-            return "PC’ye şu anda ulaşamıyorum. Açık ve internete bağlı olduğundan emin olun."
+            return String(localized: "PC’ye şu anda ulaşamıyorum. Açık ve internete bağlı olduğundan emin olun.")
         }
         if normalized.contains("permission")
             || normalized.contains("presence")
             || normalized.contains("authority") {
-            return "Bu işlem için gerekli izni alamadım."
+            return String(localized: "Bu işlem için gerekli izni alamadım.")
         }
-        return "Bunu tamamlayamadım."
+        return String(localized: "Bunu tamamlayamadım.")
     }
 
     private func localResultMessage(_ result: CommandResult) -> String {
         switch result.status {
         case .pending, .running:
-            return "Şimdi yapıyorum…"
+            return String(localized: "Şimdi yapıyorum…")
         case .completed:
-            return result.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Oldu." : result.message
+            return result.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? String(localized: "Oldu.") : result.message
         case .unknown:
-            return "İşlemin sonucu netleşmedi; tekrar çalıştırmadım."
+            return String(localized: "İşlemin sonucu netleşmedi; tekrar çalıştırmadım.")
         case .denied:
-            return "Bu işlemi yapmadım."
+            return String(localized: "Bu işlemi yapmadım.")
         case .failed:
-            return "Bunu tamamlayamadım."
+            return String(localized: "Bunu tamamlayamadım.")
         }
     }
 
@@ -1129,7 +1129,7 @@ struct CopilotView: View {
 
         var reply = ChatBubble(
             role: .assistant,
-            text: liveReply.displayed.isEmpty ? "Bakıyorum…" : liveReply.displayed
+            text: liveReply.displayed.isEmpty ? String(localized: "Bakıyorum…") : liveReply.displayed
         )
         reply.executionUpdates[update.id] = update
         bubbles.append(reply)
@@ -1201,7 +1201,7 @@ struct CopilotView: View {
 
         var reply = ChatBubble(
             role: .assistant,
-            text: liveReply.displayed.isEmpty ? "Bunu yapmak için onayını almam gerekiyor." : liveReply.displayed,
+            text: liveReply.displayed.isEmpty ? String(localized: "Bunu yapmak için onayını almam gerekiyor.") : liveReply.displayed,
             steps: steps,
             backendConfirmations: backendConfirmations.map { BackendConfirmationRow(confirmation: $0) }
         )
@@ -1258,14 +1258,14 @@ struct CopilotView: View {
                     },
                     onConfirmTaskReads: {
                         Task {
-                            await confirmAndExecute(bubbleID: bubbleID, reason: "Bu görev boyunca Masaüstü, Belgeler ve İndirilenler içindeki hassas olmayan dosyaları okumaya izin ver") {
+                            await confirmAndExecute(bubbleID: bubbleID, reason: String(localized: "Bu görev boyunca Masaüstü, Belgeler ve İndirilenler içindeki hassas olmayan dosyaları okumaya izin ver")) {
                                 taskReadApprovalBubbleID = bubbleID
                             }
                         }
                     },
                     onConfirmTaskFiles: {
                         Task {
-                            await confirmAndExecute(bubbleID: bubbleID, reason: "Bu görev boyunca Masaüstü, Belgeler ve İndirilenler'de dosya okuma, klasör açma, taşıma, kopyalama ve yeniden adlandırmaya izin ver. Silme ve üzerine yazma hariç.") {
+                            await confirmAndExecute(bubbleID: bubbleID, reason: String(localized: "Bu görev boyunca Masaüstü, Belgeler ve İndirilenler'de dosya okuma, klasör açma, taşıma, kopyalama ve yeniden adlandırmaya izin ver. Silme ve üzerine yazma hariç.")) {
                                 taskReadApprovalBubbleID = bubbleID
                                 taskWriteApproved = true
                             }
@@ -1285,7 +1285,7 @@ struct CopilotView: View {
     private func grantTrustThenExecute(bubbleID: UUID) async {
         await confirmAndExecute(
             bubbleID: bubbleID,
-            reason: "Bu tür eylemleri onaysız çalıştırmaya izin vermek için kimliğinizi doğrulayın"
+            reason: String(localized: "Bu tür eylemleri onaysız çalıştırmaya izin vermek için kimliğinizi doğrulayın")
         ) {
             guard let bubble = self.bubbles.first(where: { $0.id == bubbleID }) else { return }
             let pending = self.pendingLocalSteps(in: bubble)
@@ -1333,7 +1333,7 @@ struct CopilotView: View {
                     guard let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) else { return }
                     bubble.backendConfirmations[index].status = .pending
                     bubble.backendConfirmations[index].resultText = nil
-                    bubble.backendConfirmations[index].resultDetail = "Terminal izni bu telefonda imzalanamadı. PC eşleşmesini kontrol ettikten sonra yeniden deneyebilirsin."
+                    bubble.backendConfirmations[index].resultDetail = String(localized: "Terminal izni bu telefonda imzalanamadı. PC eşleşmesini kontrol ettikten sonra yeniden deneyebilirsin.")
                 }
                 persistConversation()
                 return
@@ -1370,7 +1370,7 @@ struct CopilotView: View {
             setBubble(bubbleID) { bubble in
                 if let index = bubble.backendConfirmations.firstIndex(where: { $0.id == confirmationID }) {
                     bubble.backendConfirmations[index].status = .failed
-                    bubble.backendConfirmations[index].resultText = "Oturumun geçersiz veya süresi dolmuş."
+                    bubble.backendConfirmations[index].resultText = String(localized: "Oturumun geçersiz veya süresi dolmuş.")
                     bubble.backendConfirmations[index].resultDetail = nil
                 }
             }
@@ -1548,7 +1548,7 @@ struct CopilotView: View {
                 onCancel: { showsDocumentScanner = false },
                 onError: {
                     showsDocumentScanner = false
-                    bubbles.append(ChatBubble(role: .system, text: "Belge taranamadı. Kamera iznini kontrol edip yeniden dene."))
+                    bubbles.append(ChatBubble(role: .system, text: String(localized: "Belge taranamadı. Kamera iznini kontrol edip yeniden dene.")))
                     persistConversation()
                 }
             )
@@ -1665,8 +1665,8 @@ struct CopilotView: View {
         }
         let files = pendingFiles
         let text = !typedText.isEmpty ? typedText
-            : !files.isEmpty ? (files.count > 1 ? "Bu dosyaları incele." : "Bu dosyayı incele.")
-            : (pendingAttachments.count > 1 ? "Bu görselleri analiz et." : "Bu görseli analiz et.")
+            : !files.isEmpty ? (files.count > 1 ? String(localized: "Bu dosyaları incele.") : String(localized: "Bu dosyayı incele."))
+            : (pendingAttachments.count > 1 ? String(localized: "Bu görselleri analiz et.") : String(localized: "Bu görseli analiz et."))
         let attachments = pendingAttachments
         let previews = attachmentPreviews
         let thumbnails = attachmentPreviews.compactMap(makeThumbnailData)
@@ -1682,7 +1682,7 @@ struct CopilotView: View {
         liveReply.reset()
         isSending = true
         thinking = ThinkingTrace()
-        thinking.note("Anlıyorum…")
+        thinking.note(String(localized: "Anlıyorum…"))
         // Results belong to the turn that produced them; never let an older device outcome alter
         // the model's interpretation of a new user message.
         recentDeviceResults.removeAll(keepingCapacity: true)
@@ -1774,7 +1774,7 @@ struct CopilotView: View {
                 }
             )
             let replyText = result.reply.isEmpty
-                ? (liveReply.currentText.isEmpty ? "Bakıyorum…" : liveReply.currentText)
+                ? (liveReply.currentText.isEmpty ? String(localized: "Bakıyorum…") : liveReply.currentText)
                 : result.reply
             let replyBubbleID = earlyConfirmationBubbleID ?? responseBubble.id
             commitThinking(to: replyBubbleID)
@@ -1840,7 +1840,7 @@ struct CopilotView: View {
             liveReplyBubbleID = nil
             thinking.finish(failed: true)
             setBubble(responseBubble.id) { bubble in
-                if bubble.text.isEmpty { bubble.text = "Oturum sona erdi; yanıt alınamadı." }
+                if bubble.text.isEmpty { bubble.text = String(localized: "Oturum sona erdi; yanıt alınamadı.") }
             }
             liveReply.reset()
             persistConversation()
@@ -1929,7 +1929,7 @@ struct CopilotView: View {
         return failed ? .failed : .completed
     }
 
-    private func confirmAndExecute(bubbleID: UUID, reason: String = "Bu eylemi PC'de çalıştırmak için kimliğinizi doğrulayın", beforeExecute: () async -> Void = {}) async {
+    private func confirmAndExecute(bubbleID: UUID, reason: String = String(localized: "Bu eylemi PC'de çalıştırmak için kimliğinizi doğrulayın"), beforeExecute: () async -> Void = {}) async {
         guard !isConfirming else { return }
         isConfirming = true
         let wasSending = isSending
@@ -1998,10 +1998,10 @@ struct CopilotView: View {
                     result = CommandResult(
                         commandID: step.id,
                         status: .failed,
-                        message: "Ekran gözlem sınırına ulaşıldı.",
+                        message: String(localized: "Ekran gözlem sınırına ulaşıldı."),
                         startedAt: now,
                         finishedAt: now,
-                        error: RovaError(code: "SCREEN_OBSERVATION_LIMIT", message: "Bu istek için en fazla üç ekran gözlemi yapılabilir.", category: "tool_failure")
+                        error: RovaError(code: "SCREEN_OBSERVATION_LIMIT", message: String(localized: "Bu istek için en fazla üç ekran gözlemi yapılabilir."), category: "tool_failure")
                     )
                     setBubble(bubbleID) { bubble in
                         bubble.inFlightStepIDs.remove(step.id)
@@ -2024,7 +2024,7 @@ struct CopilotView: View {
                     result = await model.send(step.type, payload: step.payload, commandID: step.id)
                 } catch {
                     let now = Date()
-                    result = CommandResult(commandID: step.id, status: .failed, message: "Dosya aktarımı başlatılamadı.", startedAt: now, finishedAt: now, error: RovaError(code: "TRANSFER_UNAVAILABLE", message: "Dosya aktarımı başlatılamadı."))
+                    result = CommandResult(commandID: step.id, status: .failed, message: String(localized: "Dosya aktarımı başlatılamadı."), startedAt: now, finishedAt: now, error: RovaError(code: "TRANSFER_UNAVAILABLE", message: String(localized: "Dosya aktarımı başlatılamadı.")))
                 }
             } else if step.type == .runFilePlan, case .filePlan(let plan) = step.payload {
                 // Every file the plan sends needs its transfer registered before the Mac uploads it.
@@ -2037,7 +2037,7 @@ struct CopilotView: View {
                     result = await model.send(step.type, payload: step.payload, commandID: step.id)
                 } catch {
                     let now = Date()
-                    result = CommandResult(commandID: step.id, status: .failed, message: "Dosya aktarımı başlatılamadı.", startedAt: now, finishedAt: now, error: RovaError(code: "TRANSFER_UNAVAILABLE", message: "Dosya aktarımı başlatılamadı."))
+                    result = CommandResult(commandID: step.id, status: .failed, message: String(localized: "Dosya aktarımı başlatılamadı."), startedAt: now, finishedAt: now, error: RovaError(code: "TRANSFER_UNAVAILABLE", message: String(localized: "Dosya aktarımı başlatılamadı.")))
                 }
             } else {
                 result = await model.send(step.type, payload: step.payload, commandID: step.id)
@@ -2120,7 +2120,7 @@ struct CopilotView: View {
         let failedCount = relevant.filter { bubble.failedSteps[$0.id] != nil }.count
         if failedCount == 0 { return "Mac adımlarının sonuçları alındı; görevin kalanını kontrol ediyorum." }
         if failedCount == relevant.count { return "Bu isteği tamamlayamadım." }
-        return "İşin bir kısmını yaptım; kalanını tamamlayamadım."
+        return String(localized: "İşin bir kısmını yaptım; kalanını tamamlayamadım.")
     }
 
     /// Local reads and verified system controls are two-phase turns: first the Mac returns the
@@ -2135,7 +2135,7 @@ struct CopilotView: View {
         recoveryAttemptsRemaining: Int
     ) async {
         guard remainingRounds > 0 else {
-            setBubble(bubbleID) { $0.text = "Bu turdaki adım sınırına ulaştım. Görevin tamamlandığı doğrulanmadı; devam etmemi isteyebilirsin." }
+            setBubble(bubbleID) { $0.text = String(localized: "Bu turdaki adım sınırına ulaştım. Görevin tamamlandığı doğrulanmadı; devam etmemi isteyebilirsin.") }
             persistConversation()
             return
         }
@@ -2154,7 +2154,7 @@ struct CopilotView: View {
         let taskHistory = taskStart.map { Array(history[$0...]).filter { !$0.content.hasPrefix("Yerel PC sonuçları hazır.") } } ?? history
         let continuationHistory = Array(taskHistory.prefix(1)) + [
             RovaBackendClient.ChatTurn(role: "assistant", content: initialReply),
-            RovaBackendClient.ChatTurn(role: "user", content: "Yerel PC sonuçları hazır. Bu sonuçları kullanarak önceki isteği şimdi tamamla; belge içeriğini yeniden isteme.")
+            RovaBackendClient.ChatTurn(role: "user", content: String(localized: "Yerel PC sonuçları hazır. Bu sonuçları kullanarak önceki isteği şimdi tamamla; belge içeriğini yeniden isteme."))
         ]
         recentDeviceResults.removeAll(keepingCapacity: true)
         liveReplyBubbleID = nil
@@ -2223,7 +2223,7 @@ struct CopilotView: View {
                 }
             )
             let replyText = result.reply.isEmpty
-                ? (liveReply.currentText.isEmpty ? "Bakıyorum…" : liveReply.currentText)
+                ? (liveReply.currentText.isEmpty ? String(localized: "Bakıyorum…") : liveReply.currentText)
                 : result.reply
             commitThinking(to: bubbleID)
             liveReply.finish(with: replyText)
@@ -2245,7 +2245,7 @@ struct CopilotView: View {
                 )
             } else {
                 if remainingRounds <= 1 && !result.steps.isEmpty {
-                    setBubble(bubbleID) { $0.text = "Adım sınırına ulaştım. Son Mac sonucu alındı ancak görevin bütünü henüz doğrulanmadı; devam etmemi isteyebilirsin." }
+                    setBubble(bubbleID) { $0.text = String(localized: "Adım sınırına ulaştım. Son Mac sonucu alındı ancak görevin bütünü henüz doğrulanmadı; devam etmemi isteyebilirsin.") }
                 }
                 recentDeviceResults.removeAll(keepingCapacity: true)
             }
@@ -2258,7 +2258,7 @@ struct CopilotView: View {
             commitThinking(to: bubbleID, failed: true)
             // The first local read already succeeded and is visible in the original bubble. Keep
             // that evidence rather than replacing it with a generic network failure.
-            setBubble(bubbleID) { $0.text = executionNoticeFreeText($0.text) + "\n\nYerel sonuç alındı; kalan adımı tamamlayamadım." }
+            setBubble(bubbleID) { $0.text = executionNoticeFreeText($0.text) + String(localized: "\n\nYerel sonuç alındı; kalan adımı tamamlayamadım.") }
             persistConversation()
             CopilotConversationStore.flushPending()
         }
@@ -2302,7 +2302,7 @@ struct CopilotView: View {
             if !bubble.failedSteps.isEmpty && !result.steps.isEmpty {
                 for step in bubble.steps where !bubble.executedStepIDs.contains(step.id) && !result.steps.contains(where: { $0.id == step.id }) {
                     bubble.executedStepIDs.insert(step.id)
-                    bubble.failedSteps[step.id] = "Önceki hata nedeniyle çalıştırılmadı."
+                    bubble.failedSteps[step.id] = String(localized: "Önceki hata nedeniyle çalıştırılmadı.")
                 }
             }
             let existingStepIDs = Set(bubble.steps.map(\.id))
@@ -2371,31 +2371,31 @@ struct CopilotView: View {
             return String(content.text.prefix(4_000))
         case .desktopFiles(let files):
             let names = files.map(\.filename).joined(separator: ", ")
-            return files.isEmpty ? "Masaüstü boş." : "Dosyalar: \(names)"
+            return files.isEmpty ? String(localized: "Masaüstü boş.") : "Dosyalar: \(names)"
         case .files(let files):
             let names = files.map { $0.name + ($0.isDirectory ? "/" : "") }.joined(separator: ", ")
-            return files.isEmpty ? "Klasör boş." : "Dosyalar: \(names)"
+            return files.isEmpty ? String(localized: "Klasör boş.") : "Dosyalar: \(names)"
         case .fileData(let content):
             if let text = content.text { return String(text.prefix(2_000)) }
-            return "\(content.mimeType) dosyası okundu."
+            return String(localized: "\(content.mimeType) dosyası okundu.")
         case .screenshot(let content):
-            return "Ekran görüntüsü: \(content.width)×\(content.height)"
+            return String(localized: "Ekran görüntüsü: \(content.width)×\(content.height)")
         case .shortcutResult(let content):
-            return "Doğrulama: \(content.verified ? "başarılı" : "başarısız") (beklenen: \(content.expectedState), gözlenen: \(content.observedState ?? "belirsiz"))"
+            return String(localized: "Doğrulama: \(content.verified ? "başarılı" : "başarısız") (beklenen: \(content.expectedState), gözlenen: \(content.observedState ?? "belirsiz"))")
         case .uiElement(let content):
-            return "Eşleşme: \(content.title ?? content.description ?? "etiket") (\(content.verified ? "doğrulandı" : "doğrulanamadı"))"
+            return String(localized: "Eşleşme: \(content.title ?? content.description ?? "etiket") (\(content.verified ? "doğrulandı" : "doğrulanamadı"))")
         case .screenClick(let content):
-            return "Koordinat: \(Int(content.x.rounded())), \(Int(content.y.rounded())) — yeniden gözlem gerekli."
+            return String(localized: "Koordinat: \(Int(content.x.rounded())), \(Int(content.y.rounded())) — yeniden gözlem gerekli.")
         case .applicationControl(let content):
-            return "Doğrulama: \(content.verified ? "başarılı" : "başarısız") (önce: \(content.stateBefore), sonra: \(content.stateAfter))"
+            return String(localized: "Doğrulama: \(content.verified ? "başarılı" : "başarısız") (önce: \(content.stateBefore), sonra: \(content.stateAfter))")
         case .calendarEvents(let events):
-            if events.isEmpty { return "Yaklaşan etkinlik yok." }
+            if events.isEmpty { return String(localized: "Yaklaşan etkinlik yok.") }
             let formatter = DateFormatter()
             formatter.dateStyle = .short
             formatter.timeStyle = .short
             return events.prefix(8).map { "\($0.title) (\(formatter.string(from: $0.startAt)))" }.joined(separator: "; ")
         case .reminders(let reminders):
-            if reminders.isEmpty { return "Hatırlatıcı yok." }
+            if reminders.isEmpty { return String(localized: "Hatırlatıcı yok.") }
             let formatter = DateFormatter()
             formatter.dateStyle = .short
             formatter.timeStyle = .short
@@ -2406,7 +2406,7 @@ struct CopilotView: View {
         case .clipboardText(let text):
             return String(text.prefix(2_000))
         case .clipboardHistory(let entries):
-            if entries.isEmpty { return "Pano geçmişi boş." }
+            if entries.isEmpty { return String(localized: "Pano geçmişi boş.") }
             let formatter = DateFormatter()
             formatter.dateStyle = .none
             formatter.timeStyle = .short
@@ -2414,16 +2414,16 @@ struct CopilotView: View {
         case .processOutput(let output):
             // The code and its full stdout/stderr are shown in the dedicated, collapsible code
             // card instead (see CodeExecutionCard) - this line stays short.
-            return "Çıkış kodu \(output.exitCode), \(output.durationMs) ms"
+            return String(localized: "Çıkış kodu \(output.exitCode), \(output.durationMs) ms")
         case .systemStatus(let status):
             var parts = ["PC · \(status.macOSVersion)", formatUptime(status.uptimeSeconds)]
             if let battery = status.batteryPercentage { parts.append("pil %\(battery)\(status.isCharging == true ? " ⚡︎" : "")") }
             return parts.joined(separator: " • ")
         case .installedApplications(let apps):
-            return apps.isEmpty ? "Yüklü uygulama bulunamadı." : "Uygulamalar: \(apps.prefix(20).map(\.name).joined(separator: ", "))"
+            return apps.isEmpty ? String(localized: "Yüklü uygulama bulunamadı.") : "Uygulamalar: \(apps.prefix(20).map(\.name).joined(separator: ", "))"
         case .runningApplications(let apps):
-            if apps.isEmpty { return "Açık uygulama yok." }
-            return apps.prefix(30).map { $0.isActive ? "\($0.name) (öndeki)" : $0.name }.joined(separator: ", ")
+            if apps.isEmpty { return String(localized: "Açık uygulama yok.") }
+            return apps.prefix(30).map { $0.isActive ? String(localized: "\($0.name) (öndeki)") : $0.name }.joined(separator: ", ")
         default:
             return nil
         }
@@ -2526,7 +2526,7 @@ struct CopilotView: View {
                 encoded = normalized.jpegData(compressionQuality: quality)
             }
             guard let encoded, encoded.count <= 8_000_000 else {
-                bubbles.append(ChatBubble(role: .system, text: "Bir görsel desteklenen boyut sınırını aştığı için eklenmedi."))
+                bubbles.append(ChatBubble(role: .system, text: String(localized: "Bir görsel desteklenen boyut sınırını aştığı için eklenmedi.")))
                 continue
             }
             pendingAttachments.append(RovaBackendClient.ChatAttachment(name: item.itemIdentifier ?? "gorsel.jpg", mimeType: "image/jpeg", dataBase64: encoded.base64EncodedString()))
@@ -2645,7 +2645,7 @@ struct CopilotView: View {
                 defer { isStartingAudio = false }
                 let transcript = await audioRecorder.stop()
                 guard !transcript.isEmpty else {
-                    bubbles.append(ChatBubble(role: .system, text: "Ses net anlaşılamadı. Lütfen tekrar dene."))
+                    bubbles.append(ChatBubble(role: .system, text: String(localized: "Ses net anlaşılamadı. Lütfen tekrar dene.")))
                     return
                 }
                 await sendMessage(textOverride: transcript)
@@ -2665,9 +2665,9 @@ struct CopilotView: View {
                 // the only remaining path, so offer it directly instead of a dead-end error line.
                 showingMicPermissionAlert = true
             case .speechUnavailable:
-                bubbles.append(ChatBubble(role: .system, text: "Konuşma tanıma şu anda kullanılamıyor - Siri ve Dikte'nin Ayarlar'dan açık olduğundan ve internete bağlı olduğundan emin ol. Ses sunucuya gönderilmedi; bu arada metni yazabilirsin."))
+                bubbles.append(ChatBubble(role: .system, text: String(localized: "Konuşma tanıma şu anda kullanılamıyor - Siri ve Dikte'nin Ayarlar'dan açık olduğundan ve internete bağlı olduğundan emin ol. Ses sunucuya gönderilmedi; bu arada metni yazabilirsin.")))
             case .setupFailed:
-                bubbles.append(ChatBubble(role: .system, text: "Mikrofon başlatılamadı; başka bir uygulama mikrofonu kullanıyor olabilir. Lütfen tekrar dene."))
+                bubbles.append(ChatBubble(role: .system, text: String(localized: "Mikrofon başlatılamadı; başka bir uygulama mikrofonu kullanıyor olabilir. Lütfen tekrar dene.")))
             }
         }
     }
@@ -2705,18 +2705,18 @@ struct CopilotView: View {
 
     private func executionNoticeFreeText(_ text: String) -> String {
         let notices = [
-            "\n\nİstediklerini sırayla yapıyorum…",
-            "İstediklerini sırayla yapıyorum…",
-            "\n\nİstediklerini yaptım.",
-            "\n\nOnayını bekliyor; onay verdiğinde PC'de çalıştırılacak.",
-            "\n\nBu cihaz eylemleri henüz çalıştırılmadı; önce uygulamadaki onayını bekliyor.",
-            "\n\nBu PC komutları hazırlanıp yerel cihaza gönderilecek; gerçek sonucu henüz doğrulamadım.",
-            "\n\nİstediğin işlemi PC'ye gönderiyorum; gerçek sonucu alınca haber vereceğim.",
-            "\n\nPC'de çalıştırılıyor; gerçek sonuç doğrulanınca burada gösterilecek.",
-            "\n\nPC'de çalıştırılıyor…",
-            " için onayını bekliyorum.",
-            " isteği PC'de çalıştırılıyor; gerçek sonuç doğrulanınca burada göstereceğim.",
-            " başlatılıyor."
+            String(localized: "\n\nİstediklerini sırayla yapıyorum…"),
+            String(localized: "İstediklerini sırayla yapıyorum…"),
+            String(localized: "\n\nİstediklerini yaptım."),
+            String(localized: "\n\nOnayını bekliyor; onay verdiğinde PC'de çalıştırılacak."),
+            String(localized: "\n\nBu cihaz eylemleri henüz çalıştırılmadı; önce uygulamadaki onayını bekliyor."),
+            String(localized: "\n\nBu PC komutları hazırlanıp yerel cihaza gönderilecek; gerçek sonucu henüz doğrulamadım."),
+            String(localized: "\n\nİstediğin işlemi PC'ye gönderiyorum; gerçek sonucu alınca haber vereceğim."),
+            String(localized: "\n\nPC'de çalıştırılıyor; gerçek sonuç doğrulanınca burada gösterilecek."),
+            String(localized: "\n\nPC'de çalıştırılıyor…"),
+            String(localized: " için onayını bekliyorum."),
+            String(localized: " isteği PC'de çalıştırılıyor; gerçek sonuç doğrulanınca burada göstereceğim."),
+            String(localized: " başlatılıyor.")
         ]
         var result = text
         for notice in notices { result = result.replacingOccurrences(of: notice, with: "") }
@@ -2766,10 +2766,10 @@ struct CopilotView: View {
             if let step = bubble.steps.first(where: { step in
                 !bubble.executedStepIDs.contains(step.id) && requiresLocalConfirmation(step)
             }) {
-                bubble.failedSteps[step.id] = "İşlem iptal edildi."
+                bubble.failedSteps[step.id] = String(localized: "İşlem iptal edildi.")
             }
             let base = executionNoticeFreeText(bubble.text)
-            bubble.text = base.isEmpty ? "İşlem iptal edildi." : base + "\n\nİşlem iptal edildi."
+            bubble.text = base.isEmpty ? String(localized: "İşlem iptal edildi.") : base + String(localized: "\n\nİşlem iptal edildi.")
         }
     }
 
@@ -2784,7 +2784,7 @@ struct CopilotView: View {
         case .automation:
             widgetDestination = .automation(RovaBackendClient.RovaAutomation(
                 id: resourceID,
-                prompt: widget.detail ?? widget.title ?? "Otomasyon",
+                prompt: widget.detail ?? widget.title ?? String(localized: "Otomasyon"),
                 cron: widget.schedule ?? "",
                 isActive: widget.status == "active",
                 nextRunAt: widget.nextRunAt,
@@ -2905,10 +2905,10 @@ private struct CopilotResultWidgetView: View {
                     .frame(width: 40, height: 40)
                     .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(widget.title ?? "Görev sonucu")
+                    Text(widget.title ?? String(localized: "Görev sonucu"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
-                    Text(widget.summary ?? "\(completed)/\(total) adım tamamlandı")
+                    Text(widget.summary ?? String(localized: "\(completed)/\(total) adım tamamlandı"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
@@ -2937,7 +2937,7 @@ private struct CopilotResultWidgetView: View {
     private var errorResultCard: some View {
         // The reason, not a code: the technical code stays out of sight (it is in the accessibility value and the server's task timeline), the card stays small.
         VStack(alignment: .leading, spacing: 3) {
-            Label(widget.title ?? "İşlem tamamlanamadı", systemImage: "exclamationmark.circle.fill")
+            Label(widget.title ?? String(localized: "İşlem tamamlanamadı"), systemImage: "exclamationmark.circle.fill")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.red)
             if let message = widget.message, !message.isEmpty {
@@ -2966,7 +2966,7 @@ private struct CopilotResultWidgetView: View {
                         .frame(width: 40, height: 40)
                         .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(widget.title ?? artifact?.filename ?? "Dosya")
+                        Text(widget.title ?? artifact?.filename ?? String(localized: "Dosya"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(2)
@@ -3048,8 +3048,8 @@ private struct CopilotResultWidgetView: View {
     }
 
     private var artifactSubtitle: String {
-        let labels: [String: String] = ["document": "Belge", "pdf": "PDF", "spreadsheet": "Tablo dosyası", "table": "Tablo", "chart": "Grafik", "diagram": "Diyagram", "image": "Görsel", "code": "Kod", "file": "Dosya"]
-        let kind = labels[widget.variant ?? "file"] ?? "Dosya"
+        let labels: [String: String] = ["document": String(localized: "Belge"), "pdf": "PDF", "spreadsheet": String(localized: "Tablo dosyası"), "table": String(localized: "Tablo"), "chart": String(localized: "Grafik"), "diagram": String(localized: "Diyagram"), "image": String(localized: "Görsel"), "code": "Kod", "file": String(localized: "Dosya")]
+        let kind = labels[widget.variant ?? "file"] ?? String(localized: "Dosya")
         let bytes = widget.byteCount ?? artifact?.byteCount
         return bytes.map { "\(kind) · \(ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file))" } ?? kind
     }
@@ -3127,7 +3127,7 @@ private struct CopilotResultWidgetView: View {
                 .frame(width: 42, height: 38)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(displaySourceText(source.title) ?? sourceHost(source.url) ?? "Web kaynağı")
+                Text(displaySourceText(source.title) ?? sourceHost(source.url) ?? String(localized: "Web kaynağı"))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
@@ -3180,12 +3180,12 @@ private struct CopilotResultWidgetView: View {
     private var createdResourceCard: some View {
         let isAgent = widget.resourceType == .agent
         let title = isAgent
-            ? (widget.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Yeni ajan")
-            : "Otomasyon"
+            ? (widget.title.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Yeni ajan"))
+            : String(localized: "Otomasyon")
         let summary = widget.summary.flatMap { $0.isEmpty ? nil : $0 }
             ?? widget.detail.flatMap { $0.isEmpty ? nil : $0 }
             ?? widget.scheduleLabel.flatMap { $0.isEmpty ? nil : $0 }
-        let detailTitle = isAgent ? "Görev" : "İstek"
+        let detailTitle = isAgent ? String(localized: "Görev") : String(localized: "İstek")
 
         return VStack(spacing: 0) {
             Button {
@@ -3243,18 +3243,18 @@ private struct CopilotResultWidgetView: View {
                     if let schedule = widget.scheduleLabel, !schedule.isEmpty,
                        let nextRunAt = widget.nextRunAt, !nextRunAt.isEmpty {
                         HStack(alignment: .top, spacing: 10) {
-                            resourceInfoCard("Zamanlama", value: schedule, symbol: "clock")
+                            resourceInfoCard(String(localized: "Zamanlama"), value: schedule, symbol: "clock")
                             resourceInfoCard(
-                                "Sonraki çalışma",
+                                String(localized: "Sonraki çalışma"),
                                 value: formattedDate(nextRunAt, timezone: widget.timezone),
                                 symbol: "calendar"
                             )
                         }
                     } else if let schedule = widget.scheduleLabel, !schedule.isEmpty {
-                        resourceInfoCard("Zamanlama", value: schedule, symbol: "clock")
+                        resourceInfoCard(String(localized: "Zamanlama"), value: schedule, symbol: "clock")
                     } else if let nextRunAt = widget.nextRunAt, !nextRunAt.isEmpty {
                         resourceInfoCard(
-                            "Sonraki çalışma",
+                            String(localized: "Sonraki çalışma"),
                             value: formattedDate(nextRunAt, timezone: widget.timezone),
                             symbol: "calendar"
                         )
@@ -3323,12 +3323,12 @@ private struct CopilotResultWidgetView: View {
             } label: {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(widget.location ?? "Hava durumu")
+                        Text(widget.location ?? String(localized: "Hava durumu"))
                             .font(.headline.weight(.semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
-                        Text(current?.condition ?? "Güncel hava")
+                        Text(current?.condition ?? String(localized: "Güncel hava"))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -3367,8 +3367,8 @@ private struct CopilotResultWidgetView: View {
                 Divider().padding(.horizontal, 16)
                 VStack(alignment: .leading, spacing: 16) {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
-                        weatherMetric("Nem", value: percent(current?.humidityPercent), symbol: "humidity")
-                        weatherMetric("Rüzgâr", value: wind(current?.windKmh), symbol: "wind")
+                        weatherMetric(String(localized: "Nem"), value: percent(current?.humidityPercent), symbol: "humidity")
+                        weatherMetric(String(localized: "Rüzgâr"), value: wind(current?.windKmh), symbol: "wind")
                     }
 
                     if !hours.isEmpty {
@@ -3405,7 +3405,7 @@ private struct CopilotResultWidgetView: View {
                     }
 
                     HStack(spacing: 6) {
-                        Text(widget.source ?? "Hava durumu verisi")
+                        Text(widget.source ?? String(localized: "Hava durumu verisi"))
                         if let observedAt = current?.observedAt, let localTime = localTime(observedAt) {
                             Text("·")
                             Text("Güncellendi \(localTime)")
@@ -3504,7 +3504,7 @@ private struct CopilotResultWidgetView: View {
 
     private var statusBadge: some View {
         let isActive = widget.status == "active"
-        return Text(isActive ? "Etkin" : (widget.status ?? "Durum bilinmiyor"))
+        return Text(isActive ? String(localized: "Etkin") : (widget.status ?? String(localized: "Durum bilinmiyor")))
             .font(.caption2.weight(.semibold))
             .foregroundStyle(isActive ? Color.green : Color.secondary)
             .padding(.horizontal, 7)

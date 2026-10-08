@@ -37,7 +37,7 @@ final class ScannerViewController: UIViewController, @preconcurrency AVCaptureMe
         view.addSubview(statusLabel)
         configureCapture()
         let close = UIButton(type: .system)
-        close.setTitle("Vazgeç", for: .normal)
+        close.setTitle(String(localized: "Vazgeç"), for: .normal)
         close.tintColor = .white
         close.addAction(UIAction { [weak self] _ in self?.onCancel?() }, for: .touchUpInside)
         close.translatesAutoresizingMaskIntoConstraints = false
@@ -77,15 +77,15 @@ final class ScannerViewController: UIViewController, @preconcurrency AVCaptureMe
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 guard let self else { return }
                 guard granted else {
-                    Task { @MainActor in self.showCameraError("Eşleşme QR'ını taramak için kamera izni gerekli.") }
+                    Task { @MainActor in self.showCameraError(String(localized: "Eşleşme QR'ını taramak için kamera izni gerekli.")) }
                     return
                 }
                 self.sessionQueue.async { [weak self] in self?.configureCaptureOnQueue() }
             }
         case .denied, .restricted:
-            showCameraError("Kamera izni kapalı. QR taramak için Ayarlar'dan açın.")
+            showCameraError(String(localized: "Kamera izni kapalı. QR taramak için Ayarlar'dan açın."))
         @unknown default:
-            showCameraError("Kamera kullanılamıyor.")
+            showCameraError(String(localized: "Kamera kullanılamıyor."))
         }
     }
 

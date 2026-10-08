@@ -39,12 +39,12 @@ private func pairedDeviceToken(deviceID: String) -> String? {
 private func performDeviceIntent(_ type: CommandType, payload: CommandPayload = .none, successMessage: String) async throws -> some IntentResult & ProvidesDialog {
     guard RovaBackendClient.isAuthenticated else { throw WiqoIntentError.notSignedIn }
     guard let deviceID = UserDefaults.standard.string(forKey: "rova.ios.mac-device-id"), UUID(uuidString: deviceID) != nil else {
-        throw WiqoIntentError.deviceFailure("Hedef PC belirlenemedi. Wiqo'da PC ile yeniden eşleşin.")
+        throw WiqoIntentError.deviceFailure(String(localized: "Hedef PC belirlenemedi. Wiqo'da PC ile yeniden eşleşin."))
     }
     do {
         let commandID = UUID()
         guard let token = pairedDeviceToken(deviceID: deviceID), let nonce = try? RovaCrypto.randomToken() else {
-            throw WiqoIntentError.deviceFailure("PC eşleşme anahtarı kullanılamıyor. Wiqo'da yeniden eşleşin.")
+            throw WiqoIntentError.deviceFailure(String(localized: "PC eşleşme anahtarı kullanılamıyor. Wiqo'da yeniden eşleşin."))
         }
         let request = RovaValidation.signedRequest(id: commandID, type: type, payload: payload, nonce: nonce, token: token)
         let result = try await RovaBackendClient.sendDeviceCommand(request, deviceId: deviceID)
@@ -54,9 +54,9 @@ private func performDeviceIntent(_ type: CommandType, payload: CommandPayload = 
     } catch let error as WiqoIntentError {
         throw error
     } catch let error as LocalizedError {
-        throw WiqoIntentError.deviceFailure(error.errorDescription ?? "Komut gönderilemedi.")
+        throw WiqoIntentError.deviceFailure(error.errorDescription ?? String(localized: "Komut gönderilemedi."))
     } catch {
-        throw WiqoIntentError.deviceFailure("Komut gönderilemedi.")
+        throw WiqoIntentError.deviceFailure(String(localized: "Komut gönderilemedi."))
     }
 }
 
@@ -74,7 +74,7 @@ struct SleepPCIntent: AppIntent {
     static let description = IntentDescription("Wiqo ile eşleştirilmiş PC'yi uyku moduna alır.")
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        try await performDeviceIntent(.sleepMac, successMessage: "PC uyku moduna alındı.")
+        try await performDeviceIntent(.sleepMac, successMessage: String(localized: "PC uyku moduna alındı."))
     }
 }
 
@@ -83,7 +83,7 @@ struct ToggleMuteIntent: AppIntent {
     static let description = IntentDescription("Wiqo ile eşleştirilmiş PC'nin sesini kısar veya açar.")
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        try await performDeviceIntent(.toggleMute, successMessage: "Ses durumu değiştirildi.")
+        try await performDeviceIntent(.toggleMute, successMessage: String(localized: "Ses durumu değiştirildi."))
     }
 }
 
@@ -92,7 +92,7 @@ struct MediaPlayPauseIntent: AppIntent {
     static let description = IntentDescription("Wiqo ile eşleştirilmiş PC'de oynatmayı durdurur ya da devam ettirir.")
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        try await performDeviceIntent(.mediaControl, payload: .media(.playPause), successMessage: "Oynatma değiştirildi.")
+        try await performDeviceIntent(.mediaControl, payload: .media(.playPause), successMessage: String(localized: "Oynatma değiştirildi."))
     }
 }
 

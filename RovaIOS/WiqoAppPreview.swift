@@ -11,7 +11,7 @@ enum WiqoPreviewDevice: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .phone: return "Uygulama"
+        case .phone: return String(localized: "Uygulama")
         case .desktop: return "PC"
         }
     }
@@ -314,11 +314,11 @@ final class ActWebVerifier: NSObject, WKNavigationDelegate {
             }
             var problems = (result["errors"] as? [String] ?? []).prefix(5).map { String($0.prefix(160)) }
             if (result["textLength"] as? Int ?? 0) == 0 { problems.append("Sayfa boş görünüyor.") }
-            if (result["width"] as? Int ?? 0) > 410 { problems.append("Sayfa telefon ekranından yatay taşıyor.") }
+            if (result["width"] as? Int ?? 0) > 410 { problems.append(String(localized: "Sayfa telefon ekranından yatay taşıyor.")) }
             if !problems.isEmpty { return .problems(Array(problems.prefix(5))) }
             var notes: [String] = []
-            if let small = result["small"] as? Int, small > 0 { notes.append("\(small) düğme/giriş 40 pt'ten küçük; dokunması zor") }
-            if let low = result["low"] as? Int, low > 0 { notes.append("\(low) yerde yazı ile zemin arasındaki kontrast düşük") }
+            if let small = result["small"] as? Int, small > 0 { notes.append(String(localized: "\(small) düğme/giriş 40 pt'ten küçük; dokunması zor")) }
+            if let low = result["low"] as? Int, low > 0 { notes.append(String(localized: "\(low) yerde yazı ile zemin arasındaki kontrast düşük")) }
             return notes.isEmpty ? .passed : .passedWithNotes(notes)
         } catch {
             return .unavailable

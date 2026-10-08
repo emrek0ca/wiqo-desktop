@@ -24,7 +24,7 @@ struct WiqoWelcomeView: View {
 
             Spacer(minLength: 8)
 
-            WiqoActionButton(title: "PC uygulamasını indir") {
+            WiqoActionButton(title: String(localized: "PC uygulamasını indir")) {
                 openURL(WiqoWebsite.downloadURL)
             }
 

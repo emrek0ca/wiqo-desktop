@@ -195,7 +195,7 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
         }
         guard isRecording else { return }
         if didFail, !isFinishing {
-            lastErrorMessage = "Konuşma tanıma durdu. Lütfen tekrar dene."
+            lastErrorMessage = String(localized: "Konuşma tanıma durdu. Lütfen tekrar dene.")
             cleanupCapture()
         } else if isFinal {
             cleanupCapture()

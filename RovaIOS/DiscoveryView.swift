@@ -17,32 +17,32 @@ private struct DiscoveryCategory: Identifiable {
 }
 
 private let discoveryCategories: [DiscoveryCategory] = [
-    DiscoveryCategory(title: "Belgeler ve tablolar", icon: "doc.richtext.fill", examples: [
-        DiscoveryExample(prompt: "Bu ayki bütçemi kalemlere ayırıp bir tabloya dök", requiresDevice: false),
-        DiscoveryExample(prompt: "Toplantı notlarımı düzenli, başlıklı bir belgeye dönüştür", requiresDevice: false),
-        DiscoveryExample(prompt: "Geçen ayki satışları özetleyen bir grafik çiz", requiresDevice: false)
+    DiscoveryCategory(title: String(localized: "Belgeler ve tablolar"), icon: "doc.richtext.fill", examples: [
+        DiscoveryExample(prompt: String(localized: "Bu ayki bütçemi kalemlere ayırıp bir tabloya dök"), requiresDevice: false),
+        DiscoveryExample(prompt: String(localized: "Toplantı notlarımı düzenli, başlıklı bir belgeye dönüştür"), requiresDevice: false),
+        DiscoveryExample(prompt: String(localized: "Geçen ayki satışları özetleyen bir grafik çiz"), requiresDevice: false)
     ]),
-    DiscoveryCategory(title: "Kod ve hesap makinesi", icon: "function", examples: [
-        DiscoveryExample(prompt: "Basit bir hesap makinesi yap", requiresDevice: false),
-        DiscoveryExample(prompt: "Sayı tahmin oyunu yaz, tarayıcıda oynayabileyim", requiresDevice: false),
-        DiscoveryExample(prompt: "Bu verinin ortalamasını ve standart sapmasını hesapla: 12, 18, 9, 25, 14", requiresDevice: false)
+    DiscoveryCategory(title: String(localized: "Kod ve hesap makinesi"), icon: "function", examples: [
+        DiscoveryExample(prompt: String(localized: "Basit bir hesap makinesi yap"), requiresDevice: false),
+        DiscoveryExample(prompt: String(localized: "Sayı tahmin oyunu yaz, tarayıcıda oynayabileyim"), requiresDevice: false),
+        DiscoveryExample(prompt: String(localized: "Bu verinin ortalamasını ve standart sapmasını hesapla: 12, 18, 9, 25, 14"), requiresDevice: false)
     ]),
-    DiscoveryCategory(title: "Matematik", icon: "x.squareroot", examples: [
-        DiscoveryExample(prompt: "x^2 + 3x - 4 = 0 denklemini adım adım çöz", requiresDevice: false)
+    DiscoveryCategory(title: String(localized: "Matematik"), icon: "x.squareroot", examples: [
+        DiscoveryExample(prompt: String(localized: "x^2 + 3x - 4 = 0 denklemini adım adım çöz"), requiresDevice: false)
     ]),
-    DiscoveryCategory(title: "Görsel üretimi", icon: "photo.fill", examples: [
-        DiscoveryExample(prompt: "Minimalist bir uygulama ikonu taslağı çiz", requiresDevice: false)
+    DiscoveryCategory(title: String(localized: "Görsel üretimi"), icon: "photo.fill", examples: [
+        DiscoveryExample(prompt: String(localized: "Minimalist bir uygulama ikonu taslağı çiz"), requiresDevice: false)
     ]),
-    DiscoveryCategory(title: "Güncel araştırma", icon: "magnifyingglass", examples: [
-        DiscoveryExample(prompt: "Bugün dolar kuru ne kadar, kaynağıyla söyle", requiresDevice: false)
+    DiscoveryCategory(title: String(localized: "Güncel araştırma"), icon: "magnifyingglass", examples: [
+        DiscoveryExample(prompt: String(localized: "Bugün dolar kuru ne kadar, kaynağıyla söyle"), requiresDevice: false)
     ]),
-    DiscoveryCategory(title: "Otomasyon", icon: "clock.badge.checkmark.fill", examples: [
-        DiscoveryExample(prompt: "Her sabah 9'da bana günün özetini çıkar", requiresDevice: false)
+    DiscoveryCategory(title: String(localized: "Otomasyon"), icon: "clock.badge.checkmark.fill", examples: [
+        DiscoveryExample(prompt: String(localized: "Her sabah 9'da bana günün özetini çıkar"), requiresDevice: false)
     ]),
-    DiscoveryCategory(title: "PC kontrolü", icon: "laptopcomputer", examples: [
+    DiscoveryCategory(title: String(localized: "PC kontrolü"), icon: "laptopcomputer", examples: [
         DiscoveryExample(prompt: "PC'mi kilitle", requiresDevice: true),
-        DiscoveryExample(prompt: "Sesi kıs", requiresDevice: true),
-        DiscoveryExample(prompt: "Müziği duraklat", requiresDevice: true)
+        DiscoveryExample(prompt: String(localized: "Sesi kıs"), requiresDevice: true),
+        DiscoveryExample(prompt: String(localized: "Müziği duraklat"), requiresDevice: true)
     ])
 ]
 

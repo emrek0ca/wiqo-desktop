@@ -26,7 +26,7 @@ public struct ActPackageCatalog: Codable, Sendable, Equatable {
 public struct ActPackageError: LocalizedError, Sendable {
     public static let code = "DEVICE_PACKAGE_MISSING"
     public let detail: String
-    public var errorDescription: String? { "Paket eksik (\(Self.code)): \(detail)" }
+    public var errorDescription: String? { String(localized: "Paket eksik (\(Self.code)): \(detail)") }
     public init(_ detail: String) { self.detail = detail }
 }
 
@@ -114,7 +114,7 @@ public final class ActPackages: @unchecked Sendable {
         let catalog: ActPackageCatalog
         do { catalog = try await loadCatalog() } catch {
             // No catalog now: the cached one may still know the package.
-            guard let known = cachedCatalog() else { throw ActPackageError("paket listesi alınamadı") }
+            guard let known = cachedCatalog() else { throw ActPackageError(String(localized: "paket listesi alınamadı")) }
             catalog = known
         }
         saveCatalog(catalog)
@@ -134,14 +134,14 @@ public final class ActPackages: @unchecked Sendable {
 
     private func fetch(_ package: ActWebPackage) async throws {
         let label = "\(package.id) \(package.version)"
-        guard let url = URL(string: package.archiveUrl) else { throw ActPackageError("\(label) adresi geçersiz") }
+        guard let url = URL(string: package.archiveUrl) else { throw ActPackageError(String(localized: "\(label) adresi geçersiz")) }
         let archive: Data
         do { archive = try await download(url) } catch { throw ActPackageError("\(label) indirilemedi") }
-        guard archive.count <= Self.maxArchiveBytes else { throw ActPackageError("\(label) beklenenden büyük") }
+        guard archive.count <= Self.maxArchiveBytes else { throw ActPackageError(String(localized: "\(label) beklenenden büyük")) }
         // Nothing from the archive is read before it matches the catalog's value.
-        guard ActArchive.matches(archive, integrity: package.integrity) else { throw ActPackageError("\(label) doğrulanamadı (özet uyuşmuyor)") }
+        guard ActArchive.matches(archive, integrity: package.integrity) else { throw ActPackageError(String(localized: "\(label) doğrulanamadı (özet uyuşmuyor)")) }
         guard let tar = try? ActArchive.gunzip(archive), let entry = ActArchive.tarEntry(tar, named: package.archiveEntry),
-              let code = String(data: entry, encoding: .utf8), !code.isEmpty else { throw ActPackageError("\(label) arşivinde \(package.archiveEntry) yok") }
+              let code = String(data: entry, encoding: .utf8), !code.isEmpty else { throw ActPackageError(String(localized: "\(label) arşivinde \(package.archiveEntry) yok")) }
         store(code: entry, for: package)
     }
 

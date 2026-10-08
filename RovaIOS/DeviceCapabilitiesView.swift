@@ -92,10 +92,10 @@ struct DeviceCapabilitiesView: View {
 
     private func label(for access: CapabilityAuthorityAccess) -> String {
         switch access {
-        case .automatic: return "Hazır"
-        case .confirmation: return "Onaylı"
-        case .denied: return "Kapalı"
-        case .unavailable: return "İzin gerekiyor"
+        case .automatic: return String(localized: "Hazır")
+        case .confirmation: return String(localized: "Onaylı")
+        case .denied: return String(localized: "Kapalı")
+        case .unavailable: return String(localized: "İzin gerekiyor")
         }
     }
 }

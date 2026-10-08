@@ -230,15 +230,15 @@ struct ConfirmationSheetView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 8) {
-                    WiqoActionButton(title: "Onayla", isLoading: isProcessing) { onConfirm() }
+                    WiqoActionButton(title: String(localized: "Onayla"), isLoading: isProcessing) { onConfirm() }
                     if let step = currentStep, !step.isDestructive, RovaOwnFolders.isAutoReadable(type: step.type, payload: step.payload) {
-                        WiqoActionButton(title: "Bu görev boyunca dosya okumaya izin ver", kind: .secondary, isLoading: isGranting) { onConfirmTaskReads() }
+                        WiqoActionButton(title: String(localized: "Bu görev boyunca dosya okumaya izin ver"), kind: .secondary, isLoading: isGranting) { onConfirmTaskReads() }
                             .disabled(isProcessing)
                         Text("Masaüstü, Belgeler ve İndirilenler. Yazma, silme ve gönderme dahil değil.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if offersTaskFiles {
-                        WiqoActionButton(title: "Bu görev boyunca dosya işlerine izin ver", kind: .secondary, isLoading: isGranting) { onConfirmTaskFiles() }
+                        WiqoActionButton(title: String(localized: "Bu görev boyunca dosya işlerine izin ver"), kind: .secondary, isLoading: isGranting) { onConfirmTaskFiles() }
                             .disabled(isProcessing)
                         Text("Okuma, klasör açma, taşıma, kopyalama, yeniden adlandırma ve PDF/zip. Silme, üzerine yazma ve dışarı gönderme hariç; görev bitince izin biter.")
                             .font(.caption).foregroundStyle(.secondary)
@@ -330,7 +330,7 @@ struct TaskPlanMiniCard: View {
         case "awaiting_confirmation": return "Onay bekliyor"
         case "waiting_device": return "Mac bekleniyor"
         case "running": return "Çalışıyor"
-        default: return "Bekliyor"
+        default: return String(localized: "Bekliyor")
         }
     }
 }

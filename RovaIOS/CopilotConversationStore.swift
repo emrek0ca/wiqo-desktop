@@ -225,8 +225,8 @@ enum CopilotConversationStore {
         UserDefaults.standard.set(max(0, turnCount), forKey: keys.turnCountPrefix + id)
 
         let userMessages = boundedMessages.filter { $0.role == .user }
-        let title = userMessages.first.map { short($0.text, limit: 42) } ?? "Yeni sohbet"
-        let preview = boundedMessages.last.map { short($0.text, limit: 90) } ?? "Boş sohbet"
+        let title = userMessages.first.map { short($0.text, limit: 42) } ?? String(localized: "Yeni sohbet")
+        let preview = boundedMessages.last.map { short($0.text, limit: 90) } ?? String(localized: "Boş sohbet")
         var summaries = readSummaries(keys).filter { $0.id != id }
         summaries.append(CopilotConversationSummary(
             id: id,
@@ -264,8 +264,8 @@ enum CopilotConversationStore {
         for item in remote {
             byID[item.id] = CopilotConversationSummary(
                 id: item.id,
-                title: item.title.isEmpty ? "Yeni sohbet" : item.title,
-                preview: item.preview.isEmpty ? "Boş sohbet" : item.preview,
+                title: item.title.isEmpty ? String(localized: "Yeni sohbet") : item.title,
+                preview: item.preview.isEmpty ? String(localized: "Boş sohbet") : item.preview,
                 updatedAt: remoteDateFormatter.date(from: item.updatedAt) ?? Date(),
                 turnCount: item.turnCount
             )

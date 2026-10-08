@@ -1,5 +1,0 @@
-/* Wiqo's own UI text is written directly in Turkish, not through NSLocalizedString - this file
-   exists only so the app bundle formally declares "en" support, which is what makes iOS serve its
-   own system-provided chrome (native context menus, share sheet, photo picker, permission
-   alerts) in a language that actually matches the device instead of always falling back to
-   English when only one locale was ever declared. */

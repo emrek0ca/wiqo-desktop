@@ -15,70 +15,70 @@ private struct AutomationTemplate: Identifiable {
 
 private let automationTemplates: [AutomationTemplate] = [
     AutomationTemplate(
-        title: "Sabah brifingi",
-        detail: "Her sabah hava durumu ve gündemi özetler",
+        title: String(localized: "Sabah brifingi"),
+        detail: String(localized: "Her sabah hava durumu ve gündemi özetler"),
         icon: "sun.max.fill",
-        prompt: "Her sabah 08:00'de bana hava durumunu ve takvimimdeki bugünkü etkinlikleri özetleyen bir otomasyon oluştur."
+        prompt: String(localized: "Her sabah 08:00'de bana hava durumunu ve takvimimdeki bugünkü etkinlikleri özetleyen bir otomasyon oluştur.")
     ),
     AutomationTemplate(
-        title: "Pil uyarısı",
-        detail: "PC pili azalınca haber verir",
+        title: String(localized: "Pil uyarısı"),
+        detail: String(localized: "PC pili azalınca haber verir"),
         icon: "battery.25",
-        prompt: "PC'min pili %20'nin altına düştüğünde bana haber veren bir otomasyon oluştur."
+        prompt: String(localized: "PC'min pili %20'nin altına düştüğünde bana haber veren bir otomasyon oluştur.")
     ),
     AutomationTemplate(
-        title: "Hafta sonu hatırlatıcı özeti",
-        detail: "Cuma akşamı bekleyen hatırlatıcıları listeler",
+        title: String(localized: "Hafta sonu hatırlatıcı özeti"),
+        detail: String(localized: "Cuma akşamı bekleyen hatırlatıcıları listeler"),
         icon: "checklist",
-        prompt: "Her Cuma 18:00'de tamamlanmamış hatırlatıcılarımı özetleyen bir otomasyon oluştur."
+        prompt: String(localized: "Her Cuma 18:00'de tamamlanmamış hatırlatıcılarımı özetleyen bir otomasyon oluştur.")
     ),
     AutomationTemplate(
-        title: "Odak modu",
-        detail: "Belirlediğin saatte Rahatsız Etmeyi açar",
+        title: String(localized: "Odak modu"),
+        detail: String(localized: "Belirlediğin saatte Rahatsız Etmeyi açar"),
         icon: "moon.stars.fill",
-        prompt: "Her gün 09:00'da Rahatsız Etme'yi açan, 18:00'de kapatan bir otomasyon oluştur."
+        prompt: String(localized: "Her gün 09:00'da Rahatsız Etme'yi açan, 18:00'de kapatan bir otomasyon oluştur.")
     ),
     AutomationTemplate(
-        title: "Haftalık takvim özeti",
-        detail: "Pazartesi sabahı haftanın programını çıkarır",
+        title: String(localized: "Haftalık takvim özeti"),
+        detail: String(localized: "Pazartesi sabahı haftanın programını çıkarır"),
         icon: "calendar",
-        prompt: "Her Pazartesi 08:30'da o haftaki takvim etkinliklerimi özetleyen bir otomasyon oluştur."
+        prompt: String(localized: "Her Pazartesi 08:30'da o haftaki takvim etkinliklerimi özetleyen bir otomasyon oluştur.")
     ),
     AutomationTemplate(
-        title: "İndirilenler temizliği",
-        detail: "Her hafta eski dosyaları ayıklar",
+        title: String(localized: "İndirilenler temizliği"),
+        detail: String(localized: "Her hafta eski dosyaları ayıklar"),
         icon: "trash",
-        prompt: "Her Pazar 20:00'de İndirilenler klasöründeki 30 günden eski dosyaları listeleyip benden onay isteyen bir otomasyon oluştur."
+        prompt: String(localized: "Her Pazar 20:00'de İndirilenler klasöründeki 30 günden eski dosyaları listeleyip benden onay isteyen bir otomasyon oluştur.")
     ),
     AutomationTemplate(
-        title: "Gece kilidi",
-        detail: "Belirlediğin saatte PC'yi otomatik kilitler",
+        title: String(localized: "Gece kilidi"),
+        detail: String(localized: "Belirlediğin saatte PC'yi otomatik kilitler"),
         icon: "lock.fill",
-        prompt: "Her gece 00:30'da PC'mi otomatik kilitleyen bir otomasyon oluştur."
+        prompt: String(localized: "Her gece 00:30'da PC'mi otomatik kilitleyen bir otomasyon oluştur.")
     ),
     AutomationTemplate(
-        title: "Akşam özet e-postası",
-        detail: "Günün özetini akşam bana gönderir",
+        title: String(localized: "Akşam özet e-postası"),
+        detail: String(localized: "Günün özetini akşam bana gönderir"),
         icon: "envelope.fill",
-        prompt: "Her gün 19:00'da o günkü yaptıklarımın kısa bir özetini bana ileten bir otomasyon oluştur."
+        prompt: String(localized: "Her gün 19:00'da o günkü yaptıklarımın kısa bir özetini bana ileten bir otomasyon oluştur.")
     ),
     AutomationTemplate(
-        title: "Pano temizliği",
-        detail: "Panoyu belirli aralıklarla temizler",
+        title: String(localized: "Pano temizliği"),
+        detail: String(localized: "Panoyu belirli aralıklarla temizler"),
         icon: "doc.on.clipboard",
-        prompt: "Her gün 22:00'de PC'min panosunu (clipboard) temizleyen bir otomasyon oluştur."
+        prompt: String(localized: "Her gün 22:00'de PC'min panosunu (clipboard) temizleyen bir otomasyon oluştur.")
     ),
     AutomationTemplate(
-        title: "Ayın başı hatırlatıcı",
-        detail: "Her ayın ilk günü bir hatırlatma gönderir",
+        title: String(localized: "Ayın başı hatırlatıcı"),
+        detail: String(localized: "Her ayın ilk günü bir hatırlatma gönderir"),
         icon: "calendar.badge.clock",
-        prompt: "Her ayın 1'inde saat 09:00'da o ay için bütçe/faturalarımı gözden geçirmemi hatırlatan bir otomasyon oluştur."
+        prompt: String(localized: "Her ayın 1'inde saat 09:00'da o ay için bütçe/faturalarımı gözden geçirmemi hatırlatan bir otomasyon oluştur.")
     ),
     AutomationTemplate(
-        title: "Uygulama açılışı",
-        detail: "Gün başında sık kullandığın uygulamaları açar",
+        title: String(localized: "Uygulama açılışı"),
+        detail: String(localized: "Gün başında sık kullandığın uygulamaları açar"),
         icon: "app.badge",
-        prompt: "Her hafta içi 09:00'da mail ve takvim uygulamalarımı PC'de otomatik açan bir otomasyon oluştur."
+        prompt: String(localized: "Her hafta içi 09:00'da mail ve takvim uygulamalarımı PC'de otomatik açan bir otomasyon oluştur.")
     )
 ]
 
@@ -92,7 +92,7 @@ struct AutomationTemplatesView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if !skills.isEmpty {
-                        WiqoSettingsGroup(title: "Becerilerim") {
+                        WiqoSettingsGroup(title: String(localized: "Becerilerim")) {
                             ForEach(skills) { skill in
                                 Button {
                                     onSelect(skill.prompt)
