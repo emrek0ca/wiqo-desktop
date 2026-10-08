@@ -74,6 +74,7 @@ fun PCSettingsSheet(
     initialVolume: Float = 0.5f,
     initialBrightness: Float = 0.8f,
     error: String? = null,
+    notice: String? = null,
 ) {
     val colors = WiqoDesign.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -126,6 +127,7 @@ fun PCSettingsSheet(
             }
 
             error?.let { Text(it, color = colors.red, fontFamily = WiqoSans) }
+            notice?.let { Text(it, color = colors.green, fontFamily = WiqoSans) }
 
             if (!isPaired) {
                 // Not paired card
@@ -235,8 +237,8 @@ fun PCSettingsSheet(
                             value = volume,
                             onValueChange = {
                                 volume = it
-                                onVolumeChange(it)
                             },
+                            onValueChangeFinished = { onVolumeChange(volume) },
                             modifier = Modifier.weight(1f),
                             colors = SliderDefaults.colors(thumbColor = colors.ink, activeTrackColor = colors.ink),
                         )
@@ -252,8 +254,8 @@ fun PCSettingsSheet(
                             value = brightness,
                             onValueChange = {
                                 brightness = it
-                                onBrightnessChange(it)
                             },
+                            onValueChangeFinished = { onBrightnessChange(brightness) },
                             modifier = Modifier.weight(1f),
                             colors = SliderDefaults.colors(thumbColor = colors.ink, activeTrackColor = colors.ink),
                         )

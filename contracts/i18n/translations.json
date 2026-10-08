@@ -1392,7 +1392,14 @@
   "İlerlet": "Advance",
   "İncelenecek": "To review",
   "İzleme": "Tracking",
-  "İzleme, izinler ve geçmiş": "Tracking, permissions, and history"
+  "İzleme, izinler ve geçmiş": "Tracking, permissions, and history",
+  "Bakman gerekenler": "Things to check",
+  "Duraklatıldı": "Paused",
+  "Hatırlayayım mı?": "Should I remind you?",
+  "Sohbette bir hedef söylediğinde burada ilerlemesini görürsün.": "When you set a goal in chat, you’ll see its progress here.",
+  "Tercihlerini bana söylediğinde burada görürsün.": "When you share your preferences, you’ll see them here.",
+  "İzleme ve rutinler açık": "Tracking and routines are on",
+  "Şu an bir iş yok": "Nothing to do right now"
  },
  "de": {
   "Arkadaşını davet et": "Lade deinen Freund ein",
@@ -2787,7 +2794,14 @@
   "İlerlet": "Weiterleiten",
   "İncelenecek": "Zu prüfen",
   "İzleme": "Verfolgen",
-  "İzleme, izinler ve geçmiş": "Verfolgung, Berechtigungen und Verlauf"
+  "İzleme, izinler ve geçmiş": "Verfolgung, Berechtigungen und Verlauf",
+  "Bakman gerekenler": "Was du beachten musst",
+  "Duraklatıldı": "Pausiert",
+  "Hatırlayayım mı?": "Soll ich dich erinnern?",
+  "Sohbette bir hedef söylediğinde burada ilerlemesini görürsün.": "Wenn du im Gespräch ein Ziel nennst, siehst du hier deinen Fortschritt.",
+  "Tercihlerini bana söylediğinde burada görürsün.": "Wenn du mir deine Vorlieben sagst, siehst du sie hier.",
+  "İzleme ve rutinler açık": "Tracking und Routinen sind aktiviert",
+  "Şu an bir iş yok": "Momentan gibt es keine Aufgaben"
  },
  "es": {
   "\"%@\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.": "\"%@\": se eliminarán los archivos y el historial de todos los dispositivos; irreversible.",
@@ -4182,7 +4196,14 @@
   "İlerlet": "Avanzar",
   "İncelenecek": "Revisar",
   "İzleme": "Seguimiento",
-  "İzleme, izinler ve geçmiş": "Seguimiento, permisos y historial"
+  "İzleme, izinler ve geçmiş": "Seguimiento, permisos y historial",
+  "Bakman gerekenler": "Lo que debes revisar",
+  "Duraklatıldı": "Pausado",
+  "Hatırlayayım mı?": "¿Te lo recuerdo?",
+  "Sohbette bir hedef söylediğinde burada ilerlemesini görürsün.": "Cuando dices un objetivo en la conversación, verás su progreso aquí.",
+  "Tercihlerini bana söylediğinde burada görürsün.": "Cuando me dices tus preferencias, las verás aquí.",
+  "İzleme ve rutinler açık": "Seguimiento y rutinas activados",
+  "Şu an bir iş yok": "No hay tareas en este momento"
  },
  "fr": {
   "Arkadaşını davet et": "Invite a friend",
@@ -5577,7 +5598,14 @@
   "İlerlet": "Avancer",
   "İncelenecek": "À examiner",
   "İzleme": "Suivi",
-  "İzleme, izinler ve geçmiş": "Suivi, autorisations et historique"
+  "İzleme, izinler ve geçmiş": "Suivi, autorisations et historique",
+  "Bakman gerekenler": "À vérifier",
+  "Duraklatıldı": "En pause",
+  "Hatırlayayım mı?": "Souhaitez‑vous un rappel?",
+  "Sohbette bir hedef söylediğinde burada ilerlemesini görürsün.": "Lorsque vous définissez un objectif dans la conversation, vous voyez votre progression ici.",
+  "Tercihlerini bana söylediğinde burada görürsün.": "Lorsque vous me communiquez vos préférences, vous les voyez ici.",
+  "İzleme ve rutinler açık": "Suivi et routines activés",
+  "Şu an bir iş yok": "Pas de tâche en cours"
  },
  "ar": {
   "+%lld adım": "+%lld خطوة",
@@ -6972,7 +7000,14 @@
   "“%@” bir daha çalışmaz. Bu geri alınamaz.": "لن يعمل “%@” مرة أخرى. لا يمكن التراجع.",
   "“%@” bulunduğu adımda bırakılır; yarım sonuç teslim edilmez.": "يُترك “%@” في الخطوة الحالية؛ لا يُسلم النتيجة غير المكتملة.",
   "“%@” hedefim için sıradaki adımı planla": "خطط للخطوة التالية لـ “%@” في هدفي",
-  "“%@” için kayıt yok.": "لا توجد سجلات لـ “%@”"
+  "“%@” için kayıt yok.": "لا توجد سجلات لـ “%@”",
+  "Bakman gerekenler": "المطلوب منك",
+  "Duraklatıldı": "مُوقف",
+  "Hatırlayayım mı?": "هل أذكرك؟",
+  "Sohbette bir hedef söylediğinde burada ilerlemesini görürsün.": "عندما تقول هدفًا في المحادثة سترى تقدمه هنا.",
+  "Tercihlerini bana söylediğinde burada görürsün.": "عندما تخبرني بتفضيلاتك سترى ذلك هنا.",
+  "İzleme ve rutinler açık": "المتابعة والعادات مفعلة",
+  "Şu an bir iş yok": "لا توجد مهام حالية"
  },
  "ru": {
   "Arkadaşını davet et": "Пригласить друга",
@@ -8367,6 +8402,13 @@
   "İlerlet": "Продвинуть",
   "İncelenecek": "Будет рассмотрено",
   "İzleme": "Отслеживание",
-  "İzleme, izinler ve geçmiş": "Отслеживание, разрешения и история"
+  "İzleme, izinler ve geçmiş": "Отслеживание, разрешения и история",
+  "Bakman gerekenler": "Что нужно проверить",
+  "Duraklatıldı": "Приостановлено",
+  "Hatırlayayım mı?": "Надо напомнить?",
+  "Sohbette bir hedef söylediğinde burada ilerlemesini görürsün.": "Когда в разговоре вы упомянете цель, вы увидите её прогресс здесь.",
+  "Tercihlerini bana söylediğinde burada görürsün.": "Когда вы поделитесь своими предпочтениями, вы увидите их здесь.",
+  "İzleme ve rutinler açık": "Включено отслеживание и рутины",
+  "Şu an bir iş yok": "Сейчас нет задач"
  }
 }

@@ -5,6 +5,8 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -19,8 +21,25 @@ class AttachmentLoader(context: Context) {
         var encodedBytes = 0L
         uris.map { uri ->
             val name = displayName(uri)
-            val mimeType = resolver.getType(uri)?.takeIf(String::isNotBlank) ?: "application/octet-stream"
-            val bytes = readBounded(uri)
+            val reportedType = resolver.getType(uri)?.lowercase() ?: ""
+            if (!reportedType.startsWith("image/")) throw AttachmentException("Fotoğraf olarak yalnızca görsel ekleyebilirsin.")
+            val original = readBounded(uri)
+            val mimeType: String
+            val bytes: ByteArray
+            if (reportedType in ALLOWED_IMAGE_TYPES) {
+                mimeType = reportedType
+                bytes = original
+            } else {
+                val image = BitmapFactory.decodeByteArray(original, 0, original.size)
+                    ?: throw AttachmentException("Görsel okunamadı.")
+                bytes = try {
+                    ByteArrayOutputStream().also { output ->
+                        if (!image.compress(Bitmap.CompressFormat.JPEG, 85, output)) throw AttachmentException("Görsel dönüştürülemedi.")
+                    }.toByteArray()
+                } finally { image.recycle() }
+                mimeType = "image/jpeg"
+            }
+            if (bytes.size > MAX_FILE_BYTES) throw AttachmentException("Görsel 8 MB sınırını aşıyor.")
             val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
             encodedBytes += encoded.length
             if (encodedBytes > MAX_BASE64_BYTES) throw AttachmentException("Eklerin toplam boyutu çok büyük. Daha küçük dosyalar seçip tekrar dene.")
@@ -57,10 +76,11 @@ class AttachmentLoader(context: Context) {
     }
 
     companion object {
-        private const val MAX_FILES = 5
+        private const val MAX_FILES = 4
         private const val MAX_FILE_BYTES = 8 * 1024 * 1024
         private const val MAX_BASE64_BYTES = 18_000_000L
         private const val MAX_NAME_CHARS = 120
+        private val ALLOWED_IMAGE_TYPES = setOf("image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif")
     }
 }
 

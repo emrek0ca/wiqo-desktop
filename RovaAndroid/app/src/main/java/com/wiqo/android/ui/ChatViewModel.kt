@@ -8,6 +8,7 @@ import com.wiqo.android.data.local.LocalConversationMessage
 import com.wiqo.android.data.network.ApiException
 import com.wiqo.android.data.network.ChatTurn
 import com.wiqo.android.data.attachments.ChatAttachment
+import com.wiqo.android.data.attachments.ChatFileContent
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -74,7 +75,7 @@ class ChatViewModel(private val container: AppContainer, val conversationId: Str
 
     private val answeredLocationRequests = mutableSetOf<String>()
 
-    fun send(text: String, attachments: List<ChatAttachment> = emptyList(), createAgent: Boolean = false) {
+    fun send(text: String, attachments: List<ChatAttachment> = emptyList(), files: List<ChatFileContent> = emptyList(), createAgent: Boolean = false) {
         val clean = text.trim()
         val account = accountId ?: container.api.currentAccountId()
         if (account == null) {
@@ -89,14 +90,14 @@ class ChatViewModel(private val container: AppContainer, val conversationId: Str
             mutableState.value = mutableState.value.copy(error = "Bir kerede en fazla dört görsel ekleyebilirsin.")
             return
         }
-        if ((clean.isEmpty() && attachments.isEmpty()) || mutableState.value.sending) return
+        if ((clean.isEmpty() && attachments.isEmpty() && files.isEmpty()) || mutableState.value.sending) return
         accountId = account
         sendJob = viewModelScope.launch {
             val requestText = clean.ifBlank { "Ekli dosyaları incele." }
             val displayText = clean.ifBlank { "Ekli dosyaları incele." }
             val attachmentMetadata = buildJsonObject {
-                put("attachments", JsonArray(attachments.map { JsonPrimitive(it.name) }))
-            }.toString().takeIf { attachments.isNotEmpty() }
+                put("attachments", JsonArray((attachments.map { it.name } + files.map { it.name }).map { JsonPrimitive(it) }))
+            }.toString().takeIf { attachments.isNotEmpty() || files.isNotEmpty() }
             val userMessage = LocalConversationMessage(UUID.randomUUID().toString(), account, conversationId, "user", displayText, System.currentTimeMillis(), attachmentMetadata)
             container.database.conversations().insert(userMessage)
             mutableState.value = mutableState.value.copy(sending = true, error = null, progress = null, partialReply = "", pendingConfirmations = emptyList(), liveUpdates = emptyList())
@@ -111,6 +112,7 @@ class ChatViewModel(private val container: AppContainer, val conversationId: Str
                     conversationId,
                     turns,
                     attachments,
+                    files = files,
                     createAgent = createAgent,
                     onProgress = { status -> mutableState.value = mutableState.value.copy(progress = status.ifBlank { null }) },
                     onDelta = { delta -> mutableState.value = mutableState.value.copy(partialReply = mutableState.value.partialReply + delta) },

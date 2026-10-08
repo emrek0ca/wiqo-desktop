@@ -2,6 +2,7 @@ package com.wiqo.android.data.network
 
 import com.wiqo.android.data.security.SecureTokenStore
 import com.wiqo.android.data.attachments.ChatAttachment
+import com.wiqo.android.data.attachments.ChatFileContent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -94,7 +95,7 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
 
     suspend fun put(path: String, body: JsonObject): JsonElement = authorizedJson(path, "PUT", body)
 
-    suspend fun delete(path: String): JsonElement = authorizedJson(path, "DELETE")
+    suspend fun delete(path: String, body: JsonObject = JsonObject(emptyMap())): JsonElement = authorizedJson(path, "DELETE", body)
 
     suspend fun registerFcmToken(token: String) {
         post("notifications/fcm-token", buildJsonObject {
@@ -395,6 +396,7 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
         conversationId: String,
         messages: List<ChatTurn>,
         attachments: List<ChatAttachment> = emptyList(),
+        files: List<ChatFileContent> = emptyList(),
         createAgent: Boolean = false,
         onProgress: (String) -> Unit,
         onDelta: (String) -> Unit = {},
@@ -414,9 +416,10 @@ class WiqoApi(private val tokenStore: SecureTokenStore) {
                     })
                 }
             })
+            put("files", buildJsonArray { files.forEach { add(it.toJson()) } })
             put("availableApps", JsonArray(emptyList()))
             put("availableCapabilities", JsonArray(emptyList()))
-            put("clientFeatures", buildJsonArray { add("artifact-directory-v1") })
+            put("clientFeatures", buildJsonArray { add(JsonPrimitive("artifact-directory-v1")) })
             put("locale", java.util.Locale.getDefault().toLanguageTag())
             if (createAgent) put("composerIntent", "create_agent")
             tokenStore.read(SecureTokenStore.COMPANION_DEVICE_ID)?.let { put("deviceId", it) }

@@ -49,6 +49,7 @@ import kotlinx.coroutines.launch
 private data class SettingsItem(val id: String, val title: String, val subtitle: String? = null)
 
 private val settingsItems = listOf(
+    SettingsItem("devices", "PC", "Eşleşme ve bilgisayar kontrolleri"),
     SettingsItem("history", "Sohbet geçmişi", "Önceki konuşmaların"),
     SettingsItem("profile", "Hesap", "Profil ve oturum bilgileri"),
     SettingsItem("connected", "Bağlı hesaplar", "OAuth uygulamaları ve erişim düzeyleri"),
@@ -61,6 +62,9 @@ private val settingsItems = listOf(
     SettingsItem("tasks", "Görevler", "Yapılacak işler"),
     SettingsItem("goals", "Hedefler", "Uzun vadeli hedeflerin"),
     SettingsItem("automations", "Otomasyonlar", "Zamanlanmış ve tekrarlanan işler"),
+    SettingsItem("activity", "Etkinlik", "İlgi bekleyen ve son işlemler"),
+    SettingsItem("mcp", "MCP sunucuları", "Bağlı araç sunucuları"),
+    SettingsItem("channels", "Mesajlaşma kanalları", "Telegram bağlantısı"),
     SettingsItem("subscription", "Wiqo Pro", "Plan ve kullanım"),
     SettingsItem("invites", "Davetler", "Davet kodların"),
 )

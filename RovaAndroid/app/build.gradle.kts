@@ -68,6 +68,7 @@ dependencies {
     implementation(libs.firebase.messaging)
     implementation(libs.play.billing.ktx)
     implementation(libs.mlkit.document.scanner)
+    implementation(libs.mlkit.text.recognition)
     implementation(libs.play.services.code.scanner)
 
     testImplementation(libs.junit)

@@ -1457,8 +1457,6 @@ extension Notification.Name {
     static let wiqoOpenInAct = Notification.Name("wiqo.openInAct")
     /// Open an existing Act project (a card that was just turned into one).
     static let wiqoOpenProjectInAct = Notification.Name("wiqo.openProjectInAct")
-    /// A suggestion elsewhere in the app (Görevler, Hafıza...) starts a new chat with this text (the notification's object) ready to send.
-    static let wiqoStartChat = Notification.Name("wiqo.startChat")
 }
 
 /// What a handoff card sends Act.

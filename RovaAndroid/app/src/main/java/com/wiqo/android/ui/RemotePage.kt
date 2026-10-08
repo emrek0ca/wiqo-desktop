@@ -111,6 +111,8 @@ internal fun endpointFor(destination: DestinationData): String = when (destinati
     "history" -> "conversations"
     "profile" -> "profile"
     "connected" -> "oauth"
+    "mcp" -> "mcp/servers"
+    "channels" -> "channels"
     "skills" -> "skills"
     "agents" -> "agents"
     "agent-tasks" -> "agent-tasks"

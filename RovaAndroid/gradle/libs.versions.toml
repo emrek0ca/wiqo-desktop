@@ -14,6 +14,7 @@ firebaseBom = "34.19.0"
 googleServices = "4.5.0"
 playBilling = "8.1.0"
 mlkitScanner = "16.0.0"
+mlkitTextRecognition = "16.0.1"
 codeScanner = "16.1.0"
 junit = "4.13.2"
 androidxJunit = "1.2.1"
@@ -51,6 +52,7 @@ firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "fir
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 play-billing-ktx = { module = "com.android.billingclient:billing-ktx", version.ref = "playBilling" }
 mlkit-document-scanner = { module = "com.google.android.gms:play-services-mlkit-document-scanner", version.ref = "mlkitScanner" }
+mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlkitTextRecognition" }
 play-services-code-scanner = { module = "com.google.android.gms:play-services-code-scanner", version.ref = "codeScanner" }
 junit = { module = "junit:junit", version.ref = "junit" }
 androidx-junit = { module = "androidx.test.ext:junit", version.ref = "androidxJunit" }

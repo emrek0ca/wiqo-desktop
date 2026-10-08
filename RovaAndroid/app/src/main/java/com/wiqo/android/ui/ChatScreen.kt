@@ -130,6 +130,7 @@ import com.wiqo.android.AppContainer
 import com.wiqo.android.R
 import com.wiqo.android.data.attachments.AttachmentException
 import com.wiqo.android.data.attachments.ChatAttachment
+import com.wiqo.android.data.attachments.ChatFileContent
 import com.wiqo.android.data.local.LocalConversationMessage
 import com.wiqo.android.ui.components.RovaConnectionIcon
 import com.wiqo.android.ui.components.ThinkingLiveView
@@ -180,6 +181,7 @@ internal fun ChatScreen(
 
     var draft by rememberSaveable(conversationId) { mutableStateOf(draftPrompt ?: "") }
     val attachments = remember(conversationId) { mutableStateListOf<ChatAttachment>() }
+    val fileContents = remember(conversationId) { mutableStateListOf<ChatFileContent>() }
     var isComposerFocused by remember { mutableStateOf(false) }
     var isCreatingAgent by remember(conversationId) { mutableStateOf(false) }
     var isRecordingAudio by remember { mutableStateOf(false) }
@@ -201,6 +203,7 @@ internal fun ChatScreen(
     val addUris: (List<android.net.Uri>) -> Unit = { uris ->
         scope.launch {
             try {
+                if (attachments.size + uris.size > 4) throw AttachmentException("Bir kerede en fazla dört görsel ekleyebilirsin.")
                 attachments.addAll(container.attachments.load(uris))
                 attachmentError = null
             } catch (error: AttachmentException) {
@@ -211,7 +214,21 @@ internal fun ChatScreen(
         }
     }
 
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments(), addUris)
+    val addDocumentUris: (List<android.net.Uri>) -> Unit = { uris ->
+        scope.launch {
+            try {
+                if (fileContents.size + uris.size > 5) throw AttachmentException("Bir kerede en fazla beş dosya ekleyebilirsin.")
+                fileContents.addAll(container.documents.load(uris))
+                attachmentError = null
+            } catch (error: AttachmentException) {
+                attachmentError = error.message ?: "Dosya okunamadı."
+            } catch (_: Exception) {
+                attachmentError = "Dosya okunamadı. Tekrar dene."
+            }
+        }
+    }
+
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments(), addDocumentUris)
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents(), addUris)
 
     val scannerOptions = remember {
@@ -227,7 +244,7 @@ internal fun ChatScreen(
         if (result.resultCode == Activity.RESULT_OK) {
             val pdf = GmsDocumentScanningResult.fromActivityResultIntent(result.data)?.getPdf()
             val uri = pdf?.getUri()
-            if (uri != null) addUris(listOf(uri))
+            if (uri != null) addDocumentUris(listOf(uri))
         }
     }
 
@@ -265,7 +282,7 @@ internal fun ChatScreen(
         if (last >= 0) listState.animateScrollToItem(last)
     }
 
-    val canSend = draft.isNotBlank() || attachments.isNotEmpty()
+    val canSend = draft.isNotBlank() || attachments.isNotEmpty() || fileContents.isNotEmpty()
 
     Column(
         modifier = Modifier
@@ -790,7 +807,7 @@ internal fun ChatScreen(
                 }
 
                 // Attachment preview strip
-                if (attachments.isNotEmpty()) {
+                if (attachments.isNotEmpty() || fileContents.isNotEmpty()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -815,6 +832,16 @@ internal fun ChatScreen(
                                             .size(14.dp)
                                             .clickable { attachments.removeAt(index) },
                                     )
+                                }
+                            }
+                        }
+                        fileContents.forEachIndexed { index, file ->
+                            Box(modifier = Modifier.background(colors.surface, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(file.name, fontFamily = WiqoSans, fontSize = 12.sp, color = colors.ink)
+                                    Spacer(Modifier.width(4.dp))
+                                    Icon(Icons.Default.Close, contentDescription = "Kaldır", tint = colors.ink.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(14.dp).clickable { fileContents.removeAt(index) })
                                 }
                             }
                         }
@@ -902,7 +929,7 @@ internal fun ChatScreen(
                     // Text Field
                     BasicTextField(
                         value = draft,
-                        onValueChange = { draft = it },
+                        onValueChange = { draft = it.take(4_000) },
                         modifier = Modifier
                             .weight(1f)
                             .padding(vertical = 10.dp)
@@ -955,10 +982,12 @@ internal fun ChatScreen(
                                 .clickable {
                                     val textToSend = draft
                                     val attToSend = attachments.toList()
+                                    val filesToSend = fileContents.toList()
                                     draft = ""
                                     attachments.clear()
+                                    fileContents.clear()
                                     keyboard?.hide()
-                                    vm.send(textToSend, attToSend, createAgent = isCreatingAgent)
+                                    vm.send(textToSend, attToSend, filesToSend, createAgent = isCreatingAgent)
                                     isCreatingAgent = false
                                 },
                             contentAlignment = Alignment.Center,

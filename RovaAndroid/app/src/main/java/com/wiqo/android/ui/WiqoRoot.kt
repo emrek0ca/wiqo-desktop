@@ -69,6 +69,7 @@ private fun WiqoHome(
     var remoteDestination by remember { mutableStateOf<DestinationData?>(null) }
     var homeRefresh by remember { mutableStateOf(0) }
     var pcError by remember { mutableStateOf<String?>(null) }
+    var pcNotice by remember { mutableStateOf<String?>(null) }
 
     var isPaired by remember { mutableStateOf(false) }
     var isConnected by remember { mutableStateOf(false) }
@@ -77,6 +78,25 @@ private fun WiqoHome(
     var userEmail by remember { mutableStateOf("") }
 
     val conversationList = remember { mutableStateListOf<ConversationItem>() }
+
+    fun executePcCommand(type: String, value: Int? = null) {
+        val deviceId = container.tokenStore.read(SecureTokenStore.COMPANION_DEVICE_ID)
+        if (deviceId == null) {
+            pcError = "Önce PC eşleştir."
+            return
+        }
+        pcError = null
+        pcNotice = null
+        scope.launch {
+            try {
+                container.api.sendCompanionCommand(deviceId, type, value)
+                pcNotice = "PC işlemi tamamlandı."
+                homeRefresh += 1
+            } catch (error: Exception) {
+                pcError = error.message ?: "PC işlemi tamamlanamadı."
+            }
+        }
+    }
 
     LaunchedEffect(homeRefresh) {
         val profile = runCatching { container.api.get("profile") as? JsonObject }.getOrNull()
@@ -219,6 +239,13 @@ private fun WiqoHome(
                     }
                 },
                 error = pcError,
+                notice = pcNotice,
+                onLockPC = { executePcCommand("lockMac") },
+                onSleepPC = { executePcCommand("sleepMac") },
+                onMutePC = { executePcCommand("toggleMute") },
+                onDisplaySleepPC = { executePcCommand("displaySleep") },
+                onVolumeChange = { executePcCommand("setVolume", (it * 100).toInt().coerceIn(0, 100)) },
+                onBrightnessChange = { executePcCommand("setBrightness", (it * 100).toInt().coerceIn(0, 100)) },
             )
         }
 
@@ -248,14 +275,25 @@ private fun WiqoHome(
         if (showSettings && remoteDestination == null && !showPaywall && !showPairing) {
             SettingsScreen(
                 preferences = container.preferences,
-                onNavigate = { destination -> remoteDestination = destination },
+                onNavigate = { destination ->
+                    when (destination.id) {
+                        "devices" -> showPCSettings = true
+                        "subscription" -> showPaywall = true
+                        else -> remoteDestination = destination
+                    }
+                },
                 onSignOut = onSignOut,
                 onBack = { showSettings = false },
             )
         }
 
         remoteDestination?.takeUnless { showPairing || showPaywall }?.let { destination ->
-            RemotePage(
+            if (destination.id == "profile") ProfileScreen(
+                container = container,
+                onBack = { remoteDestination = null; homeRefresh += 1 },
+                onDeleted = onSignOut,
+                onSaved = { homeRefresh += 1 },
+            ) else RemotePage(
                 container = container,
                 destination = destination,
                 title = destination.id.replace('-', ' ').replaceFirstChar(Char::uppercase),

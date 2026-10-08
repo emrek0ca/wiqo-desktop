@@ -10,6 +10,7 @@ import com.wiqo.android.data.network.WiqoApi
 import com.wiqo.android.data.network.PushRegistration
 import com.wiqo.android.data.security.SecureTokenStore
 import com.wiqo.android.data.attachments.AttachmentLoader
+import com.wiqo.android.data.attachments.DocumentContentLoader
 import com.wiqo.android.data.artifacts.ArtifactRepository
 import com.wiqo.android.data.billing.PlayBillingRepository
 
@@ -25,7 +26,7 @@ class WiqoApplication : Application() {
             .addMigrations(WIQO_DATABASE_MIGRATION_1_2)
             .build()
         val pushRegistration = PushRegistration(this, api)
-        container = AppContainer(api, tokenStore, database, UserPreferencesStore(this), pushRegistration, AttachmentLoader(this), ArtifactRepository(this, api), PlayBillingRepository(this, api))
+        container = AppContainer(api, tokenStore, database, UserPreferencesStore(this), pushRegistration, AttachmentLoader(this), DocumentContentLoader(this), ArtifactRepository(this, api), PlayBillingRepository(this, api))
         if (tokenStore.read() != null) pushRegistration.register()
     }
 }
@@ -43,6 +44,7 @@ data class AppContainer(
     val preferences: UserPreferencesStore,
     val pushRegistration: PushRegistration,
     val attachments: AttachmentLoader,
+    val documents: DocumentContentLoader,
     val artifacts: ArtifactRepository,
     val billing: PlayBillingRepository,
 )
