@@ -51,10 +51,12 @@ class AuthViewModel(private val container: AppContainer) : ViewModel() {
         val accountId = container.api.currentAccountId()
         viewModelScope.launch {
             try {
+                container.reminders.clear()
                 accountId?.let { container.database.conversations().clearAccount(it) }
                 runCatching { container.artifacts.clearAccount(accountId) }
                 container.pushRegistration.revoke()
             } finally {
+                container.billing.clearAccountState()
                 container.tokenStore.clearCredentials()
                 mutableState.value = AuthUiState()
             }

@@ -274,6 +274,10 @@ class DocumentContentLoader(context: Context) {
                     result.append(if (cellType == "s") shared.getOrNull(value.toIntOrNull() ?: -1).orEmpty() else value)
                     result.append('\t')
                 }
+                parser.eventType == XmlPullParser.START_TAG && tag == "t" && cellType == "inlineStr" -> {
+                    result.append(parser.nextText().take(300))
+                    result.append('\t')
+                }
                 parser.eventType == XmlPullParser.END_TAG && tag == "row" -> { result.append('\n'); rows++ }
             }
         }

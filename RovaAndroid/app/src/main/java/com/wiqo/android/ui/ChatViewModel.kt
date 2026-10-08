@@ -12,6 +12,7 @@ import com.wiqo.android.data.attachments.ChatFileContent
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -34,6 +35,7 @@ data class ChatUiState(
     val confirmationBusy: String? = null,
     val locationRequestId: String? = null,
     val liveUpdates: List<String> = emptyList(),
+    val liveWidgets: List<JsonObject> = emptyList(),
 )
 
 class ChatViewModel(private val container: AppContainer, val conversationId: String = "default") : ViewModel() {
@@ -95,9 +97,9 @@ class ChatViewModel(private val container: AppContainer, val conversationId: Str
                     System.currentTimeMillis(), response.terminal?.safeDisplayMetadata()?.toString(),
                 ))
                 mutableState.value = mutableState.value.copy(recovering = false, progress = null, partialReply = "",
-                    pendingConfirmations = emptyList(), locationRequestId = null, completedSends = mutableState.value.completedSends + 1)
+                    pendingConfirmations = emptyList(), locationRequestId = null, liveWidgets = emptyList(), completedSends = mutableState.value.completedSends + 1)
             } catch (failure: Exception) {
-                mutableState.value = mutableState.value.copy(recovering = false, progress = null,
+                mutableState.value = mutableState.value.copy(recovering = false, progress = null, liveWidgets = emptyList(),
                     error = failure.message ?: "İşlem sonucu alınamadı. Sohbeti yeniden açıp geçmişi yenile.")
             } finally { currentRequestId = null }
         }
@@ -136,7 +138,7 @@ class ChatViewModel(private val container: AppContainer, val conversationId: Str
             }.toString().takeIf { attachments.isNotEmpty() || files.isNotEmpty() }
             val userMessage = LocalConversationMessage(UUID.randomUUID().toString(), account, conversationId, "user", displayText, System.currentTimeMillis(), attachmentMetadata)
             container.database.conversations().insert(userMessage)
-            mutableState.value = mutableState.value.copy(sending = true, error = null, progress = null, partialReply = "", pendingConfirmations = emptyList(), liveUpdates = emptyList())
+            mutableState.value = mutableState.value.copy(sending = true, error = null, progress = null, partialReply = "", pendingConfirmations = emptyList(), liveUpdates = emptyList(), liveWidgets = emptyList())
             try {
                 val history = container.database.conversations().getMessages(account, conversationId)
                 val recent = history.takeLast(16)
@@ -161,17 +163,17 @@ class ChatViewModel(private val container: AppContainer, val conversationId: Str
                         response.terminal?.safeDisplayMetadata()?.toString(),
                     ),
                 )
-                mutableState.value = mutableState.value.copy(sending = false, progress = null, partialReply = "", pendingConfirmations = emptyList(), locationRequestId = null, completedSends = mutableState.value.completedSends + 1)
+                mutableState.value = mutableState.value.copy(sending = false, progress = null, partialReply = "", pendingConfirmations = emptyList(), locationRequestId = null, liveWidgets = emptyList(), completedSends = mutableState.value.completedSends + 1)
                 currentRequestId = null
             } catch (_: CancellationException) {
                 // The backend may still finish; cancelSending follows the request ledger.
             } catch (error: ApiException) {
                 runCatching { container.database.conversations().delete(userMessage) }
-                mutableState.value = mutableState.value.copy(sending = false, progress = null, partialReply = "", error = error.message)
+                mutableState.value = mutableState.value.copy(sending = false, progress = null, partialReply = "", liveWidgets = emptyList(), error = error.message)
                 currentRequestId = null
             } catch (_: Exception) {
                 runCatching { container.database.conversations().delete(userMessage) }
-                mutableState.value = mutableState.value.copy(sending = false, progress = null, partialReply = "", error = "Yanıt alınamadı. Tekrar deneyebilirsin.")
+                mutableState.value = mutableState.value.copy(sending = false, progress = null, partialReply = "", liveWidgets = emptyList(), error = "Yanıt alınamadı. Tekrar deneyebilirsin.")
                 currentRequestId = null
             }
         }
@@ -232,6 +234,14 @@ class ChatViewModel(private val container: AppContainer, val conversationId: Str
                 label?.content?.takeIf(String::isNotBlank)?.let { message ->
                     mutableState.value = mutableState.value.copy(liveUpdates = (mutableState.value.liveUpdates + message).takeLast(8))
                 }
+            }
+            "widget_update" -> {
+                val widget = event["widget"] as? JsonObject ?: return
+                val id = (widget["widgetId"] as? JsonPrimitive)?.contentOrNull ?: widget.toString()
+                val others = mutableState.value.liveWidgets.filterNot {
+                    ((it["widgetId"] as? JsonPrimitive)?.contentOrNull ?: it.toString()) == id
+                }
+                mutableState.value = mutableState.value.copy(liveWidgets = (others + widget).takeLast(8))
             }
         }
     }

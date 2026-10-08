@@ -164,6 +164,7 @@ internal fun ChatScreen(
     onOpenSidebar: () -> Unit = {},
     onOpenPCSettings: () -> Unit = {},
     onOpenTemplates: () -> Unit = {},
+    onOpenAct: () -> Unit = {},
     onNewConversation: () -> Unit = {},
     onOpenRelated: (String, String?) -> Unit = { _, _ -> },
     onSendCompleted: () -> Unit = {},
@@ -176,7 +177,7 @@ internal fun ChatScreen(
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
 
-    val vm: ChatViewModel = viewModel(key = "chat-$conversationId", factory = ChatViewModel.Factory(container, conversationId))
+    val vm: ChatViewModel = viewModel(key = "chat-${container.api.currentAccountId()}-$conversationId", factory = ChatViewModel.Factory(container, conversationId))
     val state by vm.state.collectAsStateWithLifecycle()
 
     var draft by rememberSaveable(conversationId) { mutableStateOf(draftPrompt ?: "") }
@@ -283,6 +284,10 @@ internal fun ChatScreen(
     }
 
     val canSend = (draft.isNotBlank() || attachments.isNotEmpty() || fileContents.isNotEmpty()) && !state.recovering
+    val replacedWidgetIds = remember(state.messages, state.liveWidgets) {
+        (state.messages.flatMap { parseMessageMetadata(it.metadataJson).widgets } + state.liveWidgets)
+            .mapNotNull { (it["replaces"] as? JsonPrimitive)?.contentOrNull }.toSet()
+    }
 
     Column(
         modifier = Modifier
@@ -321,6 +326,16 @@ internal fun ChatScreen(
                 )
             }
 
+            Spacer(Modifier.weight(1f))
+            Row(
+                Modifier.background(colors.inset, CircleShape).padding(3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Chat", Modifier.background(colors.canvas, CircleShape).padding(horizontal = 12.dp, vertical = 6.dp),
+                    color = colors.ink, fontFamily = WiqoSans, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text("Act", Modifier.clickable(onClick = onOpenAct).padding(horizontal = 12.dp, vertical = 6.dp),
+                    color = colors.ink3, fontFamily = WiqoSans, fontSize = 13.sp)
+            }
             Spacer(Modifier.weight(1f))
 
             // Right: Unified capsule container with hairline border
@@ -506,7 +521,8 @@ internal fun ChatScreen(
                                     MarkdownReply(text = message.content)
                                 }
 
-                                metadata.widgets.forEach { widget -> ChatWidgetSummary(widget, onOpenRelated) }
+                                metadata.widgets.filterNot { (it["widgetId"] as? JsonPrimitive)?.contentOrNull in replacedWidgetIds }
+                                    .forEach { widget -> ChatWidgetSummary(widget, onOpenRelated, container.api.currentAccountId()) }
 
                                 if (metadata.confirmations.isNotEmpty()) {
                                     metadata.confirmations.forEach { confirmation ->
@@ -728,6 +744,11 @@ internal fun ChatScreen(
                     if (state.liveUpdates.isNotEmpty()) {
                         item(key = "live-updates") {
                             Text(state.liveUpdates.last(), fontFamily = WiqoSans, fontSize = 12.sp, color = colors.ink3)
+                        }
+                    }
+                    if (state.liveWidgets.isNotEmpty()) {
+                        items(state.liveWidgets, key = { "live-widget-${(it["widgetId"] as? JsonPrimitive)?.contentOrNull ?: it.hashCode()}" }) { widget ->
+                            ChatWidgetSummary(widget, onOpenRelated, container.api.currentAccountId())
                         }
                     }
                     if (state.partialReply.isNotEmpty()) {

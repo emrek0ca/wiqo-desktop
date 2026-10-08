@@ -125,6 +125,9 @@ struct SubscriptionView: View {
                 .foregroundStyle(.secondary)
             WiqoUsageBar(title: String(localized: "Mesaj"), used: info.usage.messages.used, limit: info.usage.messages.limit)
             WiqoUsageBar(title: String(localized: "Görsel"), used: info.usage.images.used, limit: info.usage.images.limit)
+            if let act = info.usage.act {
+                WiqoUsageBar(title: String(localized: "Act"), used: act.used, limit: act.limit)
+            }
             if let reset = info.resetDate {
                 Text("Sayaçlar \(reset.formatted(date: .omitted, time: .shortened)) saatinde sıfırlanır.")
                     .font(.caption)

@@ -21,7 +21,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import java.security.MessageDigest
 
 data class PlayBillingState(
@@ -29,10 +31,18 @@ data class PlayBillingState(
     val available: Boolean = false,
     val busy: Boolean = false,
     val price: String? = null,
-    val tier: String = "free",
+    val tier: String = "",
+    val plans: List<PlanSummary> = emptyList(),
+    val messageUsed: Int? = null,
+    val messageLimit: Int? = null,
+    val imageUsed: Int? = null,
+    val imageLimit: Int? = null,
+    val pcAllowed: Boolean? = null,
     val statusMessage: String? = null,
     val error: String? = null,
 )
+
+data class PlanSummary(val id: String, val label: String, val messagesPerDay: Int, val imagesPerDay: Int, val pcAllowed: Boolean)
 
 /** Google Play adapter. Pro access is refreshed only after the backend verifies the purchase token. */
 class PlayBillingRepository(context: Context, private val api: WiqoApi) {
@@ -41,6 +51,11 @@ class PlayBillingRepository(context: Context, private val api: WiqoApi) {
     val state = mutableState.asStateFlow()
     private var productDetails: ProductDetails? = null
     private var offerToken: String? = null
+
+    fun clearAccountState() {
+        mutableState.value = PlayBillingState(loading = false, available = productDetails != null && offerToken != null,
+            price = mutableState.value.price, plans = mutableState.value.plans)
+    }
 
     private val billingClient = BillingClient.newBuilder(context.applicationContext)
         .setListener { result, purchases -> handlePurchaseUpdate(result, purchases) }
@@ -51,6 +66,19 @@ class PlayBillingRepository(context: Context, private val api: WiqoApi) {
     fun load() {
         mutableState.value = mutableState.value.copy(loading = true, error = null)
         refreshSubscription()
+        scope.launch {
+            runCatching { api.get("billing/plans") as? JsonObject }.getOrNull()?.let { root ->
+                val plans = (root["plans"] as? JsonArray).orEmpty().mapNotNull { value ->
+                    val item = value as? JsonObject ?: return@mapNotNull null
+                    val id = item.scalar("id") ?: return@mapNotNull null
+                    PlanSummary(id, item.scalar("label") ?: id,
+                        item.scalar("messagesPerDay")?.toIntOrNull() ?: return@mapNotNull null,
+                        item.scalar("imagesPerDay")?.toIntOrNull() ?: return@mapNotNull null,
+                        item.scalar("pcAllowed") == "true")
+                }
+                mutableState.value = mutableState.value.copy(plans = plans)
+            }
+        }
         if (billingClient.isReady) {
             queryProduct()
             queryExistingPurchases()
@@ -156,10 +184,14 @@ class PlayBillingRepository(context: Context, private val api: WiqoApi) {
 
     private fun verifyPurchases(purchases: List<Purchase>) {
         if (purchases.isEmpty()) return
+        val accountId = api.currentAccountId() ?: return
         mutableState.value = mutableState.value.copy(busy = true, error = null, statusMessage = "Satın alma Wiqo hesabınla doğrulanıyor…")
         scope.launch {
             var verified = false
             for (purchase in purchases) {
+                if (api.currentAccountId() != accountId) break
+                val purchaseAccount = purchase.accountIdentifiers?.obfuscatedAccountId
+                if (purchaseAccount != null && purchaseAccount != googlePlayAccountId(accountId)) continue
                 try {
                     api.verifyGooglePlayPurchase(purchase.purchaseToken)
                     verified = true
@@ -170,19 +202,35 @@ class PlayBillingRepository(context: Context, private val api: WiqoApi) {
                     mutableState.value = mutableState.value.copy(error = "Satın alma sunucuda doğrulanamadı. Biraz sonra tekrar dene.")
                 }
             }
-            mutableState.value = mutableState.value.copy(busy = false, statusMessage = if (verified) "Wiqo Pro hesabına bağlandı." else null)
-            if (verified) refreshSubscription()
+            if (api.currentAccountId() == accountId) {
+                mutableState.value = mutableState.value.copy(busy = false, statusMessage = if (verified) "Wiqo Pro hesabına bağlandı." else null)
+                if (verified) refreshSubscription()
+            }
         }
     }
 
     private fun refreshSubscription() {
+        val accountId = api.currentAccountId() ?: return
         scope.launch {
             runCatching { api.get("billing/subscription") as? JsonObject }
                 .onSuccess { subscription ->
+                    if (api.currentAccountId() != accountId) return@onSuccess
                     val tier = (subscription?.get("tier") as? JsonPrimitive)?.content
                         ?: (subscription?.get("subscriptionTier") as? JsonPrimitive)?.content
                         ?: mutableState.value.tier
-                    mutableState.value = mutableState.value.copy(tier = tier)
+                    val usage = subscription?.get("usage") as? JsonObject
+                    val messages = usage?.get("messages") as? JsonObject
+                    val images = usage?.get("images") as? JsonObject
+                    mutableState.value = mutableState.value.copy(tier = tier,
+                        messageUsed = messages?.scalar("used")?.toIntOrNull(),
+                        messageLimit = messages?.scalar("limit")?.toIntOrNull(),
+                        imageUsed = images?.scalar("used")?.toIntOrNull(),
+                        imageLimit = images?.scalar("limit")?.toIntOrNull(),
+                        pcAllowed = subscription?.scalar("pcAllowed") == "true")
+                }
+                .onFailure {
+                    if (api.currentAccountId() == accountId) mutableState.value = mutableState.value.copy(
+                        error = "Abonelik bilgisi şu anda alınamadı. Yeniden deneyebilirsin.")
                 }
         }
     }
@@ -191,6 +239,8 @@ class PlayBillingRepository(context: Context, private val api: WiqoApi) {
         const val PRODUCT_ID = "wiqo_pro_monthly"
     }
 }
+
+private fun JsonObject.scalar(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
 internal fun googlePlayAccountId(accountId: String): String = MessageDigest.getInstance("SHA-256")
     .digest("wiqo-account:$accountId".toByteArray(Charsets.UTF_8))

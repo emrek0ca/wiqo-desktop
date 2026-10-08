@@ -49,6 +49,8 @@ internal fun SubscriptionScreen(container: AppContainer, onBack: () -> Unit = {}
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     LaunchedEffect(Unit) { container.billing.load() }
+    val freePlan = state.plans.firstOrNull { it.id == "free" }
+    val proPlan = state.plans.firstOrNull { it.id == "pro" }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Planlar") }, navigationIcon = {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri") }
@@ -60,19 +62,31 @@ internal fun SubscriptionScreen(container: AppContainer, onBack: () -> Unit = {}
             ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text("Wiqo'yu yükselt", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                Text("Daha fazla mesaj, görsel ve PC bağlantısı için bir plan seç.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Planını ve günlük kullanımını gör.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (state.messageLimit != null && state.imageLimit != null) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text("Bugünkü kullanım", style = MaterialTheme.typography.titleMedium)
+                        Text("Mesaj: ${state.messageUsed ?: 0} / ${state.messageLimit}")
+                        Text("Görsel: ${state.imageUsed ?: 0} / ${state.imageLimit}")
+                        Text(if (state.pcAllowed == true) "PC erişimi dahil" else "PC erişimi dahil değil")
+                    }
+                }
             }
             PlanCard(
                 title = "Free",
                 price = "Ücretsiz",
                 current = state.tier == "free",
-                features = listOf("Günde 10 mesaj", "Günde 1 görsel", "PC bağlantısı yok"),
+                features = freePlan?.let { listOf("Günde ${it.messagesPerDay} mesaj", "Günde ${it.imagesPerDay} görsel",
+                    if (it.pcAllowed) "PC erişimi dahil" else "PC erişimi dahil değil") } ?: listOf("Plan sınırları yükleniyor"),
             )
             PlanCard(
                 title = "Pro",
                 price = state.price?.let { "$it/ay" } ?: if (state.loading) "Fiyat yükleniyor" else "Fiyat şu anda kullanılamıyor",
                 current = state.tier == "pro",
-                features = listOf("Günde 100 mesaj", "Günde 10 görsel", "PC bağlantısı"),
+                features = proPlan?.let { listOf("Günde ${it.messagesPerDay} mesaj", "Günde ${it.imagesPerDay} görsel",
+                    if (it.pcAllowed) "PC erişimi dahil" else "PC erişimi dahil değil") } ?: listOf("Plan sınırları yükleniyor"),
             ) {
                 if (state.tier != "pro") {
                     Button(

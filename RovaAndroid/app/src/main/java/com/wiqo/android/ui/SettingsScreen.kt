@@ -1,10 +1,12 @@
 package com.wiqo.android.ui
 
 import android.Manifest
+import android.app.AlarmManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -87,6 +89,10 @@ internal fun SettingsScreen(
     val notificationSettings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         notificationsEnabled = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
     }
+    var exactAlarmsEnabled by remember { mutableStateOf((context.getSystemService(android.content.Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()) }
+    val alarmSettings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        exactAlarmsEnabled = (context.getSystemService(android.content.Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+    }
     Scaffold(topBar = { TopAppBar(title = { Text("Ayarlar") }, navigationIcon = {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri") }
     }) }) { insets ->
@@ -134,6 +140,27 @@ internal fun SettingsScreen(
                             runCatching { notificationSettings.launch(settingsIntent) }
                         }
                     }) { Text(if (notificationsEnabled) "Yönet" else "Aç") }
+                }
+            }
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Kesin zamanlı hatırlatmalar", style = MaterialTheme.typography.titleMedium)
+                        Text(if (exactAlarmsEnabled) "Telefon otomasyon bildirimlerini zamanlayabilir"
+                            else "Saatinde yerel hatırlatma için izni aç", style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Button(onClick = {
+                        runCatching {
+                            alarmSettings.launch(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                Uri.parse("package:${context.packageName}")))
+                        }
+                    }) { Text(if (exactAlarmsEnabled) "Yönet" else "Aç") }
                 }
             }
             settingsItems.forEach { item ->

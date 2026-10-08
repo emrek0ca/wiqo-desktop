@@ -3,6 +3,7 @@ package com.wiqo.android.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -13,6 +14,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.wiqo.android.AppContainer
 import com.wiqo.android.NotificationLink
 import com.wiqo.android.data.security.SecureTokenStore
@@ -22,6 +26,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import java.util.UUID
 
@@ -60,6 +65,7 @@ private fun WiqoHome(
     onNotificationConsumed: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
     var conversationId by remember { mutableStateOf("default") }
     var draftPrompt by remember { mutableStateOf<String?>(null) }
     var showSidebar by remember { mutableStateOf(false) }
@@ -68,7 +74,11 @@ private fun WiqoHome(
     var showTemplates by remember { mutableStateOf(false) }
     var showPairing by remember { mutableStateOf(false) }
     var showPaywall by remember { mutableStateOf(false) }
+    var showAct by remember { mutableStateOf(false) }
+    var actProjectId by remember { mutableStateOf<String?>(null) }
+    var actInitialRequest by remember { mutableStateOf<String?>(null) }
     var remoteDestination by remember { mutableStateOf<DestinationData?>(null) }
+    val remoteBackStack = remember { mutableStateListOf<DestinationData>() }
     var homeRefresh by remember { mutableStateOf(0) }
     var pcError by remember { mutableStateOf<String?>(null) }
     var pcNotice by remember { mutableStateOf<String?>(null) }
@@ -80,6 +90,14 @@ private fun WiqoHome(
     var userEmail by remember { mutableStateOf("") }
 
     val conversationList = remember { mutableStateListOf<ConversationItem>() }
+
+    DisposableEffect(lifecycleOwner, container) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) scope.launch { runCatching { container.reminders.reconcile() } }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     fun executePcCommand(type: String, value: Int? = null) {
         val deviceId = container.tokenStore.read(SecureTokenStore.COMPANION_DEVICE_ID)
@@ -101,6 +119,7 @@ private fun WiqoHome(
     }
 
     LaunchedEffect(homeRefresh) {
+        runCatching { container.reminders.reconcile() }
         val profile = runCatching { container.api.get("profile") as? JsonObject }.getOrNull()
         userName = (profile?.get("displayName") as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) ?: "Wiqo Kullanıcısı"
         userEmail = (profile?.get("email") as? JsonPrimitive)?.contentOrNull.orEmpty()
@@ -164,11 +183,21 @@ private fun WiqoHome(
                 }
             }
             "devices" -> showPCSettings = true
-            "activity" -> remoteDestination = DestinationData("activity", null)
+            "activity" -> remoteDestination = when {
+                link.confirmationId != null -> DestinationData("activity", null)
+                link.automationId?.matches(Regex("[0-9]{1,18}")) == true &&
+                    link.runId?.matches(Regex("[0-9]{1,18}")) == true ->
+                    DestinationData("automation-run", "${link.automationId}/runs/${link.runId}/journal")
+                link.projectId?.matches(Regex("[0-9]{1,18}")) == true -> DestinationData("project-detail", link.projectId)
+                link.agentTaskId?.matches(Regex("[0-9]{1,18}")) == true -> DestinationData("agent-task-detail", link.agentTaskId)
+                else -> DestinationData("activity", null)
+            }
             "settings" -> showSettings = true
             "subscription" -> showPaywall = true
             "pairing" -> showPairing = true
             "connected" -> remoteDestination = DestinationData("connected", null, link.oauthMessage)
+            "agent-tasks" -> remoteDestination = link.agentTaskId?.takeIf { it.matches(Regex("[0-9]{1,18}")) }
+                ?.let { DestinationData("agent-task-detail", it) } ?: DestinationData("agent-tasks", null)
             else -> {
                 if (link.conversationId != null) conversationId = link.conversationId
                 else remoteDestination = DestinationData("activity", null)
@@ -187,12 +216,20 @@ private fun WiqoHome(
             onOpenSidebar = { homeRefresh += 1; showSidebar = true },
             onOpenPCSettings = { showPCSettings = true },
             onOpenTemplates = { showTemplates = true },
+            onOpenAct = { actProjectId = null; actInitialRequest = null; showAct = true },
             onNewConversation = {
                 draftPrompt = null
                 conversationId = UUID.randomUUID().toString()
             },
             onOpenRelated = { route, id ->
                 when (route) {
+                    "inline-ask" -> { draftPrompt = id?.take(500); showAct = false }
+                    "act" -> {
+                        val handoff = runCatching { Json.parseToJsonElement(id.orEmpty()) as? JsonObject }.getOrNull()
+                        actProjectId = (handoff?.get("projectId") as? JsonPrimitive)?.contentOrNull
+                        actInitialRequest = (handoff?.get("request") as? JsonPrimitive)?.contentOrNull
+                        showAct = true
+                    }
                     "project-detail", "agent-task-detail", "automation-detail", "agents" -> remoteDestination = DestinationData(route, id)
                     "devices" -> showPCSettings = true
                     else -> remoteDestination = DestinationData("activity", null)
@@ -200,6 +237,11 @@ private fun WiqoHome(
             },
             onSendCompleted = { homeRefresh += 1 },
         )
+
+        if (showAct && !showPairing && !showPaywall) {
+            ActScreen(container = container, onBack = { showAct = false; actProjectId = null; actInitialRequest = null },
+                initialProjectId = actProjectId, initialRequest = actInitialRequest)
+        }
 
         // Slide-in Conversation Sidebar Drawer matching iOS SidebarOverlay
         SidebarOverlay(
@@ -313,7 +355,11 @@ private fun WiqoHome(
         }
 
         remoteDestination?.takeUnless { showPairing || showPaywall }?.let { destination ->
-            if (destination.id == "profile") ProfileScreen(
+            if (destination.id == "tasks") WorkHubScreen(
+                container = container,
+                onBack = { remoteDestination = null; homeRefresh += 1 },
+                onOpenRelated = { route, id -> remoteBackStack.add(destination); remoteDestination = DestinationData(route, id) },
+            ) else if (destination.id == "profile") ProfileScreen(
                 container = container,
                 onBack = { remoteDestination = null; homeRefresh += 1 },
                 onDeleted = onSignOut,
@@ -321,12 +367,49 @@ private fun WiqoHome(
             ) else RemotePage(
                 container = container,
                 destination = destination,
-                title = destination.id.replace('-', ' ').replaceFirstChar(Char::uppercase),
-                onBack = { remoteDestination = null; homeRefresh += 1 },
+                title = when (destination.id) {
+                    "activity" -> "Etkinlik"
+                    "history" -> "Sohbet geçmişi"
+                    "connected" -> "Bağlı hesaplar"
+                    "mcp" -> "MCP sunucuları"
+                    "channels" -> "Mesajlaşma kanalları"
+                    "skills" -> "Beceriler"
+                    "agents" -> "Ajanlar"
+                    "agent-tasks" -> "Ajan görevleri"
+                    "agent-task-detail" -> "Ajan görevi"
+                    "memory" -> "Hafıza"
+                    "memory-candidates" -> "Hafıza önerileri"
+                    "trust" -> "Güven izinleri"
+                    "tasks" -> "Görevler"
+                    "goals" -> "Hedefler"
+                    "automations" -> "Otomasyonlar"
+                    "automation-detail" -> "Otomasyon"
+                    "automation-runs" -> "Çalıştırmalar"
+                    "automation-run" -> "Çalıştırma günlüğü"
+                    "project-detail" -> "Proje"
+                    "invites" -> "Davetler"
+                    else -> destination.id.replace('-', ' ').replaceFirstChar(Char::uppercase)
+                },
+                onBack = {
+                    remoteDestination = if (remoteBackStack.isNotEmpty()) remoteBackStack.removeAt(remoteBackStack.lastIndex) else null
+                    homeRefresh += 1
+                },
                 onPair = if (destination.id == "devices") ({ showPairing = true }) else null,
+                onSelectPrompt = if (destination.id == "skills") ({ prompt ->
+                    draftPrompt = prompt
+                    conversationId = UUID.randomUUID().toString()
+                    remoteDestination = null
+                    remoteBackStack.clear()
+                    showSettings = false
+                }) else null,
                 onSelect = when (destination.id) {
-                    "agent-tasks" -> ({ id -> remoteDestination = DestinationData("agent-task-detail", id) })
-                    "automations" -> ({ id -> remoteDestination = DestinationData("automation-detail", id) })
+                    "agent-tasks" -> ({ id -> remoteBackStack.add(destination); remoteDestination = DestinationData("agent-task-detail", id) })
+                    "automations" -> ({ id -> remoteBackStack.add(destination); remoteDestination = DestinationData("automation-detail", id) })
+                    "automation-detail" -> ({ id -> remoteBackStack.add(destination); remoteDestination = DestinationData("automation-runs", id) })
+                    "automation-runs" -> ({ id ->
+                        remoteBackStack.add(destination)
+                        remoteDestination = DestinationData("automation-run", "${destination.path}/runs/$id/journal")
+                    })
                     else -> null
                 },
             )

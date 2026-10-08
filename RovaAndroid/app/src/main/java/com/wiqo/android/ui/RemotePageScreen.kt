@@ -62,10 +62,14 @@ internal fun RemotePage(
     onBack: (() -> Unit)? = null,
     onPair: (() -> Unit)? = null,
     onSelect: ((String) -> Unit)? = null,
+    onSelectPrompt: ((String) -> Unit)? = null,
 ) {
     val path = endpointFor(destination)
-    val vm: RemotePageViewModel = viewModel(key = "remote-$path-${destination.path.orEmpty()}", factory = RemotePageViewModel.Factory(container, path))
+    val vm: RemotePageViewModel = viewModel(key = "remote-${container.api.currentAccountId()}-$path-${destination.path.orEmpty()}", factory = RemotePageViewModel.Factory(container, path))
     val state by vm.state.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(destination.notice) {
+        if (destination.id == "connected" && destination.notice != null) vm.refresh()
+    }
     var pendingAction by remember(path) { mutableStateOf<RemoteAction?>(null) }
     var showSkillEditor by remember(path) { mutableStateOf(false) }
     var showMcpEditor by remember(path) { mutableStateOf(false) }
@@ -74,6 +78,8 @@ internal fun RemotePage(
     var mcpToken by remember(path) { mutableStateOf("") }
     var skillName by remember(path) { mutableStateOf("") }
     var skillPrompt by remember(path) { mutableStateOf("") }
+    var showSteerEditor by remember(path) { mutableStateOf(false) }
+    var steerNote by remember(path) { mutableStateOf("") }
     val context = androidx.compose.ui.platform.LocalContext.current
     var launchError by remember(path) { mutableStateOf<String?>(null) }
     androidx.compose.runtime.LaunchedEffect(state.openUrl) {
@@ -90,6 +96,10 @@ internal fun RemotePage(
                 if (destination.id == "skills") TextButton(onClick = { showSkillEditor = true }) { Text("Yeni beceri") }
                 if (destination.id == "mcp") TextButton(onClick = { showMcpEditor = true }) { Text("Sunucu ekle") }
                 if (destination.id == "channels") TextButton(onClick = vm::startTelegramLink) { Text("Telegram bağla") }
+                if (destination.id == "agent-task-detail" &&
+                    ((state.data as? JsonObject)?.get("status") as? JsonPrimitive)?.content == "running") {
+                    TextButton(onClick = { showSteerEditor = true }) { Text("Yönlendir") }
+                }
                 if (onPair != null) IconButton(onClick = onPair) { Icon(Icons.Filled.QrCodeScanner, "PC eşleştir") }
                 IconButton(onClick = vm::refresh) { Icon(Icons.Filled.Refresh, "Yenile") }
             },
@@ -99,8 +109,14 @@ internal fun RemotePage(
             destination.notice?.let { Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.primary) }
             if (destination.id == "connected") {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { vm.startOAuth("google") }, enabled = state.busyAction == null) { Text("Google bağla") }
-                    Button(onClick = { vm.startOAuth("notion") }, enabled = state.busyAction == null) { Text("Notion bağla") }
+                    state.providers.forEach { provider ->
+                        val id = (provider["id"] as? JsonPrimitive)?.content?.takeIf { it.matches(Regex("[a-z0-9_-]{1,40}")) }
+                        val name = (provider["name"] as? JsonPrimitive)?.content ?: id
+                        val available = (provider["available"] as? JsonPrimitive)?.content == "true"
+                        if (id != null) Button(onClick = { vm.startOAuth(id) }, enabled = available && state.busyAction == null) {
+                            Text("${name ?: id} bağla")
+                        }
+                    }
                 }
             }
             launchError?.let { Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.error) }
@@ -126,7 +142,10 @@ internal fun RemotePage(
                     TextButton(onClick = vm::refresh) { Text("Tekrar dene") }
                 }
                 else -> {
-                    val items = state.data?.visibleItems().orEmpty()
+                    val allItems = if (destination.id in setOf("project-detail", "agent-task-detail", "task-request")) {
+                        listOfNotNull(state.data)
+                    } else state.data?.visibleItems().orEmpty()
+                    val items = if (destination.id == "automation-detail") allItems.filter { it.itemIdentifier() == destination.path } else allItems
                     if (items.isEmpty()) {
                         Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                             Text(emptyMessage(destination.id), style = MaterialTheme.typography.titleMedium)
@@ -153,7 +172,17 @@ internal fun RemotePage(
                                             Text(value, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
                                         }
                                     }
-                                    val entryActions = remoteActions(destination.id, entry)
+                                    if (destination.id == "skills" && onSelectPrompt != null) {
+                                        val prompt = ((entry as? JsonObject)?.get("prompt") as? JsonPrimitive)?.content
+                                        if (!prompt.isNullOrBlank()) TextButton(onClick = { onSelectPrompt(prompt) }) { Text("Sohbete ekle") }
+                                    }
+                                    val entryActions = remoteActions(destination.id, entry) + if (
+                                        destination.id == "automation-runs" &&
+                                        (entry as? JsonObject)?.get("status")?.let { (it as? JsonPrimitive)?.content } == "failed" &&
+                                        destination.path?.matches(Regex("[0-9]{1,18}")) == true &&
+                                        itemId?.matches(Regex("[0-9]{1,18}")) == true
+                                    ) listOf(RemoteAction("Yeniden dene", "automations/${destination.path}/runs/$itemId/retry", "POST",
+                                        needsConfirmation = true, successMessage = "Çalıştırma yeniden başlatıldı.")) else emptyList()
                                     if (entryActions.isNotEmpty()) {
                                         Column {
                                             entryActions.forEach { action ->
@@ -246,13 +275,14 @@ internal fun RemotePage(
     }
     if (showMcpEditor) {
         AlertDialog(
-            onDismissRequest = { showMcpEditor = false },
+            onDismissRequest = { showMcpEditor = false; mcpToken = "" },
             title = { Text("MCP sunucusu ekle") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(mcpName, { mcpName = it.take(40) }, label = { Text("Ad") }, singleLine = true)
                     OutlinedTextField(mcpUrl, { mcpUrl = it.take(2_048) }, label = { Text("HTTPS adresi") }, singleLine = true)
-                    OutlinedTextField(mcpToken, { mcpToken = it.take(4_000) }, label = { Text("Erişim anahtarı (isteğe bağlı)") }, singleLine = true)
+                    OutlinedTextField(mcpToken, { mcpToken = it.take(4_000) }, label = { Text("Erişim anahtarı (isteğe bağlı)") },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), singleLine = true)
                 }
             },
             confirmButton = {
@@ -267,6 +297,23 @@ internal fun RemotePage(
                 }, enabled = mcpName.trim().length >= 2 && mcpUrl.startsWith("https://") && state.busyAction == null) { Text("Ekle") }
             },
             dismissButton = { TextButton(onClick = { showMcpEditor = false; mcpToken = "" }) { Text("Vazgeç") } },
+        )
+    }
+    if (showSteerEditor) {
+        AlertDialog(
+            onDismissRequest = { showSteerEditor = false },
+            title = { Text("Ajan görevini yönlendir") },
+            text = { OutlinedTextField(steerNote, { steerNote = it.take(2_000) },
+                label = { Text("Ek yönerge") }, minLines = 3, maxLines = 6) },
+            confirmButton = { TextButton(onClick = {
+                val id = destination.path?.takeIf { it.matches(Regex("[0-9]{1,18}")) } ?: return@TextButton
+                val body = buildJsonObject { put("note", steerNote.trim()) }
+                showSteerEditor = false
+                steerNote = ""
+                vm.perform(RemoteAction("Yönlendiriliyor", "agent-tasks/$id/steer", "POST", body,
+                    successMessage = "Yönerge göreve eklendi."))
+            }, enabled = steerNote.isNotBlank() && state.busyAction == null) { Text("Gönder") } },
+            dismissButton = { TextButton(onClick = { showSteerEditor = false }) { Text("Vazgeç") } },
         )
     }
 }

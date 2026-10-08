@@ -14,6 +14,10 @@ Android istemcisi `com.wiqo.android` kimliğiyle ayrı Gradle projesidir. iOS’
 | `RovaIOS/IOSViews.swift` | Compose navigation, PC, activity, history, and settings destinations |
 | `RovaIOS/ProfileViews.swift`, `ConnectedAccountsView.swift` | account and connected-account destinations |
 | `RovaIOS/AutomationDetailView.swift`, `AutomationTemplatesView.swift` | automation destinations |
+| `RovaIOS/WiqoWorkHub.swift` | `ui/WorkHubScreen.kt` aggregates work, automation review, agents and autonomy controls |
+| `RovaIOS/ActView.swift`, `ActModel.swift`, `ActProjectStore.swift` | `ui/ActScreen.kt`, `data/act/` for device projects, writer jobs, preview, encrypted sync and export |
+| `RovaIOS/WiqoInlineApp.swift`, `WiqoCards.swift` | `ui/widgets/WiqoWidgetCard.kt`, bundled `assets/inline/` helpers |
+| `RovaIOS/RovaIOSApp.swift` local reminders | `data/automation/LocalReminderCoordinator.kt` and Android alarms |
 | `RovaIOS/PaywallView.swift`, `Billing.swift` | `data/billing/PlayBillingRepository.kt`, `SubscriptionScreen.kt`, backend verification route |
 | APNs registration in `RovaIOS/RovaBackendClient.swift` | FCM registration/revoke routes |
 
@@ -25,9 +29,11 @@ Android istemcisi `com.wiqo.android` kimliğiyle ayrı Gradle projesidir. iOS’
 - Inter and JetBrains Mono are bundled under their upstream OFL licenses.
 - OkHttp is the single HTTP/SSE transport. It is used behind `WiqoApi`; UI code does not perform direct network calls.
 - ML Kit Document Scanner delegates capture and PDF creation to Google Play services; Android's system speech recognizer supplies voice input. The QR scanner uses Google Code Scanner so the app does not need camera access just to scan pairing codes.
-- Chat attachments are read through the Android document picker, limited to five files and 18 MB of encoded content, and sent only in the active request. Base64 file data is never written to Room.
+- Chat accepts at most four image attachments (18 MB total encoded) and five documents. Documents are parsed on the phone using Android PDF rendering and ZIP/XML readers; bundled ML Kit Text Recognition v2 reads scanned pages and images without waiting for a model download. The existing document picker grants read access only to the selected files. Only extracted text (up to the backend's 6 MB request limit) is sent; raw document bytes are never sent or written to Room. OCR may be less accurate than a native PDF text layer for selectable PDFs.
 - Play purchase state stays free until `/billing/google-play/verify` validates the purchase with Google. Pending purchases stay pending; restore uses the Play-owned purchase list and repeats backend verification.
 - FCM registration refreshes on sign-in/token rotation and is revoked on sign-out. Notification bodies stay generic; notification IDs route to the matching Wiqo area.
+- Notification-only automations are reconciled from `/automations/local-notifications`. Android installs exact local alarms and calls `/automations/local-delivery` only when notification and exact-alarm permissions allow scheduling. Alarms are restored after reboot, time changes, and app updates. If permissions are missing, backend delivery remains responsible.
+- Inline apps load the backend HTML into a networkless, fileless WebView. The same bundled core/chart/confetti/template helpers used by iOS are shipped as Android assets; per-card state is scoped to the signed-in account.
 
 ## Build
 

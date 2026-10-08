@@ -1399,7 +1399,8 @@
   "Sohbette bir hedef söylediğinde burada ilerlemesini görürsün.": "When you set a goal in chat, you’ll see its progress here.",
   "Tercihlerini bana söylediğinde burada görürsün.": "When you share your preferences, you’ll see them here.",
   "İzleme ve rutinler açık": "Tracking and routines are on",
-  "Şu an bir iş yok": "Nothing to do right now"
+  "Şu an bir iş yok": "Nothing to do right now",
+  "Günde %lld Act işi": "Act work per day %lld"
  },
  "de": {
   "Arkadaşını davet et": "Lade deinen Freund ein",
@@ -2801,7 +2802,8 @@
   "Sohbette bir hedef söylediğinde burada ilerlemesini görürsün.": "Wenn du im Gespräch ein Ziel nennst, siehst du hier deinen Fortschritt.",
   "Tercihlerini bana söylediğinde burada görürsün.": "Wenn du mir deine Vorlieben sagst, siehst du sie hier.",
   "İzleme ve rutinler açık": "Tracking und Routinen sind aktiviert",
-  "Şu an bir iş yok": "Momentan gibt es keine Aufgaben"
+  "Şu an bir iş yok": "Momentan gibt es keine Aufgaben",
+  "Günde %lld Act işi": "Tägliche %lld Act-Aufgabe"
  },
  "es": {
   "\"%@\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.": "\"%@\": se eliminarán los archivos y el historial de todos los dispositivos; irreversible.",
@@ -4203,7 +4205,8 @@
   "Sohbette bir hedef söylediğinde burada ilerlemesini görürsün.": "Cuando dices un objetivo en la conversación, verás su progreso aquí.",
   "Tercihlerini bana söylediğinde burada görürsün.": "Cuando me dices tus preferencias, las verás aquí.",
   "İzleme ve rutinler açık": "Seguimiento y rutinas activados",
-  "Şu an bir iş yok": "No hay tareas en este momento"
+  "Şu an bir iş yok": "No hay tareas en este momento",
+  "Günde %lld Act işi": "Act por día %lld"
  },
  "fr": {
   "Arkadaşını davet et": "Invite a friend",
@@ -5605,7 +5608,8 @@
   "Sohbette bir hedef söylediğinde burada ilerlemesini görürsün.": "Lorsque vous définissez un objectif dans la conversation, vous voyez votre progression ici.",
   "Tercihlerini bana söylediğinde burada görürsün.": "Lorsque vous me communiquez vos préférences, vous les voyez ici.",
   "İzleme ve rutinler açık": "Suivi et routines activés",
-  "Şu an bir iş yok": "Pas de tâche en cours"
+  "Şu an bir iş yok": "Pas de tâche en cours",
+  "Günde %lld Act işi": "Act travail par jour %lld"
  },
  "ar": {
   "+%lld adım": "+%lld خطوة",
@@ -7007,7 +7011,8 @@
   "Sohbette bir hedef söylediğinde burada ilerlemesini görürsün.": "عندما تقول هدفًا في المحادثة سترى تقدمه هنا.",
   "Tercihlerini bana söylediğinde burada görürsün.": "عندما تخبرني بتفضيلاتك سترى ذلك هنا.",
   "İzleme ve rutinler açık": "المتابعة والعادات مفعلة",
-  "Şu an bir iş yok": "لا توجد مهام حالية"
+  "Şu an bir iş yok": "لا توجد مهام حالية",
+  "Günde %lld Act işi": "يومياً %lld عمل"
  },
  "ru": {
   "Arkadaşını davet et": "Пригласить друга",
@@ -8409,6 +8414,7 @@
   "Sohbette bir hedef söylediğinde burada ilerlemesini görürsün.": "Когда в разговоре вы упомянете цель, вы увидите её прогресс здесь.",
   "Tercihlerini bana söylediğinde burada görürsün.": "Когда вы поделитесь своими предпочтениями, вы увидите их здесь.",
   "İzleme ve rutinler açık": "Включено отслеживание и рутины",
-  "Şu an bir iş yok": "Сейчас нет задач"
+  "Şu an bir iş yok": "Сейчас нет задач",
+  "Günde %lld Act işi": "Ежедневно %lld Act задача"
  }
 }

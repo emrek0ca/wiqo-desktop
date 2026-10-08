@@ -13,6 +13,7 @@ import com.wiqo.android.data.attachments.AttachmentLoader
 import com.wiqo.android.data.attachments.DocumentContentLoader
 import com.wiqo.android.data.artifacts.ArtifactRepository
 import com.wiqo.android.data.billing.PlayBillingRepository
+import com.wiqo.android.data.automation.LocalReminderCoordinator
 
 class WiqoApplication : Application() {
     lateinit var container: AppContainer
@@ -26,8 +27,8 @@ class WiqoApplication : Application() {
             .addMigrations(WIQO_DATABASE_MIGRATION_1_2)
             .build()
         val pushRegistration = PushRegistration(this, api)
-        container = AppContainer(api, tokenStore, database, UserPreferencesStore(this), pushRegistration, AttachmentLoader(this), DocumentContentLoader(this), ArtifactRepository(this, api), PlayBillingRepository(this, api))
-        if (tokenStore.read() != null) pushRegistration.register()
+        container = AppContainer(api, tokenStore, database, UserPreferencesStore(this), pushRegistration, AttachmentLoader(this), DocumentContentLoader(this), ArtifactRepository(this, api), PlayBillingRepository(this, api), LocalReminderCoordinator(this, api, tokenStore))
+        if (tokenStore.read() != null) pushRegistration.register() else container.reminders.clear()
     }
 }
 
@@ -47,4 +48,5 @@ data class AppContainer(
     val documents: DocumentContentLoader,
     val artifacts: ArtifactRepository,
     val billing: PlayBillingRepository,
+    val reminders: LocalReminderCoordinator,
 )

@@ -23,13 +23,25 @@ data class RemotePageState(
     val notice: String? = null,
     val openUrl: String? = null,
     val commandResult: JsonElement? = null,
+    val providers: List<JsonObject> = emptyList(),
 )
 
 class RemotePageViewModel(private val container: AppContainer, private val path: String) : ViewModel() {
     private val mutableState = MutableStateFlow(RemotePageState())
     val state = mutableState.asStateFlow()
 
-    init { refresh() }
+    init {
+        refresh()
+        if (path == "oauth") refreshProviders()
+    }
+
+    private fun refreshProviders() {
+        viewModelScope.launch {
+            val root = runCatching { container.api.get("oauth/providers") as? JsonObject }.getOrNull()
+            val providers = (root?.get("providers") as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            mutableState.value = mutableState.value.copy(providers = providers)
+        }
+    }
 
     fun refresh() {
         if (mutableState.value.loading && mutableState.value.data != null) return
@@ -57,6 +69,7 @@ class RemotePageViewModel(private val container: AppContainer, private val path:
                     "COMMAND" -> container.api.sendCompanionStatus(action.path)
                     else -> throw ApiException("Bu işlem desteklenmiyor.", 400)
                 }
+                if (action.path.startsWith("automations/")) runCatching { container.reminders.reconcile() }
                 mutableState.value = mutableState.value.copy(
                     busyAction = null,
                     notice = action.successMessage,
@@ -134,7 +147,8 @@ internal fun endpointFor(destination: DestinationData): String = when (destinati
     "agent-task-detail" -> "agent-tasks/${destination.path.asSafeIdentifier()}"
     "task-request" -> "copilot/requests/${destination.path.asSafeIdentifier()}"
     "project-detail" -> "projects/${destination.path.asNumericIdentifier()}"
-    "automation-detail" -> "automations/${destination.path.asNumericIdentifier()}"
+    "automation-detail" -> "automations"
+    "automation-runs" -> "automations/${destination.path.asNumericIdentifier()}/runs"
     "automation-run" -> {
         val path = destination.path.orEmpty()
         if (path.matches(Regex("[0-9]+/runs/[0-9]+/journal"))) "automations/$path" else "activity"
@@ -207,6 +221,8 @@ internal fun remoteActions(pageId: String, item: JsonElement): List<RemoteAction
         "memory-candidates" -> "memory/candidates"
         "trust" -> "trust-grants"
         "mcp" -> "mcp/servers"
+        "automation-detail" -> "automations"
+        "agent-task-detail" -> "agent-tasks"
         else -> pageId
     }
     fun action(
@@ -224,6 +240,10 @@ internal fun remoteActions(pageId: String, item: JsonElement): List<RemoteAction
             add(action("Bu hesaptan kaldır", "", "DELETE", confirm = true, success = "Bilgisayar hesaptan kaldırıldı."))
         }
         "skills" -> listOf(action("Beceriyi sil", "", "DELETE", confirm = true, success = "Beceri silindi."))
+        "agents" -> buildList {
+            add(action("Ajan hafızasını temizle", "/forget", "POST", confirm = true, success = "Ajan hafızası temizlendi."))
+            if (item.value("isPrimary") != "true") add(action("Ajanı kaldır", "", "DELETE", confirm = true, success = "Ajan kaldırıldı."))
+        }
         "mcp" -> listOf(action("Sunucuyu kaldır", "", "DELETE", confirm = true, success = "MCP sunucusu kaldırıldı."))
         "channels" -> listOf(action("Bağlantıyı kaldır", "", "DELETE", confirm = true, success = "Kanal bağlantısı kaldırıldı."))
         "memory-candidates" -> listOf(
@@ -238,7 +258,10 @@ internal fun remoteActions(pageId: String, item: JsonElement): List<RemoteAction
         "agent-tasks" -> if (item.value("status") in setOf("done", "failed", "cancelled")) emptyList() else listOf(
             action("Görevi durdur", "/cancel", "POST", confirm = true, success = "Görev durduruldu."),
         )
-        "automations" -> {
+        "agent-task-detail" -> if (item.value("status") in setOf("done", "failed", "cancelled")) emptyList() else listOf(
+            action("Görevi durdur", "/cancel", "POST", confirm = true, success = "Görev durduruldu."),
+        )
+        "automations", "automation-detail" -> {
             val active = item.value("isActive") == "true" || item.value("lifecycleStatus") == "active"
             listOf(
                 action(if (active) "Duraklat" else "Sürdür", if (active) "/pause" else "/resume", "POST", success = if (active) "Otomasyon duraklatıldı." else "Otomasyon sürdürüldü."),

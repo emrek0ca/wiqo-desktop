@@ -30,6 +30,8 @@ struct WiqoPlan: Decodable, Equatable, Identifiable {
     let imagesPerDay: Int
     let pcAllowed: Bool
     let purchasableInApp: Bool
+    /// Act (code project) jobs per day; absent from an older backend.
+    let actJobsPerDay: Int?
 }
 
 struct SubscriptionInfo: Codable, Equatable {
@@ -40,6 +42,8 @@ struct SubscriptionInfo: Codable, Equatable {
     struct Usage: Codable, Equatable {
         let messages: UsageCounter
         let images: UsageCounter
+        /// Act jobs today; absent from an older backend or snapshot.
+        var act: UsageCounter? = nil
     }
 
     let tier: String
@@ -67,7 +71,7 @@ struct SubscriptionInfo: Codable, Equatable {
     func withMessageUsage(used: Int, limit: Int) -> SubscriptionInfo {
         SubscriptionInfo(
             tier: tier, label: label, source: source, expiresAt: expiresAt, pcAllowed: pcAllowed,
-            usage: Usage(messages: UsageCounter(used: used, limit: limit), images: usage.images),
+            usage: Usage(messages: UsageCounter(used: used, limit: limit), images: usage.images, act: usage.act),
             resetsAt: resetsAt
         )
     }
@@ -77,7 +81,7 @@ struct SubscriptionInfo: Codable, Equatable {
     func withUsageReset() -> SubscriptionInfo {
         SubscriptionInfo(
             tier: tier, label: label, source: source, expiresAt: expiresAt, pcAllowed: pcAllowed,
-            usage: Usage(messages: UsageCounter(used: 0, limit: usage.messages.limit), images: UsageCounter(used: 0, limit: usage.images.limit)),
+            usage: Usage(messages: UsageCounter(used: 0, limit: usage.messages.limit), images: UsageCounter(used: 0, limit: usage.images.limit), act: usage.act.map { UsageCounter(used: 0, limit: $0.limit) }),
             resetsAt: nil
         )
     }

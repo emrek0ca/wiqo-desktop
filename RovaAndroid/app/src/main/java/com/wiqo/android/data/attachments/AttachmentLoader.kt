@@ -30,7 +30,14 @@ class AttachmentLoader(context: Context) {
                 mimeType = reportedType
                 bytes = original
             } else {
-                val image = BitmapFactory.decodeByteArray(original, 0, original.size)
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(original, 0, original.size, options)
+                if (options.outWidth < 1 || options.outHeight < 1) throw AttachmentException("Görsel okunamadı.")
+                options.inJustDecodeBounds = false
+                options.inSampleSize = generateSequence(1) { it * 2 }.first { sample ->
+                    options.outWidth / sample <= 2048 && options.outHeight / sample <= 2048
+                }
+                val image = BitmapFactory.decodeByteArray(original, 0, original.size, options)
                     ?: throw AttachmentException("Görsel okunamadı.")
                 bytes = try {
                     ByteArrayOutputStream().also { output ->

@@ -16,6 +16,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -61,6 +62,10 @@ internal fun ProfileScreen(container: AppContainer, onBack: () -> Unit, onDelete
     var language by remember { mutableStateOf("tr") }
     var location by remember { mutableStateOf("") }
     var proactive by remember { mutableStateOf(false) }
+    var avatarKind by remember { mutableStateOf("initial") }
+    var avatarEmoji by remember { mutableStateOf("") }
+    var avatarColor by remember { mutableStateOf("indigo") }
+    var avatarImage by remember { mutableStateOf<String?>(null) }
     var deleteDialog by remember { mutableStateOf(false) }
     var deletePassword by remember { mutableStateOf("") }
 
@@ -74,6 +79,10 @@ internal fun ProfileScreen(container: AppContainer, onBack: () -> Unit, onDelete
             language = profile.stringValue("language") ?: "tr"
             location = profile.stringValue("location").orEmpty()
             proactive = profile.stringValue("proactiveEnabled") == "true"
+            avatarKind = profile.stringValue("avatarKind") ?: "initial"
+            avatarEmoji = profile.stringValue("avatarEmoji").orEmpty()
+            avatarColor = profile.stringValue("avatarColor") ?: "indigo"
+            avatarImage = profile.stringValue("avatarImage")
         } catch (failure: Exception) {
             error = failure.message ?: "Profil yüklenemedi."
         } finally { loading = false }
@@ -91,6 +100,36 @@ internal fun ProfileScreen(container: AppContainer, onBack: () -> Unit, onDelete
             } catch (failure: Exception) { error = failure.message ?: "Veriler dışa aktarılamadı." }
         }
     }
+    val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) scope.launch {
+            try {
+                val encoded = withContext(Dispatchers.IO) {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readNBytes(10_000_001) }
+                        ?: throw IllegalStateException("Fotoğraf açılamadı.")
+                    if (bytes.size > 10_000_000) throw IllegalStateException("Fotoğraf 10 MB sınırını aşıyor.")
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    if (bounds.outWidth < 1 || bounds.outHeight < 1) throw IllegalStateException("Fotoğraf okunamadı.")
+                    val sample = generateSequence(1) { it * 2 }.first { sample ->
+                        bounds.outWidth / sample <= 512 && bounds.outHeight / sample <= 512
+                    }
+                    val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                    val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                        ?: throw IllegalStateException("Fotoğraf okunamadı.")
+                    try {
+                        val output = java.io.ByteArrayOutputStream()
+                        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, output)
+                        val base64 = android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
+                        if (base64.length > 400_000) throw IllegalStateException("Fotoğraf küçültülemedi. Başka bir fotoğraf seç.")
+                        base64
+                    } finally { bitmap.recycle() }
+                }
+                avatarImage = encoded
+                avatarKind = "photo"
+                error = null
+            } catch (failure: Exception) { error = failure.message ?: "Fotoğraf hazırlanamadı." }
+        }
+    }
 
     Scaffold(topBar = {
         TopAppBar(title = { Text("Hesap") }, navigationIcon = {
@@ -104,6 +143,26 @@ internal fun ProfileScreen(container: AppContainer, onBack: () -> Unit, onDelete
             if (loading) CircularProgressIndicator()
             else {
                 Text(email)
+                Text("Profil görseli")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("initial" to "Baş harf", "emoji" to "Emoji", "photo" to "Fotoğraf").forEach { (kind, label) ->
+                        FilterChip(selected = avatarKind == kind, onClick = {
+                            if (kind == "photo" && avatarImage == null) photoLauncher.launch("image/*") else avatarKind = kind
+                        }, label = { Text(label) })
+                    }
+                }
+                when (avatarKind) {
+                    "emoji" -> OutlinedTextField(avatarEmoji, { avatarEmoji = it.take(16) }, label = { Text("Emoji") }, singleLine = true)
+                    "photo" -> OutlinedButton(onClick = { photoLauncher.launch("image/*") }) { Text("Fotoğraf seç") }
+                }
+                listOf("indigo", "blue", "teal", "green", "orange", "pink", "purple", "graphite")
+                    .chunked(2).forEach { colors ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        colors.forEach { color ->
+                            FilterChip(selected = avatarColor == color, onClick = { avatarColor = color }, label = { Text(color) })
+                        }
+                    }
+                }
                 OutlinedTextField(name, { name = it.take(40) }, label = { Text("Ad") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(address, { address = it.take(40) }, label = { Text("Hitap") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Text("Yanıt tonu")
@@ -139,6 +198,10 @@ internal fun ProfileScreen(container: AppContainer, onBack: () -> Unit, onDelete
                                 put("displayName", name.trim()); put("preferredAddress", address.trim())
                                 put("tone", tone); put("language", language); put("location", location.trim())
                                 put("proactiveEnabled", proactive)
+                                put("avatarKind", avatarKind)
+                                put("avatarColor", avatarColor)
+                                if (avatarKind == "emoji") put("avatarEmoji", avatarEmoji.trim())
+                                if (avatarKind == "photo") avatarImage?.let { put("avatarImage", it) }
                             })
                             notice = "Profil kaydedildi."
                             onSaved()

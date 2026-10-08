@@ -121,7 +121,8 @@ struct PaywallView: View {
         return [
             String(localized: "Günde \(plan?.messagesPerDay ?? fallback.messages) mesaj"),
             String(localized: "Günde \(plan?.imagesPerDay ?? fallback.images) görsel")
-        ] + ((plan?.pcAllowed ?? true) ? [String(localized: "PC bağlantısı")] : [])
+        ] + (plan?.actJobsPerDay.map { [String(localized: "Günde \($0) Act işi")] } ?? [])
+          + ((plan?.pcAllowed ?? true) ? [String(localized: "PC bağlantısı")] : [])
     }
 
     private var proCard: some View {
