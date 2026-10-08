@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E85F91D5E574CA21A1446C1C /* WiqoWorkHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7575F91D5E574CA21A1446C /* WiqoWorkHub.swift */; };
+		E8938BBA3B534491EBAB51B2 /* SubscriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7F4938BBA3B534491EBAB51 /* SubscriptionView.swift */; };
 		CC224180A9C29B5B70DB3EC1 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D40ECA86D390584A080B2810 /* InfoPlist.xcstrings */; };
 		0389568031C30301F5AA9324 /* AutomationDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 700F9BED6A26B2075241440C /* AutomationDetailView.swift */; };
 		134499258EDC4B29A14A8CBA /* WiqoAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B328EA9F210844F1BEFB3599 /* WiqoAppIntents.swift */; };
@@ -181,6 +183,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E7575F91D5E574CA21A1446C /* WiqoWorkHub.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoWorkHub.swift; sourceTree = "<group>"; };
+		E7F4938BBA3B534491EBAB51 /* SubscriptionView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SubscriptionView.swift; sourceTree = "<group>"; };
 		D40ECA86D390584A080B2810 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		D40ECA86D390584A080B280F /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		05E4E100FCB3F1A506A081F9 /* DesignSystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
@@ -506,6 +510,8 @@
 				AAAFA55B3331D4116B3819B3 /* ArtifactPreview.swift */,
 				395FF78233CB35CC80BB3B64 /* Billing.swift */,
 				91687FA6CF10762A30145E6C /* PaywallView.swift */,
+				E7575F91D5E574CA21A1446C /* WiqoWorkHub.swift */,
+				E7F4938BBA3B534491EBAB51 /* SubscriptionView.swift */,
 				8E470424BA1B9926C7F1169F /* CanvasView.swift */,
 				D40ECA86D390584A080B280F /* Localizable.xcstrings */,
 				D40ECA86D390584A080B2810 /* InfoPlist.xcstrings */,
@@ -883,6 +889,8 @@
 				9D4EB581866295D210CBC5E7 /* ArtifactPreview.swift in Sources */,
 				61D8FCE0A1D986DE1A0BF730 /* Billing.swift in Sources */,
 				3B3989760AB287C6DF759DA5 /* PaywallView.swift in Sources */,
+				E85F91D5E574CA21A1446C1C /* WiqoWorkHub.swift in Sources */,
+				E8938BBA3B534491EBAB51B2 /* SubscriptionView.swift in Sources */,
 				49B373C9F593CC5E80FE77F8 /* CanvasView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

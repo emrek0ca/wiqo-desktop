@@ -14,9 +14,12 @@ struct PaywallView: View {
     @State private var plans: [WiqoPlan] = []
     /// First launch of a new account: the plans are offered once, with a clear way to carry on for free.
     private let introMode: Bool
+    /// Inside the Abonelik page: just the plan cards, restore and terms, with no sheet chrome and no dismissing after a purchase.
+    private let embedded: Bool
 
-    init(subscriptionStore: SubscriptionStore, introMode: Bool = false) {
+    init(subscriptionStore: SubscriptionStore, introMode: Bool = false, embedded: Bool = false) {
         self.introMode = introMode
+        self.embedded = embedded
         self.subscriptionStore = subscriptionStore
         _storeKit = ObservedObject(wrappedValue: subscriptionStore.storeKit)
     }
@@ -24,32 +27,61 @@ struct PaywallView: View {
     private var currentTier: String { subscriptionStore.info.tier }
 
     var body: some View {
+        if embedded {
+            planContent
+                .task { await loadAll() }
+                .alert("İşlem tamamlanamadı", isPresented: errorBinding) {
+                    Button("Tamam", role: .cancel) {}
+                } message: {
+                    Text(errorMessage ?? "")
+                }
+        } else {
+            sheetBody
+        }
+    }
+
+    private var errorBinding: Binding<Bool> {
+        Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })
+    }
+
+    private func loadAll() async {
+        async let catalog = try? RovaBackendClient.fetchPlans()
+        await storeKit.loadProductsForPaywall()
+        await subscriptionStore.refreshIfStale(maxAge: 60)
+        if let fetched = await catalog, !fetched.isEmpty { plans = fetched }
+    }
+
+    private var planContent: some View {
+        VStack(spacing: RovaDesign.cardSpacing) {
+            if !embedded { header }
+            planCard(
+                title: "Free",
+                price: String(localized: "Ücretsiz"),
+                features: features(for: "free", fallback: (10, 1)),
+                isCurrent: currentTier == "free"
+            )
+            proCard
+            if currentTier == "business" {
+                planCard(
+                    title: "Business",
+                    price: nil,
+                    features: features(for: "business", fallback: (200, 20)),
+                    isCurrent: true
+                )
+            }
+            restoreButton
+            if introMode {
+                WiqoActionButton(title: String(localized: "Ücretsiz devam et"), kind: .secondary) { dismiss() }
+            }
+            legalFooter
+        }
+    }
+
+    private var sheetBody: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: RovaDesign.cardSpacing) {
-                    header
-                    planCard(
-                        title: "Free",
-                        price: String(localized: "Ücretsiz"),
-                        features: features(for: "free", fallback: (10, 1)),
-                        isCurrent: currentTier == "free"
-                    )
-                    proCard
-                    if currentTier == "business" {
-                        planCard(
-                            title: "Business",
-                            price: nil,
-                            features: features(for: "business", fallback: (200, 20)),
-                            isCurrent: true
-                        )
-                    }
-                    restoreButton
-                    if introMode {
-                        WiqoActionButton(title: String(localized: "Ücretsiz devam et"), kind: .secondary) { dismiss() }
-                    }
-                    legalFooter
-                }
-                .padding(RovaDesign.screenPadding)
+                planContent
+                    .padding(RovaDesign.screenPadding)
             }
             .background(RovaDesign.canvas)
             .navigationTitle("Planlar")
@@ -59,12 +91,7 @@ struct PaywallView: View {
                     Button(introMode ? "Şimdi değil" : "Kapat") { dismiss() }
                 }
             }
-            .task {
-                async let catalog = try? RovaBackendClient.fetchPlans()
-                await storeKit.loadProductsForPaywall()
-                await subscriptionStore.refreshIfStale(maxAge: 60)
-                if let fetched = await catalog, !fetched.isEmpty { plans = fetched }
-            }
+            .task { await loadAll() }
             .wiqoToastHost(level: 2)
             .alert("İşlem tamamlanamadı", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
                 Button("Tamam", role: .cancel) {}
@@ -255,7 +282,7 @@ struct PaywallView: View {
             let outcome = try await storeKit.purchasePro()
             switch outcome {
             case .purchased:
-                dismiss()
+                if !embedded { dismiss() }
                 WiqoToastCenter.shared.show(String(localized: "Pro aktif. Hoş geldin!"), kind: .success)
             case .pending:
                 errorMessage = String(localized: "Satın alma onay bekliyor (Ask to Buy). Onaylanınca otomatik aktif olacak.")
@@ -272,7 +299,7 @@ struct PaywallView: View {
         defer { isRestoring = false }
         do {
             try await storeKit.restore()
-            dismiss()
+            if !embedded { dismiss() }
             WiqoToastCenter.shared.show(String(localized: "Satın alımların geri yüklendi"), kind: .success)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription

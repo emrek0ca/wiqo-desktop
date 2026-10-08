@@ -410,7 +410,9 @@ final class StoreKitManager: ObservableObject {
         guard let product = proProduct else { throw PurchaseError.productUnavailable }
         isPurchasing = true
         defer { isPurchasing = false }
-        let result = try await product.purchase()
+        // The account's token goes with the purchase: Apple repeats it in every renewal and refund notice, so the account is known even if this phone never reports the purchase.
+        let token = try? await RovaBackendClient.fetchStoreKitAccountToken()
+        let result = try await product.purchase(options: token.map { [.appAccountToken($0)] } ?? [])
         switch result {
         case .success(let verification):
             try await apply(verification)

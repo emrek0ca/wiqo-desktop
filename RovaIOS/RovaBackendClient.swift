@@ -1643,6 +1643,14 @@ enum RovaBackendClient {
 
     // MARK: - Billing
 
+    /// The UUID handed to StoreKit with a purchase (Apple's appAccountToken) so notifications name this account.
+    static func fetchStoreKitAccountToken() async throws -> UUID {
+        struct Response: Decodable { let token: String }
+        let response = try await authorizedGet("billing/storekit/account-token", as: Response.self)
+        guard let token = UUID(uuidString: response.token) else { throw RovaBackendError.network(String(localized: "İstek anlaşılamadı.")) }
+        return token
+    }
+
     /// The plans the paywall lists, with the limits the backend enforces.
     static func fetchPlans() async throws -> [WiqoPlan] {
         struct Response: Decodable { let plans: [WiqoPlan] }

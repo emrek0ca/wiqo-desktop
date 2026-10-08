@@ -60,10 +60,20 @@ private struct WiqoActivityView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 18) {
                     if let error { Text(error).font(.footnote).foregroundStyle(WiqoTheme.red) }
                     if let feed {
-                        section(String(localized: "İlgi bekleyen"), items: feed.needsAttention)
+                        if feed.needsAttention.isEmpty && feed.upcoming.isEmpty && feed.recent.isEmpty {
+                            VStack(spacing: 12) {
+                                WiqoAgentMascot("general", size: 72)
+                                Text("Her şey yolunda").font(.headline)
+                                Text("Bekleyen bir şey yok. Wiqo bir iş yaptığında ya da senden bir şey istediğinde burada görürsün.")
+                                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 32)
+                        }
+                        section(String(localized: "Senin kararını bekleyen"), items: feed.needsAttention)
                         section(String(localized: "Yaklaşan"), items: feed.upcoming)
                         section(String(localized: "Son etkinlik"), items: feed.recent)
                     } else if error == nil {
@@ -127,87 +137,126 @@ private struct WiqoActivityView: View {
         }
     }
 
+    /// One group of the feed. A group with nothing in it is not drawn at all: the page shows only what exists.
+    @ViewBuilder
     private func section(_ title: String, items: [RovaBackendClient.ActivityItem]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline)
-            WiqoSettingsGroup {
-                if items.isEmpty {
-                    Text("Burada bir şey yok.").font(.subheadline).foregroundStyle(.secondary).padding(16)
-                } else {
-                    ForEach(items) { item in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 10) {
-                                if let persona = item.persona {
-                                    WiqoAgentMascot(persona, size: 34, isWorking: item.state == "running")
-                                }
-                                Text(item.title).font(.body.weight(.medium))
-                            }
-                            if let detail = item.detail { Text(detail).font(.subheadline).foregroundStyle(.secondary) }
-                            Text(label(for: item.state)).font(.caption).foregroundStyle(.secondary)
-                            if item.state == "needs_approval", item.ref?.type == "confirmation",
-                               let confirmation = item.confirmation {
-                                ForEach(confirmation.details.keys.sorted().filter { !$0.hasPrefix("wiqo") }, id: \.self) { key in
-                                    if let value = confirmation.details[key], !value.isEmpty {
-                                        HStack(alignment: .top, spacing: 8) {
-                                            Text(key).foregroundStyle(.secondary)
-                                            Spacer(minLength: 8)
-                                            Text(value).multilineTextAlignment(.trailing)
-                                        }
-                                        .font(.caption)
-                                    }
-                                }
-                                if confirmation.details["wiqoGrantId"] != nil {
-                                    let duration = terminalGrantDurations[confirmation.id] ?? 0
-                                    Menu {
-                                        Button("Yalnızca bu görev") { terminalGrantDurations[confirmation.id] = 0 }
-                                        Button("Bu klasör için 30 dakika") { terminalGrantDurations[confirmation.id] = 1_800 }
-                                        if (confirmation.details["wiqoGrantMaxSeconds"].flatMap(Int.init) ?? 1_800) > 1_800 {
-                                            Button("Bu klasör için 8 saat") { terminalGrantDurations[confirmation.id] = 8 * 60 * 60 }
-                                        }
-                                    } label: {
-                                        Label("İzin: \(duration == 0 ? "bu görev" : duration > 1_800 ? "8 saat" : "30 dakika")", systemImage: "lock.shield")
-                                            .font(.caption.weight(.medium))
-                                    }
-                                    .padding(.top, 4)
-                                }
-                                HStack {
-                                    Spacer()
-                                    Button("Reddet") { Task { await resolveConfirmation(confirmation, approved: false) } }
-                                        .buttonStyle(.bordered)
-                                        .disabled(resolvingConfirmationID == confirmation.id)
-                                    Button(resolvingConfirmationID == confirmation.id ? "İletiliyor…" : "Onayla") {
-                                        Task { await resolveConfirmation(confirmation, approved: true) }
-                                    }
-                                        .buttonStyle(.borderedProminent)
-                                        .disabled(resolvingConfirmationID == confirmation.id)
-                                }
-                                .font(.subheadline.weight(.semibold))
-                                .padding(.top, 4)
-                            }
-                            if canCancel(item) {
-                                HStack {
-                                    Spacer()
-                                    Button(cancellingTaskID == item.id ? "İptal ediliyor…" : "İptal") {
-                                        selectedPendingTask = item
-                                    }
-                                    .font(.subheadline.weight(.semibold))
-                                    .disabled(cancellingTaskID == item.id)
-                                }
-                                .padding(.top, 4)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
+        if !items.isEmpty {
+            WiqoSettingsGroup(title: title) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    activityRow(item)
                         .id(item.id)
+                        .overlay(alignment: .bottom) {
+                            if index < items.count - 1 { Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 62) }
+                        }
                         .overlay {
                             if item.id == "confirmation:\(focusConfirmationID?.uuidString.lowercased() ?? "")" {
-                                RoundedRectangle(cornerRadius: 16).stroke(RovaDesign.ink.opacity(0.25), lineWidth: 1.5)
+                                RoundedRectangle(cornerRadius: 12).stroke(WiqoTheme.orange.opacity(0.6), lineWidth: 1.5).padding(2)
                             }
                         }
-                    }
                 }
             }
         }
+    }
+
+    private func stateTint(_ state: String) -> Color {
+        switch state {
+        case "needs_approval", "needs_review", "waiting_for_pc": WiqoTheme.orange
+        case "running", "watching": WiqoTheme.green
+        case "failed": WiqoTheme.red
+        default: .secondary
+        }
+    }
+
+    private func activityRow(_ item: RovaBackendClient.ActivityItem) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Group {
+                    if let persona = item.persona {
+                        WiqoAgentMascot(persona, size: 38, isWorking: item.state == "running")
+                    } else {
+                        Image(systemName: item.state == "done" ? "checkmark.circle" : item.state == "failed" ? "xmark.circle" : item.state == "scheduled" ? "clock" : "circle.dotted")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(stateTint(item.state))
+                            .frame(width: 38, height: 38)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.title).font(.body.weight(.medium)).lineLimit(2)
+                    if let detail = item.detail, !detail.isEmpty {
+                        Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
+                    }
+                    Text(label(for: item.state))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(stateTint(item.state))
+                }
+                Spacer(minLength: 4)
+                if canCancel(item) {
+                    Button { selectedPendingTask = item } label: {
+                        Text(cancellingTaskID == item.id ? "İptal ediliyor…" : "İptal")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(WiqoTheme.red)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(WiqoTheme.tint(WiqoTheme.red), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(cancellingTaskID == item.id)
+                }
+            }
+            if item.state == "needs_approval", item.ref?.type == "confirmation", let confirmation = item.confirmation {
+                approvalControls(confirmation)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
+    @ViewBuilder
+    private func approvalControls(_ confirmation: RovaBackendClient.BackendConfirmation) -> some View {
+        let visible = confirmation.details.keys.sorted().filter { !$0.hasPrefix("wiqo") && !(confirmation.details[$0] ?? "").isEmpty }
+        VStack(alignment: .leading, spacing: 8) {
+            if !visible.isEmpty {
+                VStack(spacing: 4) {
+                    ForEach(visible, id: \.self) { key in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(key).foregroundStyle(.secondary)
+                            Spacer(minLength: 8)
+                            Text(confirmation.details[key] ?? "").multilineTextAlignment(.trailing)
+                        }
+                        .font(.caption)
+                    }
+                }
+                .padding(10)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            if confirmation.details["wiqoGrantId"] != nil {
+                let duration = terminalGrantDurations[confirmation.id] ?? 0
+                Menu {
+                    Button("Yalnızca bu görev") { terminalGrantDurations[confirmation.id] = 0 }
+                    Button("Bu klasör için 30 dakika") { terminalGrantDurations[confirmation.id] = 1_800 }
+                    if (confirmation.details["wiqoGrantMaxSeconds"].flatMap(Int.init) ?? 1_800) > 1_800 {
+                        Button("Bu klasör için 8 saat") { terminalGrantDurations[confirmation.id] = 8 * 60 * 60 }
+                    }
+                } label: {
+                    Label("İzin: \(duration == 0 ? "bu görev" : duration > 1_800 ? "8 saat" : "30 dakika")", systemImage: "lock.shield")
+                        .font(.caption.weight(.medium))
+                }
+            }
+            HStack(spacing: 10) {
+                Button { Task { await resolveConfirmation(confirmation, approved: false) } } label: {
+                    Text("Reddet").frame(maxWidth: .infinity, minHeight: 40)
+                }
+                .buttonStyle(.bordered)
+                Button { Task { await resolveConfirmation(confirmation, approved: true) } } label: {
+                    Text(resolvingConfirmationID == confirmation.id ? "İletiliyor…" : "Onayla").frame(maxWidth: .infinity, minHeight: 40)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .font(.subheadline.weight(.semibold))
+            .disabled(resolvingConfirmationID == confirmation.id)
+        }
+        .padding(.leading, 50)
     }
 
     private func label(for state: String) -> String {
@@ -361,53 +410,149 @@ private struct WiqoActivityView: View {
 
 private struct WiqoMemoryView: View {
     @State private var memories: [RovaBackendClient.StoredMemory] = []
+    @State private var candidates: [RovaBackendClient.MemoryCandidate] = []
     @State private var isLoading = true
     @State private var error: String?
     @State private var selected: RovaBackendClient.StoredMemory?
     @State private var confirmAll = false
+    @State private var query = ""
+
+    private var filtered: [RovaBackendClient.StoredMemory] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return needle.isEmpty ? memories : memories.filter { $0.content.lowercased().contains(needle) }
+    }
+
+    private static let kinds: [(id: String, title: String, icon: String)] = [
+        ("preference", String(localized: "Tercihlerin"), "slider.horizontal.3"),
+        ("fact", String(localized: "Senin hakkında"), "person.text.rectangle"),
+        ("note", String(localized: "Notlar"), "note.text")
+    ]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Wiqo'nun hatırladıklarını burada görebilir ve silebilirsin.")
-                    .font(.subheadline).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 18) {
                 if let error { Text(error).font(.footnote).foregroundStyle(WiqoTheme.red) }
-                if isLoading { ProgressView().frame(maxWidth: .infinity) }
-                else if memories.isEmpty { Text("Kayıtlı hafıza yok.").foregroundStyle(.secondary) }
-                else {
-                    WiqoSettingsGroup {
-                        ForEach(memories) { memory in
-                            HStack(alignment: .top, spacing: 12) {
-                                Text(memory.content).font(.body).frame(maxWidth: .infinity, alignment: .leading)
-                                Button("Sil") { selected = memory }.font(.subheadline)
-                            }
-                            .padding(16)
-                        }
+                if !candidates.isEmpty { suggestionCard }
+                if isLoading {
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 30)
+                } else if memories.isEmpty {
+                    emptyState
+                } else {
+                    if filtered.isEmpty {
+                        Text("“\(query)” için kayıt yok.").font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.top, 20)
                     }
-                    Button("Tüm hafızayı sil", role: .destructive) { confirmAll = true }
-                        .font(.subheadline)
+                    ForEach(Self.kinds, id: \.id) { kind in
+                        let items = filtered.filter { $0.kind == kind.id }
+                        if !items.isEmpty { group(kind.title, icon: kind.icon, items: items) }
+                    }
+                    let others = filtered.filter { memory in !Self.kinds.contains { $0.id == memory.kind } }
+                    if !others.isEmpty { group(String(localized: "Diğer"), icon: "tray", items: others) }
+                    actions
                 }
             }
-            .padding(RovaDesign.screenPadding)
+            .padding(.horizontal, RovaDesign.screenPadding)
+            .padding(.top, 8)
+            .padding(.bottom, 32)
         }
-        .background(RovaDesign.canvas)
+        .background(WiqoSettingsStyle.canvas)
         .navigationTitle("Hafıza")
         .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: String(localized: "Hafızada ara"))
         .task { await load() }
         .refreshable { await load() }
         .wiqoConfirmation(item: $selected, title: { _ in String(localized: "Bu hafıza kaydı silinsin mi?") }) { memory in
             Button("Kaydı sil", role: .destructive) { Task { await remove(memory.id) } }
-        } message: { _ in EmptyView() }
+        } message: { memory in Text(memory.content) }
         .wiqoConfirmation(String(localized: "Tüm hafıza silinsin mi?"), isPresented: $confirmAll) {
             Button("Tümünü sil", role: .destructive) { Task { await removeAll() } }
+        } message: {
+            Text("Wiqo senin hakkında öğrendiği her şeyi unutur. Bu geri alınamaz.")
         }
     }
 
+    /// Wiqo noticed something worth keeping and asks first: one tap to keep, one to drop.
+    private var suggestionCard: some View {
+        WiqoSettingsGroup(title: String(localized: "Wiqo bunları hatırlamayı öneriyor")) {
+            ForEach(Array(candidates.enumerated()), id: \.element.id) { index, candidate in
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "lightbulb").foregroundStyle(WiqoTheme.orange).frame(width: 28, height: 28)
+                    Text(candidate.content).font(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
+                    Button { Task { await dismiss(candidate) } } label: { Image(systemName: "xmark").font(.footnote.weight(.bold)).foregroundStyle(.secondary).frame(width: 36, height: 36) }
+                        .buttonStyle(.plain).accessibilityLabel("Önerme")
+                    Button { Task { await accept(candidate) } } label: { Image(systemName: "checkmark").font(.footnote.weight(.bold)).foregroundStyle(WiqoTheme.green).frame(width: 36, height: 36) }
+                        .buttonStyle(.plain).accessibilityLabel("Hatırla")
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .overlay(alignment: .bottom) { if index < candidates.count - 1 { Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 54) } }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "brain.head.profile").font(.system(size: 40)).foregroundStyle(.secondary)
+            Text("Henüz bir şey hatırlamıyorum").font(.headline)
+            Text("Tercihlerini, çevreni ve sık yaptığın işleri bana söyle; sonraki sohbetlerde hatırlarım. İstediğin zaman buradan silebilirsin.")
+                .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button("Bir şey hatırlat") { NotificationCenter.default.post(name: .wiqoStartChat, object: String(localized: "Şunu hatırla: ")) }
+                .buttonStyle(.wiqoPill(.accent))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+    }
+
+    private func group(_ title: String, icon: String, items: [RovaBackendClient.StoredMemory]) -> some View {
+        WiqoSettingsGroup(title: title) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, memory in
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: icon).font(.system(size: 15, weight: .medium)).foregroundStyle(.secondary).frame(width: 28, height: 28)
+                    Text(memory.content).font(.subheadline).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                    Menu {
+                        Button("Kopyala", systemImage: "doc.on.doc") { UIPasteboard.general.string = memory.content }
+                        Button("Sil", systemImage: "trash", role: .destructive) { selected = memory }
+                    } label: {
+                        Image(systemName: "ellipsis").font(.system(size: 15, weight: .semibold)).foregroundStyle(.secondary).frame(width: 36, height: 36).contentShape(Rectangle())
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .overlay(alignment: .bottom) { if index < items.count - 1 { Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 54) } }
+            }
+        }
+    }
+
+    private var actions: some View {
+        VStack(spacing: 10) {
+            Button { NotificationCenter.default.post(name: .wiqoStartChat, object: String(localized: "Şunu hatırla: ")) } label: {
+                Label("Yeni bir şey hatırlat", systemImage: "plus").frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            Button(role: .destructive) { confirmAll = true } label: {
+                Text("Tüm hafızayı sil").font(.subheadline).frame(maxWidth: .infinity, minHeight: 40)
+            }
+        }
+        .padding(.top, 4)
+    }
+
     private func load() async {
-        isLoading = true
+        isLoading = memories.isEmpty
         defer { isLoading = false }
-        do { memories = try await RovaBackendClient.fetchStoredMemories(); error = nil }
+        async let stored = RovaBackendClient.fetchStoredMemories()
+        async let suggested = try? RovaBackendClient.fetchMemoryCandidates()
+        do { memories = try await stored; error = nil }
         catch { self.error = String(localized: "Hafıza yüklenemedi. Yeniden denemek için aşağı çek.") }
+        candidates = ((await suggested) ?? candidates).filter { $0.status == "pending" }
+    }
+
+    private func accept(_ candidate: RovaBackendClient.MemoryCandidate) async {
+        do { try await RovaBackendClient.acceptMemoryCandidate(id: candidate.id); candidates.removeAll { $0.id == candidate.id }; await load() }
+        catch { self.error = String(localized: "Kaydedilemedi. Tekrar dene.") }
+    }
+
+    private func dismiss(_ candidate: RovaBackendClient.MemoryCandidate) async {
+        do { try await RovaBackendClient.dismissMemoryCandidate(id: candidate.id); candidates.removeAll { $0.id == candidate.id } }
+        catch { self.error = String(localized: "İşlem tamamlanamadı. Tekrar dene.") }
     }
 
     private func remove(_ id: Int) async {
@@ -426,40 +571,88 @@ private struct WiqoGoalsView: View {
     @State private var isLoading = true
     @State private var error: String?
 
+    private var active: [RovaBackendClient.RovaGoal] { goals.filter { $0.total == 0 || $0.done < $0.total } }
+    private var completed: [RovaBackendClient.RovaGoal] { goals.filter { $0.total > 0 && $0.done >= $0.total } }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Hedeflerini sohbette Wiqo'ya söyle. Alt görevler tamamlandıkça ilerleme burada güncellenir.")
-                    .font(.subheadline).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 18) {
                 if let error { Text(error).font(.footnote).foregroundStyle(WiqoTheme.red) }
-                if isLoading { ProgressView().frame(maxWidth: .infinity) }
-                else if goals.isEmpty { Text("Henüz hedef yok.").foregroundStyle(.secondary) }
-                else {
-                    WiqoSettingsGroup {
-                        ForEach(goals) { goal in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(goal.title).font(.body.weight(.medium))
-                                ProgressView(value: Double(goal.done), total: Double(max(1, goal.total)))
-                                Text("\(goal.done) / \(goal.total) alt görev tamamlandı")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(16)
-                        }
+                if isLoading {
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 30)
+                } else if goals.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "target").font(.system(size: 40)).foregroundStyle(.secondary)
+                        Text("Henüz hedef yok").font(.headline)
+                        Text("Bir hedef söyle; Wiqo alt görevlere bölsün ve ilerlemeni burada göstersin.")
+                            .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Button("Hedef belirle") { NotificationCenter.default.post(name: .wiqoStartChat, object: String(localized: "Hedefim: ")) }
+                            .buttonStyle(.wiqoPill(.accent))
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                } else {
+                    if !active.isEmpty { section(String(localized: "Devam eden"), goals: active) }
+                    if !completed.isEmpty { section(String(localized: "Tamamlanan"), goals: completed) }
+                    Button { NotificationCenter.default.post(name: .wiqoStartChat, object: String(localized: "Hedefim: ")) } label: {
+                        Label("Yeni hedef", systemImage: "plus").frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
-            .padding(RovaDesign.screenPadding)
+            .padding(.horizontal, RovaDesign.screenPadding)
+            .padding(.top, 8)
+            .padding(.bottom, 32)
         }
-        .background(RovaDesign.canvas)
+        .background(WiqoSettingsStyle.canvas)
         .navigationTitle("Hedefler")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
     }
 
+    private func section(_ title: String, goals: [RovaBackendClient.RovaGoal]) -> some View {
+        WiqoSettingsGroup(title: title) {
+            ForEach(Array(goals.enumerated()), id: \.element.id) { index, goal in
+                HStack(spacing: 14) {
+                    ring(goal)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(goal.title).font(.body.weight(.medium)).lineLimit(2)
+                        Text(goal.total == 0 ? String(localized: "Henüz alt görev yok") : String(localized: "\(goal.done) / \(goal.total) alt görev tamamlandı"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                    if goal.total == 0 || goal.done < goal.total {
+                        Button {
+                            NotificationCenter.default.post(name: .wiqoStartChat, object: String(localized: "“\(goal.title)” hedefim için sıradaki adımı planla"))
+                        } label: {
+                            Text("İlerlet").font(.footnote.weight(.semibold)).foregroundStyle(Color.accentColor)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(WiqoTheme.tint(Color.accentColor), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .overlay(alignment: .bottom) { if index < goals.count - 1 { Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 70) } }
+            }
+        }
+    }
+
+    private func ring(_ goal: RovaBackendClient.RovaGoal) -> some View {
+        let fraction = goal.total > 0 ? Double(goal.done) / Double(goal.total) : 0
+        return ZStack {
+            Circle().stroke(Color.primary.opacity(0.1), lineWidth: 4)
+            Circle().trim(from: 0, to: fraction).stroke(fraction >= 1 ? WiqoTheme.green : Color.accentColor, style: StrokeStyle(lineWidth: 4, lineCap: .round)).rotationEffect(.degrees(-90))
+            if fraction >= 1 { Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundStyle(WiqoTheme.green) }
+            else { Text("\(Int(fraction * 100))%").font(.system(size: 10, weight: .semibold).monospacedDigit()).foregroundStyle(.secondary) }
+        }
+        .frame(width: 40, height: 40)
+    }
+
     private func load() async {
-        isLoading = true
+        isLoading = goals.isEmpty
         defer { isLoading = false }
         do { goals = try await RovaBackendClient.fetchGoals(); error = nil }
         catch { self.error = String(localized: "Hedefler yüklenemedi. Yeniden denemek için aşağı çek.") }
@@ -507,6 +700,14 @@ struct WiqoHomeView: View {
                     .accessibilityHidden(mode != .chat)
                 ActView()
                     .onReceive(actHandoffs) { _ in mode = .act }
+                    .onReceive(NotificationCenter.default.publisher(for: .wiqoStartChat)) { note in
+                        guard let prompt = note.object as? String, !prompt.isEmpty else { return }
+                        showSettings = false
+                        mode = .chat
+                        conversations = CopilotConversationStore.all()
+                        draftPrompt = prompt
+                        conversationID = CopilotConversationStore.newIdentifier()
+                    }
                     .onReceive(actProjectOpens) { _ in mode = .act }
                     .opacity(mode == .act ? 1 : 0)
                     .allowsHitTesting(mode == .act)
@@ -1164,17 +1365,15 @@ struct SettingsView: View {
     @ObservedObject var authSession: AuthSessionStore
     @ObservedObject var profileStore: ProfileStore
     @ObservedObject var subscriptionStore: SubscriptionStore
-    @State private var tasks: [RovaBackendClient.RovaTask] = []
-    @State private var automations: [RovaBackendClient.RovaAutomation] = []
-    @State private var reviewItems: [RovaBackendClient.AutomationReviewItem] = []
-    @State private var taskAutomationError: String?
+    /// What the Görevler row says at a glance: how many things are running and how many need a look.
+    @State private var runningCount = 0
+    @State private var attentionCount = 0
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
     @State private var oauthProviders: [RovaBackendClient.OAuthProviderInfo] = RovaBackendClient.OAuthProviderInfo.builtIn
     @State private var oauthConnections: [RovaBackendClient.OAuthConnection] = []
     @State private var showingApps = false
-    @State private var showingPaywall = false
     @State private var showingSignOutConfirmation = false
     @State private var styleError: String?
 
@@ -1183,6 +1382,7 @@ struct SettingsView: View {
             ScrollView {
                 VStack(spacing: 18) {
                     profileCard
+                    subscriptionGroup
                     connectionsGroup
                     styleGroup
                     workGroup
@@ -1212,16 +1412,13 @@ struct SettingsView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $showingPaywall) {
-                PaywallView(subscriptionStore: subscriptionStore)
-            }
             .wiqoConfirmation(String(localized: "Wiqo hesabından çıkmak istediğine emin misin?"), isPresented: $showingSignOutConfirmation) {
                 Button("Çıkış yap", role: .destructive) { authSession.signOut(); dismiss() }
             }
         }
         .wiqoToastHost(level: 1)
         .task {
-            async let work: Void = loadTasksAndAutomations()
+            async let work: Void = loadWorkSummary()
             async let connections: Void = loadConnections()
             async let plan: Void = subscriptionStore.refreshIfStale(maxAge: 60)
             _ = await (work, connections, plan)
@@ -1249,45 +1446,42 @@ struct SettingsView: View {
                             .lineLimit(1)
                     }
                     Spacer(minLength: 8)
-                    Text(info.label)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(WiqoTheme.tint(Color.accentColor), in: Capsule())
                     WiqoChevron()
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            HStack(spacing: 14) {
-                compactUsage(String(localized: "Mesaj"), info.usage.messages)
-                compactUsage(String(localized: "Görsel"), info.usage.images)
-                if info.tier == "free" {
-                    Button("Yükselt") { showingPaywall = true }
-                        .buttonStyle(.wiqoPill(.accent))
-                }
-            }
         }
         .padding(14)
         .wiqoGlass()
     }
 
-    private func compactUsage(_ title: String, _ counter: SubscriptionInfo.UsageCounter) -> some View {
-        let ratio = counter.limit > 0 ? min(1, Double(counter.used) / Double(counter.limit)) : 0
-        return VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(title).font(.caption2).foregroundStyle(.secondary)
-                Spacer(minLength: 4)
-                Text("\(counter.used)/\(counter.limit)").font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+    private var subscriptionGroup: some View {
+        let info = subscriptionStore.info
+        return WiqoSettingsGroup {
+            NavigationLink {
+                SubscriptionView(subscriptionStore: subscriptionStore)
+            } label: {
+                WiqoRow(
+                    systemImage: "sparkles",
+                    title: String(localized: "Abonelik"),
+                    subtitle: String(localized: "Bugün \(info.usage.messages.used)/\(info.usage.messages.limit) mesaj"),
+                    showsDivider: false
+                ) {
+                    HStack(spacing: 6) {
+                        Text(info.tier == "free" ? String(localized: "Pro'ya geç") : info.label)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(info.tier == "free" ? Color.accentColor : Color.secondary)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(WiqoTheme.tint(info.tier == "free" ? Color.accentColor : Color.secondary), in: Capsule())
+                        WiqoChevron()
+                    }
+                }
             }
-            ProgressView(value: ratio)
-                .tint(ratio > 0.85 ? WiqoTheme.orange : Color.accentColor)
+            .buttonStyle(WiqoRowButtonStyle())
         }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Bugünkü \(title.lowercased()) kullanımı \(counter.used) / \(counter.limit)")
     }
 
     // MARK: Connections
@@ -1421,14 +1615,21 @@ struct SettingsView: View {
 
     private var workGroup: some View {
         WiqoSettingsGroup(title: String(localized: "Wiqo'nun işleri")) {
-            NavigationLink { WiqoMemoryView() } label: {
-                WiqoRow(systemImage: "brain.head.profile", title: String(localized: "Hafıza"), showsDivider: true)
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-            NavigationLink { tasksSettingsPage } label: {
-                WiqoRow(systemImage: "checklist", title: String(localized: "Görevler ve otomasyonlar"), showsDivider: true) {
+            NavigationLink { WiqoWorkView() } label: {
+                WiqoRow(systemImage: "checklist", title: String(localized: "Görevler"), subtitle: String(localized: "Çalışanlar, otomasyonlar, ajanlar"), showsDivider: true) {
                     HStack(spacing: 6) {
-                        Text(taskNavigationValue).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        if attentionCount > 0 {
+                            Text("\(attentionCount) incele")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(WiqoTheme.orange)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(WiqoTheme.tint(WiqoTheme.orange), in: Capsule())
+                        } else if runningCount > 0 {
+                            Text("\(runningCount) çalışıyor")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                         WiqoChevron()
                     }
                 }
@@ -1438,6 +1639,10 @@ struct SettingsView: View {
                 WiqoRow(systemImage: "target", title: String(localized: "Hedefler"), showsDivider: true)
             }
             .buttonStyle(WiqoRowButtonStyle())
+            NavigationLink { WiqoMemoryView() } label: {
+                WiqoRow(systemImage: "brain.head.profile", title: String(localized: "Hafıza"), showsDivider: true)
+            }
+            .buttonStyle(WiqoRowButtonStyle())
             NavigationLink { WiqoActivityView(model: model) } label: {
                 WiqoRow(systemImage: "clock.arrow.circlepath", title: String(localized: "Etkinlik"), showsDivider: false)
             }
@@ -1445,10 +1650,12 @@ struct SettingsView: View {
         }
     }
 
-    private var taskNavigationValue: String {
-        if !reviewItems.isEmpty { return String(localized: "İncele") }
-        if !activeAutomations.isEmpty { return "\(activeAutomations.count) aktif" }
-        return pendingTasks.isEmpty ? "" : "\(pendingTasks.count) bekliyor"
+    private func loadWorkSummary() async {
+        async let tasks = try? RovaBackendClient.fetchAgentTasks()
+        async let review = try? RovaBackendClient.fetchAutomationReview()
+        let (taskList, reviewList) = await (tasks, review)
+        runningCount = taskList?.filter(\.isActive).count ?? runningCount
+        attentionCount = (reviewList?.count ?? 0) + (taskList?.filter { $0.waiting != nil }.count ?? 0)
     }
 
     // MARK: Support and sign-out
@@ -1466,23 +1673,6 @@ struct SettingsView: View {
         }
     }
 
-    private var tasksSettingsPage: some View {
-        ScrollView {
-            VStack(spacing: 18) {
-                if taskAutomationError != nil || !pendingTasks.isEmpty || !activeAutomations.isEmpty || !reviewItems.isEmpty {
-                    tasksAutomationsSection
-                } else {
-                    ContentUnavailableView("Görev yok", systemImage: "checklist")
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(RovaDesign.screenPadding)
-        }
-        .background(WiqoSettingsStyle.canvas)
-        .navigationTitle("Görevler ve otomasyonlar")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
     private var legalPage: some View {
         ScrollView {
             legalSection
@@ -1491,160 +1681,6 @@ struct SettingsView: View {
         .background(WiqoSettingsStyle.canvas)
         .navigationTitle("Destek ve yasal")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    // MARK: Tasks and automations
-
-    private var pendingTasks: [RovaBackendClient.RovaTask] {
-        tasks.filter { $0.status == "pending" }
-    }
-
-    private var activeAutomations: [RovaBackendClient.RovaAutomation] {
-        automations.filter(\.isActive)
-    }
-
-    private var tasksAutomationsSection: some View {
-        WiqoSettingsGroup(title: String(localized: "Görevler ve otomasyonlar")) {
-            NavigationLink {
-                AgentTasksView()
-            } label: {
-                WiqoRow(systemImage: "point.3.connected.trianglepath.dotted", title: String(localized: "Arka plan görevleri"), subtitle: String(localized: "Çalışan ve biten uzun işler"), showsDivider: true) { EmptyView() }
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-            NavigationLink {
-                NamedAgentsView()
-            } label: {
-                WiqoRow(systemImage: "person.2.circle", title: String(localized: "Ajanlarım"), subtitle: String(localized: "Rol, rutin ve hafıza"), showsDivider: true) { EmptyView() }
-            }
-            .buttonStyle(WiqoRowButtonStyle())
-            if let taskAutomationError {
-                Text(taskAutomationError)
-                    .font(.footnote)
-                    .foregroundStyle(WiqoTheme.red)
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            ForEach(pendingTasks) { task in
-                WiqoRow(
-                    systemImage: "circle",
-                    tint: .secondary,
-                    title: task.title,
-                    showsDivider: !activeAutomations.isEmpty || task.id != pendingTasks.last?.id
-                ) { EmptyView() }
-            }
-            ForEach(activeAutomations) { automation in
-                HStack(spacing: 0) {
-                    NavigationLink {
-                        AutomationDetailView(automation: automation)
-                    } label: {
-                        WiqoRow(
-                            systemImage: "clock.arrow.circlepath",
-                            title: automation.prompt,
-                            subtitle: automation.cron,
-                            showsDivider: false
-                        ) { EmptyView() }
-                    }
-                    .buttonStyle(WiqoRowButtonStyle())
-                    Button {
-                        Task { await cancel(automation) }
-                    } label: {
-                        Menu {
-                            Button("Şimdi çalıştır") {
-                                Task { await runNow(automation) }
-                            }
-                            Button("Duraklat") {
-                                Task { await pause(automation) }
-                            }
-                            Button("İptal et", role: .destructive) {
-                                Task { await cancel(automation) }
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Otomasyon seçenekleri")
-                }
-                .overlay(alignment: .bottom) {
-                    if automation.id != activeAutomations.last?.id {
-                        Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 56)
-                    }
-                }
-            }
-            ForEach(reviewItems) { item in
-                reviewRow(item, showsDivider: item.id != reviewItems.last?.id)
-            }
-        }
-    }
-
-    private func reviewRow(_ item: RovaBackendClient.AutomationReviewItem, showsDivider: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: item.status == "needs_attention" ? "exclamationmark.circle" : "clock")
-                    .foregroundStyle(item.status == "needs_attention" ? WiqoTheme.orange : .secondary)
-                    .frame(width: 22)
-                Text(item.title)
-                    .font(.subheadline.weight(.medium))
-                    .lineLimit(2)
-                Spacer(minLength: 4)
-                Menu {
-                    if item.status == "needs_attention" {
-                        Button("Tamamlandı") { Task { await resolve(item, as: "completed") } }
-                        Button("Başarısız") { Task { await resolve(item, as: "failed") } }
-                    } else {
-                        Button("Tekrar dene") { Task { await retry(item) } }
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if let message = item.error ?? item.reply, !message.isEmpty {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .bottom) {
-            if showsDivider { Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 46) }
-        }
-    }
-
-    private func cancel(_ automation: RovaBackendClient.RovaAutomation) async {
-        do {
-            try await RovaBackendClient.cancelAutomation(id: automation.id)
-            await loadTasksAndAutomations()
-            WiqoToastCenter.shared.show(String(localized: "Otomasyon iptal edildi"), kind: .success)
-        } catch {
-            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Otomasyon iptal edilemedi.")
-        }
-    }
-
-    private func runNow(_ automation: RovaBackendClient.RovaAutomation) async {
-        do {
-            _ = try await RovaBackendClient.runAutomationNow(id: automation.id)
-            await loadTasksAndAutomations()
-            WiqoToastCenter.shared.show(String(localized: "Çalıştırıyorum"), kind: .success)
-        } catch {
-            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Otomasyon başlatılamadı.")
-        }
-    }
-
-    private func pause(_ automation: RovaBackendClient.RovaAutomation) async {
-        do {
-            _ = try await RovaBackendClient.pauseAutomation(id: automation.id)
-            await loadTasksAndAutomations()
-            WiqoToastCenter.shared.show(String(localized: "Otomasyon duraklatıldı"), kind: .success)
-        } catch {
-            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Otomasyon duraklatılamadı.")
-        }
     }
 
     // MARK: Legal and account
@@ -1669,40 +1705,6 @@ struct SettingsView: View {
             }
         }
         .buttonStyle(WiqoRowButtonStyle())
-    }
-
-    private func loadTasksAndAutomations() async {
-        do {
-            async let fetchedTasks = RovaBackendClient.fetchTasks()
-            async let fetchedAutomations = RovaBackendClient.fetchAutomations()
-            async let fetchedReview = RovaBackendClient.fetchAutomationReview()
-            tasks = try await fetchedTasks
-            automations = try await fetchedAutomations
-            reviewItems = (try? await fetchedReview) ?? []
-            taskAutomationError = nil
-        } catch {
-            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Görev ve otomasyonlar yüklenemedi.")
-        }
-    }
-
-    private func retry(_ item: RovaBackendClient.AutomationReviewItem) async {
-        do {
-            _ = try await RovaBackendClient.retryAutomationRun(automationID: item.automationId, runID: item.runId)
-            await loadTasksAndAutomations()
-            WiqoToastCenter.shared.show(String(localized: "Tekrar deniyorum"), kind: .success)
-        } catch {
-            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Tekrar denenemedi.")
-        }
-    }
-
-    private func resolve(_ item: RovaBackendClient.AutomationReviewItem, as resolution: String) async {
-        do {
-            _ = try await RovaBackendClient.resolveUnknownAutomationRun(automationID: item.automationId, runID: item.runId, resolution: resolution)
-            await loadTasksAndAutomations()
-            WiqoToastCenter.shared.show(String(localized: "Kaydedildi"), kind: .success)
-        } catch {
-            taskAutomationError = (error as? LocalizedError)?.errorDescription ?? String(localized: "Sonuç kaydedilemedi.")
-        }
     }
 }
 
