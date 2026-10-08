@@ -483,6 +483,8 @@ struct WiqoHomeView: View {
     @State private var showPCSettings = false
     @State private var showTemplates = false
     @State private var showWelcome = false
+    /// The plans, offered once to a new account before the PC welcome.
+    @State private var showFirstPlans = false
     @State private var showQuickPairing = false
     @State private var openQuickPairingAfterWelcome = false
     @State private var openFirstCommandAfterPairing = false
@@ -641,6 +643,9 @@ struct WiqoHomeView: View {
                 conversationID = CopilotConversationStore.newIdentifier()
             }
         }
+        .sheet(isPresented: $showFirstPlans, onDismiss: presentWelcomeIfNeeded) {
+            PaywallView(subscriptionStore: subscriptionStore, introMode: true)
+        }
         .sheet(isPresented: $showWelcome, onDismiss: completeWelcome) {
             WiqoWelcomeView(
                 onDismiss: { showWelcome = false },
@@ -697,9 +702,28 @@ struct WiqoHomeView: View {
         return "wiqo.welcome.completed.\(identity)"
     }
 
+    private var plansOfferKey: String? {
+        let identity = RovaBackendClient.currentUserID ?? RovaBackendClient.currentUserEmail
+        guard let identity, !identity.isEmpty else { return nil }
+        return "wiqo.plans.offered.\(identity)"
+    }
+
     private func prepareWelcomeIfNeeded() {
         guard !didCheckWelcome else { return }
         didCheckWelcome = true
+        Task { @MainActor in
+            // The account's real plan first: a Pro account on a new phone is not offered Pro.
+            await subscriptionStore.refreshIfStale(maxAge: 30)
+            if let key = plansOfferKey, !UserDefaults.standard.bool(forKey: key), subscriptionStore.info.tier == "free" {
+                UserDefaults.standard.set(true, forKey: key)
+                showFirstPlans = true
+                return
+            }
+            presentWelcomeIfNeeded()
+        }
+    }
+
+    private func presentWelcomeIfNeeded() {
         guard let key = welcomeCompletionKey,
               !UserDefaults.standard.bool(forKey: key),
               !model.isPaired else { return }

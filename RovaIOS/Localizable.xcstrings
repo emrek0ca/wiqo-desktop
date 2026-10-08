@@ -18943,6 +18943,88 @@
         }
       }
     },
+    "Günde %lld görsel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld images per day"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Bilder pro Tag"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld imágenes al día"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld images par jour"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld صورة في اليوم"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "График %lld изображений"
+          }
+        }
+      }
+    },
+    "Günde %lld mesaj": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld messages per day"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Nachrichten pro Tag"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld mensajes al día"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld messages par jour"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld رسالة في اليوم"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "График %lld сообщений"
+          }
+        }
+      }
+    },
     "Günde 1 görsel": {
       "extractionState": "manual",
       "localizations": {
@@ -44404,6 +44486,47 @@
         }
       }
     },
+    "Wiqo'ya hoş geldin": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Welcome to Wiqo"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Willkommen bei Wiqo"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bienvenido a Wiqo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bienvenue sur Wiqo"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مرحباً بك في Wiqo"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добро пожаловать в Wiqo"
+          }
+        }
+      }
+    },
     "Wiqo'yu deniyorum, davet kodumla katıl ve ikimiz de Pro kazanalım: %@": {
       "extractionState": "manual",
       "localizations": {
@@ -49443,6 +49566,88 @@
           "stringUnit": {
             "state": "translated",
             "value": "Бесплатно"
+          }
+        }
+      }
+    },
+    "Ücretsiz devam et": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue for free"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kostenlos fortsetzen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuar gratis"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuer gratuitement"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "استمر مجاناً"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Продолжить бесплатно"
+          }
+        }
+      }
+    },
+    "Ücretsiz plan hazır. Daha fazla mesaj ve görsel istersen Pro'ya şimdi geçebilirsin.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free plan ready. If you want more messages and images, upgrade to Pro now."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kostenloser Plan fertig. Wenn du mehr Nachrichten und Bilder möchtest, kannst du jetzt auf Pro wechseln."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan gratuito listo. Si quieres más mensajes e imágenes, puedes pasar a Pro ahora."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan gratuit prêt. Si vous voulez plus de messages et d’images, passez à Pro dès maintenant."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الخطة المجانية جاهزة. إذا كنت تريد المزيد من الرسائل والصور، يمكنك الترقية إلى Pro الآن."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Бесплатный план готов. Если хотите больше сообщений и изображений, перейдите на Pro сейчас."
           }
         }
       }

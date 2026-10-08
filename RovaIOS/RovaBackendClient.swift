@@ -1643,6 +1643,12 @@ enum RovaBackendClient {
 
     // MARK: - Billing
 
+    /// The plans the paywall lists, with the limits the backend enforces.
+    static func fetchPlans() async throws -> [WiqoPlan] {
+        struct Response: Decodable { let plans: [WiqoPlan] }
+        return try await authorizedGet("billing/plans", as: Response.self).plans
+    }
+
     static func fetchSubscription() async throws -> SubscriptionInfo {
         try await authorizedGet("billing/subscription", as: SubscriptionInfo.self)
     }

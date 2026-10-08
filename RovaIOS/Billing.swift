@@ -22,6 +22,16 @@ enum WiqoWebsite {
 /// Mirrors the backend's `GET /billing/subscription` response exactly - the single source of
 /// truth for plan limits and today's usage. Never compute limits locally; the backend is also
 /// what actually enforces them.
+/// One plan as the backend lists it (limits come from the same table that enforces them).
+struct WiqoPlan: Decodable, Equatable, Identifiable {
+    let id: String
+    let label: String
+    let messagesPerDay: Int
+    let imagesPerDay: Int
+    let pcAllowed: Bool
+    let purchasableInApp: Bool
+}
+
 struct SubscriptionInfo: Codable, Equatable {
     struct UsageCounter: Codable, Equatable {
         let used: Int

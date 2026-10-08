@@ -1279,7 +1279,12 @@
   "şifre": "password",
   "“%@” bölgesini bulamadım.": "Could not find the “%@” region.",
   "%@ arşivinde %@ yok": "%@ archive has no %@",
-  "%lld yerde yazı ile zemin arasındaki kontrast düşük": "Contrast between text and background is low at %lld locations"
+  "%lld yerde yazı ile zemin arasındaki kontrast düşük": "Contrast between text and background is low at %lld locations",
+  "Günde %lld görsel": "%lld images per day",
+  "Günde %lld mesaj": "%lld messages per day",
+  "Wiqo'ya hoş geldin": "Welcome to Wiqo",
+  "Ücretsiz devam et": "Continue for free",
+  "Ücretsiz plan hazır. Daha fazla mesaj ve görsel istersen Pro'ya şimdi geçebilirsin.": "Free plan ready. If you want more messages and images, upgrade to Pro now."
  },
  "de": {
   "Arkadaşını davet et": "Lade deinen Freund ein",
@@ -2561,7 +2566,12 @@
   "Şu an başlatılamadı.": "Der Start ist gerade nicht möglich.",
   "şifre": "Passwort",
   "“%@” bölgesini bulamadım.": "„%@“-Bereich konnte nicht gefunden werden.",
-  "%lld yerde yazı ile zemin arasındaki kontrast düşük": "%lld: Kontrast zwischen Text und Hintergrund ist zu niedrig"
+  "%lld yerde yazı ile zemin arasındaki kontrast düşük": "%lld: Kontrast zwischen Text und Hintergrund ist zu niedrig",
+  "Günde %lld görsel": "%lld Bilder pro Tag",
+  "Günde %lld mesaj": "%lld Nachrichten pro Tag",
+  "Wiqo'ya hoş geldin": "Willkommen bei Wiqo",
+  "Ücretsiz devam et": "Kostenlos fortsetzen",
+  "Ücretsiz plan hazır. Daha fazla mesaj ve görsel istersen Pro'ya şimdi geçebilirsin.": "Kostenloser Plan fertig. Wenn du mehr Nachrichten und Bilder möchtest, kannst du jetzt auf Pro wechseln."
  },
  "es": {
   "\"%@\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.": "\"%@\": se eliminarán los archivos y el historial de todos los dispositivos; irreversible.",
@@ -3843,7 +3853,12 @@
   "“%@” projesinin kopyası": "Copia del proyecto “%@”",
   "%@ süreli": "%@ de duración",
   "%lld adımda tamamlandı · %@": "%lld pasos completados · %@",
-  "%lld yerde yazı ile zemin arasındaki kontrast düşük": "%lld contraste bajo entre texto y fondo"
+  "%lld yerde yazı ile zemin arasındaki kontrast düşük": "%lld contraste bajo entre texto y fondo",
+  "Günde %lld görsel": "%lld imágenes al día",
+  "Günde %lld mesaj": "%lld mensajes al día",
+  "Wiqo'ya hoş geldin": "Bienvenido a Wiqo",
+  "Ücretsiz devam et": "Continuar gratis",
+  "Ücretsiz plan hazır. Daha fazla mesaj ve görsel istersen Pro'ya şimdi geçebilirsin.": "Plan gratuito listo. Si quieres más mensajes e imágenes, puedes pasar a Pro ahora."
  },
  "fr": {
   "Arkadaşını davet et": "Invite a friend",
@@ -5125,7 +5140,12 @@
   "Şu an başlatılamadı.": "Impossible de démarrer pour le moment.",
   "şifre": "mot de passe",
   "“%@” bölgesini bulamadım.": "Je n'ai pas trouvé la région « %@ ».",
-  "%lld yerde yazı ile zemin arasındaki kontrast düşük": "Le contraste entre le texte et le fond est faible à %lld"
+  "%lld yerde yazı ile zemin arasındaki kontrast düşük": "Le contraste entre le texte et le fond est faible à %lld",
+  "Günde %lld görsel": "%lld images par jour",
+  "Günde %lld mesaj": "%lld messages par jour",
+  "Wiqo'ya hoş geldin": "Bienvenue sur Wiqo",
+  "Ücretsiz devam et": "Continuer gratuitement",
+  "Ücretsiz plan hazır. Daha fazla mesaj ve görsel istersen Pro'ya şimdi geçebilirsin.": "Plan gratuit prêt. Si vous voulez plus de messages et d’images, passez à Pro dès maintenant."
  },
  "ar": {
   "+%lld adım": "+%lld خطوة",
@@ -6407,7 +6427,12 @@
   "şifre": "كلمة المرور",
   "“%@” bölgesini bulamadım.": "لم أجد منطقة “%@”",
   "%lld yerde yazı ile zemin arasındaki kontrast düşük": "%lld في مكان ما، التباين بين النص والخلفية منخفض",
-  "aylık %@ karşılığında": "لكل شهر %@ مقابل"
+  "aylık %@ karşılığında": "لكل شهر %@ مقابل",
+  "Günde %lld görsel": "%lld صورة في اليوم",
+  "Günde %lld mesaj": "%lld رسالة في اليوم",
+  "Wiqo'ya hoş geldin": "مرحباً بك في Wiqo",
+  "Ücretsiz devam et": "استمر مجاناً",
+  "Ücretsiz plan hazır. Daha fazla mesaj ve görsel istersen Pro'ya şimdi geçebilirsin.": "الخطة المجانية جاهزة. إذا كنت تريد المزيد من الرسائل والصور، يمكنك الترقية إلى Pro الآن."
  },
  "ru": {
   "Arkadaşını davet et": "Пригласить друга",
@@ -7689,6 +7714,11 @@
   "şifre": "пароль",
   "“%@” bölgesini bulamadım.": "Не удалось найти регион «%@»",
   "%@ adresine bir kod gönderildi. Gelmediyse spam/gereksiz klasörünü kontrol et.": "%@ адресу был отправлен код. Если не пришёл, проверь папку спам/нежелательная.",
-  "%lld yerde yazı ile zemin arasındaki kontrast düşük": "%lld месте контраст между текстом и фоном низок"
+  "%lld yerde yazı ile zemin arasındaki kontrast düşük": "%lld месте контраст между текстом и фоном низок",
+  "Günde %lld görsel": "График %lld изображений",
+  "Günde %lld mesaj": "График %lld сообщений",
+  "Wiqo'ya hoş geldin": "Добро пожаловать в Wiqo",
+  "Ücretsiz devam et": "Продолжить бесплатно",
+  "Ücretsiz plan hazır. Daha fazla mesaj ve görsel istersen Pro'ya şimdi geçebilirsin.": "Бесплатный план готов. Если хотите больше сообщений и изображений, перейдите на Pro сейчас."
  }
 }

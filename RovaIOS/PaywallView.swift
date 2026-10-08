@@ -11,8 +11,12 @@ struct PaywallView: View {
 
     @State private var isRestoring = false
     @State private var errorMessage: String?
+    @State private var plans: [WiqoPlan] = []
+    /// First launch of a new account: the plans are offered once, with a clear way to carry on for free.
+    private let introMode: Bool
 
-    init(subscriptionStore: SubscriptionStore) {
+    init(subscriptionStore: SubscriptionStore, introMode: Bool = false) {
+        self.introMode = introMode
         self.subscriptionStore = subscriptionStore
         _storeKit = ObservedObject(wrappedValue: subscriptionStore.storeKit)
     }
@@ -27,7 +31,7 @@ struct PaywallView: View {
                     planCard(
                         title: "Free",
                         price: String(localized: "Ücretsiz"),
-                        features: [String(localized: "Günde 10 mesaj"), String(localized: "Günde 1 görsel"), String(localized: "Mac bağlantısı")],
+                        features: features(for: "free", fallback: (10, 1)),
                         isCurrent: currentTier == "free"
                     )
                     proCard
@@ -35,11 +39,14 @@ struct PaywallView: View {
                         planCard(
                             title: "Business",
                             price: nil,
-                            features: [String(localized: "Günde 200 mesaj"), String(localized: "Günde 20 görsel"), String(localized: "PC bağlantısı")],
+                            features: features(for: "business", fallback: (200, 20)),
                             isCurrent: true
                         )
                     }
                     restoreButton
+                    if introMode {
+                        WiqoActionButton(title: String(localized: "Ücretsiz devam et"), kind: .secondary) { dismiss() }
+                    }
                     legalFooter
                 }
                 .padding(RovaDesign.screenPadding)
@@ -49,12 +56,14 @@ struct PaywallView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Kapat") { dismiss() }
+                    Button(introMode ? "Şimdi değil" : "Kapat") { dismiss() }
                 }
             }
             .task {
+                async let catalog = try? RovaBackendClient.fetchPlans()
                 await storeKit.loadProductsForPaywall()
                 await subscriptionStore.refreshIfStale(maxAge: 60)
+                if let fetched = await catalog, !fetched.isEmpty { plans = fetched }
             }
             .wiqoToastHost(level: 2)
             .alert("İşlem tamamlanamadı", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
@@ -67,9 +76,9 @@ struct PaywallView: View {
 
     private var header: some View {
         VStack(spacing: 6) {
-            Text("Wiqo'yu yükselt")
+            Text(introMode ? "Wiqo'ya hoş geldin" : "Wiqo'yu yükselt")
                 .font(.title2.weight(.bold))
-            Text("Daha fazla mesaj ve görsel için bir plan seç.")
+            Text(introMode ? "Ücretsiz plan hazır. Daha fazla mesaj ve görsel istersen Pro'ya şimdi geçebilirsin." : "Daha fazla mesaj ve görsel için bir plan seç.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -79,12 +88,21 @@ struct PaywallView: View {
         .wiqoRiseIn()
     }
 
+    /// The lines of a plan card: the numbers the backend enforces (the built-in ones only until they have loaded).
+    private func features(for id: String, fallback: (messages: Int, images: Int)) -> [String] {
+        let plan = plans.first { $0.id == id }
+        return [
+            String(localized: "Günde \(plan?.messagesPerDay ?? fallback.messages) mesaj"),
+            String(localized: "Günde \(plan?.imagesPerDay ?? fallback.images) görsel")
+        ] + ((plan?.pcAllowed ?? true) ? [String(localized: "PC bağlantısı")] : [])
+    }
+
     private var proCard: some View {
         planCard(
             title: "Pro",
             price: storeKit.proProduct?.displayPrice,
             priceSuffix: "/ay",
-            features: [String(localized: "Günde 100 mesaj"), String(localized: "Günde 10 görsel"), String(localized: "PC bağlantısı")],
+            features: features(for: "pro", fallback: (100, 10)),
             isCurrent: currentTier == "pro"
         ) {
             switch storeKit.productLoadState {
