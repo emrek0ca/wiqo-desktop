@@ -81,6 +81,8 @@ struct CopilotView: View {
     @State private var isStartingAudio = false
     @State private var showingMicPermissionAlert = false
     @State private var showingDiscovery = false
+    /// The daily message limit was reached: the plans open on their own instead of leaving an error line.
+    @State private var showingQuotaPaywall = false
     @StateObject private var liveReply = LiveReplyText()
     @State private var liveReplyBubbleID: UUID?
     /// Follows the conversation's end only while the reader is already there: dragging up to read
@@ -217,6 +219,9 @@ struct CopilotView: View {
             Button("Vazgeç", role: .cancel) {}
         } message: {
             Text("Wiqo'nun konuşmanızı cihazda metne çevirebilmesi için Ayarlar'dan Wiqo'ya mikrofon ve konuşma tanıma izinlerini vermen gerekiyor.")
+        }
+        .sheet(isPresented: $showingQuotaPaywall) {
+            PaywallView(subscriptionStore: subscriptionStore)
         }
         .sheet(isPresented: $showingDiscovery) {
             DiscoveryView(deviceReady: deviceSuggestionsReady) { prompt in
@@ -1852,6 +1857,7 @@ struct CopilotView: View {
             liveReplyBubbleID = nil
             commitThinking(to: earlyConfirmationBubbleID ?? responseBubble.id, failed: true)
             let presentation = errorPresentation(error)
+            if case RovaBackendError.declined(let message) = error, message.contains("QUOTA_EXCEEDED") { showingQuotaPaywall = true }
             setBubble(responseBubble.id) { bubble in
                 if bubble.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     bubble.text = presentation.message
