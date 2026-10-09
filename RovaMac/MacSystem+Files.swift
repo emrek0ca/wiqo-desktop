@@ -1066,7 +1066,7 @@ extension MacSystem {
             for raw in raws { guard let url = existing(raw) else { return missing(raw) }; sources.append(url) }
             guard let first = sources.first else { return fail("INVALID_PAYLOAD", "Arşivlenecek dosya yok.") }
             let name = sources.count == 1 ? first.deletingPathExtension().lastPathComponent : "Arşiv"
-            guard let output = target(payload.destination, fallback: first.deletingLastPathComponent().appendingPathComponent("\(name).zip")) else { return fail("INVALID_PATH", "Arşivin kaydedileceği yer geçersiz.") }
+            guard let output = target(payload.destination, fallback: first.deletingLastPathComponent().appendingPathComponent("\(name).zip")) else { return fail("INVALID_PATH", "Arşivin kaydedileceği yer geçersiz. Hedef klasör yoksa önce fileUtility createFolder ile oluştur, sonra işlemi tekrarla.") }
             var input = first
             var scratch: URL?
             if sources.count > 1 {
@@ -1085,7 +1085,7 @@ extension MacSystem {
 
         case .extract:
             guard let archive = existing(payload.path) else { return missing(payload.path) }
-            guard let folder = target(payload.destination, fallback: archive.deletingLastPathComponent().appendingPathComponent(archive.deletingPathExtension().lastPathComponent)) else { return fail("INVALID_PATH", "Açılacak yer geçersiz.") }
+            guard let folder = target(payload.destination, fallback: archive.deletingLastPathComponent().appendingPathComponent(archive.deletingPathExtension().lastPathComponent)) else { return fail("INVALID_PATH", "Açılacak yer geçersiz. Hedef klasör yoksa önce fileUtility createFolder ile oluştur, sonra işlemi tekrarla.") }
             let result = await runProcess("/usr/bin/ditto", ["-x", "-k", archive.path, folder.path], timeout: 180)
             guard result.status == 0, manager.fileExists(atPath: folder.path) else { return fail("EXTRACT_FAILED", "Arşiv açılamadı; zip dosyası mı?") }
             return (listing([folder]), "Arşiv \(folder.lastPathComponent) klasörüne açıldı.", nil)
@@ -1098,7 +1098,7 @@ extension MacSystem {
                 guard let document = PDFDocument(url: source) else { return fail("NOT_A_PDF", "\(source.lastPathComponent) PDF olarak açılamadı.") }
                 for index in 0..<document.pageCount { if let page = document.page(at: index) { merged.insert(page, at: merged.pageCount) } }
             }
-            guard let first = sources.first, let output = target(payload.destination, fallback: first.deletingLastPathComponent().appendingPathComponent("Birleşik.pdf")) else { return fail("INVALID_PATH", "Birleşik PDF'in yeri geçersiz.") }
+            guard let first = sources.first, let output = target(payload.destination, fallback: first.deletingLastPathComponent().appendingPathComponent("Birleşik.pdf")) else { return fail("INVALID_PATH", "Birleşik PDF'in yeri geçersiz. Hedef klasör yoksa önce fileUtility createFolder ile oluştur, sonra işlemi tekrarla.") }
             guard merged.pageCount > 0, merged.write(to: output) else { return fail("MERGE_FAILED", "PDF'ler birleştirilemedi.") }
             return (listing([output]), "\(sources.count) PDF birleştirildi: \(output.lastPathComponent) (\(merged.pageCount) sayfa).", nil)
 
