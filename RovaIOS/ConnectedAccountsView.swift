@@ -93,7 +93,7 @@ struct ConnectedAccountsView: View {
             .padding(RovaDesign.screenPadding)
             .wiqoAnimation(WiqoMotion.slide(), value: errorMessage)
         }
-        .background(WiqoSettingsStyle.canvas)
+        .background(RovaDesign.canvas)
         .navigationTitle("Uygulamalar")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }

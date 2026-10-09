@@ -23,11 +23,6 @@ struct WiqoSettingsGroup<Content: View>: View {
     }
 }
 
-/// The settings surfaces sit on the chat screen's own background; cards are Liquid Glass on iOS 26 and a quiet grouped fill before it.
-enum WiqoSettingsStyle {
-    static let canvas = Color(uiColor: .systemBackground)
-}
-
 extension View {
     @ViewBuilder
     func wiqoGlass(radius: CGFloat = WiqoTheme.cardRadius) -> some View {

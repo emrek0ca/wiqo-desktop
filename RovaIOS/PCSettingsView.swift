@@ -69,7 +69,7 @@ struct PCSettingsView: View {
                 }
                 .padding(RovaDesign.screenPadding)
             }
-            .background(WiqoSettingsStyle.canvas)
+            .background(RovaDesign.canvas)
             .navigationTitle("PC")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

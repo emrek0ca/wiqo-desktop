@@ -17,7 +17,8 @@ enum RovaDesign {
             : UIColor(red: 0.055, green: 0.12, blue: 0.20, alpha: 1)
     })
     static let signal = Color(red: 0.55, green: 0.78, blue: 0.16)
-    static let canvas = Color(uiColor: .systemGroupedBackground)
+    /// The one background of every screen (Settings, sheets, the paywall, Act) - white in light mode, black in dark.
+    static let canvas = Color(uiColor: .systemBackground)
     static let cardSurface = Color(uiColor: .secondarySystemGroupedBackground)
 }
 

@@ -33,7 +33,7 @@ struct SubscriptionView: View {
             .padding(.top, 6)
             .padding(.bottom, 28)
         }
-        .background(WiqoSettingsStyle.canvas)
+        .background(RovaDesign.canvas)
         .navigationTitle("Abonelik")
         .navigationBarTitleDisplayMode(.inline)
         .manageSubscriptionsSheet(isPresented: $showingManage)

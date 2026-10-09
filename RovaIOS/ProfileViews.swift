@@ -231,7 +231,7 @@ struct AccountSettingsView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
-        .background(WiqoSettingsStyle.canvas)
+        .background(RovaDesign.canvas)
         .navigationTitle("Profil")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

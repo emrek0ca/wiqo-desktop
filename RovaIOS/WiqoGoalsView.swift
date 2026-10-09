@@ -41,7 +41,7 @@ struct WiqoGoalsView: View {
             .padding(.top, 8)
             .padding(.bottom, 32)
         }
-        .background(WiqoSettingsStyle.canvas)
+        .background(RovaDesign.canvas)
         .navigationTitle("Hedefler")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }

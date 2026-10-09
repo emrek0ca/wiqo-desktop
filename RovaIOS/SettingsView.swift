@@ -36,7 +36,7 @@ struct SettingsView: View {
                 .padding(.top, 6)
                 .padding(.bottom, 28)
             }
-            .background(WiqoSettingsStyle.canvas)
+            .background(RovaDesign.canvas)
             .navigationTitle("Ayarlar")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -313,7 +313,7 @@ struct SettingsView: View {
             legalSection
                 .padding(RovaDesign.screenPadding)
         }
-        .background(WiqoSettingsStyle.canvas)
+        .background(RovaDesign.canvas)
         .navigationTitle("Destek ve yasal")
         .navigationBarTitleDisplayMode(.inline)
     }
