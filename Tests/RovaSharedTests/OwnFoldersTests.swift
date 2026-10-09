@@ -90,6 +90,7 @@ final class OwnFoldersTests: XCTestCase {
             (.renameDesktopFile, .fileMove(DesktopFileMovePayload(source: "a.pdf", destination: "b.pdf"))),
             (.fileUtility, utility(.createFolder, path: "~/Desktop/Raporlar")),
             (.fileUtility, utility(.organize, path: "~/Downloads")),
+            (.fileUtility, utility(.moveDocuments, path: "~/Desktop", destination: "~/Desktop/Emre")),
             (.fileUtility, utility(.mergePDF, paths: ["~/Downloads/a.pdf", "~/Downloads/b.pdf"], destination: "~/Downloads/Birleşik.pdf")),
             (.fileUtility, utility(.restoreFromTrash, name: "eski fatura"))
         ]
@@ -104,6 +105,8 @@ final class OwnFoldersTests: XCTestCase {
             (.copyFile, move("~/Documents/id_rsa", "~/Desktop/id_rsa")),
             (.fileUtility, utility(.print, path: "~/Desktop/a.pdf")),
             (.fileUtility, utility(.createFolder, path: "~/Library/Raporlar")),
+            (.fileUtility, utility(.moveDocuments, path: "~/Desktop", destination: "~/Library/Emre")),
+            (.fileUtility, utility(.moveDocuments, path: "~/Desktop/Secrets", destination: "~/Desktop/Emre")),
             (.fileUtility, utility(.archive, path: "~/Documents/parola listesi.txt")),
             (.executeCode, .none),
             (.controlApplication, .none)

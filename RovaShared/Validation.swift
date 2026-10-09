@@ -1287,8 +1287,9 @@ public enum RovaOwnFolders {
         case (.saveArtifact, .artifactFile(let artifact)):
             return !artifact.overwrite && !isSensitive(artifact.filename) && (artifact.destinationDirectory.map { !isSensitive($0) } ?? true)
         case (.fileUtility, .fileUtility(let utility)):
-            guard [.createFolder, .archive, .extract, .mergePDF, .splitPDF, .compressImage, .organize, .batchRename, .setTags, .restoreFromTrash, .openWith, .reveal].contains(utility.action) else { return false }
+            guard [.createFolder, .archive, .extract, .mergePDF, .splitPDF, .compressImage, .organize, .batchRename, .moveDocuments, .setTags, .restoreFromTrash, .openWith, .reveal].contains(utility.action) else { return false }
             let paths = [utility.path, utility.destination].compactMap { $0 } + (utility.paths ?? [])
+            if utility.action == .moveDocuments && (utility.path == nil || utility.destination == nil) { return false }
             guard paths.allSatisfy({ isOwnFolder($0) && !isSensitive($0) }) else { return false }
             // Restoring from the Trash names a file, not a path; everything else works on paths.
             return utility.action == .restoreFromTrash || !paths.isEmpty
