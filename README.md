@@ -17,6 +17,11 @@ The targets keep their original `Rova*` names. Renaming them would also rename p
 2. Run the `RovaMac` scheme. Wiqo appears in the menu bar; the menu shows what start-up is doing and offers **Yeniden dene** and **Sertifikayı yenile** if it fails.
 3. Run the `RovaIOS` scheme on a physical iPhone.
 
+For a terminal launch of the Mac app, use `bash scripts/run-mac.sh`. This builds
+into `build/DerivedData-Mac`, separate from Xcode's default DerivedData, so an
+iOS build in Xcode cannot lock the Mac build database. The script also refuses a
+second simultaneous Mac build using that directory.
+
 Xcode runs of the Mac app keep their own keychain items and paired-device records (`MacStorage`), so they never touch the installed app's.
 
 ## Pair
