@@ -244,26 +244,20 @@ struct SettingsView: View {
 
     private var appearanceGroup: some View {
         WiqoSettingsGroup(title: String(localized: "Uygulama görünümü")) {
-            WiqoRow(systemImage: "circle.lefthalf.filled", title: String(localized: "Tema"), showsDivider: true) {
-                Picker("Tema", selection: $theme) {
-                    ForEach(WiqoAppearance.Theme.allCases) { Text($0.title).tag($0.rawValue) }
+            appearanceRow(String(localized: "Tema"), showsDivider: true) {
+                Picker(String(localized: "Tema"), selection: $theme) {
+                    Image(systemName: "circle.lefthalf.filled").tag(WiqoAppearance.Theme.system.rawValue)
+                        .accessibilityLabel(WiqoAppearance.Theme.system.title)
+                    Image(systemName: "sun.max").tag(WiqoAppearance.Theme.light.rawValue)
+                        .accessibilityLabel(WiqoAppearance.Theme.light.title)
+                    Image(systemName: "moon").tag(WiqoAppearance.Theme.dark.rawValue)
+                        .accessibilityLabel(WiqoAppearance.Theme.dark.title)
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .tint(.secondary)
+                .pickerStyle(.segmented)
+                .frame(width: 150)
             }
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 12) {
-                    Image(systemName: "paintpalette")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 28, height: 28)
-                        .background(WiqoTheme.tint(Color.accentColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .accessibilityHidden(true)
-                    Text("Vurgu rengi").font(.subheadline.weight(.medium))
-                    Spacer(minLength: 0)
-                }
-                HStack(spacing: 14) {
+            appearanceRow(String(localized: "Vurgu rengi"), showsDivider: true) {
+                HStack(spacing: 10) {
                     ForEach(WiqoAppearance.Accent.allCases) { option in
                         Button {
                             UISelectionFeedbackGenerator().selectionChanged()
@@ -271,38 +265,51 @@ struct SettingsView: View {
                         } label: {
                             Circle()
                                 .fill(option.color)
-                                .frame(width: 28, height: 28)
+                                .frame(width: 22, height: 22)
                                 .overlay {
-                                    if accent == option.rawValue {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 12, weight: .bold))
-                                            .foregroundStyle(Color(uiColor: .systemBackground))
-                                    }
+                                    Circle()
+                                        .strokeBorder(Color.primary.opacity(accent == option.rawValue ? 0.55 : 0), lineWidth: 1.5)
+                                        .padding(-4)
                                 }
-                                .frame(width: 36, height: 36)
+                                .frame(width: 28, height: 36)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(option.title)
                         .accessibilityAddTraits(accent == option.rawValue ? .isSelected : [])
                     }
-                    Spacer(minLength: 0)
                 }
-                .padding(.leading, 40)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 54)
-            }
-            WiqoRow(systemImage: "textformat.size", title: String(localized: "Yazı boyutu"), showsDivider: false) {
-                Picker("Yazı boyutu", selection: $textSize) {
-                    ForEach(WiqoAppearance.TextSize.allCases) { Text($0.title).tag($0.rawValue) }
+            appearanceRow(String(localized: "Yazı boyutu"), showsDivider: false) {
+                Picker(String(localized: "Yazı boyutu"), selection: $textSize) {
+                    Text(verbatim: "A").font(.system(size: 12)).tag(WiqoAppearance.TextSize.small.rawValue)
+                        .accessibilityLabel(WiqoAppearance.TextSize.small.title)
+                    Text(verbatim: "A").font(.system(size: 15)).tag(WiqoAppearance.TextSize.standard.rawValue)
+                        .accessibilityLabel(WiqoAppearance.TextSize.standard.title)
+                    Text(verbatim: "A").font(.system(size: 19)).tag(WiqoAppearance.TextSize.large.rawValue)
+                        .accessibilityLabel(WiqoAppearance.TextSize.large.title)
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .tint(.secondary)
+                .pickerStyle(.segmented)
+                .frame(width: 150)
+            }
+        }
+    }
+
+    /// A quiet row: the name on the left, one compact control on the right, a hairline between rows.
+    private func appearanceRow<Control: View>(_ title: String, showsDivider: Bool, @ViewBuilder control: () -> Control) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            control()
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 52)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) {
+            if showsDivider {
+                Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 14)
             }
         }
     }

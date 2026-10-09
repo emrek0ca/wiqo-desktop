@@ -4962,6 +4962,47 @@
         }
       }
     },
+    "Adaçayı": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sage"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salbei"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salvia"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sage"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مريمية"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Шалфей"
+          }
+        }
+      }
+    },
     "Adı, sunucuyu çağırırken söyleyeceğin ad olsun (örneğin Linear). Wiqo eklemeden önce sunucuya bağlanıp araçlarını dener.": {
       "extractionState": "manual",
       "localizations": {
@@ -21280,6 +21321,47 @@
         }
       }
     },
+    "Gül kurusu": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dusty rose"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Altrosa"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rosa antiguo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vieux rose"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "وردي باهت"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пыльная роза"
+          }
+        }
+      }
+    },
     "Gün başında sık kullandığın uygulamaları açar": {
       "extractionState": "manual",
       "localizations": {
@@ -21973,6 +22055,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "Очистить память"
+          }
+        }
+      }
+    },
+    "Hardal": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mustard"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Senf"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostaza"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moutarde"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "خردل"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Горчица"
           }
         }
       }
@@ -30505,47 +30628,6 @@
         }
       }
     },
-    "Mavi": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Blue"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Blau"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Azul"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bleu"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "أزرق"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Синий"
-          }
-        }
-      }
-    },
     "Maçlar": {
       "extractionState": "manual",
       "localizations": {
@@ -31038,47 +31120,6 @@
         }
       }
     },
-    "Mor": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Purple"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lila"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Morado"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Violet"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "بنفسجي"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Фиолетовый"
-          }
-        }
-      }
-    },
     "Mükemmel": {
       "extractionState": "manual",
       "localizations": {
@@ -31116,6 +31157,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "Отлично"
+          }
+        }
+      }
+    },
+    "Mürdüm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plum"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pflaume"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ciruela"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prune"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "برقوقي"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Слива"
           }
         }
       }
@@ -36815,47 +36897,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Понедельник утром я показываю план недели."
-          }
-        }
-      }
-    },
-    "Pembe": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pink"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rosa"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rosa"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rose"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "زهري"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Розовый"
           }
         }
       }
@@ -46085,43 +46126,43 @@
         }
       }
     },
-    "Turuncu": {
+    "Toprak": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Orange"
+            "value": "Clay"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Orange"
+            "value": "Ton"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Naranja"
+            "value": "Arcilla"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Orange"
+            "value": "Argile"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "برتقالي"
+            "value": "طين"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Оранжевый"
+            "value": "Глина"
           }
         }
       }
@@ -50673,47 +50714,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Запрос локального анализа недействителен."
-          }
-        }
-      }
-    },
-    "Yeşil": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Green"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Grün"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Verde"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Vert"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "أخضر"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Зеленый"
           }
         }
       }

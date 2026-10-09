@@ -161,28 +161,35 @@ enum WiqoAppearance {
         }
     }
 
+    /// Muted, slightly dusty tones (a deeper one for light mode, a softer one for dark) instead of the system's saturated colours.
     enum Accent: String, CaseIterable, Identifiable {
-        case wiqo, blue, green, orange, pink, purple
+        case wiqo, sage, clay, mustard, rose, plum
         var id: String { rawValue }
         var color: Color {
             switch self {
             case .wiqo: return RovaDesign.brandInk
-            case .blue: return .blue
-            case .green: return .green
-            case .orange: return .orange
-            case .pink: return .pink
-            case .purple: return .purple
+            case .sage: return Self.tone(light: (0.36, 0.48, 0.40), dark: (0.62, 0.74, 0.65))
+            case .clay: return Self.tone(light: (0.67, 0.37, 0.28), dark: (0.84, 0.58, 0.48))
+            case .mustard: return Self.tone(light: (0.67, 0.50, 0.18), dark: (0.85, 0.70, 0.40))
+            case .rose: return Self.tone(light: (0.68, 0.42, 0.47), dark: (0.84, 0.62, 0.66))
+            case .plum: return Self.tone(light: (0.45, 0.33, 0.50), dark: (0.69, 0.58, 0.75))
             }
         }
         var title: String {
             switch self {
             case .wiqo: return String(localized: "Wiqo")
-            case .blue: return String(localized: "Mavi")
-            case .green: return String(localized: "Yeşil")
-            case .orange: return String(localized: "Turuncu")
-            case .pink: return String(localized: "Pembe")
-            case .purple: return String(localized: "Mor")
+            case .sage: return String(localized: "Adaçayı")
+            case .clay: return String(localized: "Toprak")
+            case .mustard: return String(localized: "Hardal")
+            case .rose: return String(localized: "Gül kurusu")
+            case .plum: return String(localized: "Mürdüm")
             }
+        }
+        private static func tone(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
+            Color(uiColor: UIColor { traits in
+                let value = traits.userInterfaceStyle == .dark ? dark : light
+                return UIColor(red: value.0, green: value.1, blue: value.2, alpha: 1)
+            })
         }
     }
 
