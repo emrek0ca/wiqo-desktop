@@ -40,6 +40,7 @@ struct ThinkingTrace: Codable, Hashable, Sendable {
     /// The sub-agent at work (general / research / developer / execution) - drives the mascot.
     private(set) var persona: String?
     private var localCount = 0
+    private var failedOutcome = false
 
     init(startedAt: Date = Date()) {
         self.startedAt = startedAt
@@ -104,6 +105,7 @@ struct ThinkingTrace: Codable, Hashable, Sendable {
     mutating func finish(failed: Bool = false, at date: Date = Date()) {
         guard !isFinished else { return }
         closeRunning(as: failed ? .failed : .done, at: date)
+        failedOutcome = failed
         endedAt = date
         lastChangeAt = date
     }
@@ -111,6 +113,7 @@ struct ThinkingTrace: Codable, Hashable, Sendable {
     /// A device follow-up turn continues the same timeline instead of starting a new one.
     mutating func reopen(at date: Date = Date()) {
         endedAt = nil
+        failedOutcome = false
         lastChangeAt = date
     }
 
@@ -135,7 +138,7 @@ extension ThinkingTrace {
     /// The collapsed row under a finished turn, e.g. "4 adımda tamamlandı · 9 sn".
     var summary: String {
         let duration = Self.formatDuration(self.duration())
-        if steps.contains(where: { $0.state == .failed }) {
+        if failedOutcome || steps.contains(where: { $0.state == .failed }) {
             return String(localized: "\(steps.count) adım · \(duration) · bir adım tamamlanamadı")
         }
         return String(localized: "\(steps.count) adımda tamamlandı · \(duration)")

@@ -29,6 +29,55 @@ final class MacCommandEngineTests: XCTestCase {
         XCTAssertEqual(second.message, "Emre klasörü zaten var.")
     }
 
+    func testMoveDocumentsMovesOnlyDirectDocumentsAndVerifiesEveryFile() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-documents-\(UUID().uuidString)", isDirectory: true)
+        let source = root.appendingPathComponent("Desktop", isDirectory: true)
+        let destination = source.appendingPathComponent("Emre", isDirectory: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("report".utf8).write(to: source.appendingPathComponent("Report.docx"))
+        try Data("paper".utf8).write(to: source.appendingPathComponent("Paper.pdf"))
+        try Data("secret".utf8).write(to: source.appendingPathComponent("AuthKey.p8"))
+        let otherFolder = source.appendingPathComponent("Other", isDirectory: true)
+        try FileManager.default.createDirectory(at: otherFolder, withIntermediateDirectories: false)
+        try Data("nested".utf8).write(to: otherFolder.appendingPathComponent("Nested.pdf"))
+
+        let result = await MacSystem.fileUtility(FileUtilityPayload(action: .moveDocuments, path: source.path, destination: destination.path, limit: 500))
+        XCTAssertNil(result.error)
+        XCTAssertTrue(result.message.contains("2 belge"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.appendingPathComponent("Report.docx").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.appendingPathComponent("Report.docx").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.appendingPathComponent("Paper.pdf").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.appendingPathComponent("AuthKey.p8").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: otherFolder.appendingPathComponent("Nested.pdf").path))
+    }
+
+    func testMoveDocumentsStopsBeforeAnyMutationOnNameCollision() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-collision-\(UUID().uuidString)", isDirectory: true)
+        let source = root.appendingPathComponent("Desktop", isDirectory: true)
+        let destination = source.appendingPathComponent("Emre", isDirectory: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for name in ["A.pdf", "B.docx"] { try Data(name.utf8).write(to: source.appendingPathComponent(name)) }
+        try Data("existing".utf8).write(to: destination.appendingPathComponent("B.docx"))
+
+        let result = await MacSystem.fileUtility(FileUtilityPayload(action: .moveDocuments, path: source.path, destination: destination.path))
+        XCTAssertEqual(result.error?.code, "FILE_EXISTS")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.appendingPathComponent("A.pdf").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.appendingPathComponent("B.docx").path))
+    }
+
+    func testMoveDocumentsCreatesMissingDestinationOnlyWhenDocumentsAreReady() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-create-destination-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let destination = root.appendingPathComponent("Emre", isDirectory: true)
+        try Data("paper".utf8).write(to: root.appendingPathComponent("Paper.pdf"))
+        let result = await MacSystem.fileUtility(FileUtilityPayload(action: .moveDocuments, path: root.path, destination: destination.path))
+        XCTAssertNil(result.error)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.appendingPathComponent("Paper.pdf").path))
+    }
+
     func testCommittedFileEvidenceRejectsMissingAndMismatchedContent() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-evidence-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

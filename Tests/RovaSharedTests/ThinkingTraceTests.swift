@@ -43,6 +43,14 @@ final class ThinkingTraceTests: XCTestCase {
         XCTAssertEqual(trace.steps.count, 1)
     }
 
+    func testFailedResultDoesNotClaimCompletedTimelineAfterAllActivitiesClosed() {
+        var trace = ThinkingTrace(startedAt: start)
+        trace.apply(id: "r:1", phase: "device", label: "Dosyaları taşıyorum", state: .done, at: at(1))
+        trace.finish(failed: true, at: at(2))
+        XCTAssertEqual(trace.steps.last?.state, .done)
+        XCTAssertTrue(trace.summary.contains("tamamlanamadı"))
+    }
+
     func testAFollowUpTurnExtendsTheSameTimeline() {
         var trace = ThinkingTrace(startedAt: start)
         trace.apply(id: "a:1", phase: "device", label: "Dosyayı arıyorum…", state: .running, at: at(0))

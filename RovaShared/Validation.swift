@@ -558,6 +558,8 @@ public enum RovaValidation {
             return hasPath && utility.tags != nil ? nil : "Dosya (path) ve etiketler (tags) gerekli."
         case .organize:
             return hasPath && ["type", "month"].contains(utility.mode ?? "type") ? nil : "Düzenlenecek klasör (path) gerekli; mode type ya da month olmalı."
+        case .moveDocuments:
+            return hasPath && utility.destination != nil ? nil : "Kaynak klasör (path) ve hedef klasör (destination) gerekli."
         case .batchRename:
             return hasPath && (utility.name?.contains("{n}") ?? false) ? nil : "Klasör (path) ve {n} içeren ad kalıbı (name) gerekli."
         }
@@ -962,7 +964,7 @@ public enum RovaCommandAuthority {
         case .fileUtility:
             // Moving many files at once or putting paper through a printer is a decision the person makes.
             guard case .fileUtility(let utility) = payload else { return true }
-            return [.organize, .batchRename, .print].contains(utility.action)
+            return [.organize, .batchRename, .moveDocuments, .print].contains(utility.action)
         default:
             return false
         }

@@ -359,7 +359,7 @@ final class MacBackendChannel: NSObject {
             "platform": info.platform,
             "capabilities": info.capabilities,
             // Optional protocol features; an older backend ignores the field.
-            "features": ["artifact-directory-v1"] + (CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2] : [])
+            "features": ["artifact-directory-v1", "bulk-document-move-v1"] + (CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2] : [])
                 + (AgentAccessStore.shared.isEnabled ? [AgentAccessStore.feature] : [])
                 + (AgentAccessStore.shared.isActive && !AgentAccessStore.shared.isEnabled ? [AgentAccessStore.taskActiveFeature] : [])
                 + [AgentAccessStore.grantFeature],

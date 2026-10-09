@@ -1777,7 +1777,7 @@ struct CopilotView: View {
                 ? (liveReply.currentText.isEmpty ? String(localized: "Bakıyorum…") : liveReply.currentText)
                 : result.reply
             let replyBubbleID = earlyConfirmationBubbleID ?? responseBubble.id
-            commitThinking(to: replyBubbleID)
+            commitThinking(to: replyBubbleID, failed: result.executionState == "partial_success" || result.executionState == "failed")
             liveReply.finish(with: replyText)
             setBubble(replyBubbleID) { bubble in
                 // Reconcile the terminal result into the in-flight bubble. Existing execution
@@ -2264,7 +2264,7 @@ struct CopilotView: View {
             let replyText = result.reply.isEmpty
                 ? (liveReply.currentText.isEmpty ? String(localized: "Bakıyorum…") : liveReply.currentText)
                 : result.reply
-            commitThinking(to: bubbleID)
+            commitThinking(to: bubbleID, failed: result.executionState == "partial_success" || result.executionState == "failed")
             liveReply.finish(with: replyText)
             mergeContinuationResult(
                 result,

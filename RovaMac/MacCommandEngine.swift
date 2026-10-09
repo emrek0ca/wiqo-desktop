@@ -690,7 +690,13 @@ actor MacCommandEngine {
             guard case .fileUtility(let payload) = request.payload else {
                 return (nil, "Geçersiz dosya işlemi.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya işlemi geçersiz.", category: "validation"))
             }
-            let outcome = await MacSystem.fileUtility(payload)
+            let outcome: (data: CommandData?, message: String, error: RovaError?)
+            if payload.action == .moveDocuments {
+                let work = Task.detached(priority: .userInitiated) { await MacSystem.fileUtility(payload) }
+                outcome = await withTaskCancellationHandler(operation: { await work.value }, onCancel: { work.cancel() })
+            } else {
+                outcome = await MacSystem.fileUtility(payload)
+            }
             return (outcome.data, outcome.message, outcome.error)
         case .systemUtility:
             guard case .systemUtility(let payload) = request.payload else {

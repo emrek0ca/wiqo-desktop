@@ -511,6 +511,9 @@ except Exception:
         guard !isSymbolicLink(source), !isSymbolicLink(destination) else {
             return RovaError(code: "SYMLINK_REJECTED", message: "Sembolik bağlantılar üzerinden dosya işlemi yapılmadı.", category: "permission")
         }
+        if isDirectory(source), destination.standardizedFileURL.path.hasPrefix(source.standardizedFileURL.path + "/") {
+            return RovaError(code: "NESTED_FOLDER_MOVE", message: "Klasör kendi altına taşınamaz.", category: "validation")
+        }
         if isDirectory(source) && !payload.recursive {
             return RovaError(code: "RECURSIVE_REQUIRED", message: "Klasör işlemi için recursive=true açıkça belirtilmeli.", category: "permission")
         }
@@ -1047,6 +1050,51 @@ extension MacSystem {
         func short(_ url: URL) -> String { (url.path as NSString).abbreviatingWithTildeInPath }
 
         switch payload.action {
+        case .moveDocuments:
+            guard let source = existing(payload.path), isDirectory(source), !isSymbolicLink(source),
+                  let destination = payload.destination.flatMap({ resolvedLocalURL($0, allowingMissingLastComponent: true) }),
+                  let destinationParent = resolvedLocalURL(destination.deletingLastPathComponent().path), isDirectory(destinationParent),
+                  (!manager.fileExists(atPath: destination.path) || isDirectory(destination)), !isSymbolicLink(destination),
+                  source.standardizedFileURL != destination.standardizedFileURL else {
+                return fail("INVALID_FOLDER", "Kaynak klasör ve hedefin üst klasörü var olmalı; hedef ayrı bir klasör olmalı.")
+            }
+            let documentTypes: Set<String> = ["pdf", "doc", "docx", "rtf", "odt", "pages", "txt", "md"]
+            let entries: [URL]
+            do {
+                entries = try manager.contentsOfDirectory(at: source, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles])
+            } catch {
+                return fail("LIST_FAILED", "Kaynak klasördeki dosyalar okunamadı.")
+            }
+            let documents = entries.filter { isRegularFile($0) && !isSymbolicLink($0) && documentTypes.contains($0.pathExtension.lowercased()) }
+                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            guard documents.count <= payload.limit else {
+                return fail("TOO_MANY_DOCUMENTS", "\(documents.count) belge bulundu; bu işlem en fazla \(payload.limit) belgeyi tek seferde taşıyabilir. Hiçbir dosya taşınmadı.")
+            }
+            guard !documents.isEmpty else { return (listing([]), "Taşınacak belge bulunamadı.", nil) }
+            guard documents.allSatisfy({ !manager.fileExists(atPath: destination.appendingPathComponent($0.lastPathComponent).path) && !isSymbolicLink(destination.appendingPathComponent($0.lastPathComponent)) }) else {
+                return fail("FILE_EXISTS", "Hedefte aynı adlı belge var; hiçbir dosya taşınmadı.", category: "permission")
+            }
+            if !manager.fileExists(atPath: destination.path) {
+                do { try manager.createDirectory(at: destination, withIntermediateDirectories: false) } catch {
+                    return fail("CREATE_FOLDER_FAILED", "Hedef klasör oluşturulamadı; hiçbir belge taşınmadı.")
+                }
+            }
+            var moved: [URL] = []
+            for document in documents {
+                let target = destination.appendingPathComponent(document.lastPathComponent)
+                guard !Task.isCancelled, isRegularFile(document), !isSymbolicLink(document), !manager.fileExists(atPath: target.path), !isSymbolicLink(target) else {
+                    return (listing(moved), "\(moved.count)/\(documents.count) belge taşındı; kalanların durumu değişti. Otomatik tekrar yapılmadı.", RovaError(code: "PARTIAL_MOVE", message: "Belge listesi işlem sırasında değişti; sonucu kontrol et.", category: "tool_failure"))
+                }
+                do { try manager.moveItem(at: document, to: target) } catch {
+                    return (listing(moved), "\(moved.count)/\(documents.count) belge taşındı; kalanlar taşınamadı. Otomatik tekrar yapılmadı.", RovaError(code: "PARTIAL_MOVE", message: "Bazı belgeler taşınamadı; sonucu kontrol et.", category: "tool_failure"))
+                }
+                guard isRegularFile(target), !manager.fileExists(atPath: document.path) else {
+                    return (listing(moved), "Taşıma sonucu belirsiz; otomatik tekrar yapılmadı.", RovaError(code: "OUTCOME_UNKNOWN", message: "Dosya taşıma sonucu doğrulanamadı.", category: "tool_failure"))
+                }
+                moved.append(target)
+            }
+            return (listing(moved), "\(moved.count) belge \(destination.lastPathComponent) klasörüne taşındı ve doğrulandı.", nil)
+
         case .createFolder:
             guard let raw = payload.path, let url = resolvedLocalURL(raw, allowingMissingLastComponent: true) else {
                 return fail("INVALID_PATH", "Klasörün açılacağı yer yok ya da yol geçersiz; üst klasörü kontrol et.")
