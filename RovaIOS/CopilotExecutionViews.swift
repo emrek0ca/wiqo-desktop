@@ -70,7 +70,7 @@ struct CodeExecutionCard: View {
             }
         }
         .padding(12)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
+        .background(WiqoTheme.card, in: RoundedRectangle(cornerRadius: WiqoTheme.cardCorner, style: .continuous))
     }
 
     private var languageIcon: String {
@@ -176,7 +176,7 @@ struct ConfirmationSheetView: View {
                                 Spacer(minLength: 0)
                             }
                             .padding(16)
-                            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
+                            .background(WiqoTheme.card, in: RoundedRectangle(cornerRadius: WiqoTheme.cardCorner, style: .continuous))
                         }
 
                         if waitingSteps.count > 1 {
@@ -198,7 +198,7 @@ struct ConfirmationSheetView: View {
                             }
                             .padding(14)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
+                            .background(WiqoTheme.card, in: RoundedRectangle(cornerRadius: WiqoTheme.cardCorner, style: .continuous))
                         }
 
                         Text(laterConfirmationCount > 0
@@ -311,7 +311,7 @@ struct TaskPlanMiniCard: View {
             }
         }
         .padding(12)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: RovaDesign.chipRadius, style: .continuous))
+        .background(WiqoTheme.card, in: RoundedRectangle(cornerRadius: WiqoTheme.cardCorner, style: .continuous))
     }
 
     private func color(_ status: String) -> Color {

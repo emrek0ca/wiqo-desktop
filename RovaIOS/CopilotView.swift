@@ -550,7 +550,7 @@ struct CopilotView: View {
                         isStreaming: bubble.id == liveReplyBubbleID
                     )
                 }
-                ForEach(bubble.widgets, id: \.stableID) { widget in
+                ForEach(WiqoChatDeclutter.visible(bubble.widgets, hasArtifact: !bubble.artifacts.isEmpty), id: \.stableID) { widget in
                     let widgetArtifact = widget.artifactId.flatMap { artifactID in
                         bubble.artifacts.first(where: { $0.id == artifactID })
                     }

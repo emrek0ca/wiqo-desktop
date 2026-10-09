@@ -700,12 +700,8 @@ struct CopilotResultWidgetView: View {
     }
 
     private var widgetCardBackground: some View {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .fill(Color(uiColor: .secondarySystemGroupedBackground))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-            }
+        RoundedRectangle(cornerRadius: WiqoTheme.cardCorner, style: .continuous)
+            .fill(WiqoTheme.card)
     }
 
     private func resourceDetailRow(_ title: String, value: String, symbol: String? = nil) -> some View {
@@ -788,5 +784,31 @@ struct CopilotResultWidgetView: View {
         case 95...99: return "cloud.bolt.rain.fill"
         default: return "cloud.fill"
         }
+    }
+}
+
+/// What a finished conversation turn shows under the reply. The reply already says what was done, so a completed plan, a "completed" task row and
+/// a file list that repeats the file card are left out; whatever still needs the person (a step open, a failure, a question) stays.
+enum WiqoChatDeclutter {
+    static func visible(_ widgets: [RovaBackendClient.CopilotResultWidget], hasArtifact: Bool) -> [RovaBackendClient.CopilotResultWidget] {
+        let hasArtifactCard = hasArtifact || widgets.contains { $0.type == .artifact }
+        return widgets.filter { widget in
+            switch widget.type {
+            case .task_plan:
+                let rows = widget.planSteps ?? []
+                return rows.isEmpty || rows.contains { $0.status != "verified" }
+            case .task_result:
+                return (widget.taskStatus ?? "completed") != "completed"
+            case .list:
+                return !(hasArtifactCard && widget.domain == "files" && isFileEvidence(widget))
+            default:
+                return true
+            }
+        }
+    }
+
+    /// The "Doğrulanan dosya" list: proof of a save, which the file card above it already is.
+    private static func isFileEvidence(_ widget: RovaBackendClient.CopilotResultWidget) -> Bool {
+        widget.widgetId?.hasPrefix("file-evidence-") == true || widget.title == String(localized: "Doğrulanan dosya")
     }
 }

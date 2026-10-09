@@ -5,12 +5,8 @@ import SwiftUI
 /// backend sends typed rows (never text to parse), so the card is a pure rendering of them.
 
 private var connectorCardBackground: some View {
-    RoundedRectangle(cornerRadius: 18, style: .continuous)
-        .fill(Color(uiColor: .secondarySystemGroupedBackground))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-        }
+    RoundedRectangle(cornerRadius: WiqoTheme.cardCorner, style: .continuous)
+        .fill(WiqoTheme.card)
 }
 
 /// Lets a card hand a short follow-up sentence to the conversation ("… dosyasını özetle").
