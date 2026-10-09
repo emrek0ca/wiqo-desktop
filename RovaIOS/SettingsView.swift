@@ -29,6 +29,7 @@ struct SettingsView: View {
                     subscriptionGroup
                     connectionsGroup
                     styleGroup
+                    appearanceGroup
                     workGroup
                     supportGroup
                 }
@@ -231,6 +232,77 @@ struct SettingsView: View {
                     .padding(.horizontal, 14)
                     .padding(.bottom, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    // MARK: Appearance (applied at the app's root; see WiqoAppearanceModifier)
+
+    @AppStorage(WiqoAppearance.themeKey) private var theme = WiqoAppearance.Theme.system.rawValue
+    @AppStorage(WiqoAppearance.accentKey) private var accent = WiqoAppearance.Accent.wiqo.rawValue
+    @AppStorage(WiqoAppearance.textKey) private var textSize = WiqoAppearance.TextSize.standard.rawValue
+
+    private var appearanceGroup: some View {
+        WiqoSettingsGroup(title: String(localized: "Uygulama görünümü")) {
+            WiqoRow(systemImage: "circle.lefthalf.filled", title: String(localized: "Tema"), showsDivider: true) {
+                Picker("Tema", selection: $theme) {
+                    ForEach(WiqoAppearance.Theme.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .tint(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    Image(systemName: "paintpalette")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 28, height: 28)
+                        .background(WiqoTheme.tint(Color.accentColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .accessibilityHidden(true)
+                    Text("Vurgu rengi").font(.subheadline.weight(.medium))
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 14) {
+                    ForEach(WiqoAppearance.Accent.allCases) { option in
+                        Button {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                            withAnimation(WiqoMotion.ease(0.25)) { accent = option.rawValue }
+                        } label: {
+                            Circle()
+                                .fill(option.color)
+                                .frame(width: 28, height: 28)
+                                .overlay {
+                                    if accent == option.rawValue {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundStyle(Color(uiColor: .systemBackground))
+                                    }
+                                }
+                                .frame(width: 36, height: 36)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(option.title)
+                        .accessibilityAddTraits(accent == option.rawValue ? .isSelected : [])
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 40)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(WiqoTheme.line).frame(height: 0.5).padding(.leading, 54)
+            }
+            WiqoRow(systemImage: "textformat.size", title: String(localized: "Yazı boyutu"), showsDivider: false) {
+                Picker("Yazı boyutu", selection: $textSize) {
+                    ForEach(WiqoAppearance.TextSize.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .tint(.secondary)
             }
         }
     }

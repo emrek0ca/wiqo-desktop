@@ -139,3 +139,83 @@ extension ButtonStyle where Self == WiqoPillButtonStyle {
         WiqoPillButtonStyle(kind: kind)
     }
 }
+
+// MARK: - Appearance
+
+/// The few appearance choices a person makes. Kept on this phone, applied once at the app's root, so Chat, Act, the sidebar and every sheet follow together.
+enum WiqoAppearance {
+    static let themeKey = "wiqo.appearance.theme"
+    static let accentKey = "wiqo.appearance.accent"
+    static let textKey = "wiqo.appearance.text"
+
+    enum Theme: String, CaseIterable, Identifiable {
+        case system, light, dark
+        var id: String { rawValue }
+        var scheme: ColorScheme? { self == .light ? .light : self == .dark ? .dark : nil }
+        var title: String {
+            switch self {
+            case .system: return String(localized: "Sistem teması")
+            case .light: return String(localized: "Açık tema")
+            case .dark: return String(localized: "Koyu tema")
+            }
+        }
+    }
+
+    enum Accent: String, CaseIterable, Identifiable {
+        case wiqo, blue, green, orange, pink, purple
+        var id: String { rawValue }
+        var color: Color {
+            switch self {
+            case .wiqo: return RovaDesign.brandInk
+            case .blue: return .blue
+            case .green: return .green
+            case .orange: return .orange
+            case .pink: return .pink
+            case .purple: return .purple
+            }
+        }
+        var title: String {
+            switch self {
+            case .wiqo: return String(localized: "Wiqo")
+            case .blue: return String(localized: "Mavi")
+            case .green: return String(localized: "Yeşil")
+            case .orange: return String(localized: "Turuncu")
+            case .pink: return String(localized: "Pembe")
+            case .purple: return String(localized: "Mor")
+            }
+        }
+    }
+
+    enum TextSize: String, CaseIterable, Identifiable {
+        case small, standard, large
+        var id: String { rawValue }
+        /// nil keeps the size the system (Settings > Display) asks for.
+        var size: DynamicTypeSize? { self == .small ? .small : self == .large ? .xxLarge : nil }
+        var title: String {
+            switch self {
+            case .small: return String(localized: "Küçük")
+            case .standard: return String(localized: "Standart")
+            case .large: return String(localized: "Büyük")
+            }
+        }
+    }
+}
+
+/// Applies the saved appearance to everything below it.
+struct WiqoAppearanceModifier: ViewModifier {
+    @AppStorage(WiqoAppearance.themeKey) private var theme = WiqoAppearance.Theme.system.rawValue
+    @AppStorage(WiqoAppearance.accentKey) private var accent = WiqoAppearance.Accent.wiqo.rawValue
+    @AppStorage(WiqoAppearance.textKey) private var text = WiqoAppearance.TextSize.standard.rawValue
+
+    func body(content: Content) -> some View {
+        let textSize = WiqoAppearance.TextSize(rawValue: text)?.size
+        content
+            .preferredColorScheme((WiqoAppearance.Theme(rawValue: theme) ?? .system).scheme)
+            .tint((WiqoAppearance.Accent(rawValue: accent) ?? .wiqo).color)
+            .transformEnvironment(\.dynamicTypeSize) { size in if let textSize { size = textSize } }
+    }
+}
+
+extension View {
+    func wiqoAppearance() -> some View { modifier(WiqoAppearanceModifier()) }
+}

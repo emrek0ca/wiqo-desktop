@@ -16,7 +16,6 @@ struct RootView: View {
                 WiqoHomeView(model: model, authSession: authSession)
             }
         }
-        .tint(RovaDesign.ink)
         .wiqoToastHost()
         .onChange(of: authSession.isAuthenticated) { _, isAuthenticated in
             if isAuthenticated {

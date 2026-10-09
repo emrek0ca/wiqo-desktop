@@ -11,11 +11,13 @@ enum RovaDesign {
     // A fixed navy reads as near-black in dark mode (its own luminance barely rises), making any
     // text/icon/tint that uses it nearly invisible on a dark background - this resolves to the
     // brand navy in light mode and a light, still on-brand tint in dark mode instead.
-    static let ink = Color(uiColor: UIColor { traits in
+    static let brandInk = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(red: 0.78, green: 0.83, blue: 0.90, alpha: 1)
             : UIColor(red: 0.055, green: 0.12, blue: 0.20, alpha: 1)
     })
+    /// The accent the person picked (Ayarlar > Görünüm): the app's tint, so every use follows the choice on Chat, Act and the sidebar.
+    static var ink: Color { Color.accentColor }
     static let signal = Color(red: 0.55, green: 0.78, blue: 0.16)
     /// The one background of every screen (Settings, sheets, the paywall, Act) - white in light mode, black in dark.
     static let canvas = Color(uiColor: .systemBackground)
