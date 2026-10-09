@@ -578,3 +578,95 @@ enum WiqoRecentTask {
 
     static var last: String? { UserDefaults.standard.string(forKey: key) }
 }
+
+// MARK: - Chat / Act switch
+
+/// What the Chat side is doing, readable from the Home bar without owning the conversation.
+@MainActor
+final class WiqoChatActivity: ObservableObject {
+    static let shared = WiqoChatActivity()
+    @Published var isWorking = false
+}
+
+extension Notification.Name {
+    /// The segment of the screen already showing was tapped again: Chat puts the cursor in the composer.
+    static let wiqoFocusComposer = Notification.Name("wiqo.focus-composer")
+    /// Act goes back to its project list.
+    static let wiqoActHome = Notification.Name("wiqo.act-home")
+}
+
+/// The two-way switch in the Home bar: slim, one soft thumb that glides, a small status mark per side (work in progress / something new).
+struct WiqoModeSwitch<Value: Hashable>: View {
+    enum Badge { case none, working, unread }
+
+    struct Option: Identifiable {
+        let value: Value
+        let title: String
+        let systemImage: String
+        var badge: Badge = .none
+        var id: Value { value }
+    }
+
+    let options: [Option]
+    @Binding var selection: Value
+    /// The side that is already showing was tapped again.
+    var onReselect: (Value) -> Void = { _ in }
+    @Namespace private var thumb
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options) { option in
+                let isSelected = option.value == selection
+                Button {
+                    if isSelected {
+                        WiqoHaptics.selection()
+                        onReselect(option.value)
+                    } else {
+                        WiqoHaptics.selection()
+                        withAnimation(reduceMotion ? nil : WiqoMotion.ease(0.3)) { selection = option.value }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: option.systemImage)
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(option.title)
+                            .font(.footnote.weight(.semibold))
+                            .lineLimit(1)
+                        badge(option.badge)
+                    }
+                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                    .frame(minWidth: 74, minHeight: 32)
+                    .padding(.horizontal, 4)
+                    .background {
+                        if isSelected {
+                            Capsule()
+                                .fill(Color.primary.opacity(0.12))
+                                .matchedGeometryEffect(id: "thumb", in: thumb)
+                        }
+                    }
+                    // The visible switch is 32 pt tall; the touch area is the full bar height.
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(.vertical, -6)
+        .padding(2)
+        .background(Color.primary.opacity(0.06), in: Capsule())
+    }
+
+    @ViewBuilder
+    private func badge(_ badge: Badge) -> some View {
+        switch badge {
+        case .none:
+            EmptyView()
+        case .working:
+            ProgressView().controlSize(.mini).scaleEffect(0.8)
+        case .unread:
+            Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+        }
+    }
+}

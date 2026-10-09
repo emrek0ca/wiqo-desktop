@@ -26,8 +26,13 @@ struct WiqoHomeView: View {
     @State private var draftPrompt: String?
     @State private var pendingActivity: ActivitySheetRoute?
 
-    private enum HomeMode: Hashable { case chat, act }
-    @State private var mode: HomeMode = .chat
+    private enum HomeMode: String, Hashable { case chat, act }
+    private static let modeKey = "wiqo.home.mode"
+    /// The side the app opens on is the one it was left on.
+    @State private var mode: HomeMode = HomeMode(rawValue: UserDefaults.standard.string(forKey: WiqoHomeView.modeKey) ?? "") ?? .chat
+    @State private var chatHasNews = false
+    @ObservedObject private var chatActivity = WiqoChatActivity.shared
+    @ObservedObject private var actModel = ActModel.shared
     private var actHandoffs: NotificationCenter.Publisher { NotificationCenter.default.publisher(for: .wiqoOpenInAct) }
     private var actProjectOpens: NotificationCenter.Publisher { NotificationCenter.default.publisher(for: .wiqoOpenProjectInAct) }
 
@@ -37,28 +42,43 @@ struct WiqoHomeView: View {
                 CopilotView(model: model, authSession: authSession, subscriptionStore: subscriptionStore, conversationID: conversationID, draftPrompt: draftPrompt)
                     .id(conversationID)
                     .opacity(mode == .chat ? 1 : 0)
+                    .offset(x: mode == .chat ? 0 : -18)
                     .allowsHitTesting(mode == .chat)
                     .accessibilityHidden(mode != .chat)
                 ActView()
                     .onReceive(actHandoffs) { _ in mode = .act }
                     .onReceive(actProjectOpens) { _ in mode = .act }
                     .opacity(mode == .act ? 1 : 0)
+                    .offset(x: mode == .act ? 0 : 18)
                     .allowsHitTesting(mode == .act)
                     .accessibilityHidden(mode != .act)
             }
+                .animation(WiqoMotion.ease(0.3), value: mode)
+                .modifier(WiqoSideSwipe(canSwipe: !showSidebar) { toAct in
+                    let next: HomeMode = toAct ? .act : .chat
+                    guard next != mode else { return }
+                    WiqoHaptics.selection()
+                    withAnimation(WiqoMotion.ease(0.3)) { mode = next }
+                })
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
-                        WiqoPillTabs<HomeMode>(
+                        WiqoModeSwitch<HomeMode>(
                             options: [
-                                WiqoPillTabs<HomeMode>.Option(value: .chat, title: String(localized: "Chat")),
-                                WiqoPillTabs<HomeMode>.Option(value: .act, title: String(localized: "Act"))
+                                .init(value: .chat, title: String(localized: "Chat"), systemImage: "bubble.left",
+                                      badge: mode == .act && chatHasNews ? .unread : (chatActivity.isWorking && mode == .act ? .working : .none)),
+                                .init(value: .act, title: String(localized: "Act"), systemImage: "sparkles",
+                                      badge: actModel.job != nil && mode == .chat ? .working : .none)
                             ],
                             selection: $mode,
-                            horizontalPadding: 8
+                            onReselect: { side in
+                                switch side {
+                                case .chat: NotificationCenter.default.post(name: .wiqoFocusComposer, object: nil)
+                                case .act: NotificationCenter.default.post(name: .wiqoActHome, object: nil)
+                                }
+                            }
                         )
-                        .frame(width: 126)
                         .accessibilityLabel("Chat veya Act")
                     }
                     ToolbarItem(placement: .topBarLeading) {
@@ -120,7 +140,14 @@ struct WiqoHomeView: View {
         .onChange(of: mode) { _, new in
             dismissKeyboard()
             WiqoOrientation.allowLandscape(new == .act)
+            UserDefaults.standard.set(new.rawValue, forKey: Self.modeKey)
+            if new == .chat { chatHasNews = false }
         }
+        .onChange(of: chatActivity.isWorking) { _, working in
+            // A reply that finished while the person was in Act is marked on the Chat side.
+            if !working && mode == .act { chatHasNews = true }
+        }
+        .onAppear { WiqoOrientation.allowLandscape(mode == .act) }
         .onReceive(NotificationCenter.default.publisher(for: .wiqoOpenAct)) { _ in
             mode = .act
         }
@@ -527,5 +554,28 @@ struct ConversationRow: View {
         .background(isSelected ? Color(.tertiarySystemFill) : Color.clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contentShape(Rectangle())
         .padding(.horizontal, 12)
+    }
+}
+
+/// Left/right swipe between Chat and Act. Only a swipe that starts in the top or bottom band counts, so code blocks, tables and chip rows keep their own horizontal scrolling,
+/// and the left edge stays with the sidebar.
+private struct WiqoSideSwipe: ViewModifier {
+    var canSwipe: Bool
+    var onSwipe: (_ toAct: Bool) -> Void
+
+    func body(content: Content) -> some View {
+        GeometryReader { proxy in
+            content
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 24, coordinateSpace: .local).onEnded { value in
+                        guard canSwipe else { return }
+                        let dx = value.translation.width, dy = value.translation.height
+                        let inBand = value.startLocation.y < 120 || value.startLocation.y > proxy.size.height - 170
+                        guard inBand, value.startLocation.x > 24, abs(dx) > 70, abs(dx) > abs(dy) * 2 else { return }
+                        onSwipe(dx < 0)
+                    }
+                )
+        }
     }
 }

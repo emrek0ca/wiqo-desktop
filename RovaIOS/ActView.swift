@@ -118,6 +118,9 @@ struct ActView: View {
         }
         // A chat card sent a request: a new project starts from it (the same consent and privacy steps as typing it here),
         // a change to an open project is applied to that project.
+        .onReceive(NotificationCenter.default.publisher(for: .wiqoActHome)) { _ in
+            withAnimation(WiqoMotion.ease(0.25)) { openedID = nil }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .wiqoOpenInAct)) { note in
             guard let open = note.object as? ActOpenRequest else { return }
             handle(open)

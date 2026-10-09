@@ -201,6 +201,8 @@ struct CopilotView: View {
             }
             Task { await loadSideCards() }
         }
+        .onChange(of: isSending) { _, sending in WiqoChatActivity.shared.isWorking = sending }
+        .onReceive(NotificationCenter.default.publisher(for: .wiqoFocusComposer)) { _ in isComposerFocused = true }
         .onChange(of: selectedPhotos) { _, items in
             guard !items.isEmpty else { return }
             Task { await prepareAttachments(items) }

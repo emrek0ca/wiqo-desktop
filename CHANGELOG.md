@@ -3,6 +3,7 @@
 ## 2026-10-10
 
 - **Every displayed sentence is translated.** ~120 Turkish status and error texts that were returned as plain strings (plan and task states, automation timelines, Act errors, file and connection messages) now go through the catalog: 1,408 strings in 6 languages. `contracts/i18n/guard.mjs` fails CI on a Turkish sentence outside the catalog (`verbatim.json` lists the ones that must stay as written); `extract.mjs` adds a build's new keys.
+- **Chat / Act switch:** slimmer two-way switch with one soft thumb and icons; swipe left/right in the top or bottom band to change side; tapping the current side focuses the composer (Chat) or returns to the project list (Act); a working mark on Act while a job runs and a dot on Chat when a reply finished meanwhile; the app opens on the side it was left on; the sides slide slightly as they cross-fade.
 - **Uygulama görünümü** (Ayarlar): theme (system / light / dark), accent colour (6) and text size (small / standard / large). One modifier at the app root (`WiqoAppearanceModifier`), so Chat, Act, the sidebar and every sheet follow; `RovaDesign.ink` is now the app tint.
 - **Chat is calmer:** one flat card surface, finished turns hide the plan, task row and duplicate file list under the reply, plan card is one line until opened, copy on long press, empty-chat line and a "do it again" chip for the last PC task, entry motion and a completion haptic.
 
