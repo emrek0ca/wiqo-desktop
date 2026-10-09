@@ -1,0 +1,32 @@
+{
+  "plans": [
+    {
+      "id": "free",
+      "label": "Free",
+      "messagesPerDay": 10,
+      "imagesPerDay": 1,
+      "pcAllowed": true,
+      "actJobsPerDay": 3,
+      "purchasableInApp": false
+    },
+    {
+      "id": "pro",
+      "label": "Pro",
+      "messagesPerDay": 100,
+      "imagesPerDay": 10,
+      "pcAllowed": true,
+      "actJobsPerDay": 40,
+      "purchasableInApp": true
+    },
+    {
+      "id": "business",
+      "label": "Business",
+      "messagesPerDay": 200,
+      "imagesPerDay": 20,
+      "pcAllowed": true,
+      "actJobsPerDay": 80,
+      "purchasableInApp": false
+    }
+  ],
+  "proProductId": "com.wiqo.ios.pro.monthly"
+}

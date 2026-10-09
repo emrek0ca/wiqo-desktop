@@ -1,0 +1,22 @@
+{
+  "tier": "free",
+  "label": "Free",
+  "source": "none",
+  "expiresAt": null,
+  "pcAllowed": true,
+  "usage": {
+    "messages": {
+      "used": 0,
+      "limit": 10
+    },
+    "images": {
+      "used": 0,
+      "limit": 1
+    },
+    "act": {
+      "used": 0,
+      "limit": 3
+    }
+  },
+  "resetsAt": "2026-10-09T21:00:00.000Z"
+}

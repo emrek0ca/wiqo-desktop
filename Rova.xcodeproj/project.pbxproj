@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EDBBB81898629DEC560670FB /* APIContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECD1BBB81898629DEC560670 /* APIContractTests.swift */; };
+		EA2A1ED3F8624349DB622681 /* BillingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E99A2A1ED3F8624349DB6226 /* BillingModels.swift */; };
+		EB1ED3F8624349DB62268154 /* BillingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E99A2A1ED3F8624349DB6226 /* BillingModels.swift */; };
 		E8A78E777F3A43B7342F5D66 /* CopilotResultWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E735A78E777F3A43B7342F5D /* CopilotResultWidgetView.swift */; };
 		E88948E2CA54BB90FD8C7B27 /* PCSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7178948E2CA54BB90FD8C7B /* PCSettingsView.swift */; };
 		E8DE96C56CBAC202420A47BC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7EEDE96C56CBAC202420A47 /* SettingsView.swift */; };
@@ -195,6 +198,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		ECD1BBB81898629DEC560670 /* APIContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIContractTests.swift; sourceTree = "<group>"; };
+		E99A2A1ED3F8624349DB6226 /* BillingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingModels.swift; sourceTree = "<group>"; };
 		E735A78E777F3A43B7342F5D /* CopilotResultWidgetView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CopilotResultWidgetView.swift; sourceTree = "<group>"; };
 		E7178948E2CA54BB90FD8C7B /* PCSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PCSettingsView.swift; sourceTree = "<group>"; };
 		E7EEDE96C56CBAC202420A47 /* SettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -415,6 +420,7 @@
 				F031 /* OperationManifest.swift */,
 				D30000000000000000000070 /* ConnectionRoutePolicy.swift */,
 				D30000000000000000000071 /* StoreKitLoadPolicy.swift */,
+				E99A2A1ED3F8624349DB6226 /* BillingModels.swift */,
 				F002 /* Validation.swift */,
 				F003 /* Framing.swift */,
 				D50000000000000000000100 /* ActVault.swift */,
@@ -587,6 +593,7 @@
 				D30000000000000000000C95 /* KeychainInstallTests.swift */,
 				D2000000000000000000002F /* CanvasPackageDetectorTests.swift */,
 				D30000000000000000000072 /* StoreKitLoadPolicyTests.swift */,
+				ECD1BBB81898629DEC560670 /* APIContractTests.swift */,
 				D50000000000000000000720 /* ActPackagesTests.swift */,
 			);
 			path = RovaSharedTests;
@@ -893,6 +900,7 @@
 				D2000000000000000000000E /* WiqoAppPreview.swift in Sources */,
 				D20000000000000000000010 /* WiqoCanvasSupport.swift in Sources */,
 				D30000000000000000000010 /* StoreKitLoadPolicy.swift in Sources */,
+				EA2A1ED3F8624349DB622681 /* BillingModels.swift in Sources */,
 				FF9BADD43072F4A100D8CB24 /* ConnectionRoutePolicy.swift in Sources */,
 				FF28DCBE30573E6C0006FF82 /* Protocol.swift in Sources */,
 				FF28DCBF30573E6C0006FF82 /* Validation.swift in Sources */,
@@ -965,7 +973,9 @@
 				B028 /* OperationManifest.swift in Sources */,
 				D30000000000000000000009 /* ConnectionRoutePolicy.swift in Sources */,
 				D30000000000000000000012 /* StoreKitLoadPolicy.swift in Sources */,
+				EB1ED3F8624349DB62268154 /* BillingModels.swift in Sources */,
 				D30000000000000000000011 /* StoreKitLoadPolicyTests.swift in Sources */,
+				EDBBB81898629DEC560670FB /* APIContractTests.swift in Sources */,
 				D50000000000000000000721 /* ActPackagesTests.swift in Sources */,
 				D50000000000000000000722 /* ActArchive.swift in Sources */,
 				D50000000000000000000723 /* ActPackages.swift in Sources */,
