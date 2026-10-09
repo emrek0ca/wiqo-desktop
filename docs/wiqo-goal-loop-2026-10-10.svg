@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3400" height="2520" viewBox="0 0 3400 2520" role="img" aria-label="Wiqo isteği anlama, planlama ve goal loop mimarisi ile risk noktaları">
+<defs><marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto"><path d="M1 1 L12 7 L1 13" fill="none" stroke="#78A9FF" stroke-width="2.6"/></marker></defs>
+<rect x="0" y="0" width="3400" height="2520" rx="0" fill="#08111F" stroke="#08111F" stroke-width="0"/>
+<rect x="52" y="42" width="3296" height="195" rx="30" fill="#101E31" stroke="#375477" stroke-width="2"/>
+<text x="90" y="112" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="52" font-weight="700" text-anchor="start">WİQO · İSTEĞİ ANLAMA → PLAN → GOAL LOOP → GERÇEK SONUÇ</text>
+<text x="90" y="169" fill="#A8C6E8" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Mevcut üretim mimarisi • backend 6cb1683 • iOS/Mac kaynak kodu 10.10.2026 • düz çizgi: iş akışı, kesikli çizgi: devam/geri besleme</text>
+<rect x="60" y="275" width="530" height="70" rx="17" fill="#4169A7" stroke="#4169A7" stroke-width="0"/>
+<text x="85" y="322" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start">1  İPHONE</text>
+<rect x="630" y="275" width="630" height="70" rx="17" fill="#4B6E9A" stroke="#4B6E9A" stroke-width="0"/>
+<text x="655" y="322" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start">2  BACKEND GİRİŞİ</text>
+<rect x="1290" y="275" width="870" height="70" rx="17" fill="#7558A8" stroke="#7558A8" stroke-width="0"/>
+<text x="1315" y="322" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start">3  KARAR VE GOAL LOOP</text>
+<rect x="2190" y="275" width="560" height="70" rx="17" fill="#4B927A" stroke="#4B927A" stroke-width="0"/>
+<text x="2215" y="322" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start">4  MAC / ARAÇ</text>
+<rect x="2780" y="275" width="560" height="70" rx="17" fill="#997C4A" stroke="#997C4A" stroke-width="0"/>
+<text x="2805" y="322" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" text-anchor="start">5  KALICI GÖREV DEFTERİ</text>
+<rect x="60" y="378" width="530" height="246" rx="22" fill="#14243B" stroke="#4169A7" stroke-width="2"/>
+<rect x="80" y="396" width="75" height="38" rx="12" fill="#4169A7" stroke="#4169A7" stroke-width="0"/>
+<text x="117" y="423" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">A</text>
+<text x="170" y="428" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">Kullanıcı isteği</text>
+<text x="86" y="472" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Sohbet metni + ekler + conversationId</text>
+<text x="86" y="506" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">taskId, bağlı Mac ve izin/yetenek bilgisi</text>
+<text x="86" y="540" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">POST /copilot; SSE ile durum ve yanıt</text>
+<rect x="630" y="378" width="630" height="246" rx="22" fill="#14243B" stroke="#4B6E9A" stroke-width="2"/>
+<rect x="650" y="396" width="75" height="38" rx="12" fill="#4B6E9A" stroke="#4B6E9A" stroke-width="0"/>
+<text x="687" y="423" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">B</text>
+<text x="740" y="428" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">Kimlik ve istek sınırı</text>
+<text x="656" y="472" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Auth / kota / şema / requestId</text>
+<text x="656" y="506" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Önceki konuşma, dosyalar ve cihaz sonucu</text>
+<text x="656" y="540" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Yeni görev veya aynı taskId ile devam</text>
+<rect x="1290" y="378" width="870" height="246" rx="22" fill="#14243B" stroke="#7558A8" stroke-width="2"/>
+<rect x="1310" y="396" width="75" height="38" rx="12" fill="#7558A8" stroke="#7558A8" stroke-width="0"/>
+<text x="1347" y="423" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">C</text>
+<text x="1400" y="428" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">Anlama ve yönlendirme</text>
+<text x="1316" y="472" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Hedef, öğeler, kısıtlar, kritik belirsizlik; gerekiyorsa tek soru</text>
+<text x="1316" y="506" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Niyet, risk, PC/sohbet/araştırma/proje; araç gruplarını daraltır</text>
+<text x="1316" y="540" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Basit iş kısa yol • proje arka planı • uzun iş ana döngü</text>
+<rect x="2190" y="378" width="560" height="246" rx="22" fill="#14243B" stroke="#4B927A" stroke-width="2"/>
+<rect x="2210" y="396" width="75" height="38" rx="12" fill="#4B927A" stroke="#4B927A" stroke-width="0"/>
+<text x="2247" y="423" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">D</text>
+<text x="2300" y="428" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">Yürütme sınırı</text>
+<text x="2216" y="472" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Özel dosya/ekran/uygulama Mac’te</text>
+<text x="2216" y="506" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Telefon adımı taşır veya izinli ajan soketi</text>
+<text x="2216" y="540" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Mac komut kimliğiyle tekrarı önler</text>
+<rect x="2780" y="378" width="560" height="246" rx="22" fill="#14243B" stroke="#997C4A" stroke-width="2"/>
+<rect x="2800" y="396" width="75" height="38" rx="12" fill="#997C4A" stroke="#997C4A" stroke-width="0"/>
+<text x="2837" y="423" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">E</text>
+<text x="2890" y="428" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">SQLite work_memory</text>
+<text x="2806" y="472" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Asıl hedef + plan + adım durumları</text>
+<text x="2806" y="506" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Kanıt, yollar, görev gerçekleri ve TTL</text>
+<text x="2806" y="540" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Bitmemiş iş 6 saat; bitmiş 30 dk</text>
+<path d="M590 495 L625 495" fill="none" stroke="#78A9FF" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M1260 495 L1285 495" fill="none" stroke="#78A9FF" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M2160 495 L2185 495" fill="none" stroke="#78A9FF" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
+<rect x="60" y="680" width="2100" height="1000" rx="28" fill="#0F1C31" stroke="#45567D" stroke-width="2"/>
+<text x="95" y="740" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="700" text-anchor="start">ANA GOAL LOOP · backend src/groq/client.ts</text>
+<text x="95" y="785" fill="#A9C4E5" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="400" text-anchor="start">Her tur: kayıtlı hedefi oku → doğru aracı seç → sonucu gözle → kanıtla → kalan adıma geç</text>
+<rect x="100" y="830" width="970" height="207" rx="22" fill="#14243B" stroke="#6B77B8" stroke-width="2"/>
+<rect x="120" y="848" width="75" height="38" rx="12" fill="#6B77B8" stroke="#6B77B8" stroke-width="0"/>
+<text x="157" y="875" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">P1</text>
+<text x="210" y="880" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">1 · Plan / görev sözleşmesi</text>
+<text x="126" y="924" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">set_plan: adımlar, beklenen sonuçlar, bağımlılıklar</text>
+<text x="126" y="958" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">ExecutionCoordinator mevcut adımı ve durumunu tutar</text>
+<text x="126" y="992" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Görev defteri: hedef + kısıt + bitti ölçütü</text>
+<rect x="1130" y="830" width="970" height="207" rx="22" fill="#14243B" stroke="#6B77B8" stroke-width="2"/>
+<rect x="1150" y="848" width="75" height="38" rx="12" fill="#6B77B8" stroke="#6B77B8" stroke-width="0"/>
+<text x="1187" y="875" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">P2</text>
+<text x="1240" y="880" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">2 · Araç seçimi / emniyet</text>
+<text x="1156" y="924" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Görünen yetenekler + daraltılmış araç grupları</text>
+<text x="1156" y="958" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Backend aracı burada; yerel eylem Mac’e adım olarak</text>
+<text x="1156" y="992" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Yan etkide izin/yerel onay; çevrimdışında beklet</text>
+<rect x="100" y="1075" width="970" height="207" rx="22" fill="#14243B" stroke="#6B77B8" stroke-width="2"/>
+<rect x="120" y="1093" width="75" height="38" rx="12" fill="#6B77B8" stroke="#6B77B8" stroke-width="0"/>
+<text x="157" y="1120" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">P3</text>
+<text x="210" y="1125" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">3 · Yürüt / makbuz bekle</text>
+<text x="126" y="1169" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Araç çağrısı veya Mac stepId ile gönderim</text>
+<text x="126" y="1203" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">İPhone onayı ve Mac sonucu gerekirse burada durur</text>
+<text x="126" y="1237" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Aynı stepId kesinleşmişse tekrar çalıştırma</text>
+<rect x="1130" y="1075" width="970" height="207" rx="22" fill="#14243B" stroke="#6B77B8" stroke-width="2"/>
+<rect x="1150" y="1093" width="75" height="38" rx="12" fill="#6B77B8" stroke="#6B77B8" stroke-width="0"/>
+<text x="1187" y="1120" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">P4</text>
+<text x="1240" y="1125" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">4 · Kanıtla / güncelle</text>
+<text x="1156" y="1169" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Mac verified sonucu veya backend araç kanıtı</text>
+<text x="1156" y="1203" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Hızlı makbuz kararı ya da checkCompletion</text>
+<text x="1156" y="1237" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Başarı / eksik / reddedildi / belirsiz ayrı kalır</text>
+<rect x="100" y="1320" width="970" height="266" rx="22" fill="#14243B" stroke="#6B77B8" stroke-width="2"/>
+<rect x="120" y="1338" width="75" height="38" rx="12" fill="#6B77B8" stroke="#6B77B8" stroke-width="0"/>
+<text x="157" y="1365" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">P5</text>
+<text x="210" y="1370" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">5 · İlerle veya güvenle dur</text>
+<text x="126" y="1414" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Doğrulanan adımı atla; eksikse düzelt / soru sor</text>
+<text x="126" y="1448" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">3 sessiz tur: yön değiştir; 5: dur</text>
+<text x="126" y="1482" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">24 model turu veya süre sınırı: checkpoint</text>
+<rect x="1130" y="1320" width="970" height="266" rx="22" fill="#14243B" stroke="#6B77B8" stroke-width="2"/>
+<rect x="1150" y="1338" width="75" height="38" rx="12" fill="#6B77B8" stroke="#6B77B8" stroke-width="0"/>
+<text x="1187" y="1365" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" text-anchor="middle">P6</text>
+<text x="1240" y="1370" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">6 · Yanıtı kapat / ekranda göster</text>
+<text x="1156" y="1414" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Plan, artefakt, görev kartı ve gerçek durum</text>
+<text x="1156" y="1448" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">SSE son yanıtı; telefon canlı/kalıcı görünümü birleştirir</text>
+<text x="1156" y="1482" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">“devam et”: saklanan hedef ve kalan adımlar</text>
+<path d="M1070 930 L1120 930" fill="none" stroke="#78A9FF" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M1615 1037 L1615 1065" fill="none" stroke="#78A9FF" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M1130 1175 L1080 1175" fill="none" stroke="#78A9FF" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M585 1282 L585 1310" fill="none" stroke="#78A9FF" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M1070 1450 L1120 1450" fill="none" stroke="#78A9FF" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
+<rect x="2190" y="680" width="560" height="1000" rx="28" fill="#10261F" stroke="#4B927A" stroke-width="2"/>
+<text x="2225" y="740" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="35" font-weight="700" text-anchor="start">MAC YÜRÜTMESİ</text>
+<rect x="2220" y="795" width="500" height="195" rx="22" fill="#17392E" stroke="#4B927A" stroke-width="2"/>
+<text x="2244" y="845" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">Yerel adım</text>
+<text x="2246" y="889" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Onay → MacCommandEngine</text>
+<text x="2246" y="923" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Dosya / belge / tarayıcı / sistem</text>
+<text x="2246" y="957" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Gerçek postcondition kontrolü</text>
+<rect x="2220" y="1030" width="500" height="195" rx="22" fill="#17392E" stroke="#4B927A" stroke-width="2"/>
+<text x="2244" y="1080" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">Makbuz</text>
+<text x="2246" y="1124" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">commandID + status + verified</text>
+<text x="2246" y="1158" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Sonuç, hata, sideEffectUncertain</text>
+<text x="2246" y="1192" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Aynı ID → kayıtlı sonuç</text>
+<rect x="2220" y="1265" width="500" height="275" rx="22" fill="#17392E" stroke="#4B927A" stroke-width="2"/>
+<text x="2244" y="1315" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">Telefona geri dönüş</text>
+<text x="2246" y="1359" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">İPhone son 12 sonucu taşır</text>
+<text x="2246" y="1393" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Backend sonuçları aynı taskId ile alır</text>
+<text x="2246" y="1427" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Onay kartı, adım listesi, dosya kartı</text>
+<text x="2246" y="1461" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">İşlem belirsizse otomatik tekrar yok</text>
+<path d="M2160 1160 L2210 1160" fill="none" stroke="#78A9FF" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M2470 990 L2470 1020" fill="none" stroke="#78A9FF" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
+<path d="M2470 1225 L2470 1255" fill="none" stroke="#78A9FF" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
+<rect x="2780" y="680" width="560" height="1000" rx="28" fill="#2B2518" stroke="#A78B53" stroke-width="2"/>
+<text x="2815" y="740" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="35" font-weight="700" text-anchor="start">BAĞLAM / DEVAM</text>
+<rect x="2810" y="795" width="500" height="206" rx="22" fill="#3B321F" stroke="#A78B53" stroke-width="2"/>
+<text x="2834" y="845" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">Kalıcı kayıt</text>
+<text x="2836" y="889" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">execution snapshot + stepId</text>
+<text x="2836" y="923" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">24 sonuç satırı • 40 named fact</text>
+<text x="2836" y="957" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Bilinen yollar ve son görev</text>
+<rect x="2810" y="1040" width="500" height="206" rx="22" fill="#3B321F" stroke="#A78B53" stroke-width="2"/>
+<text x="2834" y="1090" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">Model bağlamı</text>
+<text x="2836" y="1134" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Eski turlar sıkıştırılır</text>
+<text x="2836" y="1168" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Asıl hedef + sözleşme + son 24 fact</text>
+<text x="2836" y="1202" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Yeni turda görev durumu yeniden verilir</text>
+<rect x="2810" y="1285" width="500" height="255" rx="22" fill="#3B321F" stroke="#A78B53" stroke-width="2"/>
+<text x="2834" y="1335" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">Devam kapısı</text>
+<text x="2836" y="1379" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">taskId / stepId ve hedef eşleştirme</text>
+<text x="2836" y="1413" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Bitmiş makbuz tekrar işlenmez</text>
+<text x="2836" y="1447" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Açık plan “devam et” ile sürer</text>
+<text x="2836" y="1481" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Çalışan Mac adımı otomatik yeniden yollanmaz</text>
+<path d="M2160 1460 L2795 1460" fill="none" stroke="#78A9FF" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)" stroke-dasharray="15 10"/>
+<rect x="60" y="1725" width="3280" height="90" rx="20" fill="#57272A" stroke="#AF5960" stroke-width="2"/>
+<text x="95" y="1784" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="37" font-weight="700" text-anchor="start">KIRMIZI ALANLAR  ·  kodda görülen hata / tasarım riski</text>
+<rect x="60" y="1845" width="770" height="438" rx="22" fill="#3B2028" stroke="#AF5960" stroke-width="2"/>
+<text x="84" y="1895" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">R1 · Erken yeşil risk</text>
+<text x="86" y="1939" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">verifyThrough: sonraki makbuz + ara adımda</text>
+<text x="86" y="1973" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">herhangi bir kanıt varsa önceki adımları</text>
+<text x="86" y="2007" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">topluca verified yapabiliyor. Kanıtın</text>
+<text x="86" y="2041" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">aynı çıktıya bağlı olduğu açıkça doğrulanmıyor.</text>
+<text x="86" y="2075" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">coordinator.ts • client.ts</text>
+<rect x="860" y="1845" width="770" height="438" rx="22" fill="#3B2028" stroke="#AF5960" stroke-width="2"/>
+<text x="884" y="1895" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">R2 · Eksik araştırma yeşili</text>
+<text x="886" y="1939" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Backend read kanıtından sonra judge 3 kez</text>
+<text x="886" y="1973" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">done=false dese bile araştırma adımı</text>
+<text x="886" y="2007" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">ilerletilip verified yapılabiliyor. Son</text>
+<text x="886" y="2041" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">görev kontrolü var, plan satırı erken yeşil.</text>
+<text x="886" y="2075" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">client.ts verifyCurrentObjective</text>
+<rect x="1660" y="1845" width="770" height="438" rx="22" fill="#3B2028" stroke="#AF5960" stroke-width="2"/>
+<text x="1684" y="1895" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">R3 · Belirsiz Mac sonucu</text>
+<text x="1686" y="1939" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Yan etki belirsizse tekrar güvenle duruyor;</text>
+<text x="1686" y="1973" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">ancak hedef durumunu kendiliğinden okuyup</text>
+<text x="1686" y="2007" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">uzlaştıran genel yol yok. running/dispatching</text>
+<text x="1686" y="2041" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">adımı “devam et” kartından da gizleniyor.</text>
+<text x="1686" y="2075" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">taskLedger.ts • CopilotView.swift</text>
+<rect x="2460" y="1845" width="880" height="438" rx="22" fill="#3B2028" stroke="#AF5960" stroke-width="2"/>
+<text x="2484" y="1895" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" text-anchor="start">R4 · Çok uzun zincirde sıkışma</text>
+<text x="2486" y="1939" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Telefon son 12 sonucu, backend 24 satır/</text>
+<text x="2486" y="1973" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">40 fact, model son 24 fact ve 24 tur görür.</text>
+<text x="2486" y="2007" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Plan snapshot korunur; eski ayrıntılar düşebilir.</text>
+<text x="2486" y="2041" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">Kalan iş sürer ama kanıt tekrar okunabilir.</text>
+<text x="2486" y="2075" fill="#C8D8EA" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" text-anchor="start">client.ts • taskLedger.ts • CopilotView.swift</text>
+<rect x="60" y="2335" width="3280" height="115" rx="20" fill="#101E31" stroke="#2F4461" stroke-width="2"/>
+<text x="95" y="2382" fill="#8BB3E9" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" text-anchor="start">OKUMA NOTU</text>
+<text x="285" y="2382" fill="#D6E4F5" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400" text-anchor="start">Bu görsel ana sohbet/PC goal loop’unu gösterir. Proje motoru, otomasyon ve isteğe bağlı PC ajanı ayrı dallardır; her görev ana döngüye girmez.</text>
+<text x="95" y="2422" fill="#9AB2CC" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" text-anchor="start">Kaynaklar: rova-backend/src/groq/{client,taskLedger,requestUnderstanding,stall}.ts; src/execution/coordinator.ts; rova/RovaIOS/CopilotView.swift; RovaMac/MacCommandEngine.swift</text>
+</svg>
