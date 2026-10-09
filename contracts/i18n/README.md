@@ -15,3 +15,4 @@ Adding or changing a screen text:
 3. In the backend repo: `npm run i18n:catalog -- <keys.json> <translations.json>` translates what is missing (it checks the format specifiers), then run `build.mjs`.
 
 `guard.mjs` (CI) also fails on a Turkish sentence in `RovaIOS/*.swift` that is not a catalog key; text that must stay as written (wire text the backend matches, regexes, comparisons) is listed in `verbatim.json`.
+4. `node contracts/i18n/guard.mjs` (CI) fails on a Turkish sentence in `RovaIOS/*.swift` that is not a catalog key; text that must stay as written (wire text the backend matches, regexes, comparisons) is listed in `verbatim.json`.
