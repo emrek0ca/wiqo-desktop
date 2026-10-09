@@ -16,15 +16,7 @@ struct WiqoContextChunk: Identifiable, Equatable {
         return ext.isEmpty ? "DOSYA" : String(ext.prefix(4))
     }
 
-    var tone: Color {
-        switch (source as NSString).pathExtension.lowercased() {
-        case "pdf": return WiqoTheme.red
-        case "csv", "xls", "xlsx", "numbers": return WiqoTheme.green
-        case "doc", "docx", "pages", "rtf": return .blue
-        case "md", "txt": return .gray
-        default: return .indigo
-        }
-    }
+    var tone: Color { .secondary }
 }
 
 struct WiqoContextCard: View {

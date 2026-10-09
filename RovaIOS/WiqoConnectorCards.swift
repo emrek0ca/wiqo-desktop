@@ -45,16 +45,8 @@ struct ConnectorListCard: View {
             }
         }
 
-        var tint: Color {
-            switch self {
-            case .mail: return .red
-            case .calendar: return .blue
-            case .drive: return .green
-            case .notion: return .primary
-            case .contacts: return .orange
-            case .files: return .indigo
-            }
-        }
+        /// One quiet tone for every service: the icon tells them apart, colour is kept for status.
+        var tint: Color { .secondary }
 
         var noun: String {
             switch self {

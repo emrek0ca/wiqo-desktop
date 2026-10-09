@@ -289,6 +289,10 @@ struct CopilotView: View {
                 .frame(width: 96, height: 96)
                 .accessibilityLabel("Wiqo")
                 .wiqoRiseIn()
+            Text("Bugün ne yapalım?")
+                .font(.title3.weight(.medium))
+                .foregroundStyle(.secondary)
+                .wiqoRiseIn(delay: 0.1)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -320,6 +324,13 @@ struct CopilotView: View {
     private var suggestionRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                if deviceSuggestionsReady, let again = WiqoRecentTask.last {
+                    suggestionChip(title: String(again.prefix(30)) + (again.count > 30 ? "…" : ""), systemImage: "arrow.counterclockwise", isPrimary: true) {
+                        inputText = again
+                        Task { await sendMessage() }
+                    }
+                    .wiqoRiseIn(delay: 0.15)
+                }
                 ForEach(Array(visibleSuggestions.enumerated()), id: \.element.title) { index, suggestion in
                     suggestionChip(title: suggestion.title, systemImage: suggestion.icon, isPrimary: true) {
                         inputText = suggestion.title
@@ -525,6 +536,7 @@ struct CopilotView: View {
     private func commitThinking(to bubbleID: UUID, failed: Bool = false) {
         thinking.finish(failed: failed)
         let trace = thinking
+        if trace.showsTimeline { failed ? WiqoHaptics.failure() : WiqoHaptics.success() }
         setBubble(bubbleID) { $0.thinking = trace.showsTimeline ? trace : nil }
     }
 
@@ -570,6 +582,7 @@ struct CopilotView: View {
                     }
                     .environment(\.wiqoFollowUp, WiqoFollowUp { text in Task { await sendMessage(textOverride: text) } })
                     .padding(.horizontal)
+                    .transition(.wiqoFadeUp)
                 }
                 if let task = bubble.deferredTask {
                     DeferredTaskRow(task: task)
@@ -626,6 +639,7 @@ struct CopilotView: View {
         }
         .frame(maxWidth: .infinity, alignment: bubble.role == .user ? .trailing : .leading)
         .padding(.horizontal)
+        .animation(WiqoMotion.ease(), value: bubble.widgets.count)
     }
 
     private func systemErrorView(for bubble: ChatBubble) -> some View {
@@ -1506,18 +1520,9 @@ struct CopilotView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: isComposerFocused
-                            ? [RovaDesign.ink.opacity(0.55), RovaDesign.signal.opacity(0.55)]
-                            : [Color(.separator).opacity(0.35), Color(.separator).opacity(0.35)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: isComposerFocused ? 1.4 : 0.75
-                )
+                .strokeBorder(Color.primary.opacity(isComposerFocused ? 0.22 : 0.08), lineWidth: 0.75)
         )
-        .shadow(color: .black.opacity(0.10), radius: 14, y: 5)
+        .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
         .padding(.horizontal, 12)
         .padding(.bottom, 6)
         .animation(.easeOut(duration: 0.15), value: canSend)
@@ -1800,6 +1805,7 @@ struct CopilotView: View {
                 )
                 bubble.needsConfirmation = false
             }
+            if !result.steps.isEmpty { WiqoRecentTask.remember(text) }
             liveReplyBubbleID = nil
             liveReply.reset()
             persistConversation()

@@ -114,7 +114,7 @@ struct CopilotResultWidgetView: View {
                     .accessibilityLabel("\(completed) / \(total) adım tamamlandı")
             }
         }
-        .padding(12)
+        .padding(WiqoTheme.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(widgetCardBackground)
         .accessibilityElement(children: .combine)
@@ -151,17 +151,16 @@ struct CopilotResultWidgetView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 38, height: 38)
                         .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(widget.title ?? artifact?.filename ?? String(localized: "Dosya"))
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        Text(artifactSubtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+                    Text(widget.title ?? artifact?.filename ?? String(localized: "Dosya"))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(artifactSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .fixedSize()
                     Spacer(minLength: 4)
                     if isOpeningArtifact {
                         ProgressView().controlSize(.small)
@@ -183,7 +182,7 @@ struct CopilotResultWidgetView: View {
                 InlineArtifactPreview(artifact: artifact, onOpenFullscreen: onTap)
             }
         }
-        .padding(12)
+        .padding(WiqoTheme.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(widgetCardBackground)
         .accessibilityElement(children: .contain)
@@ -249,10 +248,10 @@ struct CopilotResultWidgetView: View {
             } label: {
                 HStack(spacing: 11) {
                     Image(systemName: "text.book.closed")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 42, height: 42)
-                        .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 38, height: 38)
+                        .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Kaynaklar")
@@ -269,7 +268,7 @@ struct CopilotResultWidgetView: View {
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
+                .padding(WiqoTheme.cardPadding)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -472,10 +471,10 @@ struct CopilotResultWidgetView: View {
                 .frame(width: 48, height: 48)
         } else {
             Image(systemName: "clock.badge.checkmark")
-                .font(.system(size: 21, weight: .medium))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 48, height: 48)
-                .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .font(.system(size: 20, weight: .regular))
+                .foregroundStyle(.secondary)
+                .frame(width: 44, height: 44)
+                .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 .accessibilityHidden(true)
         }
     }
@@ -493,7 +492,7 @@ struct CopilotResultWidgetView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
-        .padding(12)
+        .padding(WiqoTheme.cardPadding)
         .background(Color(uiColor: .tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .accessibilityElement(children: .combine)
     }
@@ -523,7 +522,7 @@ struct CopilotResultWidgetView: View {
                     Image(systemName: weatherSymbol(current?.weatherCode))
                         .symbolRenderingMode(.hierarchical)
                         .font(.system(size: 30, weight: .regular))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(.primary)
                         .accessibilityHidden(true)
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(temperature(current?.temperatureC))
@@ -632,7 +631,7 @@ struct CopilotResultWidgetView: View {
                 .foregroundStyle(.secondary)
             Image(systemName: weatherSymbol(hour.weatherCode))
                 .font(.body)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text(temperature(hour.temperatureC))
                 .font(.subheadline.weight(.semibold).monospacedDigit())
@@ -661,7 +660,7 @@ struct CopilotResultWidgetView: View {
                 .lineLimit(1)
             Image(systemName: weatherSymbol(day.weatherCode))
                 .font(.body)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             HStack(spacing: 5) {
                 Text(temperature(day.maxC)).foregroundStyle(.primary)

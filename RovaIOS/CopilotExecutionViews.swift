@@ -268,51 +268,72 @@ struct ConfirmationSheetView: View {
 struct TaskPlanMiniCard: View {
     let widget: RovaBackendClient.CopilotResultWidget
     @State private var expanded: Set<String> = []
+    @State private var showsAll = false
 
     var body: some View {
         let rows = widget.planSteps ?? []
+        let done = rows.filter { $0.status == "verified" }.count
+        let current = rows.first { $0.status != "verified" }
+        let needsAttention = rows.contains { $0.status == "failed" }
+        let open = showsAll || needsAttention
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Görev adımları")
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                Text("\(rows.filter { $0.status == "verified" }.count)/\(rows.count)")
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            }
-            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                let active = ["running", "awaiting_confirmation", "waiting_device", "failed"].contains(row.status)
-                Button {
-                    if expanded.contains(row.id) { expanded.remove(row.id) } else { expanded.insert(row.id) }
-                } label: {
-                    HStack(alignment: .top, spacing: 10) {
-                        ZStack {
-                            Circle().fill(color(row.status).opacity(0.12)).frame(width: 22, height: 22)
-                            if row.status == "verified" {
-                                Image(systemName: "checkmark").font(.caption.weight(.semibold))
-                            } else if row.status == "running" {
-                                ProgressView().controlSize(.mini)
-                            } else { Text("\(index + 1)").font(.caption.monospacedDigit()) }
-                        }.foregroundStyle(color(row.status))
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(row.title).font(.subheadline).foregroundStyle(row.status == "verified" ? .secondary : .primary)
-                            if row.status != "verified" && row.status != "pending" {
-                                Text(label(row.status)).font(.caption2.weight(.medium)).foregroundStyle(color(row.status))
-                            }
-                            if active || expanded.contains(row.id) {
-                                Text(row.message ?? row.expectedResult)
-                                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-                    .contentShape(Rectangle())
+            Button {
+                withAnimation(WiqoMotion.ease(0.25)) { showsAll.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    if current?.status == "running" { ProgressView().controlSize(.mini) }
+                    Text(current?.title ?? String(localized: "Görev adımları"))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text("\(done)/\(rows.count)")
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(open ? 90 : 0))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(index + 1). \(row.title). \(label(row.status))")
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(open ? "Adımları gizler" : "Adımları gösterir")
+            if open {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                    let active = ["running", "awaiting_confirmation", "waiting_device", "failed"].contains(row.status)
+                    Button {
+                        if expanded.contains(row.id) { expanded.remove(row.id) } else { expanded.insert(row.id) }
+                    } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            ZStack {
+                                Circle().fill(color(row.status).opacity(0.12)).frame(width: 22, height: 22)
+                                if row.status == "verified" {
+                                    Image(systemName: "checkmark").font(.caption2.weight(.semibold))
+                                } else if row.status == "running" {
+                                    ProgressView().controlSize(.mini)
+                                } else { Text("\(index + 1)").font(.caption2.monospacedDigit()) }
+                            }.foregroundStyle(color(row.status))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(row.title).font(.subheadline).foregroundStyle(row.status == "verified" ? .secondary : .primary)
+                                if row.status != "verified" && row.status != "pending" {
+                                    Text(label(row.status)).font(.caption2.weight(.medium)).foregroundStyle(color(row.status))
+                                }
+                                if active || expanded.contains(row.id) {
+                                    Text(row.message ?? row.expectedResult)
+                                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(index + 1). \(row.title). \(label(row.status))")
+                }
+                .transition(.opacity)
             }
         }
-        .padding(12)
+        .padding(WiqoTheme.cardPadding)
         .background(WiqoTheme.card, in: RoundedRectangle(cornerRadius: WiqoTheme.cardCorner, style: .continuous))
     }
 
@@ -321,7 +342,7 @@ struct TaskPlanMiniCard: View {
         case "verified": return .green
         case "failed": return .red
         case "awaiting_confirmation", "waiting_device": return .orange
-        case "running": return .accentColor
+        case "running": return .primary
         default: return .secondary
         }
     }

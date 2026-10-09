@@ -22,6 +22,7 @@ enum WiqoTheme {
     /// The one flat surface every card in a conversation sits on: no outline, no shadow, a faint wash that reads on light and dark.
     static let card = Color.primary.opacity(0.055)
     static let cardCorner: CGFloat = 20
+    static let cardPadding: CGFloat = 14
 
     /// The soft wash behind a semantic colour (success pill, added diff line, ...).
     static func tint(_ color: Color) -> Color { color.opacity(0.12) }

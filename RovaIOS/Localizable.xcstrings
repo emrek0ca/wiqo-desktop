@@ -11235,6 +11235,47 @@
         }
       }
     },
+    "Bugün ne yapalım?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What shall we do today?"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Was machen wir heute?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Qué hacemos hoy?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Que fait-on aujourd’hui ?"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ماذا سنفعل اليوم؟"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Чем займёмся сегодня?"
+          }
+        }
+      }
+    },
     "Bugünkü hakkın doldu. Pro ile devam edebilirsin.": {
       "extractionState": "manual",
       "localizations": {
