@@ -103,7 +103,7 @@ struct ThinkingSummaryView: View {
                         .font(.caption2.weight(.semibold))
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                     if let persona = trace.persona {
-                        WiqoAgentMascot(persona, size: 29)
+                        WiqoAgentMascot(persona, size: 22)
                     }
                     Text(trace.summary)
                         .font(.caption)

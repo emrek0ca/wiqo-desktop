@@ -63,31 +63,6 @@ struct AttachmentFullScreenView: View {
     }
 }
 
-struct CopyReplyButton: View {
-    let text: String
-    @State private var copied = false
-
-    var body: some View {
-        Button {
-            UIPasteboard.general.string = text
-            WiqoHaptics.selection()
-            copied = true
-            Task {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                copied = false
-            }
-        } label: {
-            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 30, height: 26)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(copied ? "Kopyalandı" : "Yanıtı kopyala")
-    }
-}
-
 /// "PC açılınca yapılacak" under a reply whose PC steps were queued because the PC was offline.
 /// The work runs by itself when the PC reconnects and a notification reports the result; until
 /// then the user can cancel it here.

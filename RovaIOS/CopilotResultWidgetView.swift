@@ -147,13 +147,13 @@ struct CopilotResultWidgetView: View {
             Button(action: onTap) {
                 HStack(spacing: 10) {
                     Image(systemName: artifactSymbol)
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 40, height: 40)
-                        .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    VStack(alignment: .leading, spacing: 3) {
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 38, height: 38)
+                        .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(widget.title ?? artifact?.filename ?? String(localized: "Dosya"))
-                            .font(.subheadline.weight(.semibold))
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)

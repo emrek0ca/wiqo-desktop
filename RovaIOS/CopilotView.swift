@@ -529,7 +529,7 @@ struct CopilotView: View {
     }
 
     private func bubbleView(_ bubble: ChatBubble) -> some View {
-        VStack(alignment: bubble.role == .user ? .trailing : .leading, spacing: 6) {
+        VStack(alignment: bubble.role == .user ? .trailing : .leading, spacing: 10) {
             if !bubble.attachmentThumbnails.isEmpty {
                 AttachmentThumbnailStrip(thumbnails: bubble.attachmentThumbnails)
             }
@@ -549,6 +549,9 @@ struct CopilotView: View {
                         artifacts: bubble.artifacts,
                         isStreaming: bubble.id == liveReplyBubbleID
                     )
+                    .contextMenu {
+                        Button { UIPasteboard.general.string = bubble.text } label: { Label("Kopyala", systemImage: "doc.on.doc") }
+                    }
                 }
                 ForEach(WiqoChatDeclutter.visible(bubble.widgets, hasArtifact: !bubble.artifacts.isEmpty), id: \.stableID) { widget in
                     let widgetArtifact = widget.artifactId.flatMap { artifactID in
@@ -619,7 +622,6 @@ struct CopilotView: View {
                         }
                     }
                 }
-                CopyReplyButton(text: bubble.text)
             }
         }
         .frame(maxWidth: .infinity, alignment: bubble.role == .user ? .trailing : .leading)

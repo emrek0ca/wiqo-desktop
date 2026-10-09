@@ -273,8 +273,8 @@ struct TaskPlanMiniCard: View {
         let rows = widget.planSteps ?? []
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("Görev adımları", systemImage: "list.number")
-                    .font(.subheadline.weight(.semibold))
+                Text("Görev adımları")
+                    .font(.subheadline.weight(.medium))
                 Spacer()
                 Text("\(rows.filter { $0.status == "verified" }.count)/\(rows.count)")
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -286,7 +286,7 @@ struct TaskPlanMiniCard: View {
                 } label: {
                     HStack(alignment: .top, spacing: 10) {
                         ZStack {
-                            Circle().fill(color(row.status).opacity(0.12)).frame(width: 26, height: 26)
+                            Circle().fill(color(row.status).opacity(0.12)).frame(width: 22, height: 22)
                             if row.status == "verified" {
                                 Image(systemName: "checkmark").font(.caption.weight(.semibold))
                             } else if row.status == "running" {
@@ -294,8 +294,10 @@ struct TaskPlanMiniCard: View {
                             } else { Text("\(index + 1)").font(.caption.monospacedDigit()) }
                         }.foregroundStyle(color(row.status))
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(row.title).font(.subheadline).foregroundStyle(.primary)
-                            Text(label(row.status)).font(.caption2.weight(.medium)).foregroundStyle(color(row.status))
+                            Text(row.title).font(.subheadline).foregroundStyle(row.status == "verified" ? .secondary : .primary)
+                            if row.status != "verified" && row.status != "pending" {
+                                Text(label(row.status)).font(.caption2.weight(.medium)).foregroundStyle(color(row.status))
+                            }
                             if active || expanded.contains(row.id) {
                                 Text(row.message ?? row.expectedResult)
                                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
