@@ -393,7 +393,7 @@ public struct LocalAnalysisPayload: Codable, Equatable, Sendable {
 /// actions, so a new chore is one Swift function instead of a new command type through every layer.
 public enum FileUtilityAction: String, Codable, CaseIterable, Sendable {
     case createFolder, archive, extract, mergePDF, splitPDF, compressImage, findDuplicates, diskUsage, recentFiles
-    case restoreFromTrash, reveal, openWith, print, ocr, setTags, organize, batchRename, moveDocuments
+    case restoreFromTrash, reveal, openWith, print, ocr, setTags, organize, batchRename, moveDocuments, inspect
 }
 
 public struct FileUtilityPayload: Codable, Equatable, Sendable {

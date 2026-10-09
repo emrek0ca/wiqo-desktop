@@ -29,6 +29,23 @@ final class MacCommandEngineTests: XCTestCase {
         XCTAssertEqual(second.message, "Emre klasörü zaten var.")
     }
 
+    func testInspectDistinguishesMissingFolderFromFailedLookup() async throws {
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-inspect-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let folder = parent.appendingPathComponent("Emre", isDirectory: true)
+        let missing = await MacSystem.fileUtility(FileUtilityPayload(action: .inspect, path: folder.path))
+        XCTAssertNil(missing.error)
+        guard case .files(let absent) = missing.data else { return XCTFail("Missing structured absence") }
+        XCTAssertTrue(absent.isEmpty)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        let present = await MacSystem.fileUtility(FileUtilityPayload(action: .inspect, path: folder.path))
+        XCTAssertNil(present.error)
+        guard case .files(let found) = present.data else { return XCTFail("Missing structured presence") }
+        XCTAssertEqual(found.first?.path, folder.path)
+        XCTAssertEqual(found.first?.isDirectory, true)
+    }
+
     func testMoveDocumentsMovesOnlyDirectDocumentsAndVerifiesEveryFile() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-documents-\(UUID().uuidString)", isDirectory: true)
         let source = root.appendingPathComponent("Desktop", isDirectory: true)

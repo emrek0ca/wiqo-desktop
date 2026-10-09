@@ -1050,6 +1050,19 @@ extension MacSystem {
         func short(_ url: URL) -> String { (url.path as NSString).abbreviatingWithTildeInPath }
 
         switch payload.action {
+        case .inspect:
+            guard let raw = payload.path,
+                  let url = resolvedLocalURL(raw, allowingMissingLastComponent: true),
+                  !isSymbolicLink(url) else {
+                return fail("INVALID_PATH", "Kontrol edilecek yol güvenli değil veya üst klasörüne erişilemiyor.", category: "validation")
+            }
+            var isFolder: ObjCBool = false
+            let exists = manager.fileExists(atPath: url.path, isDirectory: &isFolder)
+            if !exists { return (listing([]), "Yol bulunamadı.", nil) }
+            guard let entry = fileSystemEntry(url) else {
+                return fail("INSPECT_FAILED", "Dosya bilgisi doğrulanamadı.")
+            }
+            return (.files([entry]), isFolder.boolValue ? "Klasör bulundu." : "Dosya bulundu.", nil)
         case .moveDocuments:
             guard let source = existing(payload.path), isDirectory(source), !isSymbolicLink(source),
                   let destination = payload.destination.flatMap({ resolvedLocalURL($0, allowingMissingLastComponent: true) }),

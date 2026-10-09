@@ -560,6 +560,8 @@ public enum RovaValidation {
             return hasPath && ["type", "month"].contains(utility.mode ?? "type") ? nil : "Düzenlenecek klasör (path) gerekli; mode type ya da month olmalı."
         case .moveDocuments:
             return hasPath && utility.destination != nil ? nil : "Kaynak klasör (path) ve hedef klasör (destination) gerekli."
+        case .inspect:
+            return hasPath ? nil : "Kontrol edilecek dosya yolu (path) gerekli."
         case .batchRename:
             return hasPath && (utility.name?.contains("{n}") ?? false) ? nil : "Klasör (path) ve {n} içeren ad kalıbı (name) gerekli."
         }
@@ -567,7 +569,7 @@ public enum RovaValidation {
 
     /// File chores that only look (nothing on disk changes).
     public static func fileUtilityIsReadOnly(_ action: FileUtilityAction) -> Bool {
-        [.findDuplicates, .diskUsage, .recentFiles, .reveal, .ocr].contains(action)
+        [.findDuplicates, .diskUsage, .recentFiles, .reveal, .ocr, .inspect].contains(action)
     }
 
     /// A single path component with no separators or traversal - this is appended directly to
