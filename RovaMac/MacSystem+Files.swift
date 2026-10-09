@@ -1058,6 +1058,7 @@ extension MacSystem {
                 let failure = localFileError(code: "CREATE_FOLDER_FAILED", fallback: "Klasör oluşturulamadı.", error: error)
                 return (nil, failure.message, failure)
             }
+            guard isDirectory(url) else { return fail("POSTCONDITION_FAILED", "Klasör oluşturulduğu doğrulanamadı.") }
             return (listing([url]), "\(url.lastPathComponent) klasörü oluşturuldu.", nil)
 
         case .archive:

@@ -2,6 +2,33 @@ import XCTest
 @testable import RovaMac
 
 final class MacCommandEngineTests: XCTestCase {
+    func testArtifactURLAcceptsProductionOriginAndRejectsLookalikes() {
+        let path = "/copilot/artifacts/388367df-f586-4540-ba59-5577cbde1b49"
+        XCTAssertTrue(RovaValidation.isAllowedArtifactURL("https://api.wiqoai.com" + path))
+        XCTAssertTrue(RovaValidation.isAllowedArtifactURL("https://84-247-172-213.sslip.io" + path))
+        XCTAssertFalse(RovaValidation.isAllowedArtifactURL("http://api.wiqoai.com" + path))
+        XCTAssertFalse(RovaValidation.isAllowedArtifactURL("https://api.wiqoai.com.evil.test" + path))
+        XCTAssertFalse(RovaValidation.isAllowedArtifactURL("https://api.wiqoai.com/other/388367df-f586-4540-ba59-5577cbde1b49"))
+        XCTAssertFalse(RovaValidation.isAllowedArtifactURL("https://api.wiqoai.com" + path + "?redirect=evil"))
+    }
+
+    func testCreateFolderReturnsEvidenceOnlyAfterDirectoryExists() async throws {
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-folder-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let folder = parent.appendingPathComponent("Emre", isDirectory: true)
+
+        let first = await MacSystem.fileUtility(FileUtilityPayload(action: .createFolder, path: folder.path))
+        XCTAssertNil(first.error)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path))
+        guard case .files(let entries) = first.data else { return XCTFail("Missing folder evidence") }
+        XCTAssertEqual(entries.first?.path, folder.path)
+
+        let second = await MacSystem.fileUtility(FileUtilityPayload(action: .createFolder, path: folder.path))
+        XCTAssertNil(second.error)
+        XCTAssertEqual(second.message, "Emre klasörü zaten var.")
+    }
+
     func testCommittedFileEvidenceRejectsMissingAndMismatchedContent() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-evidence-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

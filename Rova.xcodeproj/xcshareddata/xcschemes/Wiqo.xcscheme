@@ -28,6 +28,16 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "7D84C17E5E11CF811876373E"
+               BuildableName = "RovaIOSTests.xctest"
+               BlueprintName = "RovaIOSTests"
+               ReferencedContainer = "container:Rova.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <StoreKitConfigurationFileReference
          identifier = "D30000000000000000000073"

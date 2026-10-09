@@ -57,6 +57,7 @@ struct CopilotView: View {
     /// One task-level recovery budget. Safe multi-step continuations may still use their normal
     /// round budget, but a failed local device step gets at most one alternative attempt.
     @State private var localRecoveryAttemptsRemaining = 1
+    @State private var localContinuationRoundsRemaining = 8
     @State private var proactiveSuggestions: [RovaBackendClient.ProactiveSuggestion] = []
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var pendingAttachments: [RovaBackendClient.ChatAttachment] = []
@@ -1177,9 +1178,8 @@ struct CopilotView: View {
         }
     }
 
-    /// Called as soon as `confirmation_needed` arrives. Device steps open the existing native
-    /// sheet; backend confirmations remain independent inline rows whose buttons can be used
-    /// immediately, even while the rest of the SSE turn is still streaming.
+    /// `confirmation_needed` is a preview. Keep device steps visible, but open the actionable
+    /// sheet only after the terminal response has validated the complete plan.
     private func presentEarlyConfirmationIfNeeded(
         steps: [PlannedCommand],
         backendConfirmations: [RovaBackendClient.BackendConfirmation],
@@ -1198,22 +1198,18 @@ struct CopilotView: View {
                     incoming: backendConfirmations,
                     executionUpdates: bubble.executionUpdates
                 )
-                bubble.needsConfirmation = bubble.needsConfirmation || needsDeviceConfirmation
             }
-            if needsDeviceConfirmation { presentConfirmation(for: existingBubbleID) }
             return existingBubbleID
         }
 
-        var reply = ChatBubble(
+        let reply = ChatBubble(
             role: .assistant,
             text: liveReply.displayed.isEmpty ? String(localized: "Bunu yapmak için onayını almam gerekiyor.") : liveReply.displayed,
             steps: steps,
             backendConfirmations: backendConfirmations.map { BackendConfirmationRow(confirmation: $0) }
         )
-        reply.needsConfirmation = needsDeviceConfirmation
         bubbles.append(reply)
         liveReply.reset()
-        if needsDeviceConfirmation { presentConfirmation(for: reply.id) }
         return reply.id
     }
 
@@ -1248,10 +1244,8 @@ struct CopilotView: View {
                 ConfirmationSheetView(
                     bubble: bubble,
                     isGranting: isGrantingTrust,
-                    // While the turn is still streaming, the sheet may be showing a partial plan
-                    // (see presentEarlyConfirmationIfNeeded) - keep it visible immediately, but
-                    // never let Onayla fire until `done` has reconciled the bubble with the final,
-                    // complete step list.
+                    // Only a reconciled terminal response opens this sheet. Keep actions
+                    // disabled while another request or local execution is in flight.
                     isProcessing: isConfirming || isSending,
                     onCancel: {
                         confirmationHandledExplicitly = true
@@ -1694,6 +1688,7 @@ struct CopilotView: View {
         taskReadApprovalBubbleID = nil
         taskWriteApproved = false
         localRecoveryAttemptsRemaining = 1
+        localContinuationRoundsRemaining = 8
         scrollToLatestRequest += 1
         defer { isSending = false }
 
@@ -1815,7 +1810,7 @@ struct CopilotView: View {
                     history: history,
                     initialReply: result.reply,
                     bubbleID: replyBubbleID,
-                    remainingRounds: 8,
+                    remainingRounds: localContinuationRoundsRemaining,
                     recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
                 )
             } else {
@@ -1844,6 +1839,13 @@ struct CopilotView: View {
             // there's no local sheet/screen of our own to dismiss here.
             liveReplyBubbleID = nil
             thinking.finish(failed: true)
+            confirmationBubbleID = nil
+            if let earlyConfirmationBubbleID {
+                setBubble(earlyConfirmationBubbleID) { bubble in
+                    bubble.steps.removeAll()
+                    bubble.needsConfirmation = false
+                }
+            }
             setBubble(responseBubble.id) { bubble in
                 if bubble.text.isEmpty { bubble.text = String(localized: "Oturum sona erdi; yanıt alınamadı.") }
             }
@@ -1858,13 +1860,27 @@ struct CopilotView: View {
             commitThinking(to: earlyConfirmationBubbleID ?? responseBubble.id, failed: true)
             let presentation = errorPresentation(error)
             if case RovaBackendError.declined(let message) = error, message.contains("QUOTA_EXCEEDED") { showingQuotaPaywall = true }
-            setBubble(responseBubble.id) { bubble in
-                if bubble.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // An early confirmation is only a preview of the plan. If the terminal response
+            // cannot be read, there is no final command list to approve or execute.
+            if confirmationBubbleID == earlyConfirmationBubbleID { confirmationBubbleID = nil }
+            if let earlyConfirmationBubbleID {
+                setBubble(earlyConfirmationBubbleID) { bubble in
+                    bubble.steps.removeAll()
+                    bubble.needsConfirmation = false
+                    bubble.executionUpdates.removeAll()
+                    bubble.widgets.removeAll { $0.type == .task_plan }
+                    bubble.backendConfirmations.removeAll { $0.status == .pending }
                     bubble.text = presentation.message
-                } else {
-                    bubble.text += "\n\n" + presentation.message
+                    bubble.errorDetail = presentation.detail
                 }
-                bubble.errorDetail = presentation.detail
+            }
+            if earlyConfirmationBubbleID != responseBubble.id {
+                bubbles.removeAll { $0.id == responseBubble.id }
+            } else {
+                setBubble(responseBubble.id) { bubble in
+                    bubble.text = presentation.message
+                    bubble.errorDetail = presentation.detail
+                }
             }
             liveReply.reset()
             persistConversation()
@@ -1936,7 +1952,9 @@ struct CopilotView: View {
     }
 
     private func confirmAndExecute(bubbleID: UUID, reason: String = String(localized: "Bu eylemi PC'de çalıştırmak için kimliğinizi doğrulayın"), beforeExecute: () async -> Void = {}) async {
-        guard !isConfirming else { return }
+        guard !isConfirming, !isSending,
+              let current = bubbles.first(where: { $0.id == bubbleID }),
+              current.needsConfirmation else { return }
         isConfirming = true
         let wasSending = isSending
         isSending = true
@@ -1968,7 +1986,10 @@ struct CopilotView: View {
         confirmationBubbleID = nil
         recentDeviceResults.removeAll(keepingCapacity: true)
         await execute(stepsThroughGate, bubbleID: bubbleID)
-        let advance = await advanceLocalExecution(bubbleID: bubbleID)
+        let gatedStepSucceeded = bubbles.first(where: { $0.id == bubbleID })?.stepResults[pending[gateIndex].id]?.isConfirmedSuccess == true
+        let advance: LocalExecutionAdvanceResult = gatedStepSucceeded
+            ? await advanceLocalExecution(bubbleID: bubbleID)
+            : .failed
         if case .awaitingConfirmation = advance {
             // The next gated step presents its own sheet from advanceLocalExecution.
         } else if shouldContinueAfterLocalExecution(bubbleID: bubbleID) {
@@ -1976,7 +1997,7 @@ struct CopilotView: View {
                 history: history,
                 initialReply: initialReply,
                 bubbleID: bubbleID,
-                remainingRounds: 8,
+                remainingRounds: localContinuationRoundsRemaining,
                 recoveryAttemptsRemaining: localRecoveryAttemptsRemaining
             )
         } else {
@@ -2140,7 +2161,7 @@ struct CopilotView: View {
         remainingRounds: Int,
         recoveryAttemptsRemaining: Int
     ) async {
-        guard remainingRounds > 0 else {
+        guard remainingRounds > 0, localContinuationRoundsRemaining > 0 else {
             setBubble(bubbleID) { $0.text = String(localized: "Bu turdaki adım sınırına ulaştım. Görevin tamamlandığı doğrulanmadı; devam etmemi isteyebilirsin.") }
             persistConversation()
             return
@@ -2149,6 +2170,12 @@ struct CopilotView: View {
             return
         }
         let localResults = Array(recentDeviceResults.suffix(12))
+        if localResults.contains(where: { $0.status == .unknown || $0.error?.code == "OUTCOME_UNKNOWN" || $0.error?.code == "TIMEOUT" }) {
+            recentDeviceResults.removeAll(keepingCapacity: true)
+            setBubble(bubbleID) { $0.text = String(localized: "Mac işleminin sonucu belirsiz. Aynı işlemi tekrar başlatmadım; önce Mac'teki sonucu kontrol et.") }
+            persistConversation()
+            return
+        }
         let hasFailure = localResults.contains { $0.status != .completed || $0.error != nil }
         guard !hasFailure || recoveryAttemptsRemaining > 0 else {
             recentDeviceResults.removeAll(keepingCapacity: true)
@@ -2163,6 +2190,7 @@ struct CopilotView: View {
             RovaBackendClient.ChatTurn(role: "user", content: "Yerel PC sonuçları hazır. Bu sonuçları kullanarak önceki isteği şimdi tamamla; belge içeriğini yeniden isteme.")
         ]
         recentDeviceResults.removeAll(keepingCapacity: true)
+        localContinuationRoundsRemaining -= 1
         liveReplyBubbleID = nil
         liveReply.reset()
         liveReplyBubbleID = bubbleID
@@ -2171,6 +2199,11 @@ struct CopilotView: View {
         if let previous = bubbles.first(where: { $0.id == bubbleID })?.thinking { thinking = previous }
         thinking.reopen()
         setBubble(bubbleID) { $0.thinking = nil }
+        let priorBubble = bubbles.first(where: { $0.id == bubbleID })
+        let priorStepIDs = Set(priorBubble?.steps.map(\.id) ?? [])
+        let priorUpdateIDs = Set(priorBubble?.executionUpdates.keys.map { $0 } ?? [])
+        let priorConfirmationIDs = Set(priorBubble?.backendConfirmations.map(\.id) ?? [])
+        let priorPlanWidgets = priorBubble?.widgets.filter { $0.type == .task_plan } ?? []
         var earlyConfirmationBubbleID: UUID? = bubbleID
         do {
             let result = try await RovaBackendClient.converse(
@@ -2233,7 +2266,15 @@ struct CopilotView: View {
                 : result.reply
             commitThinking(to: bubbleID)
             liveReply.finish(with: replyText)
-            mergeContinuationResult(result, into: bubbleID, streamBubbleID: earlyConfirmationBubbleID, text: replyText)
+            mergeContinuationResult(
+                result,
+                into: bubbleID,
+                streamBubbleID: earlyConfirmationBubbleID,
+                priorStepIDs: priorStepIDs,
+                priorUpdateIDs: priorUpdateIDs,
+                priorConfirmationIDs: priorConfirmationIDs,
+                text: replyText
+            )
             liveReplyBubbleID = nil
             liveReply.reset()
             persistConversation()
@@ -2262,9 +2303,18 @@ struct CopilotView: View {
             liveReplyBubbleID = nil
             liveReply.reset()
             commitThinking(to: bubbleID, failed: true)
+            if confirmationBubbleID == bubbleID { confirmationBubbleID = nil }
             // The first local read already succeeded and is visible in the original bubble. Keep
             // that evidence rather than replacing it with a generic network failure.
-            setBubble(bubbleID) { $0.text = executionNoticeFreeText($0.text) + String(localized: "\n\nYerel sonuç alındı; kalan adımı tamamlayamadım.") }
+            setBubble(bubbleID) { bubble in
+                bubble.steps.removeAll { !priorStepIDs.contains($0.id) }
+                bubble.executionUpdates = bubble.executionUpdates.filter { priorUpdateIDs.contains($0.key) || $0.value.kind != "device" }
+                bubble.widgets.removeAll { $0.type == .task_plan }
+                bubble.widgets.append(contentsOf: priorPlanWidgets)
+                bubble.backendConfirmations.removeAll { !priorConfirmationIDs.contains($0.id) && $0.status == .pending }
+                bubble.needsConfirmation = false
+                bubble.text = executionNoticeFreeText(bubble.text) + String(localized: "\n\nYerel sonuç alındı; kalan adımı tamamlayamadım.")
+            }
             persistConversation()
             CopilotConversationStore.flushPending()
         }
@@ -2280,6 +2330,9 @@ struct CopilotView: View {
         _ result: RovaBackendClient.ConverseResult,
         into bubbleID: UUID,
         streamBubbleID: UUID?,
+        priorStepIDs: Set<UUID>,
+        priorUpdateIDs: Set<UUID>,
+        priorConfirmationIDs: Set<UUID>,
         text: String
     ) {
         let streamBubble = streamBubbleID.flatMap { id in bubbles.first(where: { $0.id == id }) }
@@ -2311,8 +2364,20 @@ struct CopilotView: View {
                     bubble.failedSteps[step.id] = String(localized: "Önceki hata nedeniyle çalıştırılmadı.")
                 }
             }
-            let existingStepIDs = Set(bubble.steps.map(\.id))
-            bubble.steps.append(contentsOf: result.steps.filter { !existingStepIDs.contains($0.id) })
+            // Streamed confirmation steps are only previews. Keep prior turns' history,
+            // then take executable steps exclusively from the validated terminal response.
+            bubble.steps.removeAll { !priorStepIDs.contains($0.id) }
+            let incomingStepIDs = Set(result.steps.map(\.id))
+            bubble.steps.removeAll { incomingStepIDs.contains($0.id) }
+            bubble.steps.append(contentsOf: result.steps)
+            let terminalConfirmationIDs = Set(result.backendConfirmations.map(\.id))
+            bubble.backendConfirmations.removeAll {
+                !priorConfirmationIDs.contains($0.id) && !terminalConfirmationIDs.contains($0.id)
+            }
+            let representedIDs = incomingStepIDs.union(terminalConfirmationIDs)
+            bubble.executionUpdates = bubble.executionUpdates.filter {
+                priorUpdateIDs.contains($0.key) || representedIDs.contains($0.key)
+            }
             let existingArtifactIDs = Set(bubble.artifacts.map(\.id))
             bubble.artifacts.append(contentsOf: result.artifacts.filter { !existingArtifactIDs.contains($0.id) })
             bubble.widgets = CopilotWidgetCatalog.merging(bubble.widgets, with: result.widgets)

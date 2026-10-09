@@ -826,6 +826,56 @@ enum RovaBackendClient {
         let error: CopilotErrorResponse?
     }
 
+    /// The terminal SSE event and the cached request must decode the same plan. Keeping this
+    /// outside `converse` lets the wire contract be exercised without a live account or Mac.
+    struct CopilotDoneEvent: Decodable {
+        let reply: String
+        let steps: [CopilotStepResponse]
+        let executionState: String?
+        let artifacts: [ArtifactDescriptor]?
+        let widgets: [CopilotResultWidget]?
+        let backendConfirmations: [BackendConfirmation]?
+        let replyIsProgress: Bool?
+        let deferredTask: DeferredTask?
+        let projectTask: ProjectTask?
+        let agentTask: AgentTaskRef?
+    }
+
+    static func decodeCopilotDone(_ data: Data) throws -> ConverseResult {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let event = try decoder.decode(CopilotDoneEvent.self, from: data)
+        return makeConverseResult(
+            reply: event.reply,
+            steps: event.steps,
+            executionState: event.executionState,
+            artifacts: event.artifacts ?? [],
+            widgets: event.widgets ?? [],
+            backendConfirmations: event.backendConfirmations ?? [],
+            replyIsProgress: event.replyIsProgress ?? false,
+            deferredTask: event.deferredTask,
+            projectTask: event.projectTask,
+            agentTask: event.agentTask
+        )
+    }
+
+    static func decodeCompletedCopilotStatus(_ data: Data) throws -> ConverseResult {
+        let state = try JSONDecoder().decode(CopilotStatusResponse.self, from: data)
+        guard state.status == "done", let response = state.response else { throw RovaBackendError.invalidResponse }
+        return makeConverseResult(
+            reply: response.reply,
+            steps: response.steps,
+            executionState: response.executionState,
+            artifacts: response.artifacts ?? [],
+            widgets: response.widgets ?? [],
+            backendConfirmations: response.backendConfirmations ?? [],
+            replyIsProgress: response.replyIsProgress ?? false,
+            deferredTask: response.deferredTask,
+            projectTask: response.projectTask,
+            agentTask: response.agentTask
+        )
+    }
+
     private struct LocationRequiredInfo: Decodable {
         let requestId: String
         let prompt: String
@@ -1032,18 +1082,6 @@ enum RovaBackendClient {
 
         struct StatusEvent: Decodable { let text: String }
         struct DeltaEvent: Decodable { let text: String }
-        struct DoneEvent: Decodable {
-            let reply: String
-            let steps: [CopilotStepResponse]
-            let executionState: String?
-            let artifacts: [ArtifactDescriptor]?
-            let widgets: [CopilotResultWidget]?
-            let backendConfirmations: [BackendConfirmation]?
-            let replyIsProgress: Bool?
-            let deferredTask: DeferredTask?
-            let projectTask: ProjectTask?
-            let agentTask: AgentTaskRef?
-        }
         struct ConfirmationNeededEvent: Decodable {
             let steps: [CopilotStepResponse]
             let backendConfirmations: [BackendConfirmation]?
@@ -1121,19 +1159,7 @@ enum RovaBackendClient {
                 case "reset":
                     await onReset()
                 case "done":
-                    let event = try decoder.decode(DoneEvent.self, from: json)
-                    return makeConverseResult(
-                        reply: event.reply,
-                        steps: event.steps,
-                        executionState: event.executionState,
-                        artifacts: event.artifacts ?? [],
-                        widgets: event.widgets ?? [],
-                        backendConfirmations: event.backendConfirmations ?? [],
-                        replyIsProgress: event.replyIsProgress ?? false,
-                        deferredTask: event.deferredTask,
-                        projectTask: event.projectTask,
-                        agentTask: event.agentTask
-                    )
+                    return try decodeCopilotDone(json)
                 case "error":
                     let event = try? decoder.decode(ErrorEvent.self, from: json)
                     let message = nonEmptyMessage(event?.message, fallback: String(localized: "İstek anlaşılamadı."))
@@ -1223,11 +1249,13 @@ enum RovaBackendClient {
         await onStatus(String(localized: "Bağlantı koptu; Wiqo işlemin sonucunu koruyor…"))
         let deadline = Date().addingTimeInterval(150)
         var missingCount = 0
+        var malformedCount = 0
         var locationRequestHandled = false
         while Date() < deadline {
             if Task.isCancelled { throw CancellationError() }
             do {
                 let state = try await authorizedGet("copilot/requests/\(requestID.uuidString)", as: CopilotStatusResponse.self)
+                if state.status != "done" || state.response != nil { malformedCount = 0 }
                 switch state.status {
                 case "done":
                     guard let response = state.response else { throw RovaBackendError.invalidResponse }
@@ -1260,6 +1288,12 @@ enum RovaBackendClient {
             } catch RovaBackendError.network(let message) where message == "İşlem bulunamadı." {
                 missingCount += 1
                 if missingCount >= 3 { throw RovaBackendError.network(message) }
+                try await Task.sleep(nanoseconds: 500_000_000)
+            } catch RovaBackendError.invalidResponse {
+                // A gateway can return a transient non-JSON 200 while the durable result is
+                // already committed. Retry only this read; never post the side effect again.
+                malformedCount += 1
+                if malformedCount >= 3 { throw RovaBackendError.invalidResponse }
                 try await Task.sleep(nanoseconds: 500_000_000)
             }
         }

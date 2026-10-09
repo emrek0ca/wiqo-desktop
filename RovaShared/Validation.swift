@@ -862,8 +862,16 @@ public enum RovaValidation {
     }
 
     public static func isAllowedArtifactURL(_ rawValue: String) -> Bool {
-        guard isAllowedURL(rawValue), let host = URLComponents(string: rawValue)?.host?.lowercased() else { return false }
-        return host == "84-247-172-213.sslip.io"
+        guard isAllowedURL(rawValue), let url = URLComponents(string: rawValue),
+              url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased(),
+              ["api.wiqoai.com", "84-247-172-213.sslip.io"].contains(host),
+              url.port == nil || url.port == 443,
+              url.query == nil, url.fragment == nil else { return false }
+        return url.path.range(
+            of: #"^/copilot/artifacts/[0-9a-f-]{20,128}$"#,
+            options: .caseInsensitive.union(.regularExpression)
+        ) != nil
     }
 }
 
