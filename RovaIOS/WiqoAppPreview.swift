@@ -313,7 +313,7 @@ final class ActWebVerifier: NSObject, WKNavigationDelegate {
                 return .unavailable
             }
             var problems = (result["errors"] as? [String] ?? []).prefix(5).map { String($0.prefix(160)) }
-            if (result["textLength"] as? Int ?? 0) == 0 { problems.append("Sayfa boş görünüyor.") }
+            if (result["textLength"] as? Int ?? 0) == 0 { problems.append(String(localized: "Sayfa boş görünüyor.")) }
             if (result["width"] as? Int ?? 0) > 410 { problems.append(String(localized: "Sayfa telefon ekranından yatay taşıyor.")) }
             if !problems.isEmpty { return .problems(Array(problems.prefix(5))) }
             var notes: [String] = []

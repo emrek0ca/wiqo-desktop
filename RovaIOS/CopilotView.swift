@@ -783,7 +783,7 @@ struct CopilotView: View {
         let localDone = deviceSteps.allSatisfy { bubble.executedStepIDs.contains($0.id) }
         let backendDone = bubble.backendConfirmations.allSatisfy { $0.status == .completed }
         let liveDone = liveOnlyUpdates.allSatisfy { $0.status == LiveExecutionStatus.succeeded.rawValue }
-        if localDone && backendDone && liveDone { return bubble.replyIsProgress == true ? "Adım sonucu alındı; görev kontrol ediliyor." : "Adım sonuçları hazır." }
+        if localDone && backendDone && liveDone { return bubble.replyIsProgress == true ? String(localized: "Adım sonucu alındı; görev kontrol ediliyor.") : String(localized: "Adım sonuçları hazır.") }
         return String(localized: "İstediklerini sırayla yapıyorum.")
     }
 
@@ -843,7 +843,7 @@ struct CopilotView: View {
                         }
                     } label: {
                         Label(
-                            "İzin: \(selectedDuration == 0 ? "bu görev" : selectedDuration > 1_800 ? "8 saat" : "30 dakika")",
+                            String(localized: "İzin: \(selectedDuration == 0 ? String(localized: "bu görev") : selectedDuration > 1_800 ? String(localized: "8 saat") : String(localized: "30 dakika"))"),
                             systemImage: "lock.shield"
                         )
                         .font(.caption)
@@ -946,7 +946,7 @@ struct CopilotView: View {
 
     private func toolSummary(_ rows: [WiqoToolRow]) -> String {
         let finished = rows.filter { $0.tone == .success }.count
-        if finished == rows.count { return "\(rows.count) işlem tamamlandı" }
+        if finished == rows.count { return String(localized: "\(rows.count) işlem tamamlandı") }
         return String(localized: "\(rows.count) işlem")
     }
 
@@ -1075,7 +1075,7 @@ struct CopilotView: View {
     }
 
     private func friendlyExecutionFailure(_ status: LiveExecutionStatus, message: String?) -> String {
-        if status == .denied { return "Bu işlemi yapmadım." }
+        if status == .denied { return String(localized: "Bu işlemi yapmadım.") }
         let normalized = (message ?? "").lowercased()
         if normalized.contains("offline")
             || normalized.contains("device_offline")
@@ -2041,7 +2041,7 @@ struct CopilotView: View {
                     setBubble(bubbleID) { bubble in
                         bubble.inFlightStepIDs.remove(step.id)
                         bubble.executedStepIDs.insert(step.id)
-                        bubble.failedSteps[step.id] = result.error?.message ?? (result.data?.hasFailedVerification == true ? "Beklenen sonuç doğrulanamadı." : result.message)
+                        bubble.failedSteps[step.id] = result.error?.message ?? (result.data?.hasFailedVerification == true ? String(localized: "Beklenen sonuç doğrulanamadı.") : result.message)
                         bubble.stepResults[step.id] = result
                 if let evidence = DeviceOutcomeNarrator.fileWidget(step: step, result: result),
                    !bubble.widgets.contains(where: { $0.widgetId == evidence.widgetId }) {
@@ -2084,7 +2084,7 @@ struct CopilotView: View {
                 summary: step.summary,
                 status: result.isConfirmedSuccess ? .completed : (result.status == .completed ? .failed : result.status),
                 message: result.message,
-                error: result.error ?? (result.data?.hasFailedVerification == true ? RovaError(code: "POSTCONDITION_FAILED", message: "Beklenen sonuç doğrulanamadı; işlem otomatik tekrarlanmadı.") : nil),
+                error: result.error ?? (result.data?.hasFailedVerification == true ? RovaError(code: "POSTCONDITION_FAILED", message: String(localized: "Beklenen sonuç doğrulanamadı; işlem otomatik tekrarlanmadı.")) : nil),
                 dataText: encodedCommandData(result.data),
                 imageBase64: screenshotBase64(result.data),
                 fileBase64: delivery?.base64,
@@ -2114,7 +2114,7 @@ struct CopilotView: View {
                     bubble.widgets.append(evidence)
                 }
                 if !result.isConfirmedSuccess {
-                    bubble.failedSteps[step.id] = result.error?.message ?? (result.data?.hasFailedVerification == true ? "Beklenen sonuç doğrulanamadı." : result.message)
+                    bubble.failedSteps[step.id] = result.error?.message ?? (result.data?.hasFailedVerification == true ? String(localized: "Beklenen sonuç doğrulanamadı.") : result.message)
                 }
                 if case .processOutput(let output) = result.data {
                     bubble.codeRuns[step.id] = output
@@ -2153,8 +2153,8 @@ struct CopilotView: View {
         let relevant = bubble.steps.filter { $0.type != .executeCode }
         guard !relevant.isEmpty, relevant.allSatisfy({ bubble.executedStepIDs.contains($0.id) }) else { return nil }
         let failedCount = relevant.filter { bubble.failedSteps[$0.id] != nil }.count
-        if failedCount == 0 { return "Mac adımlarının sonuçları alındı; görevin kalanını kontrol ediyorum." }
-        if failedCount == relevant.count { return "Bu isteği tamamlayamadım." }
+        if failedCount == 0 { return String(localized: "Mac adımlarının sonuçları alındı; görevin kalanını kontrol ediyorum.") }
+        if failedCount == relevant.count { return String(localized: "Bu isteği tamamlayamadım.") }
         return String(localized: "İşin bir kısmını yaptım; kalanını tamamlayamadım.")
     }
 
@@ -2460,13 +2460,13 @@ struct CopilotView: View {
         case .screenshot(let content):
             return String(localized: "Ekran görüntüsü: \(content.width)×\(content.height)")
         case .shortcutResult(let content):
-            return String(localized: "Doğrulama: \(content.verified ? "başarılı" : "başarısız") (beklenen: \(content.expectedState), gözlenen: \(content.observedState ?? "belirsiz"))")
+            return String(localized: "Doğrulama: \(content.verified ? String(localized: "başarılı") : String(localized: "başarısız")) (beklenen: \(content.expectedState), gözlenen: \(content.observedState ?? String(localized: "belirsiz")))")
         case .uiElement(let content):
-            return String(localized: "Eşleşme: \(content.title ?? content.description ?? "etiket") (\(content.verified ? "doğrulandı" : "doğrulanamadı"))")
+            return String(localized: "Eşleşme: \(content.title ?? content.description ?? String(localized: "etiket")) (\(content.verified ? String(localized: "doğrulandı") : String(localized: "doğrulanamadı")))")
         case .screenClick(let content):
             return String(localized: "Koordinat: \(Int(content.x.rounded())), \(Int(content.y.rounded())) — yeniden gözlem gerekli.")
         case .applicationControl(let content):
-            return String(localized: "Doğrulama: \(content.verified ? "başarılı" : "başarısız") (önce: \(content.stateBefore), sonra: \(content.stateAfter))")
+            return String(localized: "Doğrulama: \(content.verified ? String(localized: "başarılı") : String(localized: "başarısız")) (önce: \(content.stateBefore), sonra: \(content.stateAfter))")
         case .calendarEvents(let events):
             if events.isEmpty { return String(localized: "Yaklaşan etkinlik yok.") }
             let formatter = DateFormatter()

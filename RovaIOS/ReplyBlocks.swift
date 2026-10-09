@@ -1059,7 +1059,7 @@ private struct RichMathWebView: UIViewRepresentable {
         }
         // Any marker that never resolved (artifact expired, download failed) degrades to a short
         // visible note instead of silently vanishing.
-        result = result.replacingOccurrences(of: #"\[\[formula:[^\]]+\]\]"#, with: "[formül yüklenemedi]", options: .regularExpression)
+        result = result.replacingOccurrences(of: #"\[\[formula:[^\]]+\]\]"#, with: String(localized: "[formül yüklenemedi]"), options: .regularExpression)
         return result
     }
 

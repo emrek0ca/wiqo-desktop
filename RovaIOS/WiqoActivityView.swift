@@ -65,26 +65,26 @@ struct WiqoActivityView: View {
             item: $selectedPendingTask,
             title: { task in
                 task.ref?.type == "project" ? "Proje iptal edilsin mi?"
-                    : task.ref?.type == "agent_task" ? "Arka plan görevi durdurulsun mu?"
-                    : task.ref?.type == "terminal_grant" ? "Terminal oturumu kapatılsın mı?"
+                    : task.ref?.type == "agent_task" ? String(localized: "Arka plan görevi durdurulsun mu?")
+                    : task.ref?.type == "terminal_grant" ? String(localized: "Terminal oturumu kapatılsın mı?")
                     : String(localized: "PC işi iptal edilsin mi?")
             },
             actions: { item in
                 Button(item.ref?.type == "project" ? "Projeyi iptal et"
-                    : item.ref?.type == "agent_task" ? "Görevi durdur"
+                    : item.ref?.type == "agent_task" ? String(localized: "Görevi durdur")
                     : item.ref?.type == "terminal_grant" ? "Oturumu kapat"
-                    : "PC işini iptal et", role: .destructive) {
+                    : String(localized: "PC işini iptal et"), role: .destructive) {
                     Task { await cancelPendingTask(item) }
                 }
             },
             message: { item in
                 Text(item.ref?.type == "project"
-                     ? "Wiqo projeyi durdurur; o ana kadar yapılan kısım teslim edilmez."
+                     ? String(localized: "Wiqo projeyi durdurur; o ana kadar yapılan kısım teslim edilmez.")
                      : item.ref?.type == "agent_task"
-                        ? "Wiqo görevi o adımda bırakır; yarım sonuç teslim edilmez."
+                        ? String(localized: "Wiqo görevi o adımda bırakır; yarım sonuç teslim edilmez.")
                      : item.ref?.type == "terminal_grant"
-                        ? "Oturum izni hemen kapatılır. PC çevrimdışıysa başlamış bir işin durduğu doğrulanamayabilir."
-                        : "PC'ye gönderilmiş bir adımın sonucu belirsiz kalabilir; Wiqo bunu Etkinlik'te gösterecek.")
+                        ? String(localized: "Oturum izni hemen kapatılır. PC çevrimdışıysa başlamış bir işin durduğu doğrulanamayabilir.")
+                        : String(localized: "PC'ye gönderilmiş bir adımın sonucu belirsiz kalabilir; Wiqo bunu Etkinlik'te gösterecek."))
             }
         )
         .alert("Durum", isPresented: Binding(
@@ -224,11 +224,11 @@ struct WiqoActivityView: View {
         case "needs_approval": return "Onay bekliyor"
         case "needs_review": return "Kontrol gerekli"
         case "waiting_for_pc": return "PC bekleniyor"
-        case "running": return "Çalışıyor"
-        case "scheduled": return "Zamanlandı"
-        case "watching": return "İzleniyor"
-        case "done": return "Tamamlandı"
-        case "failed": return "Başarısız"
+        case "running": return String(localized: "Çalışıyor")
+        case "scheduled": return String(localized: "Zamanlandı")
+        case "watching": return String(localized: "İzleniyor")
+        case "done": return String(localized: "Tamamlandı")
+        case "failed": return String(localized: "Başarısız")
         default: return String(localized: "Sonuç belirsiz")
         }
     }
@@ -324,7 +324,7 @@ struct WiqoActivityView: View {
                 cancelNotice = result.state == "cancelled"
                     ? String(localized: "Terminal işi durduruldu.")
                     : result.state == "completed" || result.state == "failed"
-                        ? "Terminal işi zaten \(result.state == "completed" ? "tamamlandı" : "başarısız oldu")."
+                        ? (result.state == "completed" ? String(localized: "Terminal işi zaten tamamlandı.") : String(localized: "Terminal işi zaten başarısız oldu."))
                         : String(localized: "İşin durduğu doğrulanamadı; sonucu belirsiz olarak Etkinlik'te gösteriliyor.")
             } catch {
                 cancelNotice = String(localized: "Terminal işi iptal edilemedi veya sonucu belirsiz. Etkinlik'i yenileyip durumu kontrol et.")

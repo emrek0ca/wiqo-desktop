@@ -202,8 +202,8 @@ struct ConfirmationSheetView: View {
                         }
 
                         Text(laterConfirmationCount > 0
-                             ? "İşlem sırayla ilerleyecek. Aynı türden geri alınabilir adımlar için aşağıdan bu görev boyunca izin verebilirsin; silme ve üzerine yazma yine ayrıca sorulur."
-                             : "Onayından sonra bu adım çalıştırılacak.")
+                             ? String(localized: "İşlem sırayla ilerleyecek. Aynı türden geri alınabilir adımlar için aşağıdan bu görev boyunca izin verebilirsin; silme ve üzerine yazma yine ayrıca sorulur.")
+                             : String(localized: "Onayından sonra bu adım çalıştırılacak."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
@@ -348,11 +348,11 @@ struct TaskPlanMiniCard: View {
     }
     private func label(_ status: String) -> String {
         switch status {
-        case "verified": return "Doğrulandı"
-        case "failed": return "Tamamlanamadı"
+        case "verified": return String(localized: "Doğrulandı")
+        case "failed": return String(localized: "Tamamlanamadı")
         case "awaiting_confirmation": return "Onay bekliyor"
         case "waiting_device": return "Mac bekleniyor"
-        case "running": return "Çalışıyor"
+        case "running": return String(localized: "Çalışıyor")
         default: return String(localized: "Bekliyor")
         }
     }

@@ -164,11 +164,11 @@ final class ActModel: ObservableObject {
     /// What a writer refusal or failure code means when the server sent no sentence with it.
     private static func describe(code: String?) -> String? {
         switch code {
-        case "VALIDATION_FAILED": return "Üretilen kod doğrulamadan geçemedi; isteği biraz değiştirip yeniden dene."
-        case "RUN_CAPACITY", "PACKAGE_CAPACITY": return "Python çalıştırma kapasitesi şu an dolu; biraz sonra tekrar dene."
-        case "UNSUPPORTED_PACKAGE": return "İstenen Python paketi veya sürümü desteklenmiyor."
-        case "PACKAGE_UNAVAILABLE": return "Paket şu an kurulamıyor; biraz sonra tekrar dene."
-        case "RETRYABLE_RESTART": return "Sunucu yeniden başladı; isteği yeniden gönderebilirsin."
+        case "VALIDATION_FAILED": return String(localized: "Üretilen kod doğrulamadan geçemedi; isteği biraz değiştirip yeniden dene.")
+        case "RUN_CAPACITY", "PACKAGE_CAPACITY": return String(localized: "Python çalıştırma kapasitesi şu an dolu; biraz sonra tekrar dene.")
+        case "UNSUPPORTED_PACKAGE": return String(localized: "İstenen Python paketi veya sürümü desteklenmiyor.")
+        case "PACKAGE_UNAVAILABLE": return String(localized: "Paket şu an kurulamıyor; biraz sonra tekrar dene.")
+        case "RETRYABLE_RESTART": return String(localized: "Sunucu yeniden başladı; isteği yeniden gönderebilirsin.")
         default: return nil
         }
     }
@@ -185,7 +185,7 @@ final class ActModel: ObservableObject {
                 writerID = try await hub.startWriter(operation: operation, request: request, files: files, kind: project?.kind ?? "web", name: project?.name, errors: errors)
                 break
             } catch let error as ActHub.HubError {
-                guard error.code == "WRITER_BUSY", waits < 6 else { throw ActError(error.errorDescription ?? "Yazara ulaşılamadı.", code: error.code) }
+                guard error.code == "WRITER_BUSY", waits < 6 else { throw ActError(error.errorDescription ?? String(localized: "Yazara ulaşılamadı."), code: error.code) }
                 waits += 1
                 let wait = min(max(error.retryAfter ?? 5, 2), 20)
                 job?.message = String(localized: "Yazar şu an dolu; \(wait) sn sonra yeniden denenecek (\(waits)/6).")
@@ -208,17 +208,17 @@ final class ActModel: ObservableObject {
                         return try await runWriter(operation: operation, request: request, project: project, errors: errors, restarted: true)
                     }
                     guard state.status == "done", let result = state.result else {
-                        let reason = (state.error?.isEmpty == false ? state.error : nil) ?? Self.describe(code: state.errorCode) ?? "Değişiklik üretilemedi."
+                        let reason = (state.error?.isEmpty == false ? state.error : nil) ?? Self.describe(code: state.errorCode) ?? String(localized: "Değişiklik üretilemedi.")
                         throw ActError(reason, code: state.errorCode)
                     }
                     return result
                 }
-                job?.message = state.status == "queued" ? "Sırada; yazar boşalınca başlayacak." : state.progress
+                job?.message = state.status == "queued" ? String(localized: "Sırada; yazar boşalınca başlayacak.") : state.progress
             } catch let error as ActError {
                 throw error
             } catch {
                 let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                if (error as? ActHub.HubError)?.status == 404 { throw ActError("Görev sunucuda kalmadı; isteği yeniden gönder.") }
+                if (error as? ActHub.HubError)?.status == 404 { throw ActError(String(localized: "Görev sunucuda kalmadı; isteği yeniden gönder.")) }
                 failures += 1
                 if failures >= 15 { throw ActError(String(localized: "Sunucuya ulaşılamadı: \(message)")) }
                 if failures >= 3 { job?.message = String(localized: "Bağlantı zayıf, yeniden deneniyor…") }
@@ -574,7 +574,7 @@ final class ActModel: ObservableObject {
         case .zip:
             let entries = p.sortedFiles.map { (path: $0.path, data: Data($0.content.utf8)) }
             let data = ActArchive.zip(entries)
-            guard entries.contains(where: { ActArchive.normalizedPath($0.path) != nil }) else { throw ActError("Projede dışa aktarılacak dosya yok.") }
+            guard entries.contains(where: { ActArchive.normalizedPath($0.path) != nil }) else { throw ActError(String(localized: "Projede dışa aktarılacak dosya yok.")) }
             let url = dir.appendingPathComponent("\(name).zip")
             try data.write(to: url, options: .atomic)
             return url

@@ -41,6 +41,8 @@ struct CanvasView: View {
     private enum Surface: String, CaseIterable {
         case code = "Kod"
         case result = "Sonuç"
+
+        var title: String { self == .code ? String(localized: "Kod") : String(localized: "Sonuç") }
     }
 
     private enum RunPhase: Equatable {
@@ -153,7 +155,7 @@ struct CanvasView: View {
 
     private var surfacePicker: some View {
         WiqoPillTabs<Surface>(
-            options: Surface.allCases.map { WiqoPillTabs<Surface>.Option(value: $0, title: $0.rawValue) },
+            options: Surface.allCases.map { WiqoPillTabs<Surface>.Option(value: $0, title: $0.title) },
             selection: $surface
         )
         .padding(.horizontal, RovaDesign.screenPadding)
@@ -299,8 +301,8 @@ struct CanvasView: View {
             }
 
             Text(packages.isEmpty
-                 ? "Kodda kullanılan tanınmış kütüphaneleri otomatik hazırlarım. İstersen kendin de ekleyebilirsin."
-                 : "Çalıştırırken hazırlanır. Kod çalışırken internet erişimi kapalıdır.")
+                 ? String(localized: "Kodda kullanılan tanınmış kütüphaneleri otomatik hazırlarım. İstersen kendin de ekleyebilirsin.")
+                 : String(localized: "Çalıştırırken hazırlanır. Kod çalışırken internet erişimi kapalıdır."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -420,7 +422,7 @@ struct CanvasView: View {
             runTone = result.timedOut ? .attention : (result.exitCode == 0 ? .success : .failure)
             runStatus = result.timedOut
                 ? String(localized: "Beklenenden uzun sürdü, durdurdum.")
-                : (result.exitCode == 0 ? nil : "Kod çalışmadı; ayrıntı aşağıda.")
+                : (result.exitCode == 0 ? nil : String(localized: "Kod çalışmadı; ayrıntı aşağıda."))
         } else if errorMessage != nil {
             runTone = .failure
             runStatus = String(localized: "Çalıştırma durdu.")
@@ -431,7 +433,7 @@ struct CanvasView: View {
         rows.append(WiqoToolRow(
             id: "run",
             icon: language == "html" ? "safari" : "terminal",
-            label: language == "html" ? "Sayfayı aç" : "Kodu çalıştır",
+            label: language == "html" ? String(localized: "Sayfayı aç") : String(localized: "Kodu çalıştır"),
             chip: fileName,
             tone: runTone,
             status: runStatus
@@ -685,8 +687,8 @@ struct CanvasView: View {
 
     private func naturalProgress(_ message: String) -> String {
         let lowercased = message.lowercased()
-        if lowercased.contains("kütüphane") { return "Kütüphaneleri hazırlıyorum…" }
-        if lowercased.contains("çıktı") || lowercased.contains("dosya") { return "Çıktıyı düzenliyorum…" }
+        if lowercased.contains("kütüphane") { return String(localized: "Kütüphaneleri hazırlıyorum…") }
+        if lowercased.contains("çıktı") || lowercased.contains("dosya") { return String(localized: "Çıktıyı düzenliyorum…") }
         return String(localized: "Kodu çalıştırıyorum…")
     }
 }

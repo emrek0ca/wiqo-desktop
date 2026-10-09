@@ -83,8 +83,8 @@ final class IOSConnectionModel: ObservableObject {
     /// Transport details stay internal; the UI gets one small, stable vocabulary.
     var userFacingConnectionLabel: String {
         guard isPaired else { return String(localized: "PC kapalı") }
-        if isReconnecting || state == .connecting { return "Yeniden bağlanıyor" }
-        if state == .connected { return isUsingRelay ? "İnternet üzerinden bağlı" : "Bağlı" }
+        if isReconnecting || state == .connecting { return String(localized: "Yeniden bağlanıyor") }
+        if state == .connected { return isUsingRelay ? String(localized: "İnternet üzerinden bağlı") : String(localized: "Bağlı") }
         return String(localized: "PC kapalı")
     }
 
@@ -416,7 +416,7 @@ final class IOSConnectionModel: ObservableObject {
                     return
                 }
                 connection.send(content: data, completion: .contentProcessed { [weak self] error in
-                    if error != nil { Task { @MainActor in self?.timeout(request.id, message: "Bağlantı koptu.") } }
+                    if error != nil { Task { @MainActor in self?.timeout(request.id, message: String(localized: "Bağlantı koptu.")) } }
                 })
                 let timeoutSeconds: UInt64 = switch RovaOperationManifest.entry(for: type).timeoutClass {
                 case .short: 10

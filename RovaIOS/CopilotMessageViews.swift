@@ -139,15 +139,15 @@ struct DeferredTaskRow: View {
 
     private var title: String {
         if let detail, detail.finished {
-            return detail.status == "completed" ? "PC işi tamamlandı" : detail.status == "cancelled" ? "PC işi iptal edildi" : detail.status == "unknown" ? "PC sonucu doğrulanamadı" : "PC işi tamamlanamadı"
+            return detail.status == "completed" ? String(localized: "PC işi tamamlandı") : detail.status == "cancelled" ? String(localized: "PC işi iptal edildi") : detail.status == "unknown" ? String(localized: "PC sonucu doğrulanamadı") : String(localized: "PC işi tamamlanamadı")
         }
         return switch state {
         case .cancelled(outcomeUnknown: false): String(localized: "PC işi iptal edildi")
         case .cancelled(outcomeUnknown: true): String(localized: "Kuyruktan alındı; PC sonucu belirsiz. Etkinlik'i kontrol et.")
         default:
             switch detail?.status ?? task.status {
-            case "waiting_for_pc": "Kuyruğa alındı · Mac’e ulaşılamıyor; bağlanınca devam edecek"
-            case "dispatched", "pending", "queued": "Mac işi sırada · sonuç burada görünecek"
+            case "waiting_for_pc": String(localized: "Kuyruğa alındı · Mac’e ulaşılamıyor; bağlanınca devam edecek")
+            case "dispatched", "pending", "queued": String(localized: "Mac işi sırada · sonuç burada görünecek")
             default: String(localized: "Mac işi yürütülüyor · sonuç burada görünecek")
             }
         }
@@ -466,7 +466,7 @@ struct ProjectTaskCard: View {
         case "website": "Web projesi"
         case "document": "Belge"
         case "presentation": "Sunum"
-        case "images": "Görsel seti"
+        case "images": String(localized: "Görsel seti")
         default: String(localized: "Proje")
         }
     }
@@ -483,10 +483,10 @@ struct ProjectTaskCard: View {
 
     private var statusLabel: String {
         switch status {
-        case "running": "Adım adım hazırlanıyor"
-        case "done": "Hazır"
-        case "failed": "Tamamlanamadı"
-        case "cancelled": "İptal edildi"
+        case "running": String(localized: "Adım adım hazırlanıyor")
+        case "done": String(localized: "Hazır")
+        case "failed": String(localized: "Tamamlanamadı")
+        case "cancelled": String(localized: "İptal edildi")
         default: String(localized: "Durum bilinmiyor")
         }
     }
@@ -622,10 +622,10 @@ struct ProjectNarrativeView: View {
     private func sentence(for event: RovaBackendClient.ProjectDetail.Event) -> String {
         switch event.kind {
         case "decision": return event.text
-        case "write": return "Yazıldı: \(event.text)"
-        case "check": return "Kontrol: \(event.text)"
-        case "issue": return "Sorun: \(event.text)"
-        case "fix": return "Düzeltildi: \(event.text.replacingOccurrences(of: "Düzeltildi: ", with: ""))"
+        case "write": return String(localized: "Yazıldı: \(event.text)")
+        case "check": return String(localized: "Kontrol: \(event.text)")
+        case "issue": return String(localized: "Sorun: \(event.text)")
+        case "fix": return String(localized: "Düzeltildi: \(event.text.replacingOccurrences(of: "Düzeltildi: ", with: ""))")
         default: return event.text
         }
     }
@@ -936,10 +936,10 @@ struct AgentTaskCard: View {
 
     private var statusLabel: String {
         if detail?.waiting?.reason == "approval" { return "onay bekliyor" }
-        if detail?.waiting?.reason == "answer" { return "yanıt bekliyor" }
+        if detail?.waiting?.reason == "answer" { return String(localized: "yanıt bekliyor") }
         switch status {
-        case "done": return "tamamlandı"
-        case "failed": return "tamamlanamadı"
+        case "done": return String(localized: "tamamlandı")
+        case "failed": return String(localized: "tamamlanamadı")
         case "cancelled": return "durduruldu"
         default: return String(localized: "çalışıyor")
         }
@@ -1125,13 +1125,13 @@ struct AgentTasksView: View {
     }
 
     private func rowStatus(_ task: RovaBackendClient.AgentTaskDetail) -> String {
-        if task.waiting?.reason == "approval" { return "Onayını bekliyor" }
-        if task.waiting?.reason == "answer" { return "Yanıt bekliyor" }
+        if task.waiting?.reason == "approval" { return String(localized: "Onayını bekliyor") }
+        if task.waiting?.reason == "answer" { return String(localized: "Yanıt bekliyor") }
         switch task.status {
-        case "done": return "Tamamlandı"
-        case "failed": return "Tamamlanamadı"
+        case "done": return String(localized: "Tamamlandı")
+        case "failed": return String(localized: "Tamamlanamadı")
         case "cancelled": return "Durduruldu"
-        case "pending", "queued": return "Sırada"
+        case "pending", "queued": return String(localized: "Sırada")
         default: return String(localized: "Çalışıyor")
         }
     }
@@ -1174,7 +1174,7 @@ struct NamedAgentsView: View {
                     )) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(source.source == "gmail" ? "Gelen mailleri izle" : "Takvimi izle")
-                            Text(source.lastError ?? (source.source == "gmail" ? "Önemli olanı haber verir, gerisini sessizce not eder" : "Yeni ve değişen etkinlikleri takip eder"))
+                            Text(source.lastError ?? (source.source == "gmail" ? String(localized: "Önemli olanı haber verir, gerisini sessizce not eder") : String(localized: "Yeni ve değişen etkinlikleri takip eder")))
                                 .font(.caption)
                                 .foregroundStyle(source.lastError == nil ? Color.secondary : WiqoTheme.red)
                         }
@@ -1356,9 +1356,9 @@ struct NamedAgentsView: View {
     private static func statusLabel(_ status: String) -> String {
         switch status {
         case "notified": return "Haber verdi"
-        case "handled": return "Ajan üzerinde çalışıyor"
-        case "noted": return "Not aldı"
-        case "ignored": return "Önemsiz bulundu"
+        case "handled": return String(localized: "Ajan üzerinde çalışıyor")
+        case "noted": return String(localized: "Not aldı")
+        case "ignored": return String(localized: "Önemsiz bulundu")
         default: return String(localized: "Bekliyor")
         }
     }

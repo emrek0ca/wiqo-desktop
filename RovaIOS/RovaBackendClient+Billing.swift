@@ -57,7 +57,7 @@ extension RovaBackendClient {
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw RovaBackendError.invalidResponse }
         if http.statusCode == 401 { throw RovaBackendError.notAuthenticated }
-        guard http.statusCode == 200 else { throw RovaBackendError.network("Cihaz bağlantısı izlenemiyor.") }
+        guard http.statusCode == 200 else { throw RovaBackendError.network(String(localized: "Cihaz bağlantısı izlenemiyor.")) }
         for try await line in bytes.lines {
             try Task.checkCancellation()
             guard line.hasPrefix("data: "),

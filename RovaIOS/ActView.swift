@@ -49,8 +49,8 @@ private struct WriterConsentAlert: ViewModifier {
             Button("Vazgeç", role: .cancel) {}
         } message: {
             Text(deviceOnly
-                 ? "Bu proje yalnız bu cihazda duruyor. İsteği yazmak için dosyaları bu istek boyunca yazar modele gönderilir; sunucuda saklanmaz."
-                 : "İsteği yazmak için projenin dosyaları yazar modele gönderilir ve sunucuda saklanmaz. Projen cihazlar arasında şifreli senkronlanır; sunucu içeriği okuyamaz.")
+                 ? String(localized: "Bu proje yalnız bu cihazda duruyor. İsteği yazmak için dosyaları bu istek boyunca yazar modele gönderilir; sunucuda saklanmaz.")
+                 : String(localized: "İsteği yazmak için projenin dosyaları yazar modele gönderilir ve sunucuda saklanmaz. Projen cihazlar arasında şifreli senkronlanır; sunucu içeriği okuyamaz."))
         }
     }
 }
@@ -139,7 +139,7 @@ struct ActView: View {
             }
             return
         }
-        guard model.job == nil else { model.notice = "Act'te bir iş sürüyor; bitince yeniden dene."; return }
+        guard model.job == nil else { model.notice = String(localized: "Act'te bir iş sürüyor; bitince yeniden dene."); return }
         openedID = nil
         draft = open.request
         requestCreate()
@@ -1400,7 +1400,7 @@ struct CodeProjectWorkspaceView: View {
         pcStatus = message
         pcOutput = nil
         let result = await model.handOff(projectID, action: action) { pcStatus = $0 }
-        pcStatus = result.ok ? (action == "run" ? "Mac çalıştırdı." : result.text) : "Mac: \(result.text)"
+        pcStatus = result.ok ? (action == "run" ? String(localized: "Mac çalıştırdı.") : result.text) : "Mac: \(result.text)"
         if action == "run" { pcOutput = result.text }
     }
 

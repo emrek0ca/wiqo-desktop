@@ -90,8 +90,8 @@ struct ActComposerBar<Leading: View>: View {
             switch await recorder.start() {
             case .started, .startedWithNetworkFallback: break
             case .permissionDenied: micDenied = true
-            case .speechUnavailable: micMessage = "Konuşma tanıma şu an kullanılamıyor. Siri ve Dikte'nin açık olduğundan emin ol; bu arada yazabilirsin."
-            case .setupFailed: micMessage = "Mikrofon başlatılamadı; başka bir uygulama kullanıyor olabilir."
+            case .speechUnavailable: micMessage = String(localized: "Konuşma tanıma şu an kullanılamıyor. Siri ve Dikte'nin açık olduğundan emin ol; bu arada yazabilirsin.")
+            case .setupFailed: micMessage = String(localized: "Mikrofon başlatılamadı; başka bir uygulama kullanıyor olabilir.")
             }
         }
     }

@@ -26,7 +26,7 @@ struct AutomationDetailView: View {
                         .foregroundStyle(.secondary)
                     if let delivery = automation.delivery {
                         Label(
-                            delivery == "phone" ? "Telefonun kendisi gösteriyor (internetsiz de gelir)" : "Wiqo sunucusu çalıştırıp bildiriyor",
+                            delivery == "phone" ? String(localized: "Telefonun kendisi gösteriyor (internetsiz de gelir)") : String(localized: "Wiqo sunucusu çalıştırıp bildiriyor"),
                             systemImage: delivery == "phone" ? "iphone" : "cloud"
                         )
                         .font(.caption2)
@@ -273,14 +273,14 @@ private struct RunCard: View {
 
     private func humanEvent(_ event: String) -> String {
         switch event {
-        case "created": return "Görev kaydedildi"
-        case "started": return "İşlem başladı"
+        case "created": return String(localized: "Görev kaydedildi")
+        case "started": return String(localized: "İşlem başladı")
         case "waiting": return "Bekliyor"
         case "approval_required": return "Onay gerekiyor"
         case "retry_scheduled": return "Tekrar denenecek"
-        case "completed": return "Sonuç doğrulandı"
-        case "unknown": return "Sonuç doğrulanamadı"
-        case "failed": return "İşlem tamamlanamadı"
+        case "completed": return String(localized: "Sonuç doğrulandı")
+        case "unknown": return String(localized: "Sonuç doğrulanamadı")
+        case "failed": return String(localized: "İşlem tamamlanamadı")
         default: return String(localized: "İşlem güncellendi")
         }
     }
@@ -307,11 +307,11 @@ private struct RunCard: View {
 
     private var statusLabel: String {
         switch run.status {
-        case "done": return "Tamamlandı"
-        case "failed": return "Başarısız"
-        case "running": return "Çalışıyor"
+        case "done": return String(localized: "Tamamlandı")
+        case "failed": return String(localized: "Başarısız")
+        case "running": return String(localized: "Çalışıyor")
         case "pending": return "Bekliyor"
-        case "unknown": return "Sonuç doğrulanamadı"
+        case "unknown": return String(localized: "Sonuç doğrulanamadı")
         default: return String(localized: "Bilinmeyen durum")
         }
     }
@@ -338,30 +338,30 @@ private struct RunCard: View {
 
     private func deliveryLabel(_ state: String) -> String {
         switch state {
-        case "not_sent": return "PC'ye henüz gönderilmedi"
-        case "sent": return "PC'ye gönderildi; alındı bilgisi bekleniyor"
-        case "acknowledged": return "PC komutu aldı; sonuç bekleniyor"
-        case "completed": return "PC sonucu doğruladı"
-        case "failed": return "PC komutu başarısız oldu"
-        case "unknown": return "Komutun sonucu doğrulanamadı"
+        case "not_sent": return String(localized: "PC'ye henüz gönderilmedi")
+        case "sent": return String(localized: "PC'ye gönderildi; alındı bilgisi bekleniyor")
+        case "acknowledged": return String(localized: "PC komutu aldı; sonuç bekleniyor")
+        case "completed": return String(localized: "PC sonucu doğruladı")
+        case "failed": return String(localized: "PC komutu başarısız oldu")
+        case "unknown": return String(localized: "Komutun sonucu doğrulanamadı")
         default: return String(localized: "Cihaz durumu bilinmiyor")
         }
     }
 
     private func completionDeliveryLabel(_ state: String) -> String {
         switch state {
-        case "accepted": return "Sonuç PC'ye iletildi"
-        case "pending": return "Sonuç PC'ye iletilmeyi bekliyor"
+        case "accepted": return String(localized: "Sonuç PC'ye iletildi")
+        case "pending": return String(localized: "Sonuç PC'ye iletilmeyi bekliyor")
         default: return String(localized: "Sonuç iletim durumu bilinmiyor")
         }
     }
 
     private func pushDeliveryLabel(_ state: String) -> String {
         switch state {
-        case "pending": return "Bildirim henüz gönderilmedi."
-        case "retrying": return "Bildirim gönderilemedi; tekrar denenecek."
-        case "failed": return "Bildirim gönderilemedi."
-        case "not_configured": return "Telefon bildirimi servisi yapılandırılmamış."
+        case "pending": return String(localized: "Bildirim henüz gönderilmedi.")
+        case "retrying": return String(localized: "Bildirim gönderilemedi; tekrar denenecek.")
+        case "failed": return String(localized: "Bildirim gönderilemedi.")
+        case "not_configured": return String(localized: "Telefon bildirimi servisi yapılandırılmamış.")
         default: return String(localized: "Bildirim durumu bilinmiyor.")
         }
     }

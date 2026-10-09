@@ -22,5 +22,35 @@ for (const file of sources) {
     }
   });
 }
+
+// The other direction: a Turkish sentence in the code that is not a catalog key is shown untranslated on every other language.
+// `verbatim.json` lists the ones that are meant to stay as written (wire text the backend matches, regexes, comparisons); anything else is a failure.
+const keys = JSON.parse(readFileSync(join(root, "contracts", "i18n", "keys.json"), "utf8"));
+const fold = (text) => text.replace(/%(?:\d+\$)?(?:lld|lf|@|d|ld|f)/g, "§");
+const known = new Set(keys.map(fold));
+const verbatim = new Set(JSON.parse(readFileSync(join(root, "contracts", "i18n", "verbatim.json"), "utf8")));
+const withoutInterpolation = (text) => {
+  let out = "";
+  for (let index = 0; index < text.length;) {
+    if (text.startsWith("\\(", index)) {
+      let depth = 1, end = index + 2;
+      while (end < text.length && depth) { depth += (text[end] === "(") - (text[end] === ")"); end++; }
+      out += "§"; index = end;
+    } else out += text[index++];
+  }
+  return out;
+};
+const literal = /"((?:[^"\\]|\\.|\\\((?:[^()]|\([^()]*\))*\))*?[çğıöşüÇĞİÖŞÜ](?:[^"\\]|\\.|\\\((?:[^()]|\([^()]*\))*\))*?)"/g;
+for (const file of readdirSync(join(root, "RovaIOS")).filter((name) => name.endsWith(".swift")).map((name) => join("RovaIOS", name))) {
+  readFileSync(join(root, file), "utf8").split("\n").forEach((line, index) => {
+    if (line.trim().startsWith("//")) return;
+    for (const match of line.matchAll(literal)) {
+      const raw = match[1];
+      if (known.has(withoutInterpolation(raw).replace(/\\n/g, "\n").replace(/\\"/g, '"')) || verbatim.has(raw.slice(0, 80))) continue;
+      console.error(`${file}:${index + 1}: Turkish text outside the catalog: "${raw.slice(0, 60)}" (wrap it in String(localized:) or list it in verbatim.json)`);
+      failed++;
+    }
+  });
+}
 if (failed) process.exit(1);
-console.log("no wire identifiers are localized");
+console.log("no wire identifiers are localized; no Turkish text outside the catalog");

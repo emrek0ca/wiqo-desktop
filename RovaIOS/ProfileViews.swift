@@ -303,7 +303,7 @@ struct AccountSettingsView: View {
 
                 switch draft.avatarKind {
                 case "photo":
-                    let pickerTitle = draftImage == nil ? "Fotoğraf seç" : "Fotoğrafı değiştir"
+                    let pickerTitle = draftImage == nil ? String(localized: "Fotoğraf seç") : String(localized: "Fotoğrafı değiştir")
                     PhotosPicker(selection: $photoItem, matching: .images, photoLibrary: .shared()) {
                         Label(pickerTitle, systemImage: "photo.on.rectangle")
                             .font(.subheadline.weight(.medium))

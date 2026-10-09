@@ -49,7 +49,7 @@ private func performDeviceIntent(_ type: CommandType, payload: CommandPayload = 
         let request = RovaValidation.signedRequest(id: commandID, type: type, payload: payload, nonce: nonce, token: token)
         let result = try await RovaBackendClient.sendDeviceCommand(request, deviceId: deviceID)
         if let error = result.error { throw WiqoIntentError.deviceFailure(error.message) }
-        guard result.status == .completed else { throw WiqoIntentError.deviceFailure("PC komutunun sonucu doğrulanamadı.") }
+        guard result.status == .completed else { throw WiqoIntentError.deviceFailure(String(localized: "PC komutunun sonucu doğrulanamadı.")) }
         return .result(dialog: IntentDialog(stringLiteral: successMessage))
     } catch let error as WiqoIntentError {
         throw error

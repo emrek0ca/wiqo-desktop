@@ -7,7 +7,7 @@ enum ActPrivacyMode: String, Codable, Sendable {
     /// Never leaves this phone (except the files of a request, handed to the writer when allowed).
     case deviceOnly
 
-    var title: String { self == .devices ? "Bağlı cihazlarım" : "Yalnız bu cihaz" }
+    var title: String { self == .devices ? String(localized: "Bağlı cihazlarım") : String(localized: "Yalnız bu cihaz") }
     var systemImage: String { self == .devices ? "lock.icloud" : "iphone" }
 }
 

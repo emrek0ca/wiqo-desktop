@@ -15,7 +15,7 @@ enum DeviceOutcomeNarrator {
             if result.isConfirmedSuccess {
                 line = successLine(step: step, result: result)
             } else {
-                line = result.error?.message ?? (result.data?.hasFailedVerification == true ? "Beklenen sonuç doğrulanamadı." : result.message)
+                line = result.error?.message ?? (result.data?.hasFailedVerification == true ? String(localized: "Beklenen sonuç doğrulanamadı.") : result.message)
             }
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty, !lines.contains(trimmed) { lines.append(trimmed) }

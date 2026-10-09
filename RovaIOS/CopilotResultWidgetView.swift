@@ -77,7 +77,7 @@ struct CopilotResultWidgetView: View {
         let completed = max(0, widget.completedSteps ?? 0)
         let total = max(completed, widget.totalSteps ?? completed)
         let status = widget.taskStatus ?? "completed"
-        let label = status == "completed" ? "Tamamlandı" : status == "partial" ? "Kısmen tamamlandı" : "Tamamlanamadı"
+        let label = status == "completed" ? String(localized: "Tamamlandı") : status == "partial" ? String(localized: "Kısmen tamamlandı") : String(localized: "Tamamlanamadı")
         let symbol = widget.capability == "browser" ? "safari"
             : widget.capability == "desktop" ? "macwindow"
             : widget.capability == "backend" ? "checkmark.seal" : "desktopcomputer"
@@ -544,7 +544,7 @@ struct CopilotResultWidgetView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(widget.location ?? "Hava durumu"), \(current?.condition ?? "güncel hava"), \(temperature(current?.temperatureC))")
+            .accessibilityLabel("\(widget.location ?? String(localized: "Hava durumu")), \(current?.condition ?? String(localized: "güncel hava")), \(temperature(current?.temperatureC))")
             .accessibilityValue(isExpanded ? "Ayrıntılar açık" : "Ayrıntılar kapalı")
             .accessibilityHint("Tahmini göstermek veya gizlemek için dokunun")
 

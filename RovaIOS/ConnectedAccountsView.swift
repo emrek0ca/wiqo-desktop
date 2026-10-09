@@ -107,7 +107,7 @@ struct ConnectedAccountsView: View {
             systemImage: provider.symbol,
             tint: needsReconnect ? WiqoTheme.red : WiqoTheme.ink,
             title: provider.name,
-            subtitle: needsReconnect ? "Bağlantının süresi doldu" : connected != nil ? (connected?.accountLabel ?? "Bağlı") : (provider.summary ?? "Bağlı değil"),
+            subtitle: needsReconnect ? String(localized: "Bağlantının süresi doldu") : connected != nil ? (connected?.accountLabel ?? String(localized: "Bağlı")) : (provider.summary ?? String(localized: "Bağlı değil")),
             showsDivider: !isLast
         ) {
             if connectingProvider == provider.id {

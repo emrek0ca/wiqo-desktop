@@ -1646,7 +1646,7 @@ enum RovaBackendClient {
         let (data, response) = try await send(request)
         if response.statusCode == 401 { signOut(); throw RovaBackendError.notAuthenticated }
         guard (200..<300).contains(response.statusCode) else {
-            throw RovaBackendError.network(response.statusCode == 404 ? "Dosyanın süresi dolmuş; yeniden oluşturmamı isteyebilirsin." : "Dosya indirilemedi.")
+            throw RovaBackendError.network(response.statusCode == 404 ? String(localized: "Dosyanın süresi dolmuş; yeniden oluşturmamı isteyebilirsin.") : "Dosya indirilemedi.")
         }
         guard sha256Hex(data) == artifact.sha256.lowercased() else {
             throw RovaBackendError.network(String(localized: "Dosya bütünlük doğrulamasını geçemedi."))

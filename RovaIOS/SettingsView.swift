@@ -137,7 +137,7 @@ struct SettingsView: View {
                 WiqoRow(systemImage: "laptopcomputer", title: "PC", showsDivider: true) {
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(model.isPaired && model.userFacingConnectionLabel != "PC kapalı" ? WiqoTheme.green : Color.secondary.opacity(0.4))
+                            .fill(model.isPaired && model.userFacingConnectionLabel != String(localized: "PC kapalı") ? WiqoTheme.green : Color.secondary.opacity(0.4))
                             .frame(width: 7, height: 7)
                         Text(model.isPaired ? model.userFacingConnectionLabel : String(localized: "Bağla"))
                             .font(.subheadline)
