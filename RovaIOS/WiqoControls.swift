@@ -1162,9 +1162,9 @@ final class WiqoSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate
             (#"`([^`]*)`"#, "$1"),                              // inline code
             (#"!?\[([^\]]*)\]\([^)]*\)"#, "$1"),              // links and images keep their text
             (#"https?://\S+"#, " "),                           // bare addresses
-            (#"^\s{0,3}#{1,6}\s*"#, ""),                       // headings
+            (#"(?m)^\s{0,3}#{1,6}\s*"#, ""),                   // headings
+            (#"(?m)^\s*[-•*]\s+"#, ""),                        // bullets (before the emphasis marks are removed)
             (#"[*_~>|]+"#, " "),                                // emphasis, quotes, table bars
-            (#"^\s*[-•]\s+"#, ""),                             // bullets
             (#"\s+"#, " ")
         ]
         for (pattern, replacement) in rules {
