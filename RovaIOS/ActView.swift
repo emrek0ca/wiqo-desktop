@@ -129,14 +129,24 @@ private struct ActDockItem: Identifiable {
 /// Everything that used to sit in bars above and below the content lives here, so the content gets the whole width.
 private struct ActDock<Extra: View>: View {
     let groups: [[ActDockItem]]
+    @Binding var hidden: Bool
     @ViewBuilder var extra: Extra
-    @State private var flash: String?
+    @State private var popped = false
+    @State private var dragOffset: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Room a screen reserves beside its content so the dock never covers it.
+    /// Room a screen reserves beside its content while the dock is out, and while only its handle shows.
     static var reservedWidth: CGFloat { 58 }
+    static var handleWidth: CGFloat { 22 }
+    static func reserved(hidden: Bool) -> CGFloat { hidden ? handleWidth : reservedWidth }
+
+    private static var hideSpring: Animation { .spring(response: 0.34, dampingFraction: 0.86) }
+    /// Underdamped on purpose: the dock overshoots a little and settles, the way a drawer pops out.
+    private static var showSpring: Animation { .spring(response: 0.46, dampingFraction: 0.58) }
 
     private var column: some View {
-        VStack(spacing: 2) {
+        var position = 0
+        return VStack(spacing: 2) {
             ForEach(Array(groups.enumerated()), id: \.offset) { groupIndex, group in
                 if groupIndex > 0 {
                     Rectangle().fill(WiqoTheme.line).frame(width: 20, height: 0.5).padding(.vertical, 4)
@@ -145,7 +155,6 @@ private struct ActDock<Extra: View>: View {
                     Button {
                         WiqoHaptics.selection()
                         item.action()
-                        showLabel(item.label)
                     } label: {
                         ZStack {
                             Circle().fill(item.selected ? Color.primary.opacity(0.10) : Color.clear)
@@ -161,19 +170,31 @@ private struct ActDock<Extra: View>: View {
                     .opacity(item.disabled ? 0.35 : 1)
                     .accessibilityLabel(item.label)
                     .accessibilityAddTraits(item.selected ? .isSelected : [])
+                    .modifier(DockPop(popped: popped, order: { position += 1; return position }(), reduceMotion: reduceMotion))
                 }
             }
             extra
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(Color(uiColor: .secondaryLabel))
                 .frame(width: 40, height: 40)
+                .modifier(DockPop(popped: popped, order: position + 1, reduceMotion: reduceMotion))
+            // Put it away: one tap, or a swipe to the right.
+            Button { setHidden(true) } label: {
+                Image(systemName: "chevron.compact.right")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                    .frame(width: 40, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dock'u gizle")
+            .modifier(DockPop(popped: popped, order: position + 2, reduceMotion: reduceMotion))
         }
         .padding(.vertical, 6)
         .frame(width: 44)
     }
 
-    var body: some View {
-        // Whole when there is room; scrolls on a short (sideways) screen.
+    private var dock: some View {
         ViewThatFits(in: .vertical) {
             column
             ScrollView(.vertical, showsIndicators: false) { column }
@@ -181,32 +202,92 @@ private struct ActDock<Extra: View>: View {
         .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(WiqoTheme.line, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.06), radius: 10, y: 3)
-        // The name of what was just chosen, beside the dock for a moment.
-        .overlay(alignment: .topLeading) {
-            if let flash {
-                Text(flash)
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
-                    .overlay(Capsule().strokeBorder(WiqoTheme.line, lineWidth: 0.5))
-                    .fixedSize()
-                    .alignmentGuide(.leading) { $0[.trailing] + 8 }
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
-            }
-        }
-        .padding(.trailing, 8)
-        .frame(maxHeight: .infinity, alignment: .center)
+        .offset(x: max(dragOffset, 0))
+        .gesture(
+            DragGesture(minimumDistance: 8)
+                .onChanged { dragOffset = max($0.translation.width, 0) * 0.9 }
+                .onEnded { value in
+                    if value.translation.width > 36 || value.predictedEndTranslation.width > 90 { setHidden(true) }
+                    withAnimation(Self.hideSpring) { dragOffset = 0 }
+                }
+        )
     }
 
-    private func showLabel(_ text: String) {
-        withAnimation(.easeOut(duration: 0.15)) { flash = text }
-        Task {
-            try? await Task.sleep(nanoseconds: 1_100_000_000)
-            if flash == text { withAnimation(.easeOut(duration: 0.2)) { flash = nil } }
+    /// What stays when the dock is put away: a slim tab on the edge. One tap, or a swipe to the left, brings the dock back.
+    private var handle: some View {
+        Button { setHidden(false) } label: {
+            Image(systemName: "chevron.compact.left")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color(uiColor: .secondaryLabel))
+                .frame(width: Self.handleWidth, height: 64)
+                .background(Color(uiColor: .secondarySystemBackground), in: UnevenRoundedRectangle(topLeadingRadius: 14, bottomLeadingRadius: 14))
+                .overlay(UnevenRoundedRectangle(topLeadingRadius: 14, bottomLeadingRadius: 14).strokeBorder(WiqoTheme.line, lineWidth: 0.5))
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Dock'u göster")
+        .gesture(
+            DragGesture(minimumDistance: 6).onEnded { if $0.translation.width < -12 { setHidden(false) } }
+        )
+    }
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            if !hidden {
+                dock
+                    .padding(.trailing, 8)
+                    .transition(.asymmetric(
+                        insertion: .modifier(active: DockSlide(x: 70, scale: 0.7, opacity: 0), identity: DockSlide(x: 0, scale: 1, opacity: 1)),
+                        removal: .modifier(active: DockSlide(x: 80, scale: 0.9, opacity: 0), identity: DockSlide(x: 0, scale: 1, opacity: 1))
+                    ))
+                    .onAppear {
+                        popped = false
+                        withAnimation(.spring(response: 0.5, dampingFraction: 0.55)) { popped = true }
+                    }
+            } else {
+                handle
+                    .transition(.asymmetric(
+                        insertion: .modifier(active: DockSlide(x: 24, scale: 0.6, opacity: 0), identity: DockSlide(x: 0, scale: 1, opacity: 1)),
+                        removal: .modifier(active: DockSlide(x: 24, scale: 0.6, opacity: 0), identity: DockSlide(x: 0, scale: 1, opacity: 1))
+                    ))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        .animation(reduceMotion ? nil : (hidden ? Self.hideSpring : Self.showSpring), value: hidden)
+    }
+
+    private func setHidden(_ value: Bool) {
+        guard hidden != value else { return }
+        WiqoHaptics.selection()
+        hidden = value
+    }
+}
+
+/// Slide, scale and fade for the dock and its handle (anchored to the trailing edge).
+private struct DockSlide: ViewModifier {
+    var x: CGFloat
+    var scale: CGFloat
+    var opacity: Double
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(scale, anchor: .trailing)
+            .offset(x: x)
+            .opacity(opacity)
+    }
+}
+
+/// Each icon pops in a moment after the one before it when the dock comes out.
+private struct DockPop: ViewModifier {
+    var popped: Bool
+    var order: Int
+    var reduceMotion: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(popped ? 1 : 0.3)
+            .opacity(popped ? 1 : 0)
+            .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.52).delay(0.05 + Double(order) * 0.035), value: popped)
     }
 }
 
@@ -230,6 +311,7 @@ struct ActView: View {
     @State private var showingImporter = false
     @State private var query = ""
     @State private var showsSearch = false
+    @AppStorage("act.dock.hidden") private var dockHidden = false
     @ObservedObject private var voiceQueue = ActVoiceQueue.shared
     @State private var pinned = ActPins.load()
     @FocusState private var composerFocused: Bool
@@ -345,7 +427,7 @@ struct ActView: View {
                 }
             }
             .padding(.leading, RovaDesign.screenPadding)
-            .padding(.trailing, ActDock<EmptyView>.reservedWidth)
+            .padding(.trailing, ActDock<EmptyView>.reserved(hidden: dockHidden))
             .padding(.top, 6)
             .padding(.bottom, 16)
         }
@@ -368,7 +450,7 @@ struct ActView: View {
                 ActDockItem(id: "import", systemImage: "square.and.arrow.down", label: String(localized: "Dosyalardan aç")) { showingImporter = true },
                 ActDockItem(id: "privacy", systemImage: "lock.shield", label: String(localized: "Gizlilik ve anahtar")) { showingPrivacy = true }
             ]
-        ]) { EmptyView() }
+        ], hidden: $dockHidden) { EmptyView() }
     }
 
     private func wideHome(_ size: CGSize) -> some View {
@@ -745,6 +827,7 @@ struct CodeProjectWorkspaceView: View {
     @State private var fileNameField = ""
     @State private var pendingFileDelete: String?
     @State private var showingFullScreen = false
+    @AppStorage("act.dock.hidden") private var dockHidden = false
     @ObservedObject private var voiceQueue = ActVoiceQueue.shared
     @State private var packageError: String?
     @State private var loadingPackages = false
@@ -787,7 +870,7 @@ struct CodeProjectWorkspaceView: View {
                     splitBody(width: geo.size.width, short: short)
                 } else {
                     content
-                        .padding(.trailing, ActDock<EmptyView>.reservedWidth)
+                        .padding(.trailing, ActDock<EmptyView>.reserved(hidden: dockHidden))
                         .overlay(alignment: .trailing) { workspaceDock(wide: false) }
                     if !(tab == .code && editing) {
                         Divider()
@@ -870,7 +953,7 @@ struct CodeProjectWorkspaceView: View {
                     default: codeStage
                     }
                 }
-                .padding(.trailing, ActDock<EmptyView>.reservedWidth)
+                .padding(.trailing, ActDock<EmptyView>.reserved(hidden: dockHidden))
                 .overlay(alignment: .trailing) { workspaceDock(wide: true) }
                 if !(tab != .history && editing) {
                     Divider()
@@ -901,7 +984,7 @@ struct CodeProjectWorkspaceView: View {
                 ActDockItem(id: "reload", systemImage: "arrow.clockwise", label: String(localized: "Sayfayı yenile")) { reloadToken += 1 }
             ])
         }
-        return ActDock(groups: groups) { if embedded { menu } }
+        return ActDock(groups: groups, hidden: $dockHidden) { if embedded { menu } }
     }
 
     @ViewBuilder private var content: some View {

@@ -1433,7 +1433,9 @@
   "Yanıtlandı": "Answered",
   "Yanıtını yaz": "Type your answer",
   "Emin misin? \"Evet\" de ya da \"Hayır\".": "Are you sure? Tap \"Yes\" or \"No\".",
-  "Yanıt yazılıyor": "Replying..."
+  "Yanıt yazılıyor": "Replying...",
+  "Dock'u gizle": "Hide Dock",
+  "Dock'u göster": "Show Dock"
  },
  "de": {
   "Arkadaşını davet et": "Lade deinen Freund ein",
@@ -2869,7 +2871,9 @@
   "Yanıtlandı": "Beantwortet",
   "Yanıtını yaz": "Antworten",
   "Emin misin? \"Evet\" de ya da \"Hayır\".": "Bist du sicher? Sag \"Ja\" oder \"Nein\".",
-  "Yanıt yazılıyor": "Antwort wird geschrieben"
+  "Yanıt yazılıyor": "Antwort wird geschrieben",
+  "Dock'u gizle": "Dock ausblenden",
+  "Dock'u göster": "Dock anzeigen"
  },
  "es": {
   "\"%@\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.": "\"%@\": se eliminarán los archivos y el historial de todos los dispositivos; irreversible.",
@@ -4305,7 +4309,9 @@
   "Yanıtlandı": "Respondida",
   "Yanıtını yaz": "Escribe tu respuesta",
   "Emin misin? \"Evet\" de ya da \"Hayır\".": "¿Estás seguro? Di \"Sí\" o \"No\".",
-  "Yanıt yazılıyor": "Escribiendo respuesta"
+  "Yanıt yazılıyor": "Escribiendo respuesta",
+  "Dock'u gizle": "Ocultar Dock",
+  "Dock'u göster": "Mostrar Dock"
  },
  "fr": {
   "Arkadaşını davet et": "Invite a friend",
@@ -5741,7 +5747,9 @@
   "Yanıtlandı": "Répondu",
   "Yanıtını yaz": "Écrivez votre réponse",
   "Emin misin? \"Evet\" de ya da \"Hayır\".": "Êtes‑vous sûr ? Dites « Oui » ou « Non ».",
-  "Yanıt yazılıyor": "Réponse en cours"
+  "Yanıt yazılıyor": "Réponse en cours",
+  "Dock'u gizle": "Masquer le Dock",
+  "Dock'u göster": "Afficher le Dock"
  },
  "ar": {
   "+%lld adım": "+%lld خطوة",
@@ -7177,7 +7185,9 @@
   "Yanıtlandı": "تم الرد",
   "Yanıtını yaz": "اكتب إجابتك",
   "Emin misin? \"Evet\" de ya da \"Hayır\".": "هل أنت متأكد؟ قل \"نعم\" أو \"لا\".",
-  "Yanıt yazılıyor": "يتم كتابة الرد"
+  "Yanıt yazılıyor": "يتم كتابة الرد",
+  "Dock'u gizle": "إخفاء Dock",
+  "Dock'u göster": "إظهار Dock"
  },
  "ru": {
   "Arkadaşını davet et": "Пригласить друга",
@@ -8613,6 +8623,8 @@
   "Yanıtlandı": "Ответлено",
   "Yanıtını yaz": "Написать ответ",
   "Emin misin? \"Evet\" de ya da \"Hayır\".": "Вы уверены? Скажите «Да» или «Нет».",
-  "Yanıt yazılıyor": "Ответ пишется"
+  "Yanıt yazılıyor": "Ответ пишется",
+  "Dock'u gizle": "Скрыть Dock",
+  "Dock'u göster": "Показать Dock"
  }
 }

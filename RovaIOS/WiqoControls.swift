@@ -633,19 +633,6 @@ extension View {
     }
 }
 
-/// The last request that ran on the person's PC, kept on this phone so an empty chat can offer "do it again" in one tap.
-enum WiqoRecentTask {
-    private static let key = "wiqo.recentPCTask"
-
-    static func remember(_ prompt: String) {
-        let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard (4...160).contains(text.count) else { return }
-        UserDefaults.standard.set(text, forKey: key)
-    }
-
-    static var last: String? { UserDefaults.standard.string(forKey: key) }
-}
-
 // MARK: - Chat / Act switch
 
 /// What the Chat side is doing, readable from the Home bar without owning the conversation.

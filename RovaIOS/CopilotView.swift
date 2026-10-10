@@ -5,26 +5,6 @@ import Speech
 import SwiftUI
 import UIKit
 
-/// A suggestion tagged `requiresDevice: true` only makes sense with a Mac actually reachable
-/// right now - showing "Sesi kıs" to a Free-tier user (no PC access at all) or to someone whose
-/// Mac is unpaired/offline just produces a confused, doomed-to-fail first message. Ordered PC
-/// suggestions first, non-PC after, so filtering + prefix(4) below naturally fills the row with
-/// non-PC alternatives instead of coming up short when device suggestions get excluded.
-private struct QuickSuggestion { let title: String; let icon: String; let requiresDevice: Bool }
-
-private let allSuggestions: [QuickSuggestion] = [
-    // Read-only on purpose: inside Desktop/Documents/Downloads these run without a Face ID prompt,
-    // so the first thing a newly paired person sees is the Mac answering instantly.
-    QuickSuggestion(title: String(localized: "Masaüstümdeki son dosyalar"), icon: "doc.text.magnifyingglass", requiresDevice: true),
-    QuickSuggestion(title: String(localized: "Bu hafta indirdiğim dosyalar"), icon: "arrow.down.doc", requiresDevice: true),
-    QuickSuggestion(title: String(localized: "Sesi kıs"), icon: "speaker.wave.1.fill", requiresDevice: true),
-    QuickSuggestion(title: String(localized: "Ekranı kısarak odaklan"), icon: "moon.stars.fill", requiresDevice: true),
-    QuickSuggestion(title: String(localized: "Bugün hava nasıl?"), icon: "cloud.sun.fill", requiresDevice: false),
-    QuickSuggestion(title: String(localized: "Basit bir hesap makinesi yap"), icon: "function", requiresDevice: false),
-    QuickSuggestion(title: String(localized: "Toplantıya hazırla"), icon: "person.2.fill", requiresDevice: false),
-    QuickSuggestion(title: String(localized: "Bu ayki bütçemi tabloya dök"), icon: "tablecells.fill", requiresDevice: false)
-]
-
 /// Wiqo's conversation surface. A real conversation, not a one-shot "type → plan → confirm" form - every
 /// message (from either side) is kept in `bubbles` and the full history is resent with each new
 /// message so the model has context (the backend itself is stateless).
@@ -173,7 +153,6 @@ struct CopilotView: View {
             }
             if bubbles.isEmpty {
                 emptyState
-                if !isSending { suggestionRow.padding(.bottom, 4) }
             } else {
                 conversation
             }
@@ -328,54 +307,6 @@ struct CopilotView: View {
     /// "Sesi kıs" tap that works perfectly for another user would just fail or hang here.
     private var deviceSuggestionsReady: Bool {
         model.isPaired && model.state == .connected && subscriptionStore.info.pcAllowed
-    }
-
-    private var visibleSuggestions: [QuickSuggestion] {
-        Array(allSuggestions.filter { deviceSuggestionsReady || !$0.requiresDevice }.prefix(4))
-    }
-
-    private var suggestionRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                if deviceSuggestionsReady, let again = WiqoRecentTask.last {
-                    suggestionChip(title: String(again.prefix(30)) + (again.count > 30 ? "…" : ""), systemImage: "arrow.counterclockwise", isPrimary: true) {
-                        inputText = again
-                        Task { await sendMessage() }
-                    }
-                    .wiqoRiseIn(delay: 0.15)
-                }
-                ForEach(Array(visibleSuggestions.enumerated()), id: \.element.title) { index, suggestion in
-                    suggestionChip(title: suggestion.title, systemImage: suggestion.icon, isPrimary: true) {
-                        inputText = suggestion.title
-                        Task { await sendMessage() }
-                    }
-                    .wiqoRiseIn(delay: 0.2 + Double(index) * 0.06)
-                }
-                suggestionChip(title: String(localized: "Neler yapabilirim?"), systemImage: "square.grid.2x2", isPrimary: false) {
-                    showingDiscovery = true
-                }
-                .wiqoRiseIn(delay: 0.2 + Double(visibleSuggestions.count) * 0.06)
-            }
-            .padding(.horizontal, 12)
-        }
-    }
-
-    private func suggestionChip(title: String, systemImage: String, isPrimary: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .foregroundStyle(.secondary)
-                Text(title)
-                    .foregroundStyle(isPrimary ? Color.primary : Color.secondary)
-            }
-            .font(.subheadline)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 40)
-            .background(WiqoTheme.surface, in: Capsule())
-            .overlay(Capsule().strokeBorder(WiqoTheme.line, lineWidth: 0.5))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(WiqoPillButtonStyle(kind: .ghost))
     }
 
     private var proactiveCards: some View {
@@ -1550,6 +1481,7 @@ struct CopilotView: View {
                         Button { showsDocumentScanner = true } label: { Label("Belge tara", systemImage: "doc.viewfinder") }
                             .disabled(fileLimitReached)
                     }
+                    Button { showingDiscovery = true } label: { Label("Neler yapabilirim?", systemImage: "square.grid.2x2") }
                     Divider()
                     Button {
                         isCreatingAgent = true
@@ -1890,7 +1822,6 @@ struct CopilotView: View {
                 )
                 bubble.needsConfirmation = false
             }
-            if !result.steps.isEmpty { WiqoRecentTask.remember(text) }
             liveReplyBubbleID = nil
             liveReply.reset()
             persistConversation()

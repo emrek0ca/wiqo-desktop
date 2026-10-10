@@ -139,7 +139,7 @@ struct WiqoListeningOrb: View {
         if WiqoMetalOrb.isAvailable {
             WiqoMetalOrb(level: level, working: working, flash: flash)
                 // The view is larger than the space the orb takes, so its glow and shadow are never cut at an edge.
-                .frame(width: 220, height: 136)
+                .frame(width: 260, height: 170)
                 .frame(width: 132, height: 92)
                 .accessibilityHidden(true)
         } else {
@@ -452,15 +452,15 @@ final class WiqoOrbRenderer {
     // faster the louder the voice is, and a ring runs over it when a word begins.
     static float field(float3 p, float t, float lv, float pulse, float squash) {
         float3 q = p;
-        q.y *= 1.0 - 0.22 * squash;
-        q.x *= 1.0 + 0.12 * squash;
-        q.z *= 1.0 + 0.12 * squash;
-        float speed = 0.7 + 0.9 * lv;
-        float amp = 0.030 + 0.13 * lv;
+        q.y *= 1.0 - 0.15 * squash;
+        q.x *= 1.0 + 0.08 * squash;
+        q.z *= 1.0 + 0.08 * squash;
+        float speed = 0.6 + 0.7 * lv;
+        float amp = 0.020 + 0.062 * lv;
         float n = sin(q.x * 3.1 + t * 1.30 * speed + sin(q.y * 2.0 + t * 0.8 * speed)) * sin(q.y * 2.7 - t * 1.10 * speed) * sin(q.z * 3.3 + t * 0.90 * speed)
-                + 0.55 * sin(q.x * 5.3 - t * 1.70 * speed + q.y * 2.1) * sin(q.z * 4.1 + t * 1.20 * speed);
+                + 0.30 * sin(q.x * 4.0 - t * 1.70 * speed + q.y * 2.1) * sin(q.z * 3.2 + t * 1.20 * speed);
         float r = length(q.xz);
-        float ring = sin(r * 5.0 - t * 4.2) * exp(-r * 0.85) * smoothstep(-0.3, 1.0, q.y) * pulse * 0.11;
+        float ring = sin(r * 5.0 - t * 4.2) * exp(-r * 0.85) * smoothstep(-0.3, 1.0, q.y) * pulse * 0.07;
         return length(q) - (1.0 + 0.10 * lv) - amp * n - ring;
     }
 
@@ -487,12 +487,12 @@ final class WiqoOrbRenderer {
         float dmin = 1e9;
         bool hit = false;
         float3 pos = ro;
-        for (int i = 0; i < 56; i++) {
+        for (int i = 0; i < 72; i++) {
             pos = ro + rd * t;
             float d = field(pos, u.time, lv, u.pulse, u.squash);
             dmin = min(dmin, d);
             if (d < 0.0015) { hit = true; break; }
-            t += d * 0.7;
+            t += d * 0.6;
             if (t > 6.0) break;
         }
 
@@ -512,7 +512,7 @@ final class WiqoOrbRenderer {
             // Body: deep shade of the accent into a lit, slightly lighter accent.
             // Liquid inside: slow swirls of lighter and deeper accent, quicker and stronger while the voice is.
             float speed = 0.7 + 0.9 * lv;
-            float swirl = 0.5 + 0.5 * sin(pos.x * 3.6 + u.time * 1.3 * speed + sin(pos.y * 2.8 - u.time * 0.9 * speed) * 1.6)
+            float swirl = 0.5 + 0.35 * sin(pos.x * 3.6 + u.time * 1.3 * speed + sin(pos.y * 2.8 - u.time * 0.9 * speed) * 1.6)
                               * cos(pos.z * 3.1 - u.time * 1.0 * speed + pos.y * 2.2);
             float3 shade = accent * 0.20;
             float3 lit = mix(accent * 0.92, accent * 1.18 + 0.05, swirl * (0.30 + 0.60 * lv)) + 0.03;
@@ -532,13 +532,13 @@ final class WiqoOrbRenderer {
             // A soft box reflected in the surface, upper left.
             float3 r = reflect(-v, n);
             float2 q = (r.xy - float2(-0.42, 0.52)) / float2(0.34, 0.20);
-            float box = exp(-dot(q, q) * 0.9);
-            color += float3(1.0) * box * 0.55;
+            float box = exp(-dot(q, q) * 0.55);
+            color += float3(1.0) * box * 0.38;
 
             // Sharp specular highlight.
             float3 h = normalize(key + v);
-            float spec = pow(clamp(dot(n, h), 0.0, 1.0), 110.0);
-            color += float3(1.0) * spec * 0.95;
+            float spec = pow(clamp(dot(n, h), 0.0, 1.0), 48.0);
+            color += float3(1.0) * spec * 0.55;
 
             // Light bounced back from the surface below.
             float bounce = smoothstep(0.1, 1.0, -n.y) * 0.22;
@@ -558,12 +558,19 @@ final class WiqoOrbRenderer {
         }
 
         // Glow around the orb, stronger with the voice.
-        float glow = exp(-max(dmin, 0.0) * 2.3) * (0.20 + 0.38 * lv) * (1.0 - u.dark * 0.15);
+        float glow = exp(-max(dmin, 0.0) * 3.0) * (0.20 + 0.38 * lv) * (1.0 - u.dark * 0.15);
         glow = hit ? 0.0 : glow;
 
         // Ground shadow, flattened, a little tighter when the orb swells.
         float2 sp = float2(p2.x / (1.05 - 0.12 * lv), (p2.y + 1.62) / 0.22);
         float shadow = exp(-dot(sp, sp) * 1.5) * (0.26 - 0.06 * lv) * (1.0 - u.dark * 0.35);
+
+        // Glow and shadow fade to nothing before the edge of the view, on all four sides: no line where the colour ends.
+        float2 edge = min(in.uv, 1.0 - in.uv);
+        float window = smoothstep(0.0, 0.34, edge.x) * smoothstep(0.0, 0.42, edge.y);
+        window *= window;
+        glow *= window;
+        shadow *= window;
 
         // Compose premultiplied: orb over glow over shadow.
         float a = orbAlpha;
