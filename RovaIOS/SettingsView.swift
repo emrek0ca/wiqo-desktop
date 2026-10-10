@@ -242,7 +242,7 @@ struct SettingsView: View {
 
     // MARK: Appearance (applied at the app's root; see WiqoAppearanceModifier)
 
-    @AppStorage(WiqoSpeaker.settingKey) private var speakReplies = true
+    @AppStorage(WiqoSpeaker.settingKey) private var speakReplies = false
     @AppStorage(WiqoAppearance.themeKey) private var theme = WiqoAppearance.Theme.system.rawValue
     @AppStorage(WiqoAppearance.accentKey) private var accent = WiqoAppearance.Accent.wiqo.rawValue
     @AppStorage(WiqoAppearance.textKey) private var textSize = WiqoAppearance.TextSize.standard.rawValue

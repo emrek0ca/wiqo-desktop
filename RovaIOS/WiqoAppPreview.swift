@@ -182,6 +182,13 @@ struct WiqoHTMLWebView: UIViewRepresentable {
             onConsole?(level, text)
         }
 
+        /// The new page is in: the dimmed old one gives way to it with a short fade, instead of a flash.
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut, .allowUserInteraction]) { webView.alpha = 1 }
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { webView.alpha = 1 }
+
         @MainActor
         func webView(
             _ webView: WKWebView,
@@ -216,6 +223,8 @@ struct WiqoHTMLWebView: UIViewRepresentable {
         webView.isUserInteractionEnabled = isInteractive
         context.coordinator.onConsole = onConsole
         guard context.coordinator.lastLoaded != html || context.coordinator.lastToken != reloadToken else { return }
+        // A page that was already showing is dimmed while its replacement loads: the person sees at once that it is being updated.
+        if context.coordinator.lastLoaded != nil { webView.alpha = 0.5 }
         context.coordinator.lastLoaded = html
         context.coordinator.lastToken = reloadToken
         webView.loadHTMLString(html, baseURL: nil)

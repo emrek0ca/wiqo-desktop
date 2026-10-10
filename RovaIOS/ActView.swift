@@ -8,6 +8,7 @@ private struct ActJobStrip: View {
     @State private var expanded = false
 
     private var stepNumber: Int { job.stage.rawValue + 1 }
+    @State private var startedAt = Date()
 
     var body: some View {
         VStack(spacing: 8) {
@@ -16,9 +17,12 @@ private struct ActJobStrip: View {
                 Text(job.stage.title)
                     .font(.subheadline.weight(.medium))
                     .lineLimit(1)
-                Text("\(stepNumber)/\(ActStage.allCases.count)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                // The seconds counting up say that it is working, long before the answer is there.
+                TimelineView(.periodic(from: startedAt, by: 1)) { context in
+                    Text("\(stepNumber)/\(ActStage.allCases.count) · \(max(0, Int(context.date.timeIntervalSince(startedAt)))) sn")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
                 Spacer(minLength: 8)
                 Button(action: onCancel) {
                     Text("Durdur")
@@ -51,6 +55,7 @@ private struct ActJobStrip: View {
         .contentShape(Rectangle())
         .onTapGesture { if !job.message.isEmpty { withAnimation(WiqoMotion.ease(0.25)) { expanded.toggle() } } }
         .animation(WiqoMotion.ease(0.25), value: job.stage)
+        .onChange(of: job.stage) { _, _ in WiqoHaptics.selection() }
     }
 }
 
@@ -419,6 +424,8 @@ struct ActView: View {
                 if let note = model.syncNote {
                     Label(note, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
                 }
+                // The new project has a place in the list the moment it is asked for.
+                if creating { creatingRow }
                 if model.projects.isEmpty {
                     emptyState
                 } else {
@@ -435,6 +442,24 @@ struct ActView: View {
         .refreshable { await model.syncAll() }
         .overlay(alignment: .trailing) { listDock }
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+    }
+
+    private var creatingRow: some View {
+        HStack(spacing: 12) {
+            ProgressView().controlSize(.small)
+                .frame(width: 44, height: 44)
+                .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Yeni proje hazırlanıyor")
+                    .font(.body.weight(.medium))
+                Text(model.job.map { $0.stage.title } ?? "")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 8)
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
     /// New, search, import, privacy: the list's actions, one tap each.
@@ -1646,11 +1671,17 @@ struct CodeProjectWorkspaceView: View {
         let request = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let errors = pendingErrors
         pendingErrors = []
+        // The answer to a tap is immediate: the field empties and the strip shows the job; if the change fails the words come back.
+        let sent = draft
+        draft = ""
+        WiqoHaptics.selection()
         Task {
             await model.edit(projectID, request: request, errors: errors)
-            if model.notice == nil || model.notice?.hasPrefix("Telefonda denenemedi") == true || model.notice?.hasPrefix("Paket eksik") == true {
-                draft = ""
-                WiqoHaptics.selection()
+            let kept = model.notice == nil || model.notice?.hasPrefix("Telefonda denenemedi") == true || model.notice?.hasPrefix("Paket eksik") == true
+            if kept {
+                if model.notice == nil { WiqoHaptics.success() }
+            } else {
+                draft = sent
             }
             runResult = nil
             reloadToken += 1

@@ -1440,7 +1440,9 @@
   "Sesli sohbette yanıtı sesli oku": "Read reply aloud in voice chat",
   "Sesli yanıtı aç": "Turn on voice reply",
   "Sesli yanıtı kapat": "Turn off voice reply",
-  "Konuşabilirsin": "Speak"
+  "Konuşabilirsin": "Speak",
+  "%lld/%lld · %lld sn": "%lld/%lld · %lld s",
+  "Yeni proje hazırlanıyor": "Preparing new project"
  },
  "de": {
   "Arkadaşını davet et": "Lade deinen Freund ein",
@@ -2883,7 +2885,9 @@
   "Sesli sohbette yanıtı sesli oku": "Antwort im Sprachchat laut vorlesen",
   "Sesli yanıtı aç": "Sprachantwort aktivieren",
   "Sesli yanıtı kapat": "Sprachantwort deaktivieren",
-  "Konuşabilirsin": "Sprechen"
+  "Konuşabilirsin": "Sprechen",
+  "%lld/%lld · %lld sn": "%lld/%lld · %lld s",
+  "Yeni proje hazırlanıyor": "Neues Projekt wird erstellt"
  },
  "es": {
   "\"%@\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.": "\"%@\": se eliminarán los archivos y el historial de todos los dispositivos; irreversible.",
@@ -4326,7 +4330,9 @@
   "Sesli sohbette yanıtı sesli oku": "Lee la respuesta en voz alta en la conversación de voz",
   "Sesli yanıtı aç": "Activar respuesta de voz",
   "Sesli yanıtı kapat": "Desactivar respuesta de voz",
-  "Konuşabilirsin": "Puedes hablar"
+  "Konuşabilirsin": "Puedes hablar",
+  "%lld/%lld · %lld sn": "%lld/%lld · %lld s",
+  "Yeni proje hazırlanıyor": "Nuevo proyecto en preparación"
  },
  "fr": {
   "Arkadaşını davet et": "Invite a friend",
@@ -5769,7 +5775,9 @@
   "Sesli sohbette yanıtı sesli oku": "Lire la réponse à voix haute en conversation vocale",
   "Sesli yanıtı aç": "Activer la réponse vocale",
   "Sesli yanıtı kapat": "Désactiver la réponse vocale",
-  "Konuşabilirsin": "Parler"
+  "Konuşabilirsin": "Parler",
+  "%lld/%lld · %lld sn": "%lld/%lld · %lld s",
+  "Yeni proje hazırlanıyor": "Nouveau projet en cours"
  },
  "ar": {
   "+%lld adım": "+%lld خطوة",
@@ -7212,7 +7220,9 @@
   "Sesli sohbette yanıtı sesli oku": "اقرأ الرد الصوتي في المحادثة الصوتية",
   "Sesli yanıtı aç": "تشغيل الرد الصوتي",
   "Sesli yanıtı kapat": "إيقاف الرد الصوتي",
-  "Konuşabilirsin": "يمكنك التحدث"
+  "Konuşabilirsin": "يمكنك التحدث",
+  "%lld/%lld · %lld sn": "%lld/%lld · %lld ثانية",
+  "Yeni proje hazırlanıyor": "جاري إعداد مشروع جديد"
  },
  "ru": {
   "Arkadaşını davet et": "Пригласить друга",
@@ -8655,6 +8665,8 @@
   "Sesli sohbette yanıtı sesli oku": "Воспроизвести ответ голосом в разговоре",
   "Sesli yanıtı aç": "Включить голосовой ответ",
   "Sesli yanıtı kapat": "Выключить голосовой ответ",
-  "Konuşabilirsin": "Говорить"
+  "Konuşabilirsin": "Говорить",
+  "%lld/%lld · %lld sn": "%lld/%lld · %lld сек",
+  "Yeni proje hazırlanıyor": "Новый проект создаётся"
  }
 }

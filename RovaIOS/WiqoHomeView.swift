@@ -369,30 +369,25 @@ struct SidebarOverlay: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 header
-                searchField
                     .padding(.horizontal, 14)
-                    .padding(.bottom, 8)
+                    .padding(.top, 16)
+                    .padding(.bottom, 10)
 
                 if filtered.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: query.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass")
-                            .font(.title2)
-                            .foregroundStyle(.tertiary)
-                        Text(query.isEmpty ? "Henüz sohbet yok" : "Sonuç bulunamadı")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 48)
+                    Text(query.isEmpty ? "Henüz sohbet yok" : "Sonuç bulunamadı")
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
                     Spacer()
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 2, pinnedViews: []) {
                             ForEach(sections, id: \.title) { section in
                                 Text(section.title)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 24)
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.horizontal, 26)
                                     .padding(.top, 14)
                                     .padding(.bottom, 4)
                                 ForEach(section.items) { conversation in
@@ -413,12 +408,18 @@ struct SidebarOverlay: View {
                     .scrollDismissesKeyboard(.immediately)
                 }
 
-                Divider()
                 profileRow
             }
             .frame(width: 304, alignment: .leading)
             .frame(maxHeight: .infinity)
-            .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+            // A panel with rounded corners on its free side, not a slab to the screen edge.
+            .background(
+                UnevenRoundedRectangle(bottomTrailingRadius: 30, topTrailingRadius: 30, style: .continuous)
+                    .fill(Color(uiColor: .systemBackground))
+                    .shadow(color: .black.opacity(0.14), radius: 24, x: 6)
+                    .ignoresSafeArea()
+            )
+            .clipShape(UnevenRoundedRectangle(bottomTrailingRadius: 30, topTrailingRadius: 30, style: .continuous))
             .offset(x: appeared ? 0 : -320)
             .gesture(
                 DragGesture(minimumDistance: 20)
@@ -439,27 +440,19 @@ struct SidebarOverlay: View {
         }
     }
 
+    /// Search and a new chat, on one line: nothing else sits above the list.
     private var header: some View {
         HStack(spacing: 8) {
-            Image("WiqoMark")
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 26, height: 26)
-            Text("Wiqo")
-                .font(.title3.weight(.bold))
-            Spacer()
+            searchField
             Button(action: onNewChat) {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 17, weight: .medium))
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 38, height: 38)
                     .background(Color(.tertiarySystemFill), in: Circle())
             }
             .accessibilityLabel("Yeni sohbet")
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
     }
 
     private var searchField: some View {
@@ -491,18 +484,12 @@ struct SidebarOverlay: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    Text(profile.email)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
                 }
                 Spacer(minLength: 8)
-                Image(systemName: "gearshape")
-                    .font(.system(size: 17))
-                    .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 18)
+            .padding(.top, 10)
+            .padding(.bottom, 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -545,15 +532,11 @@ struct ConversationRow: View {
                 .font(.subheadline.weight(isSelected ? .semibold : .regular))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-            Text(conversation.preview)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(isSelected ? Color(.tertiarySystemFill) : Color.clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(isSelected ? Color.primary.opacity(0.07) : Color.clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .contentShape(Rectangle())
         .padding(.horizontal, 12)
     }

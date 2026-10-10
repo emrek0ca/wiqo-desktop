@@ -631,14 +631,6 @@ struct CopilotView: View {
             .padding(.vertical, 12)
         }
         .scrollIndicators(.hidden)
-        .overlay {
-            if cards.isEmpty {
-                Text("Konuşabilirsin")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .transition(.opacity)
-            }
-        }
         .animation(WiqoMotion.ease(0.3), value: cards.count)
     }
 
@@ -1812,13 +1804,9 @@ struct CopilotView: View {
                 onStatus: { text in thinking.note(text) },
                 // Only the current SSE generation is visible. A reset clears its provisional
                 // text; the terminal event below remains the authoritative reconciliation.
-                onDelta: { text in
-                    liveReply.append(text)
-                    WiqoSpeaker.shared.feed(text, listening: voice.isActive)
-                },
+                onDelta: { text in liveReply.append(text) },
                 onReset: {
                     liveReply.reset()
-                    WiqoSpeaker.shared.begin()
                     if let liveReplyBubbleID {
                         setBubble(liveReplyBubbleID) { $0.text = "" }
                         persistConversation()
@@ -1866,7 +1854,8 @@ struct CopilotView: View {
             let replyBubbleID = earlyConfirmationBubbleID ?? responseBubble.id
             commitThinking(to: replyBubbleID, failed: result.executionState == "partial_success" || result.executionState == "failed")
             liveReply.finish(with: replyText)
-            WiqoSpeaker.shared.finish(reply: replyText, listening: voice.isActive)
+            // A line that only says "doing it now" is not read; the answer that follows is.
+            if result.replyIsProgress != true { WiqoSpeaker.shared.finish(reply: replyText, listening: voice.isActive) }
             setBubble(replyBubbleID) { bubble in
                 // Reconcile the terminal result into the in-flight bubble. Existing execution
                 // rows are kept so an early confirmation remains attached to this same reply.
@@ -2307,13 +2296,9 @@ struct CopilotView: View {
                 deviceResults: localResults,
                 requestID: UUID(),
                 onStatus: { text in thinking.note(text) },
-                onDelta: { text in
-                    liveReply.append(text)
-                    WiqoSpeaker.shared.feed(text, listening: voice.isActive)
-                },
+                onDelta: { text in liveReply.append(text) },
                 onReset: {
                     liveReply.reset()
-                    WiqoSpeaker.shared.begin()
                     setBubble(bubbleID) { $0.text = "" }
                     persistConversation()
                 },
@@ -2358,7 +2343,8 @@ struct CopilotView: View {
                 : result.reply
             commitThinking(to: bubbleID, failed: result.executionState == "partial_success" || result.executionState == "failed")
             liveReply.finish(with: replyText)
-            WiqoSpeaker.shared.finish(reply: replyText, listening: voice.isActive)
+            // A line that only says "doing it now" is not read; the answer that follows is.
+            if result.replyIsProgress != true { WiqoSpeaker.shared.finish(reply: replyText, listening: voice.isActive) }
             mergeContinuationResult(
                 result,
                 into: bubbleID,

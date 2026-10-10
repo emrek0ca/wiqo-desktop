@@ -137,4 +137,13 @@ final class CopilotWireTests: XCTestCase {
         XCTAssertEqual(WiqoSpeaker.speakable("Bkz. https://wiqoai.com/yardim ve `ls -la` komutu"), "Bkz. ve ls -la komutu")
         XCTAssertEqual(WiqoSpeaker.speakable("   "), "")
     }
+
+    func testOnlySpeechIsReadAndTheTaskMachineryIsNot() {
+        XCTAssertEqual(WiqoSpeaker.speakable("Belgeyi ~/Desktop/emre/Ataturk.docx olarak kaydettim."), "Belgeyi olarak kaydettim.")
+        XCTAssertEqual(WiqoSpeaker.speakable("Rapor hazır (12818 bayt, /Users/emre/a.pdf)."), "Rapor hazır .")
+        XCTAssertEqual(WiqoSpeaker.speakable("Ataturk.docx hazırlandı"), "Ataturk hazırlandı")
+        XCTAssertEqual(WiqoSpeaker.speakable("Tamamlanamayan adımlar: PDF dosyasını kaydet."), "")
+        XCTAssertEqual(WiqoSpeaker.speakable("✓ Doğrulandı"), "")
+        XCTAssertEqual(WiqoSpeaker.speakable("1. Önce ara\n2. Sonra gönder"), "Önce ara Sonra gönder")
+    }
 }

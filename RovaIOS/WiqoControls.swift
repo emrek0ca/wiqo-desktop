@@ -894,6 +894,7 @@ final class WiqoVoiceSession: ObservableObject {
             defer { starting = false }
             switch await recorder.start() {
             case .started, .startedWithNetworkFallback:
+                WiqoSpeaker.shared.muted = !WiqoSpeaker.isEnabled
                 WiqoHaptics.listeningStart()
                 isActive = true
                 arm(after: 12)
@@ -1056,8 +1057,9 @@ final class WiqoSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate
         synthesizer.delegate = self
     }
 
+    /// Whether a voice session starts with the speaker on (Ayarlar). Off by default: the conversation is listened to, answers are read.
     static var isEnabled: Bool {
-        UserDefaults.standard.object(forKey: settingKey) as? Bool ?? true
+        UserDefaults.standard.object(forKey: settingKey) as? Bool ?? false
     }
 
     /// A new reply starts: whatever was still being read is dropped.
@@ -1069,24 +1071,14 @@ final class WiqoSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate
         capped = false
     }
 
-    func feed(_ delta: String, listening: Bool) {
-        guard listening, Self.isEnabled, !muted, !delta.isEmpty else { return }
-        raw += delta
-        pending += delta
-        drain(final: false)
-    }
-
-    /// The reply is complete. What was already read stays; the rest is read, or all of it again if the final text is not an extension of what streamed.
+    /// The reply is complete: only the final text is read (never the half-written stream, which carries the task's own narration), and only when
+    /// the speaker is on. Sentences are queued one after the other.
     func finish(reply: String, listening: Bool) {
-        guard listening, Self.isEnabled, !muted else { return }
-        if reply.hasPrefix(raw) {
-            pending += reply.dropFirst(raw.count)
-        } else {
-            stop()
-            spoken = 0
-            capped = false
-            pending = reply
-        }
+        guard listening, !muted else { return }
+        stop()
+        spoken = 0
+        capped = false
+        pending = reply
         raw = reply
         drain(final: true)
     }
@@ -1154,17 +1146,24 @@ final class WiqoSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate
         synthesizer.speak(utterance)
     }
 
-    /// Markdown, links, code and emoji are not read: what is left is what a person would say.
+    /// What is left once everything that is not speech is taken out: markdown, links, code, file paths and names, brackets, tables,
+    /// emoji, and the machinery lines of a task ("Tamamlanamayan adımlar: ..."). What remains is what a person would say.
     nonisolated static func speakable(_ text: String) -> String {
         var value = text
         let rules: [(String, String)] = [
-            (#"```[\s\S]*?```"#, " "),                       // code blocks
-            (#"`([^`]*)`"#, "$1"),                              // inline code
-            (#"!?\[([^\]]*)\]\([^)]*\)"#, "$1"),              // links and images keep their text
-            (#"https?://\S+"#, " "),                           // bare addresses
-            (#"(?m)^\s{0,3}#{1,6}\s*"#, ""),                   // headings
-            (#"(?m)^\s*[-•*]\s+"#, ""),                        // bullets (before the emphasis marks are removed)
-            (#"[*_~>|]+"#, " "),                                // emphasis, quotes, table bars
+            (#"```[\s\S]*?```"#, " "),                                    // code blocks
+            (#"`([^`]*)`"#, "$1"),                                           // inline code
+            (#"!?\[([^\]]*)\]\([^)]*\)"#, "$1"),                           // links and images keep their text
+            (#"https?://\S+"#, " "),                                        // bare addresses
+            (#"(?:~|/)?(?:[\w.\-]+/)+[\w.\-]*"#, " "),                      // file paths
+            (#"\b([\p{L}\p{N}_\-]+)\.(?:pdf|docx?|xlsx?|pptx?|csv|txt|png|jpe?g|zip|html?|js|py|md|json|swift)\b"#, "$1"), // a file name is read without its extension
+            (#"\([^)]{0,80}\)"#, " "),                                    // asides in brackets
+            (#"\[[^\]]{0,80}\]"#, " "),
+            (#"(?m)^\s{0,3}#{1,6}\s*"#, ""),                                // headings
+            (#"(?m)^\s*[-•*]\s+"#, ""),                                     // bullets
+            (#"(?m)^\s*\d+[.)]\s+"#, ""),                                  // numbered lists
+            (#"[*_~>|=#]+"#, " "),                                           // emphasis, quotes, table bars, rules
+            (#"[✓✔︎✗✘→←↔⇒…]+"#, " "),                                       // status glyphs
             (#"\s+"#, " ")
         ]
         for (pattern, replacement) in rules {
@@ -1172,7 +1171,13 @@ final class WiqoSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate
         }
         value = value.unicodeScalars.filter { !($0.properties.isEmojiPresentation || ($0.properties.isEmoji && $0.value > 0x2000)) }
             .map(String.init).joined()
-        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Boilerplate of the task machinery, and lines with hardly any words in them, are not speech.
+        let folded = WiqoVoiceIntent.folded(value)
+        let machinery = ["tamamlanamayan adimlar", "gorev adimlari", "dogrulandi", "bakiyorum", "adim sonuclari hazir", "mac adimlarinin sonuclari alindi"]
+        if machinery.contains(where: { folded.hasPrefix($0) }) { return "" }
+        let letters = value.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
+        return letters >= 2 ? value : ""
     }
 
     /// The voice of the person's language (best quality installed), Turkish when there is none.
