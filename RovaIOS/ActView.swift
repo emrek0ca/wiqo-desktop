@@ -76,24 +76,37 @@ private struct ActDockItem: Identifiable {
 private struct ActDock<Extra: View>: View {
     let groups: [[ActDockItem]]
     @ViewBuilder var extra: Extra
+    @Namespace private var thumb
+    @State private var flash: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Room a screen reserves beside its content so the dock never covers it.
+    static var reservedWidth: CGFloat { 58 }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 4) {
-                ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
-                    if index > 0 {
-                        Rectangle().fill(WiqoTheme.line).frame(width: 18, height: 0.5).padding(.vertical, 3)
+            VStack(spacing: 2) {
+                ForEach(Array(groups.enumerated()), id: \.offset) { groupIndex, group in
+                    if groupIndex > 0 {
+                        Rectangle().fill(WiqoTheme.line).frame(width: 20, height: 0.5).padding(.vertical, 4)
                     }
                     ForEach(group) { item in
                         Button {
                             WiqoHaptics.selection()
-                            item.action()
+                            withAnimation(reduceMotion ? nil : WiqoMotion.ease(0.28)) { item.action() }
+                            showLabel(item.label)
                         } label: {
                             Image(systemName: item.systemImage)
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(item.selected ? Color.primary : Color.secondary)
-                                .frame(width: 36, height: 36)
-                                .background(item.selected ? Color.primary.opacity(0.12) : Color.clear, in: Circle())
+                                .frame(width: 40, height: 40)
+                                .background {
+                                    if item.selected {
+                                        Circle()
+                                            .fill(Color.primary.opacity(0.10))
+                                            .matchedGeometryEffect(id: "thumb-\(groupIndex)", in: thumb)
+                                    }
+                                }
                                 .contentShape(Circle())
                         }
                         .buttonStyle(.plain)
@@ -106,17 +119,42 @@ private struct ActDock<Extra: View>: View {
                 extra
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 40, height: 40)
             }
             .padding(.vertical, 6)
-            .frame(width: 44)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.horizontal, 2)
         }
+        .scrollBounceBehavior(.basedOnSize)
         .frame(width: 44)
         .fixedSize(horizontal: false, vertical: true)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(WiqoTheme.line, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.06), radius: 10, y: 3)
+        // The name of what was just chosen, beside the dock for a moment.
+        .overlay(alignment: .topLeading) {
+            if let flash {
+                Text(flash)
+                    .font(.footnote.weight(.medium))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(WiqoTheme.line, lineWidth: 0.5))
+                    .fixedSize()
+                    .alignmentGuide(.leading) { $0[.trailing] + 8 }
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
         .padding(.trailing, 8)
-        .padding(.top, 8)
+        .frame(maxHeight: .infinity, alignment: .center)
+    }
+
+    private func showLabel(_ text: String) {
+        withAnimation(.easeOut(duration: 0.15)) { flash = text }
+        Task {
+            try? await Task.sleep(nanoseconds: 1_100_000_000)
+            if flash == text { withAnimation(.easeOut(duration: 0.2)) { flash = nil } }
+        }
     }
 }
 
@@ -229,29 +267,27 @@ struct ActView: View {
     }
 
     private var narrowHome: some View {
-        HStack(alignment: .top, spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    header
-                    if let note = model.syncNote {
-                        Label(note, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
-                    }
-                    if model.projects.isEmpty {
-                        emptyState
-                    } else {
-                        if showsSearch { searchField }
-                        rows
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                if let note = model.syncNote {
+                    Label(note, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
                 }
-                .padding(.leading, RovaDesign.screenPadding)
-                .padding(.trailing, 8)
-                .padding(.top, 6)
-                .padding(.bottom, 16)
+                if model.projects.isEmpty {
+                    emptyState
+                } else {
+                    if showsSearch { searchField }
+                    rows
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
-            .refreshable { await model.syncAll() }
-            listDock
+            .padding(.leading, RovaDesign.screenPadding)
+            .padding(.trailing, ActDock<EmptyView>.reservedWidth)
+            .padding(.top, 6)
+            .padding(.bottom, 16)
         }
+        .scrollDismissesKeyboard(.interactively)
+        .refreshable { await model.syncAll() }
+        .overlay(alignment: .trailing) { listDock }
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
     }
 
@@ -302,7 +338,7 @@ struct ActView: View {
                 .scrollDismissesKeyboard(.interactively)
                 bottomBar
             }
-            listDock
+            .overlay(alignment: .trailing) { listDock }
         }
     }
 
@@ -648,15 +684,12 @@ struct CodeProjectWorkspaceView: View {
                 if wide {
                     splitBody(width: geo.size.width, short: short)
                 } else {
-                    HStack(alignment: .top, spacing: 0) {
-                        VStack(spacing: 0) {
-                            content
-                            if !(tab == .code && editing) {
-                                Divider()
-                                footer(showConsole: isWeb && tab == .preview, short: false)
-                            }
-                        }
-                        workspaceDock(wide: false)
+                    content
+                        .padding(.trailing, ActDock<EmptyView>.reservedWidth)
+                        .overlay(alignment: .trailing) { workspaceDock(wide: false) }
+                    if !(tab == .code && editing) {
+                        Divider()
+                        footer(showConsole: isWeb && tab == .preview, short: false)
                     }
                 }
             }
@@ -729,12 +762,13 @@ struct CodeProjectWorkspaceView: View {
                     default: codeStage
                     }
                 }
+                .padding(.trailing, ActDock<EmptyView>.reservedWidth)
+                .overlay(alignment: .trailing) { workspaceDock(wide: true) }
                 if !(tab != .history && editing) {
                     Divider()
                     footer(showConsole: false, short: short)
                 }
             }
-            workspaceDock(wide: true)
         }
     }
 
