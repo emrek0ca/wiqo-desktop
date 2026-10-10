@@ -408,6 +408,11 @@ struct WiqoMetalOrb: UIViewRepresentable {
         var isDark: Float = 0
         var animated = true
         private var shownLevel: Float = 0
+        private var lastTarget: Float = 0
+        private var lastFrame = CACurrentMediaTime()
+        private var pulse: Float = 0
+        private var squash: Float = 0
+        private var squashVelocity: Float = 0
         private let start = CACurrentMediaTime()
 
         func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
@@ -418,13 +423,32 @@ struct WiqoMetalOrb: UIViewRepresentable {
                   let descriptor = view.currentRenderPassDescriptor,
                   let buffer = renderer.queue.makeCommandBuffer(),
                   let encoder = buffer.makeRenderCommandEncoder(descriptor: descriptor) else { return }
-            shownLevel += (targetLevel - shownLevel) * 0.22
+            let now = CACurrentMediaTime()
+            let dt = Float(min(max(now - lastFrame, 1.0 / 240.0), 1.0 / 30.0))
+            lastFrame = now
+            // The surface follows the voice closely: up fast, down a little slower.
+            let follow: Float = targetLevel > shownLevel ? 0.55 : 0.18
+            shownLevel += (targetLevel - shownLevel) * follow
+            // The start of a word is an impulse: it kicks the spring (the body squashes and springs back, like a drop that was struck)
+            // and sends a ring over the surface.
+            let onset = max(0, targetLevel - lastTarget)
+            lastTarget = targetLevel
+            if animated {
+                pulse = min(pulse * exp(-dt * 3.0) + onset * 2.6, 1.4)
+                let drive = 2.0 * onset + 0.5 * (shownLevel - 0.25)
+                squashVelocity += (-85 * squash - 7.5 * squashVelocity + drive * 40) * dt
+                squash = min(max(squash + squashVelocity * dt, -0.9), 0.9)
+            }
+            let time = animated ? Float(now - start) : 0.0
             var uniforms = WiqoOrbRenderer.Uniforms(
                 accent: accent,
                 size: SIMD2<Float>(Float(view.drawableSize.width), Float(view.drawableSize.height)),
-                time: animated ? Float(CACurrentMediaTime() - start) : 0.0,
+                time: time,
                 level: animated ? shownLevel : 0.15,
-                dark: isDark
+                dark: isDark,
+                pulse: animated ? pulse : 0,
+                squash: animated ? squash : 0,
+                drift: animated ? sin(time * 1.6) * shownLevel : 0
             )
             encoder.setRenderPipelineState(renderer.pipeline)
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WiqoOrbRenderer.Uniforms>.stride, index: 0)
@@ -447,6 +471,12 @@ final class WiqoOrbRenderer {
         var time: Float
         var level: Float
         var dark: Float
+        /// A ring that runs over the surface when a word starts.
+        var pulse: Float
+        /// Squash and stretch of the whole body, from a damped spring (positive = taller and narrower).
+        var squash: Float
+        /// Sideways drift while speaking.
+        var drift: Float
     }
 
     let device: MTLDevice
@@ -474,7 +504,7 @@ final class WiqoOrbRenderer {
     using namespace metal;
 
     struct VOut { float4 position [[position]]; float2 uv; };
-    struct Uniforms { float4 accent; float2 size; float time; float level; float dark; };
+    struct Uniforms { float4 accent; float2 size; float time; float level; float dark; float pulse; float squash; float drift; };
 
     vertex VOut orb_vertex(uint vid [[vertex_id]]) {
         float2 p = float2(float((vid << 1) & 2), float(vid & 2));
@@ -484,19 +514,27 @@ final class WiqoOrbRenderer {
         return o;
     }
 
-    // Signed distance to the orb: a unit sphere whose surface moves with the voice.
-    static float field(float3 p, float t, float lv) {
-        float amp = 0.016 + 0.060 * lv;
-        float n = sin(p.x * 3.1 + t * 1.30) * sin(p.y * 2.7 - t * 1.10) * sin(p.z * 3.3 + t * 0.90)
-                + 0.55 * sin(p.x * 5.3 - t * 1.70 + p.y * 2.1) * sin(p.z * 4.1 + t * 1.20);
-        return length(p) - (1.0 + 0.05 * lv) - amp * n;
+    // Signed distance to the orb: a sphere of liquid. It squashes and stretches (a damped spring in the app), its surface flows
+    // faster the louder the voice is, and a ring runs over it when a word begins.
+    static float field(float3 p, float t, float lv, float pulse, float squash) {
+        float3 q = p;
+        q.y *= 1.0 - 0.14 * squash;
+        q.x *= 1.0 + 0.07 * squash;
+        q.z *= 1.0 + 0.07 * squash;
+        float speed = 1.0 + 2.6 * lv;
+        float amp = 0.016 + 0.075 * lv;
+        float n = sin(q.x * 3.1 + t * 1.30 * speed + sin(q.y * 2.0 + t * 0.8 * speed)) * sin(q.y * 2.7 - t * 1.10 * speed) * sin(q.z * 3.3 + t * 0.90 * speed)
+                + 0.55 * sin(q.x * 5.3 - t * 1.70 * speed + q.y * 2.1) * sin(q.z * 4.1 + t * 1.20 * speed);
+        float r = length(q.xz);
+        float ring = sin(r * 6.5 - t * 9.0) * exp(-r * 0.85) * smoothstep(-0.3, 1.0, q.y) * pulse * 0.07;
+        return length(q) - (1.0 + 0.06 * lv) - amp * n - ring;
     }
 
-    static float3 normalAt(float3 p, float t, float lv) {
+    static float3 normalAt(float3 p, float t, float lv, float pulse, float squash) {
         const float e = 0.004;
         const float2 k = float2(1.0, -1.0);
-        return normalize(k.xyy * field(p + k.xyy * e, t, lv) + k.yyx * field(p + k.yyx * e, t, lv) +
-                         k.yxy * field(p + k.yxy * e, t, lv) + k.xxx * field(p + k.xxx * e, t, lv));
+        return normalize(k.xyy * field(p + k.xyy * e, t, lv, pulse, squash) + k.yyx * field(p + k.yyx * e, t, lv, pulse, squash) +
+                         k.yxy * field(p + k.yxy * e, t, lv, pulse, squash) + k.xxx * field(p + k.xxx * e, t, lv, pulse, squash));
     }
 
     fragment float4 orb_fragment(VOut in [[stage_in]], constant Uniforms& u [[buffer(0)]]) {
@@ -504,6 +542,8 @@ final class WiqoOrbRenderer {
         float2 p2 = (in.uv * 2.0 - 1.0) * float2(aspect, 1.0) * 2.05;
         p2.y = -p2.y;
         p2.y += 0.05;                                    // the orb sits a little above the middle; its shadow below
+        p2.x -= u.drift * 0.10;                          // it sways with the voice
+        p2.y -= u.squash * 0.10;                         // and rises a little as it stretches
 
         float lv = clamp(u.level, 0.0, 1.0);
         float3 ro = float3(p2, 3.0);
@@ -513,12 +553,12 @@ final class WiqoOrbRenderer {
         float dmin = 1e9;
         bool hit = false;
         float3 pos = ro;
-        for (int i = 0; i < 48; i++) {
+        for (int i = 0; i < 56; i++) {
             pos = ro + rd * t;
-            float d = field(pos, u.time, lv);
+            float d = field(pos, u.time, lv, u.pulse, u.squash);
             dmin = min(dmin, d);
             if (d < 0.0015) { hit = true; break; }
-            t += d * 0.85;
+            t += d * 0.7;
             if (t > 6.0) break;
         }
 
@@ -527,7 +567,7 @@ final class WiqoOrbRenderer {
         float orbAlpha = 0.0;
 
         if (hit) {
-            float3 n = normalAt(pos, u.time, lv);
+            float3 n = normalAt(pos, u.time, lv, u.pulse, u.squash);
             float3 v = float3(0.0, 0.0, 1.0);
             float3 key = normalize(float3(-0.55, 0.70, 0.55));
 
@@ -536,9 +576,16 @@ final class WiqoOrbRenderer {
             float wrap = diffuse * 0.78 + 0.22;
 
             // Body: deep shade of the accent into a lit, slightly lighter accent.
-            float3 shade = accent * 0.22;
-            float3 lit = accent * 1.02 + 0.03;
+            // Liquid inside: slow swirls of lighter and deeper accent, quicker and stronger while the voice is.
+            float speed = 1.0 + 2.6 * lv;
+            float swirl = 0.5 + 0.5 * sin(pos.x * 3.6 + u.time * 1.3 * speed + sin(pos.y * 2.8 - u.time * 0.9 * speed) * 1.6)
+                              * cos(pos.z * 3.1 - u.time * 1.0 * speed + pos.y * 2.2);
+            float3 shade = accent * 0.20;
+            float3 lit = mix(accent * 0.92, accent * 1.18 + 0.05, swirl * (0.30 + 0.60 * lv)) + 0.03;
             color = mix(shade, lit, wrap);
+            // Bright streaks where the liquid folds over, only when it is moving.
+            float streak = pow(clamp(swirl, 0.0, 1.0), 6.0) * 0.30 * lv;
+            color += mix(accent, float3(1.0), 0.5) * streak;
 
             // Light that travels through the body: the rim glows with the accent, brighter when the voice is.
             float rim = pow(1.0 - ndv, 2.2);
