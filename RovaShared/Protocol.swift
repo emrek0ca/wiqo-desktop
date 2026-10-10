@@ -674,11 +674,16 @@ public struct ArtifactFilePayload: Codable, Equatable, Sendable {
 /// A path-based local operation. Paths are deliberately kept as strings on the wire; the Mac
 /// validates and resolves them after symlink expansion immediately before touching the file
 /// system. `page`/`pageSize` keep directory enumeration bounded.
+public enum FileCollisionPolicy: String, Codable, Sendable {
+    case rename, replace, fail
+}
+
 public struct LocalFileOperationPayload: Codable, Equatable, Sendable {
     public let path: String
     public let destination: String?
     public let content: String?
     public let overwrite: Bool
+    public let collisionPolicy: FileCollisionPolicy?
     public let recursive: Bool
     public let page: Int
     public let pageSize: Int
@@ -688,6 +693,7 @@ public struct LocalFileOperationPayload: Codable, Equatable, Sendable {
         destination: String? = nil,
         content: String? = nil,
         overwrite: Bool = false,
+        collisionPolicy: FileCollisionPolicy? = nil,
         recursive: Bool = false,
         page: Int = 0,
         pageSize: Int = 100
@@ -696,6 +702,7 @@ public struct LocalFileOperationPayload: Codable, Equatable, Sendable {
         self.destination = destination
         self.content = content
         self.overwrite = overwrite
+        self.collisionPolicy = collisionPolicy
         self.recursive = recursive
         self.page = page
         self.pageSize = pageSize
@@ -1635,6 +1642,8 @@ public struct DesktopFileInfo: Codable, Equatable, Sendable, Identifiable {
 
 public struct FileSystemEntry: Codable, Equatable, Sendable, Identifiable {
     public let path: String
+    /// Present when a transfer selected a different path because the requested name existed.
+    public let requestedPath: String?
     public let name: String
     public let fileType: String?
     public let byteCount: Int64
@@ -1643,8 +1652,9 @@ public struct FileSystemEntry: Codable, Equatable, Sendable, Identifiable {
 
     public var id: String { path }
 
-    public init(path: String, name: String, byteCount: Int64, modifiedAt: Date?, isDirectory: Bool, fileType: String? = nil) {
+    public init(path: String, name: String, byteCount: Int64, modifiedAt: Date?, isDirectory: Bool, fileType: String? = nil, requestedPath: String? = nil) {
         self.path = path
+        self.requestedPath = requestedPath
         self.name = name
         self.fileType = fileType
         self.byteCount = byteCount

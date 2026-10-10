@@ -611,14 +611,12 @@ actor MacCommandEngine {
             guard case .fileOperation(let payload) = request.payload else {
                 return (nil, "Geçersiz dosya taşıma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolları geçersiz.", category: "tool_failure"))
             }
-            let error = await Task.detached(priority: .userInitiated) { MacSystem.moveFile(payload) }.value
-            return (nil, error == nil ? "Dosya taşındı." : error!.message, error)
+            return await Task.detached(priority: .userInitiated) { MacSystem.moveFileResult(payload) }.value
         case .copyFile:
             guard case .fileOperation(let payload) = request.payload else {
                 return (nil, "Geçersiz dosya kopyalama isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolları geçersiz.", category: "tool_failure"))
             }
-            let error = await Task.detached(priority: .userInitiated) { MacSystem.copyFile(payload) }.value
-            return (nil, error == nil ? "Dosya kopyalandı." : error!.message, error)
+            return await Task.detached(priority: .userInitiated) { MacSystem.copyFileResult(payload) }.value
         case .grantAgentAccess:
             guard case .agentGrant(let grant) = request.payload else {
                 return (nil, "Geçersiz görev izni.", RovaError(code: "INVALID_PAYLOAD", message: "Görev izni geçersiz.", category: "tool_failure"))

@@ -1968,7 +1968,7 @@ struct CopilotView: View {
     private func requiresLocalConfirmation(_ step: PlannedCommand) -> Bool {
         // The task request authorizes every non-delete Mac operation. A stale
         // backend presence flag must not revive the old approval sheet.
-        return step.type == .deleteFile
+        return step.type == .deleteFile || step.approvalRequired
     }
 
     private func isForceQuitStep(_ step: PlannedCommand) -> Bool {

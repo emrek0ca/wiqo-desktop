@@ -14,10 +14,41 @@ final class MacCommandEngineTests: XCTestCase {
         try Data("new".utf8).write(to: original)
         try Data("existing".utf8).write(to: existing)
 
-        XCTAssertNil(MacSystem.moveFile(LocalFileOperationPayload(path: original.path, destination: existing.path)))
+        let result = MacSystem.moveFileResult(LocalFileOperationPayload(path: original.path, destination: existing.path))
+        XCTAssertNil(result.error)
+        guard case .files(let receipt)? = result.data else { return XCTFail("Missing actual-path receipt") }
+        XCTAssertEqual(receipt.first?.path, target.appendingPathComponent("image (2).png").path)
+        XCTAssertEqual(receipt.first?.requestedPath, existing.path)
         XCTAssertEqual(try String(contentsOf: existing, encoding: .utf8), "existing")
         XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("image (2).png"), encoding: .utf8), "new")
         XCTAssertFalse(FileManager.default.fileExists(atPath: original.path))
+    }
+
+    func testCopyIntoFolderReturnsActualRenamedPathAndFailPolicyDoesNotWrite() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-copy-collision-\(UUID().uuidString)")
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let target = root.appendingPathComponent("target", isDirectory: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = source.appendingPathComponent("image.png")
+        let existing = target.appendingPathComponent("image.png")
+        try Data("new".utf8).write(to: original)
+        try Data("existing".utf8).write(to: existing)
+
+        let blocked = MacSystem.copyFileResult(LocalFileOperationPayload(path: original.path, destination: target.path, collisionPolicy: .fail))
+        XCTAssertEqual(blocked.error?.code, "FILE_EXISTS")
+        XCTAssertEqual(try String(contentsOf: existing, encoding: .utf8), "existing")
+        let unapprovedReplace = MacSystem.copyFileResult(LocalFileOperationPayload(path: original.path, destination: target.path, collisionPolicy: .replace))
+        XCTAssertEqual(unapprovedReplace.error?.code, "OVERWRITE_REQUIRED")
+        XCTAssertEqual(try String(contentsOf: existing, encoding: .utf8), "existing")
+
+        let result = MacSystem.copyFileResult(LocalFileOperationPayload(path: original.path, destination: target.path))
+        XCTAssertNil(result.error)
+        guard case .files(let receipt)? = result.data else { return XCTFail("Missing actual-path receipt") }
+        XCTAssertEqual(receipt.first?.requestedPath, existing.path)
+        XCTAssertEqual(receipt.first?.path, target.appendingPathComponent("image (2).png").path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: original.path))
     }
 
     func testArtifactURLAcceptsProductionOriginAndRejectsLookalikes() {

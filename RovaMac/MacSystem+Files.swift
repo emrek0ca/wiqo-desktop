@@ -493,35 +493,63 @@ except Exception:
     }
 
     static func moveFile(_ payload: LocalFileOperationPayload) -> RovaError? {
-        transferFile(payload, copy: false)
+        transferFile(payload, copy: false).error
     }
 
     static func copyFile(_ payload: LocalFileOperationPayload) -> RovaError? {
-        transferFile(payload, copy: true)
+        transferFile(payload, copy: true).error
     }
 
-    private static func transferFile(_ payload: LocalFileOperationPayload, copy: Bool) -> RovaError? {
+    static func moveFileResult(_ payload: LocalFileOperationPayload) -> (data: CommandData?, message: String, error: RovaError?) {
+        transferResult(payload, copy: false)
+    }
+
+    static func copyFileResult(_ payload: LocalFileOperationPayload) -> (data: CommandData?, message: String, error: RovaError?) {
+        transferResult(payload, copy: true)
+    }
+
+    private static func transferResult(_ payload: LocalFileOperationPayload, copy: Bool) -> (data: CommandData?, message: String, error: RovaError?) {
+        let requested = requestedTransferTarget(payload)?.standardizedFileURL.path
+        let outcome = transferFile(payload, copy: copy)
+        if let error = outcome.error { return (nil, error.message, error) }
+        guard let actual = outcome.actualPath, let entry = fileSystemEntry(actual) else {
+            let error = RovaError(code: "OUTCOME_UNKNOWN", message: "Dosya işleminin hedefi doğrulanamadı; otomatik tekrar yapılmadı.", category: "tool_failure")
+            return (nil, error.message, error)
+        }
+        let receipt = FileSystemEntry(path: entry.path, name: entry.name, byteCount: entry.byteCount, modifiedAt: entry.modifiedAt, isDirectory: entry.isDirectory, fileType: entry.fileType, requestedPath: requested)
+        return (.files([receipt]), "\(entry.name) \(copy ? "kopyalandı" : "taşındı").", nil)
+    }
+
+    private static func transferFile(_ payload: LocalFileOperationPayload, copy: Bool) -> (actualPath: URL?, error: RovaError?) {
+        func fail(_ error: RovaError) -> (actualPath: URL?, error: RovaError?) { (nil, error) }
         guard let source = resolvedLocalURL(payload.path),
-              let destination = payload.destination.flatMap({ resolvedLocalURL($0, allowingMissingLastComponent: true) }),
+              let destination = requestedTransferTarget(payload),
               FileManager.default.fileExists(atPath: source.path),
               let parent = resolvedLocalURL(destination.deletingLastPathComponent().path),
               isDirectory(parent) else {
-            return RovaError(code: "INVALID_FILE_PATH", message: "Kaynak, hedef veya hedef klasör geçersiz.", category: "tool_failure")
+            return fail(RovaError(code: "INVALID_FILE_PATH", message: "Kaynak, hedef veya hedef klasör geçersiz.", category: "tool_failure"))
         }
         guard !isSymbolicLink(source), !isSymbolicLink(destination) else {
-            return RovaError(code: "SYMLINK_REJECTED", message: "Sembolik bağlantılar üzerinden dosya işlemi yapılmadı.", category: "permission")
+            return fail(RovaError(code: "SYMLINK_REJECTED", message: "Sembolik bağlantılar üzerinden dosya işlemi yapılmadı.", category: "permission"))
         }
         if source.standardizedFileURL == destination.standardizedFileURL {
-            return copy ? RovaError(code: "INVALID_FILE_PATH", message: "Kaynak ve hedef aynı dosya olamaz.", category: "validation") : nil
+            return copy ? fail(RovaError(code: "INVALID_FILE_PATH", message: "Kaynak ve hedef aynı dosya olamaz.", category: "validation")) : (source, nil)
         }
         if isDirectory(source), destination.standardizedFileURL.path.hasPrefix(source.standardizedFileURL.path + "/") {
-            return RovaError(code: "NESTED_FOLDER_MOVE", message: "Klasör kendi altına taşınamaz.", category: "validation")
+            return fail(RovaError(code: "NESTED_FOLDER_MOVE", message: "Klasör kendi altına taşınamaz.", category: "validation"))
         }
         if isDirectory(source) && !payload.recursive {
-            return RovaError(code: "RECURSIVE_REQUIRED", message: "Klasör işlemi için recursive=true açıkça belirtilmeli.", category: "permission")
+            return fail(RovaError(code: "RECURSIVE_REQUIRED", message: "Klasör işlemi için recursive=true açıkça belirtilmeli.", category: "permission"))
+        }
+        let collisionPolicy = payload.collisionPolicy ?? (payload.overwrite ? FileCollisionPolicy.replace : .rename)
+        if collisionPolicy == .replace && !payload.overwrite {
+            return fail(RovaError(code: "OVERWRITE_REQUIRED", message: "Mevcut dosyayı değiştirmek için overwrite=true gerekir.", category: "validation"))
         }
         var target = destination
-        if FileManager.default.fileExists(atPath: destination.path) && !payload.overwrite {
+        if FileManager.default.fileExists(atPath: destination.path) && collisionPolicy == .fail {
+            return fail(RovaError(code: "FILE_EXISTS", message: "Hedefte aynı adlı dosya var; hiçbir dosya değiştirilmedi.", category: "validation"))
+        }
+        if FileManager.default.fileExists(atPath: destination.path) && collisionPolicy == .rename {
             let extensionPart = destination.pathExtension
             let stem = destination.deletingPathExtension().lastPathComponent
             var available: URL?
@@ -535,18 +563,18 @@ except Exception:
                 }
             }
             guard let available else {
-                return RovaError(code: "FILE_EXISTS", message: "Hedefte boş dosya adı bulunamadı.", category: "tool_failure")
+                return fail(RovaError(code: "FILE_EXISTS", message: "Hedefte boş dosya adı bulunamadı.", category: "tool_failure"))
             }
             target = available
         }
-        if FileManager.default.fileExists(atPath: destination.path) && payload.overwrite {
+        if FileManager.default.fileExists(atPath: destination.path) && collisionPolicy == .replace {
             if !isDirectory(destination), let failure = backUp(destination) {
-                return failure
+                return fail(failure)
             }
             do {
                 try FileManager.default.removeItem(at: destination)
             } catch {
-                return localFileError(code: "FILE_REPLACE_FAILED", fallback: "Mevcut hedef değiştirilemedi.", error: error)
+                return fail(localFileError(code: "FILE_REPLACE_FAILED", fallback: "Mevcut hedef değiştirilemedi.", error: error))
             }
         }
         do {
@@ -555,10 +583,19 @@ except Exception:
             } else {
                 try FileManager.default.moveItem(at: source, to: target)
             }
-            return nil
+            guard FileManager.default.fileExists(atPath: target.path), copy || !FileManager.default.fileExists(atPath: source.path) else {
+                return fail(RovaError(code: "OUTCOME_UNKNOWN", message: "Dosya taşıma sonucu doğrulanamadı; otomatik tekrar yapılmadı.", category: "tool_failure"))
+            }
+            return (target, nil)
         } catch {
-            return localFileError(code: copy ? "FILE_COPY_FAILED" : "FILE_MOVE_FAILED", fallback: copy ? "Dosya kopyalanamadı." : "Dosya taşınamadı.", error: error)
+            return fail(localFileError(code: copy ? "FILE_COPY_FAILED" : "FILE_MOVE_FAILED", fallback: copy ? "Dosya kopyalanamadı." : "Dosya taşınamadı.", error: error))
         }
+    }
+
+    private static func requestedTransferTarget(_ payload: LocalFileOperationPayload) -> URL? {
+        guard let destination = payload.destination.flatMap({ resolvedLocalURL($0, allowingMissingLastComponent: true) }),
+              let source = resolvedLocalURL(payload.path) else { return nil }
+        return isDirectory(destination) ? destination.appendingPathComponent(source.lastPathComponent) : destination
     }
 
     static func deleteFile(_ payload: LocalFileOperationPayload) -> RovaError? {

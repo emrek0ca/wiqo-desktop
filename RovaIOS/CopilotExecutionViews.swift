@@ -120,7 +120,7 @@ struct ConfirmationSheetView: View {
 
     /// Everything still waiting, in order: the person sees the whole job, not one step at a time.
     private var waitingSteps: [PlannedCommand] {
-        bubble.steps.filter { !bubble.executedStepIDs.contains($0.id) && ($0.isDestructive || $0.requiresUserPresence) }
+        bubble.steps.filter { !bubble.executedStepIDs.contains($0.id) && $0.approvalRequired }
     }
 
     private func isReversible(_ step: PlannedCommand) -> Bool {
@@ -137,7 +137,7 @@ struct ConfirmationSheetView: View {
     private var currentStep: PlannedCommand? {
         bubble.steps.first { step in
             !bubble.executedStepIDs.contains(step.id)
-                && (step.isDestructive || step.requiresUserPresence)
+                && step.approvalRequired
         }
     }
 
@@ -146,7 +146,7 @@ struct ConfirmationSheetView: View {
               let index = bubble.steps.firstIndex(where: { $0.id == currentStep.id }) else { return 0 }
         return bubble.steps.dropFirst(index + 1).filter { step in
             !bubble.executedStepIDs.contains(step.id)
-                && (step.isDestructive || step.requiresUserPresence)
+                && step.approvalRequired
         }.count
     }
 

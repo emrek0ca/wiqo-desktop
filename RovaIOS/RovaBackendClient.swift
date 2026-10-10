@@ -15,14 +15,16 @@ struct PlannedCommand: Identifiable {
     let summary: String
     let isDestructive: Bool
     let requiresUserPresence: Bool
+    let approvalRequired: Bool
 
-    init(id: UUID = UUID(), type: CommandType, payload: CommandPayload, summary: String, isDestructive: Bool, requiresUserPresence: Bool) {
+    init(id: UUID = UUID(), type: CommandType, payload: CommandPayload, summary: String, isDestructive: Bool, requiresUserPresence: Bool, approvalRequired: Bool = false) {
         self.id = id
         self.type = type
         self.payload = payload
         self.summary = summary
         self.isDestructive = isDestructive
         self.requiresUserPresence = requiresUserPresence
+        self.approvalRequired = approvalRequired
     }
 }
 
@@ -801,6 +803,7 @@ enum RovaBackendClient {
         let summary: String
         let isDestructive: Bool
         let requiresUserPresence: Bool?
+        let approvalRequired: Bool?
     }
 
     private struct CopilotServerResponse: Decodable {
@@ -1230,7 +1233,8 @@ enum RovaBackendClient {
                 payload: step.payload,
                 summary: step.summary,
                 isDestructive: step.isDestructive || localDestructive,
-                requiresUserPresence: step.requiresUserPresence == true || step.isDestructive || localDestructive || localPresence
+                requiresUserPresence: step.requiresUserPresence == true || step.isDestructive || localDestructive || localPresence,
+                approvalRequired: step.approvalRequired ?? (step.type == .deleteFile)
             )
         }
         return ConverseResult(
@@ -1415,6 +1419,7 @@ enum RovaBackendClient {
             let summary: String
             let isDestructive: Bool
             let requiresUserPresence: Bool?
+            let approvalRequired: Bool?
         }
         struct Response: Decodable {
             let transcript: String
@@ -1435,7 +1440,8 @@ enum RovaBackendClient {
                 payload: step.payload,
                 summary: step.summary,
                 isDestructive: step.isDestructive || localDestructive,
-                requiresUserPresence: step.requiresUserPresence == true || step.isDestructive || localDestructive || localPresence
+                requiresUserPresence: step.requiresUserPresence == true || step.isDestructive || localDestructive || localPresence,
+                approvalRequired: step.approvalRequired ?? (step.type == .deleteFile)
             )
         }
         let generatedAudio = response.audioBase64.flatMap { Data(base64Encoded: $0) }

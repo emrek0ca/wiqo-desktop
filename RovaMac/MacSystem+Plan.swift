@@ -110,8 +110,10 @@ extension MacSystem {
         default: // move, copy
             guard let path, let destination = step.destination else { return fail("Kaynak veya hedef yok.") }
             let payload = LocalFileOperationPayload(path: path, destination: destination)
-            let error = step.op == "move" ? moveFile(payload) : copyFile(payload)
-            return error.map { fail($0.message) } ?? complete(step.op == "move" ? "Dosya taşındı." : "Dosya kopyalandı.")
+            let outcome = step.op == "move" ? moveFileResult(payload) : copyFileResult(payload)
+            if let error = outcome.error { return fail(error.message) }
+            guard case .files(let actual)? = outcome.data else { return fail("Dosya hedefi doğrulanamadı.") }
+            return complete(outcome.message, files: actual)
         }
     }
 }
