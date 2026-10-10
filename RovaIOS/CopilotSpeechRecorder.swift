@@ -25,6 +25,8 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
     @Published private(set) var isRecording = false
     @Published private(set) var transcript = ""
     @Published private(set) var lastErrorMessage: String?
+    /// How loud the person is speaking right now, 0...1, smoothed (quick to rise, slow to fall); drives the listening orb.
+    @Published private(set) var level: Float = 0
 
     private let speechRecognizer: SFSpeechRecognizer?
     private var audioEngine: AVAudioEngine?
@@ -139,7 +141,7 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
             // buffer - exactly the "says Dinliyorum then gets stuck" crash this fixes. Building
             // the block in a `nonisolated` factory instead means the closure is lexically declared
             // in a context with no actor isolation to inherit, so no such check is attached.
-            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format, block: Self.makeTapBlock(for: request))
+            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format, block: Self.makeTapBlock(for: request, meter: WiqoLevelMeter(recorder: self)))
             inputTapInstalled = true
             engine.prepare()
             try engine.start()
@@ -179,8 +181,17 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
     /// inside). `SFSpeechAudioBufferRecognitionRequest.append(_:)` being called from the realtime
     /// audio thread while the rest of the request's lifecycle runs on the main actor is Apple's
     /// own documented pattern for this API, not a real data race this happens to paper over.
-    nonisolated private static func makeTapBlock(for request: SFSpeechAudioBufferRecognitionRequest) -> (AVAudioPCMBuffer, AVAudioTime) -> Void {
-        { buffer, _ in request.append(buffer) }
+    nonisolated private static func makeTapBlock(for request: SFSpeechAudioBufferRecognitionRequest, meter: WiqoLevelMeter) -> (AVAudioPCMBuffer, AVAudioTime) -> Void {
+        { buffer, _ in
+            request.append(buffer)
+            meter.measure(buffer)
+        }
+    }
+
+    fileprivate func applyLevel(_ value: Float) {
+        guard isRecording else { return }
+        // Quick attack, slow release: the orb swells with a word and settles between words.
+        level = value > level ? level + (value - level) * 0.55 : level + (value - level) * 0.18
     }
 
     private func requestSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
@@ -204,6 +215,7 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
 
     private func cleanupCapture() {
         isRecording = false
+        level = 0
         isFinishing = false
         if inputTapInstalled {
             audioEngine?.inputNode.removeTap(onBus: 0)
@@ -223,5 +235,28 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
                 try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             }
         }
+    }
+}
+
+/// Reads the loudness of each audio buffer on the audio thread and hands a 0...1 value to the recorder on the main actor.
+/// A plain (non-actor) class on purpose: the tap block that calls it runs off the main actor.
+private final class WiqoLevelMeter: @unchecked Sendable {
+    private weak var recorder: WiqoSpeechRecorder?
+    private var buffers = 0
+
+    @MainActor init(recorder: WiqoSpeechRecorder) { self.recorder = recorder }
+
+    func measure(_ buffer: AVAudioPCMBuffer) {
+        buffers += 1
+        guard buffers % 2 == 0, let samples = buffer.floatChannelData?[0] else { return }
+        let count = Int(buffer.frameLength)
+        guard count > 0 else { return }
+        var sum: Float = 0
+        for index in 0..<count { sum += samples[index] * samples[index] }
+        let rms = (sum / Float(count)).squareRoot()
+        // -50 dB (quiet room) ... -8 dB (loud speech) mapped to 0...1.
+        let decibels = 20 * log10(max(rms, 0.000_01))
+        let value = min(max((decibels + 50) / 42, 0), 1)
+        Task { @MainActor [weak recorder] in recorder?.applyLevel(value) }
     }
 }

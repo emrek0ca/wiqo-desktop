@@ -614,37 +614,80 @@ struct WiqoModeSwitch<Value: Hashable>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        if #available(iOS 26.0, *) {
+            glassSwitch
+        } else {
+            classicSwitch
+        }
+    }
+
+    private func tap(_ option: Option) {
+        WiqoHaptics.selection()
+        if option.value == selection {
+            onReselect(option.value)
+        } else {
+            withAnimation(reduceMotion ? nil : WiqoMotion.ease(0.3)) { selection = option.value }
+        }
+    }
+
+    private func label(_ option: Option, isSelected: Bool) -> some View {
+        HStack(spacing: 5) {
+            Text(option.title)
+                .font(.footnote.weight(.semibold))
+                .lineLimit(1)
+            badge(option.badge)
+        }
+        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+        .frame(minWidth: 74, minHeight: 32)
+        .padding(.horizontal, 4)
+    }
+
+    /// iOS 26: the track and the thumb are Liquid Glass; the thumb is a glass lens tinted with the app's accent that morphs from one side to the other.
+    @available(iOS 26.0, *)
+    private var glassSwitch: some View {
+        GlassEffectContainer(spacing: 0) {
+            HStack(spacing: 0) {
+                ForEach(options) { option in
+                    let isSelected = option.value == selection
+                    Button { tap(option) } label: {
+                        label(option, isSelected: isSelected)
+                            .background {
+                                if isSelected {
+                                    Capsule()
+                                        .fill(Color.clear)
+                                        .glassEffect(.regular.tint(Color.accentColor.opacity(0.22)).interactive(), in: Capsule())
+                                        .glassEffectID("thumb", in: thumb)
+                                }
+                            }
+                            // The visible switch is 32 pt tall; the touch area is the full bar height.
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, -6)
+            .padding(2)
+            .glassEffect(.regular, in: Capsule())
+        }
+    }
+
+    private var classicSwitch: some View {
         HStack(spacing: 0) {
             ForEach(options) { option in
                 let isSelected = option.value == selection
-                Button {
-                    if isSelected {
-                        WiqoHaptics.selection()
-                        onReselect(option.value)
-                    } else {
-                        WiqoHaptics.selection()
-                        withAnimation(reduceMotion ? nil : WiqoMotion.ease(0.3)) { selection = option.value }
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Text(option.title)
-                            .font(.footnote.weight(.semibold))
-                            .lineLimit(1)
-                        badge(option.badge)
-                    }
-                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-                    .frame(minWidth: 74, minHeight: 32)
-                    .padding(.horizontal, 4)
-                    .background {
-                        if isSelected {
-                            Capsule()
-                                .fill(Color.primary.opacity(0.12))
-                                .matchedGeometryEffect(id: "thumb", in: thumb)
+                Button { tap(option) } label: {
+                    label(option, isSelected: isSelected)
+                        .background {
+                            if isSelected {
+                                Capsule()
+                                    .fill(Color.primary.opacity(0.12))
+                                    .matchedGeometryEffect(id: "thumb", in: thumb)
+                            }
                         }
-                    }
-                    // The visible switch is 32 pt tall; the touch area is the full bar height.
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])

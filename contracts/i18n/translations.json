@@ -1425,7 +1425,9 @@
   "Daha fazla seçenek": "More options",
   "Geri alınamaz": "Cannot undo",
   "Onayla, her zaman izin ver": "Approve, always allow",
-  "Yeni proje": "New project"
+  "Yeni proje": "New project",
+  "Dinliyorum": "Listening",
+  "Göndermek için dokun": "Tap to send"
  },
  "de": {
   "Arkadaşını davet et": "Lade deinen Freund ein",
@@ -2853,7 +2855,9 @@
   "Daha fazla seçenek": "Mehr Optionen",
   "Geri alınamaz": "Kann nicht rückgängig gemacht werden",
   "Onayla, her zaman izin ver": "Bestätigen, immer erlauben",
-  "Yeni proje": "Neues Projekt"
+  "Yeni proje": "Neues Projekt",
+  "Dinliyorum": "Ich höre",
+  "Göndermek için dokun": "Zum Senden tippen"
  },
  "es": {
   "\"%@\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.": "\"%@\": se eliminarán los archivos y el historial de todos los dispositivos; irreversible.",
@@ -4281,7 +4285,9 @@
   "Daha fazla seçenek": "Más opciones",
   "Geri alınamaz": "No se puede deshacer",
   "Onayla, her zaman izin ver": "Confirmar, siempre permitir",
-  "Yeni proje": "Nuevo proyecto"
+  "Yeni proje": "Nuevo proyecto",
+  "Dinliyorum": "Escuchando",
+  "Göndermek için dokun": "Toca para enviar"
  },
  "fr": {
   "Arkadaşını davet et": "Invite a friend",
@@ -5709,7 +5715,9 @@
   "Daha fazla seçenek": "Plus d'options",
   "Geri alınamaz": "Inversible",
   "Onayla, her zaman izin ver": "Accepter, autoriser toujours",
-  "Yeni proje": "Nouveau projet"
+  "Yeni proje": "Nouveau projet",
+  "Dinliyorum": "Écoute",
+  "Göndermek için dokun": "Appuyez pour envoyer"
  },
  "ar": {
   "+%lld adım": "+%lld خطوة",
@@ -7137,7 +7145,9 @@
   "Daha fazla seçenek": "خيارات أكثر",
   "Geri alınamaz": "لا يمكن التراجع",
   "Onayla, her zaman izin ver": "موافقة، دائمًا اسمح",
-  "Yeni proje": "مشروع جديد"
+  "Yeni proje": "مشروع جديد",
+  "Dinliyorum": "أستمع",
+  "Göndermek için dokun": "انقر لإرسال"
  },
  "ru": {
   "Arkadaşını davet et": "Пригласить друга",
@@ -8565,6 +8575,8 @@
   "Daha fazla seçenek": "Больше вариантов",
   "Geri alınamaz": "Необратимо",
   "Onayla, her zaman izin ver": "Подтвердить, всегда разрешать",
-  "Yeni proje": "Новый проект"
+  "Yeni proje": "Новый проект",
+  "Dinliyorum": "Слушаю",
+  "Göndermek için dokun": "Нажмите, чтобы отправить"
  }
 }

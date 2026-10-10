@@ -451,7 +451,11 @@ struct ActView: View {
                 busy: creating,
                 canSend: canCreate,
                 focus: $composerFocused,
-                onSend: requestCreate
+                onSend: requestCreate,
+                onVoiceCommand: { spoken in
+                    draft = spoken
+                    if canCreate { requestCreate() } else { composerFocused = true }
+                }
             ) {
                 Menu {
                     Section("Bu proje nerede dursun?") {
@@ -1261,7 +1265,11 @@ struct CodeProjectWorkspaceView: View {
                 busy: model.job != nil,
                 canSend: canSend,
                 focus: $focused,
-                onSend: requestSend
+                onSend: requestSend,
+                onVoiceCommand: { spoken in
+                    draft = spoken
+                    if canSend { requestSend() } else { focused = true }
+                }
             ) {
                 Menu {
                     Section("Hazır istekler") {
