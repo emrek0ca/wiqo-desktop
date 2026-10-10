@@ -76,58 +76,55 @@ private struct ActDockItem: Identifiable {
 private struct ActDock<Extra: View>: View {
     let groups: [[ActDockItem]]
     @ViewBuilder var extra: Extra
-    @Namespace private var thumb
     @State private var flash: String?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Room a screen reserves beside its content so the dock never covers it.
     static var reservedWidth: CGFloat { 58 }
 
-    var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 2) {
-                ForEach(Array(groups.enumerated()), id: \.offset) { groupIndex, group in
-                    if groupIndex > 0 {
-                        Rectangle().fill(WiqoTheme.line).frame(width: 20, height: 0.5).padding(.vertical, 4)
-                    }
-                    ForEach(group) { item in
-                        Button {
-                            WiqoHaptics.selection()
-                            withAnimation(reduceMotion ? nil : WiqoMotion.ease(0.28)) { item.action() }
-                            showLabel(item.label)
-                        } label: {
+    private var column: some View {
+        VStack(spacing: 2) {
+            ForEach(Array(groups.enumerated()), id: \.offset) { groupIndex, group in
+                if groupIndex > 0 {
+                    Rectangle().fill(WiqoTheme.line).frame(width: 20, height: 0.5).padding(.vertical, 4)
+                }
+                ForEach(group) { item in
+                    Button {
+                        WiqoHaptics.selection()
+                        item.action()
+                        showLabel(item.label)
+                    } label: {
+                        ZStack {
+                            Circle().fill(item.selected ? Color.primary.opacity(0.10) : Color.clear)
                             Image(systemName: item.systemImage)
                                 .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(item.selected ? Color.primary : Color.secondary)
-                                .frame(width: 40, height: 40)
-                                .background {
-                                    if item.selected {
-                                        Circle()
-                                            .fill(Color.primary.opacity(0.10))
-                                            .matchedGeometryEffect(id: "thumb-\(groupIndex)", in: thumb)
-                                    }
-                                }
-                                .contentShape(Circle())
+                                .foregroundStyle(Color(uiColor: item.selected ? .label : .secondaryLabel))
                         }
-                        .buttonStyle(.plain)
-                        .disabled(item.disabled)
-                        .opacity(item.disabled ? 0.35 : 1)
-                        .accessibilityLabel(item.label)
-                        .accessibilityAddTraits(item.selected ? .isSelected : [])
+                        .frame(width: 40, height: 40)
+                        .contentShape(Circle())
                     }
+                    .buttonStyle(.plain)
+                    .disabled(item.disabled)
+                    .opacity(item.disabled ? 0.35 : 1)
+                    .accessibilityLabel(item.label)
+                    .accessibilityAddTraits(item.selected ? .isSelected : [])
                 }
-                extra
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 40, height: 40)
             }
-            .padding(.vertical, 6)
-            .padding(.horizontal, 2)
+            extra
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Color(uiColor: .secondaryLabel))
+                .frame(width: 40, height: 40)
         }
-        .scrollBounceBehavior(.basedOnSize)
+        .padding(.vertical, 6)
         .frame(width: 44)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    var body: some View {
+        // Whole when there is room; scrolls on a short (sideways) screen.
+        ViewThatFits(in: .vertical) {
+            column
+            ScrollView(.vertical, showsIndicators: false) { column }
+        }
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(WiqoTheme.line, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.06), radius: 10, y: 3)
         // The name of what was just chosen, beside the dock for a moment.
@@ -135,9 +132,10 @@ private struct ActDock<Extra: View>: View {
             if let flash {
                 Text(flash)
                     .font(.footnote.weight(.medium))
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
                     .overlay(Capsule().strokeBorder(WiqoTheme.line, lineWidth: 0.5))
                     .fixedSize()
                     .alignmentGuide(.leading) { $0[.trailing] + 8 }

@@ -100,17 +100,17 @@ struct RovaConnectionIcon: View {
 
     var body: some View {
         Image(systemName: "laptopcomputer")
-            .font(.system(size: 17, weight: .regular))
+            .font(.system(size: 14, weight: .regular))
             .foregroundStyle(model.isPaired ? Color.primary.opacity(0.85) : Color.secondary)
             .overlay(alignment: .bottomTrailing) {
                 // One small dot, set off from the glyph by a ring of the background colour; none while no PC is paired.
                 if model.isPaired {
                     Circle()
                         .fill(RovaConnectionStatus.color(for: model))
-                        .frame(width: 6, height: 6)
+                        .frame(width: 5, height: 5)
                         .padding(1.5)
                         .background(Color(uiColor: .systemBackground), in: Circle())
-                        .offset(x: 5, y: 4)
+                        .offset(x: 4, y: 3)
                 }
             }
             .accessibilityElement(children: .ignore)
