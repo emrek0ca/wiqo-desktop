@@ -61,6 +61,65 @@ private extension View {
     }
 }
 
+/// One button of the side dock.
+private struct ActDockItem: Identifiable {
+    let id: String
+    let systemImage: String
+    let label: String
+    var selected = false
+    var disabled = false
+    let action: () -> Void
+}
+
+/// The slim dock on the right edge of Act: icon buttons in groups (a hairline between groups), and an optional menu at the bottom.
+/// Everything that used to sit in bars above and below the content lives here, so the content gets the whole width.
+private struct ActDock<Extra: View>: View {
+    let groups: [[ActDockItem]]
+    @ViewBuilder var extra: Extra
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 4) {
+                ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+                    if index > 0 {
+                        Rectangle().fill(WiqoTheme.line).frame(width: 18, height: 0.5).padding(.vertical, 3)
+                    }
+                    ForEach(group) { item in
+                        Button {
+                            WiqoHaptics.selection()
+                            item.action()
+                        } label: {
+                            Image(systemName: item.systemImage)
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(item.selected ? Color.primary : Color.secondary)
+                                .frame(width: 36, height: 36)
+                                .background(item.selected ? Color.primary.opacity(0.12) : Color.clear, in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(item.disabled)
+                        .opacity(item.disabled ? 0.35 : 1)
+                        .accessibilityLabel(item.label)
+                        .accessibilityAddTraits(item.selected ? .isSelected : [])
+                    }
+                }
+                extra
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, height: 36)
+            }
+            .padding(.vertical, 6)
+            .frame(width: 44)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        .frame(width: 44)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .padding(.trailing, 8)
+        .padding(.top, 8)
+    }
+}
+
 /// Pinned projects stay at the top of the list (a convenience of this phone, not synced).
 private enum ActPins {
     private static let key = "act.pinned.projects"
@@ -80,6 +139,7 @@ struct ActView: View {
     @State private var showingConsent = false
     @State private var showingImporter = false
     @State private var query = ""
+    @State private var showsSearch = false
     @State private var pinned = ActPins.load()
     @FocusState private var composerFocused: Bool
 
@@ -169,26 +229,46 @@ struct ActView: View {
     }
 
     private var narrowHome: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                if let note = model.syncNote {
-                    Label(note, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
+        HStack(alignment: .top, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    header
+                    if let note = model.syncNote {
+                        Label(note, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
+                    }
+                    if model.projects.isEmpty {
+                        emptyState
+                    } else {
+                        if showsSearch { searchField }
+                        rows
+                    }
                 }
-                if model.projects.isEmpty {
-                    emptyState
-                } else {
-                    if model.projects.count >= 6 { searchField }
-                    rows
-                }
+                .padding(.leading, RovaDesign.screenPadding)
+                .padding(.trailing, 8)
+                .padding(.top, 6)
+                .padding(.bottom, 16)
             }
-            .padding(.horizontal, RovaDesign.screenPadding)
-            .padding(.top, 6)
-            .padding(.bottom, 16)
+            .scrollDismissesKeyboard(.interactively)
+            .refreshable { await model.syncAll() }
+            listDock
         }
-        .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
-        .refreshable { await model.syncAll() }
+    }
+
+    /// New, search, import, privacy: the list's actions, one tap each.
+    private var listDock: some View {
+        ActDock(groups: [
+            [
+                ActDockItem(id: "new", systemImage: "plus", label: String(localized: "Yeni proje")) { composerFocused = true },
+                ActDockItem(id: "search", systemImage: "magnifyingglass", label: String(localized: "Proje ara"), selected: showsSearch, disabled: model.projects.isEmpty) {
+                    withAnimation(WiqoMotion.ease(0.25)) { showsSearch.toggle(); if !showsSearch { query = "" } }
+                }
+            ],
+            [
+                ActDockItem(id: "import", systemImage: "square.and.arrow.down", label: String(localized: "Dosyalardan aç")) { showingImporter = true },
+                ActDockItem(id: "privacy", systemImage: "lock.shield", label: String(localized: "Gizlilik ve anahtar")) { showingPrivacy = true }
+            ]
+        ]) { EmptyView() }
     }
 
     private func wideHome(_ size: CGSize) -> some View {
@@ -202,7 +282,7 @@ struct ActView: View {
                     if model.projects.isEmpty {
                         Text("Henüz proje yok. Sağdan başla.").font(.subheadline).foregroundStyle(.secondary).padding(.top, 8)
                     } else {
-                        if model.projects.count >= 6 { searchField }
+                        if showsSearch { searchField }
                         rows
                     }
                 }
@@ -222,23 +302,14 @@ struct ActView: View {
                 .scrollDismissesKeyboard(.interactively)
                 bottomBar
             }
+            listDock
         }
     }
 
     // MARK: - Üst
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("Projeler").font(.title2.weight(.bold))
-            Spacer()
-            Menu {
-                Button { showingImporter = true } label: { Label("Dosyalardan aç", systemImage: "square.and.arrow.down") }
-                Button { showingPrivacy = true } label: { Label("Gizlilik ve anahtar", systemImage: "lock.shield") }
-            } label: {
-                Image(systemName: "ellipsis.circle").font(.system(size: 20)).foregroundStyle(WiqoTheme.ink)
-            }
-            .accessibilityLabel("Daha fazla")
-        }
+        Text("Projeler").font(.title2.weight(.bold))
     }
 
     private var searchField: some View {
@@ -352,11 +423,11 @@ struct ActView: View {
 
     private func requestCreate() {
         composerFocused = false
-        if model.needsConsent(for: nil) || mode == .deviceOnly { showingConsent = true } else { startCreate() }
+        if model.needsConsent(mode: mode) { showingConsent = true } else { startCreate() }
     }
 
     private func startCreate() {
-        model.recordConsent()
+        model.recordConsent(mode: mode)
         let request = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
             if let id = await model.create(request: request, mode: mode) {
@@ -577,11 +648,15 @@ struct CodeProjectWorkspaceView: View {
                 if wide {
                     splitBody(width: geo.size.width, short: short)
                 } else {
-                    tabBar(wide: false, short: false)
-                    content
-                    if !(tab == .code && editing) {
-                        Divider()
-                        footer(showConsole: isWeb && tab == .preview, short: false)
+                    HStack(alignment: .top, spacing: 0) {
+                        VStack(spacing: 0) {
+                            content
+                            if !(tab == .code && editing) {
+                                Divider()
+                                footer(showConsole: isWeb && tab == .preview, short: false)
+                            }
+                        }
+                        workspaceDock(wide: false)
                     }
                 }
             }
@@ -632,7 +707,6 @@ struct CodeProjectWorkspaceView: View {
                 .lineLimit(1)
             Image(systemName: project?.mode.systemImage ?? "lock.icloud").font(.caption).foregroundStyle(.secondary)
             Spacer(minLength: 4)
-            menu
         }
         .padding(.horizontal, 16)
         .frame(height: short ? 34 : 44)
@@ -643,14 +717,12 @@ struct CodeProjectWorkspaceView: View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
                 if embedded { workspaceHeader(short: short) }
-                if isWeb { previewBar }
                 stage
                 if isWeb { consoleStrip.padding(.horizontal, 12).padding(.bottom, 6) }
             }
             .frame(width: min(max(width * 0.42, 300), 480))
             Divider()
             VStack(spacing: 0) {
-                tabBar(wide: true, short: short)
                 Group {
                     switch tab {
                     case .history: historyStage
@@ -662,92 +734,41 @@ struct CodeProjectWorkspaceView: View {
                     footer(showConsole: false, short: short)
                 }
             }
+            workspaceDock(wide: true)
         }
     }
 
-    // MARK: Sekmeler
+    // MARK: Dock
 
-    @ViewBuilder private func tabBar(wide: Bool, short: Bool) -> some View {
-        if wide && short {
-            // Little height: two small buttons instead of the sliding pill.
-            HStack(spacing: 6) {
-                ForEach([(WorkspaceTab.code, "Kod", "chevron.left.forwardslash.chevron.right"), (.history, String(localized: "Geçmiş"), "clock.arrow.circlepath")], id: \.1) { item in
-                    let selected = (tab == .history ? WorkspaceTab.history : .code) == item.0
-                    Button { tab = item.0 } label: {
-                        Label(item.1, systemImage: item.2)
-                            .font(.footnote.weight(.medium))
-                            .padding(.horizontal, 12)
-                            .frame(height: 28)
-                            .background(selected ? WiqoTheme.ink : WiqoTheme.inset, in: Capsule())
-                            .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
-                    }
-                    .buttonStyle(.plain)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 5)
-        } else if wide {
-            WiqoPillTabs<WorkspaceTab>(
-                options: [
-                    WiqoPillTabs<WorkspaceTab>.Option(value: .code, title: "Kod", systemImage: "chevron.left.forwardslash.chevron.right"),
-                    WiqoPillTabs<WorkspaceTab>.Option(value: .history, title: String(localized: "Geçmiş"), systemImage: "clock.arrow.circlepath")
-                ],
-                selection: Binding(get: { tab == .history ? .history : .code }, set: { tab = $0 })
-            )
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-        } else {
-            WiqoPillTabs<WorkspaceTab>(
-                options: [
-                    WiqoPillTabs<WorkspaceTab>.Option(value: .preview, title: isWeb ? String(localized: "Önizleme") : String(localized: "Çıktı"), systemImage: isWeb ? "iphone" : "play.rectangle"),
-                    WiqoPillTabs<WorkspaceTab>.Option(value: .code, title: "Kod", systemImage: "chevron.left.forwardslash.chevron.right"),
-                    WiqoPillTabs<WorkspaceTab>.Option(value: .history, title: String(localized: "Geçmiş"), systemImage: "clock.arrow.circlepath")
-                ],
-                selection: $tab
-            )
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+    /// Sides of the project (preview / code / history), the preview's tools and the project menu, in one slim column on the right.
+    private func workspaceDock(wide: Bool) -> some View {
+        var sides: [ActDockItem] = []
+        if !wide {
+            sides.append(ActDockItem(id: "preview", systemImage: isWeb ? "iphone" : "play.rectangle", label: isWeb ? String(localized: "Önizleme") : String(localized: "Çıktı"), selected: tab == .preview) { tab = .preview })
         }
+        sides.append(ActDockItem(id: "code", systemImage: "chevron.left.forwardslash.chevron.right", label: "Kod", selected: wide ? tab != .history : tab == .code) { tab = .code })
+        sides.append(ActDockItem(id: "history", systemImage: "clock.arrow.circlepath", label: String(localized: "Geçmiş"), selected: tab == .history) { tab = .history })
+        var groups = [sides]
+        if isWeb && (wide || tab == .preview) {
+            groups.append([
+                ActDockItem(id: "device", systemImage: previewDevice.systemImage, label: previewDevice.title) {
+                    let all = WiqoPreviewDevice.allCases
+                    if let index = all.firstIndex(of: previewDevice) { withAnimation(.snappy(duration: 0.2)) { previewDevice = all[(index + 1) % all.count] } }
+                },
+                ActDockItem(id: "fullscreen", systemImage: "arrow.up.left.and.arrow.down.right", label: String(localized: "Tam ekran")) { showingFullScreen = true },
+                ActDockItem(id: "reload", systemImage: "arrow.clockwise", label: String(localized: "Sayfayı yenile")) { reloadToken += 1 }
+            ])
+        }
+        return ActDock(groups: groups) { if embedded { menu } }
     }
 
     @ViewBuilder private var content: some View {
         switch tab {
         case .preview:
-            VStack(spacing: 0) {
-                if isWeb { previewBar }
-                stage
-            }
+            stage
         case .code: codeStage
         case .history: historyStage
         }
-    }
-
-    private var previewBar: some View {
-        HStack(spacing: 10) {
-            ForEach(WiqoPreviewDevice.allCases) { device in
-                Button { withAnimation(.snappy(duration: 0.2)) { previewDevice = device } } label: {
-                    Label(device.title, systemImage: device.systemImage)
-                        .font(.footnote.weight(.medium))
-                        .padding(.horizontal, 10)
-                        .frame(height: 30)
-                        .background(previewDevice == device ? WiqoTheme.inset : Color.clear, in: Capsule())
-                        .foregroundStyle(previewDevice == device ? Color.primary : Color.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-            Spacer()
-            Button { showingFullScreen = true } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 14, weight: .medium)) }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Tam ekran")
-            Button { reloadToken += 1 } label: { Image(systemName: "arrow.clockwise").font(.system(size: 14, weight: .medium)) }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Sayfayı yenile")
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 2)
     }
 
     /// The page on the whole screen, as a person would use it.
@@ -1358,7 +1379,7 @@ struct CodeProjectWorkspaceView: View {
     }
 
     private func startSend() {
-        model.recordConsent()
+        model.recordConsent(mode: project?.mode ?? .devices)
         let request = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let errors = pendingErrors
         pendingErrors = []

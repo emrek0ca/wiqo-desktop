@@ -66,9 +66,9 @@ struct WiqoHomeView: View {
                     ToolbarItem(placement: .principal) {
                         WiqoModeSwitch<HomeMode>(
                             options: [
-                                .init(value: .chat, title: String(localized: "Chat"), systemImage: "bubble.left",
+                                .init(value: .chat, title: String(localized: "Chat"),
                                       badge: mode == .act && chatHasNews ? .unread : (chatActivity.isWorking && mode == .act ? .working : .none)),
-                                .init(value: .act, title: String(localized: "Act"), systemImage: "sparkles",
+                                .init(value: .act, title: String(localized: "Act"),
                                       badge: actModel.job != nil && mode == .chat ? .working : .none)
                             ],
                             selection: $mode,

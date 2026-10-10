@@ -47,6 +47,7 @@ final class ActModel: ObservableObject {
 
     private static let device = "iPhone"
     private static let consentKey = "act.writer.consent.v1"
+    private static let deviceOnlyConsentKey = "act.writer.consent.device-only.v1"
 
     // MARK: Projects
 
@@ -75,12 +76,16 @@ final class ActModel: ObservableObject {
     // MARK: Writer consent
 
     /// The writer is the one place a project's files leave the phone (to the model, for that request only).
-    func needsConsent(for project: ActLocalProject?) -> Bool {
-        if project?.mode == .deviceOnly { return true }
-        return !UserDefaults.standard.bool(forKey: Self.consentKey)
+    /// Asked once for each kind of project (shared, device-only), then remembered: the notice no longer comes with every request.
+    func needsConsent(for project: ActLocalProject?) -> Bool { needsConsent(mode: project?.mode ?? .devices) }
+
+    func needsConsent(mode: ActPrivacyMode) -> Bool {
+        !UserDefaults.standard.bool(forKey: mode == .deviceOnly ? Self.deviceOnlyConsentKey : Self.consentKey)
     }
 
-    func recordConsent() { UserDefaults.standard.set(true, forKey: Self.consentKey) }
+    func recordConsent(mode: ActPrivacyMode = .devices) {
+        UserDefaults.standard.set(true, forKey: mode == .deviceOnly ? Self.deviceOnlyConsentKey : Self.consentKey)
+    }
 
     // MARK: Project note
 

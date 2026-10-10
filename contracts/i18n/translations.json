@@ -1420,7 +1420,12 @@
   "Gül kurusu": "Dusty rose",
   "Hardal": "Mustard",
   "Mürdüm": "Plum",
-  "Toprak": "Clay"
+  "Toprak": "Clay",
+  "+%lld adım daha onay bekliyor": "+%lld steps pending approval",
+  "Daha fazla seçenek": "More options",
+  "Geri alınamaz": "Cannot undo",
+  "Onayla, her zaman izin ver": "Approve, always allow",
+  "Yeni proje": "New project"
  },
  "de": {
   "Arkadaşını davet et": "Lade deinen Freund ein",
@@ -2843,7 +2848,12 @@
   "Gül kurusu": "Altrosa",
   "Hardal": "Senf",
   "Mürdüm": "Pflaume",
-  "Toprak": "Ton"
+  "Toprak": "Ton",
+  "+%lld adım daha onay bekliyor": "+%lld Schritte noch ausstehend",
+  "Daha fazla seçenek": "Mehr Optionen",
+  "Geri alınamaz": "Kann nicht rückgängig gemacht werden",
+  "Onayla, her zaman izin ver": "Bestätigen, immer erlauben",
+  "Yeni proje": "Neues Projekt"
  },
  "es": {
   "\"%@\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.": "\"%@\": se eliminarán los archivos y el historial de todos los dispositivos; irreversible.",
@@ -4266,7 +4276,12 @@
   "Gül kurusu": "Rosa antiguo",
   "Hardal": "Mostaza",
   "Mürdüm": "Ciruela",
-  "Toprak": "Arcilla"
+  "Toprak": "Arcilla",
+  "+%lld adım daha onay bekliyor": "+%lld pasos más pendientes de confirmación",
+  "Daha fazla seçenek": "Más opciones",
+  "Geri alınamaz": "No se puede deshacer",
+  "Onayla, her zaman izin ver": "Confirmar, siempre permitir",
+  "Yeni proje": "Nuevo proyecto"
  },
  "fr": {
   "Arkadaşını davet et": "Invite a friend",
@@ -5689,7 +5704,12 @@
   "Gül kurusu": "Vieux rose",
   "Hardal": "Moutarde",
   "Mürdüm": "Prune",
-  "Toprak": "Argile"
+  "Toprak": "Argile",
+  "+%lld adım daha onay bekliyor": "+%lld pas de plus à confirmer",
+  "Daha fazla seçenek": "Plus d'options",
+  "Geri alınamaz": "Inversible",
+  "Onayla, her zaman izin ver": "Accepter, autoriser toujours",
+  "Yeni proje": "Nouveau projet"
  },
  "ar": {
   "+%lld adım": "+%lld خطوة",
@@ -7112,7 +7132,12 @@
   "Gül kurusu": "وردي باهت",
   "Hardal": "خردل",
   "Mürdüm": "برقوقي",
-  "Toprak": "طين"
+  "Toprak": "طين",
+  "+%lld adım daha onay bekliyor": "+%lld خطوة أكثر في انتظار الموافقة",
+  "Daha fazla seçenek": "خيارات أكثر",
+  "Geri alınamaz": "لا يمكن التراجع",
+  "Onayla, her zaman izin ver": "موافقة، دائمًا اسمح",
+  "Yeni proje": "مشروع جديد"
  },
  "ru": {
   "Arkadaşını davet et": "Пригласить друга",
@@ -8535,6 +8560,11 @@
   "Gül kurusu": "Пыльная роза",
   "Hardal": "Горчица",
   "Mürdüm": "Слива",
-  "Toprak": "Глина"
+  "Toprak": "Глина",
+  "+%lld adım daha onay bekliyor": "+%lld шагов до подтверждения",
+  "Daha fazla seçenek": "Больше вариантов",
+  "Geri alınamaz": "Необратимо",
+  "Onayla, her zaman izin ver": "Подтвердить, всегда разрешать",
+  "Yeni proje": "Новый проект"
  }
 }

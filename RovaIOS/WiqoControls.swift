@@ -595,14 +595,13 @@ extension Notification.Name {
     static let wiqoActHome = Notification.Name("wiqo.act-home")
 }
 
-/// The two-way switch in the Home bar: slim, one soft thumb that glides, a small status mark per side (work in progress / something new).
+/// The two-way switch in the Home bar: slim, text only, one soft thumb that glides, a small status mark per side (work in progress / something new).
 struct WiqoModeSwitch<Value: Hashable>: View {
     enum Badge { case none, working, unread }
 
     struct Option: Identifiable {
         let value: Value
         let title: String
-        let systemImage: String
         var badge: Badge = .none
         var id: Value { value }
     }
@@ -628,8 +627,6 @@ struct WiqoModeSwitch<Value: Hashable>: View {
                     }
                 } label: {
                     HStack(spacing: 5) {
-                        Image(systemName: option.systemImage)
-                            .font(.system(size: 12, weight: .semibold))
                         Text(option.title)
                             .font(.footnote.weight(.semibold))
                             .lineLimit(1)

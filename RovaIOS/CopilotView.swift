@@ -202,6 +202,12 @@ struct CopilotView: View {
             Task { await loadSideCards() }
         }
         .onChange(of: isSending) { _, sending in WiqoChatActivity.shared.isWorking = sending }
+        // An approval is answered without the keyboard in the way.
+        .onChange(of: confirmationBubbleID) { _, id in
+            guard id != nil else { return }
+            isComposerFocused = false
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .wiqoFocusComposer)) { _ in isComposerFocused = true }
         .onChange(of: selectedPhotos) { _, items in
             guard !items.isEmpty else { return }

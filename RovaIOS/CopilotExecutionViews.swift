@@ -155,111 +155,81 @@ struct ConfirmationSheetView: View {
         return CopilotView.canGrantTrust(currentStep)
     }
 
+    private var isCode: Bool { currentStep?.type == .executeCode }
+
+    private var hasOptions: Bool {
+        guard let step = currentStep else { return false }
+        let readable = !step.isDestructive && RovaOwnFolders.isAutoReadable(type: step.type, payload: step.payload)
+        return readable || offersTaskFiles || qualifiesForAlwaysAllow
+    }
+
+    /// Small on purpose: what is about to happen, two buttons, and the longer-lasting choices behind one quiet menu.
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if let currentStep {
-                        if currentStep.type == .executeCode, case .codeExecution(let payload) = currentStep.payload {
-                            CodeExecutionCard(payload: payload, summary: currentStep.summary, run: nil, failureMessage: nil, isPending: true)
-                        } else {
-                            HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: "exclamationmark.triangle.fill")
+        VStack(alignment: .leading, spacing: 14) {
+            if let currentStep {
+                if isCode, case .codeExecution(let payload) = currentStep.payload {
+                    ScrollView {
+                        CodeExecutionCard(payload: payload, summary: currentStep.summary, run: nil, failureMessage: nil, isPending: true)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(currentStep.summary)
+                            .font(.headline)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 8) {
+                            if currentStep.isDestructive || !isReversible(currentStep) {
+                                Text("Geri alınamaz")
+                                    .font(.caption2.weight(.semibold))
                                     .foregroundStyle(.orange)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Sıradaki adım")
-                                        .font(.caption.weight(.medium))
-                                        .foregroundStyle(.secondary)
-                                    Text(currentStep.summary)
-                                        .font(.headline)
-                                }
-                                Spacer(minLength: 0)
                             }
-                            .padding(16)
-                            .background(WiqoTheme.card, in: RoundedRectangle(cornerRadius: WiqoTheme.cardCorner, style: .continuous))
-                        }
-
-                        if waitingSteps.count > 1 {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Bu işte onay bekleyen \(waitingSteps.count) adım var")
-                                    .font(.caption.weight(.semibold))
+                            if laterConfirmationCount > 0 {
+                                Text("+\(laterConfirmationCount) adım daha onay bekliyor")
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
-                                ForEach(Array(waitingSteps.prefix(8).enumerated()), id: \.element.id) { index, step in
-                                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                        Text("\(index + 1).").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                                        Text(step.summary).font(.footnote).foregroundStyle(.primary)
-                                        Spacer(minLength: 4)
-                                        Text(isReversible(step) ? "geri alınabilir" : "geri alınamaz")
-                                            .font(.caption2.weight(.semibold))
-                                            .foregroundStyle(isReversible(step) ? Color.green : Color.orange)
-                                    }
-                                }
-                                if waitingSteps.count > 8 { Text("… ve \(waitingSteps.count - 8) adım daha").font(.caption).foregroundStyle(.secondary) }
                             }
-                            .padding(14)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(WiqoTheme.card, in: RoundedRectangle(cornerRadius: WiqoTheme.cardCorner, style: .continuous))
                         }
-
-                        Text(laterConfirmationCount > 0
-                             ? String(localized: "İşlem sırayla ilerleyecek. Aynı türden geri alınabilir adımlar için aşağıdan bu görev boyunca izin verebilirsin; silme ve üzerine yazma yine ayrıca sorulur.")
-                             : String(localized: "Onayından sonra bu adım çalıştırılacak."))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        if qualifiesForAlwaysAllow {
-                            Text("Bu eylem türü için gelecekte onay istememeyi seçebilirsin.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Text("Onaylanacak adım bulunamadı.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
                     }
                 }
-                .padding(20)
-            }
-            .navigationTitle("Bu adım için onay")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                HStack(spacing: 10) {
                     Button("İptal", role: .cancel) { onCancel() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
                         .disabled(isProcessing)
-                }
-            }
-            .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 8) {
                     WiqoActionButton(title: String(localized: "Onayla"), isLoading: isProcessing) { onConfirm() }
-                    if let step = currentStep, !step.isDestructive, RovaOwnFolders.isAutoReadable(type: step.type, payload: step.payload) {
-                        WiqoActionButton(title: String(localized: "Bu görev boyunca dosya okumaya izin ver"), kind: .secondary, isLoading: isGranting) { onConfirmTaskReads() }
-                            .disabled(isProcessing)
-                        Text("Masaüstü, Belgeler ve İndirilenler. Yazma, silme ve gönderme dahil değil.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if offersTaskFiles {
-                        WiqoActionButton(title: String(localized: "Bu görev boyunca dosya işlerine izin ver"), kind: .secondary, isLoading: isGranting) { onConfirmTaskFiles() }
-                            .disabled(isProcessing)
-                        Text("Okuma, klasör açma, taşıma, kopyalama, yeniden adlandırma ve PDF/zip. Silme, üzerine yazma ve dışarı gönderme hariç; görev bitince izin biter.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-
-
-                    if qualifiesForAlwaysAllow {
-                        WiqoActionButton(title: "Onayla, her zaman izin ver", kind: .secondary, isLoading: isGranting) {
-                            onConfirmAndAlwaysAllow()
-                        }
-                        .disabled(isProcessing)
-                    }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-                .padding(.bottom, 8)
-                .background(.bar)
+                if hasOptions {
+                    Menu {
+                        if !currentStep.isDestructive, RovaOwnFolders.isAutoReadable(type: currentStep.type, payload: currentStep.payload) {
+                            Button(String(localized: "Bu görev boyunca dosya okumaya izin ver")) { onConfirmTaskReads() }
+                        }
+                        if offersTaskFiles {
+                            Button(String(localized: "Bu görev boyunca dosya işlerine izin ver")) { onConfirmTaskFiles() }
+                        }
+                        if qualifiesForAlwaysAllow {
+                            Button(String(localized: "Onayla, her zaman izin ver")) { onConfirmAndAlwaysAllow() }
+                        }
+                    } label: {
+                        Label("Daha fazla seçenek", systemImage: "ellipsis")
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 32)
+                    }
+                    .disabled(isProcessing || isGranting)
+                }
+            } else {
+                Text("Onaylanacak adım bulunamadı.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .presentationDetents(isCode ? [.medium, .large] : [.height(hasOptions ? 232 : 188)])
+        .presentationDragIndicator(.hidden)
+        .presentationCornerRadius(24)
         .interactiveDismissDisabled(isProcessing)
     }
 }
