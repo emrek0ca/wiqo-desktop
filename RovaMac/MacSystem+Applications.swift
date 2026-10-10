@@ -273,7 +273,9 @@ extension MacSystem {
         var usedNames = Set<String>()
 
         func actions(for bundleIdentifier: String?) -> [ApplicationControlAction] {
-            bundleIdentifier == "com.apple.finder" ? [.open, .activate] : [.open, .activate, .quit]
+            if bundleIdentifier == "com.apple.finder" { return [.open, .activate] }
+            if let bundleIdentifier, browserBundleIdentifiers.contains(bundleIdentifier) { return [.open, .activate, .newTab, .quit] }
+            return [.open, .activate, .quit]
         }
         var categoryByBundle: [String: String] = [:]
         for record in installed {
@@ -490,6 +492,9 @@ extension MacSystem {
             let content = ApplicationControlContent(action: .quit, resolvedName: application.name, bundleIdentifier: application.bundleIdentifier, stateBefore: "not_running", stateAfter: "not_running", changed: false, verified: true)
             return (.applicationControl(content), nil)
 
+        case .newTab:
+            return await openNewTab(application, group: group, wasRunning: !runningNow.isEmpty)
+
         case .open, .activate:
             if !runningNow.isEmpty {
                 let activated = runningNow.contains { $0.activate(options: [.activateAllWindows]) }
@@ -537,6 +542,46 @@ extension MacSystem {
                 ? (.applicationControl(content), nil)
                 : (.applicationControl(content), RovaError(code: "APPLICATION_VERIFICATION_FAILED", message: "\(application.name) açılma komutu verildi ama çalıştığı doğrulanamadı.", category: "tool_failure"))
         }
+    }
+
+    /// Browsers a new tab can be requested from by handing them a blank page: they open it in a tab of the running instance.
+    private static let browserBundleIdentifiers: Set<String> = [
+        "com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.canary", "com.apple.Safari", "com.apple.SafariTechnologyPreview",
+        "com.microsoft.edgemac", "com.brave.Browser", "org.mozilla.firefox", "company.thebrowser.Browser", "com.operasoftware.Opera", "com.vivaldi.Vivaldi"
+    ]
+
+    /// The person's own browser gets a blank page handed to it through LaunchServices, which every browser opens as a new tab. The tab itself
+    /// is not observable without Apple Events, so what is verified is that the browser is running and in front.
+    private static func openNewTab(_ application: ResolvedApplicationTarget, group: RunningApplicationGroup, wasRunning: Bool) async -> (data: CommandData?, error: RovaError?) {
+        let applicationURL: URL
+        if let path = application.path {
+            applicationURL = URL(fileURLWithPath: path)
+        } else if let bundle = application.bundleIdentifier, let found = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) {
+            applicationURL = found
+        } else {
+            return (nil, RovaError(code: "APPLICATION_OPEN_FAILED", message: "\(application.name) açılamadı; uygulama dosyası bulunamadı.", category: "tool_failure"))
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        do {
+            _ = try await NSWorkspace.shared.open([URL(string: "about:blank")!], withApplicationAt: applicationURL, configuration: configuration)
+        } catch {
+            let reason = (error as NSError).localizedDescription
+            return (nil, RovaError(code: "APPLICATION_NEW_TAB_FAILED", message: "\(application.name) içinde yeni sekme açılamadı: \(reason)", category: "tool_failure"))
+        }
+        let verified = await waitForApplication(target: group, expectedRunning: true, expectedActive: true, timeoutSeconds: 4)
+        let content = ApplicationControlContent(
+            action: .newTab,
+            resolvedName: application.name,
+            bundleIdentifier: application.bundleIdentifier,
+            stateBefore: wasRunning ? "running" : "not_running",
+            stateAfter: verified ? "active" : "unknown",
+            changed: true,
+            verified: verified
+        )
+        return verified
+            ? (.applicationControl(content), nil)
+            : (.applicationControl(content), RovaError(code: "APPLICATION_VERIFICATION_FAILED", message: "\(application.name) için yeni sekme komutu verildi ama uygulamanın öne geldiği doğrulanamadı.", category: "tool_failure"))
     }
 
     /// Launches (or re-activates) through LaunchServices and reports its real error.

@@ -540,6 +540,7 @@ public enum ApplicationID: String, Codable, CaseIterable, Sendable {
 public enum ApplicationControlAction: String, Codable, CaseIterable, Sendable {
     case open
     case activate
+    case newTab = "new_tab"
     case quit
 }
 

@@ -2600,10 +2600,23 @@ struct CopilotView: View {
                 ]
             ], options: [.sortedKeys])
         case .files(let files):
-            encoded = try? JSONSerialization.data(withJSONObject: [
-                "kind": "files",
-                "value": files.map { ["path": $0.path, "name": $0.name, "fileType": $0.fileType ?? "", "byteCount": $0.byteCount, "isDirectory": $0.isDirectory] }
-            ], options: [.sortedKeys])
+            // The backend refuses a result longer than 12,000 characters (the whole request, not just the field), so a search with
+            // hundreds of hits is cut by whole entries and says how many there were.
+            var kept: [[String: Any]] = []
+            var size = 0
+            for file in files {
+                let entry: [String: Any] = ["path": file.path, "name": file.name, "fileType": file.fileType ?? "", "byteCount": file.byteCount, "isDirectory": file.isDirectory]
+                let entrySize = file.path.count + file.name.count + 90
+                if size + entrySize > 10_500 { break }
+                size += entrySize
+                kept.append(entry)
+            }
+            var envelope: [String: Any] = ["kind": "files", "value": kept]
+            if kept.count < files.count {
+                envelope["truncated"] = true
+                envelope["total"] = files.count
+            }
+            encoded = try? JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys])
         case .fileData(let content):
             // Raw bytes never go in dataText: the model can't use base64, and it pushed the field
             // past the backend's 12,000-character limit so the whole follow-up was rejected. A
@@ -2621,8 +2634,12 @@ struct CopilotView: View {
         default:
             encoded = try? JSONEncoder.rovaISO8601.encode(data)
         }
-        guard let encoded else { return nil }
-        return String(data: encoded, encoding: .utf8)
+        guard let encoded, let text = String(data: encoded, encoding: .utf8) else { return nil }
+        // The backend refuses a result over 12,000 characters, and with it the whole request: anything longer travels as a valid, shorter envelope.
+        guard text.count > 11_500 else { return text }
+        let kind = ((try? JSONSerialization.jsonObject(with: encoded)) as? [String: Any])?["kind"] as? String ?? "result"
+        let shortened: [String: Any] = ["kind": kind, "truncated": true, "note": "Sonuç çok uzun olduğu için kısaltıldı.", "preview": String(text.prefix(5_000))]
+        return (try? JSONSerialization.data(withJSONObject: shortened, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) }
     }
 
     /// Must match SEND_TO_PHONE_SUMMARY_PREFIX in rova-backend/src/tools/deviceTools.ts.

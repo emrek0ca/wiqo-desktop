@@ -382,6 +382,7 @@ actor MacCommandEngine {
             switch application.action {
             case .open: successMessage = "\(resolvedName) açıldı ve doğrulandı."
             case .activate: successMessage = "\(resolvedName) öne getirildi ve doğrulandı."
+            case .newTab: successMessage = "\(resolvedName) içinde yeni sekme açıldı; uygulama öne geldi."
             case .quit:
                 if case .applicationControl(let content) = outcome.data, !content.changed {
                     successMessage = "\(resolvedName) zaten açık değildi."

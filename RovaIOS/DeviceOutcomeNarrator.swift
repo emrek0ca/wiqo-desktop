@@ -66,6 +66,7 @@ enum DeviceOutcomeNarrator {
             switch payload.action {
             case .open: return String(localized: "\(name) açıldı.")
             case .activate: return String(localized: "\(name) öne geldi.")
+            case .newTab: return "\(name) içinde yeni sekme açıldı."
             case .quit: return changed ? String(localized: "\(name) kapatıldı.") : String(localized: "\(name) zaten kapalıydı.")
             }
         case (.lockMac, _): return "PC'yi kilitledim."
