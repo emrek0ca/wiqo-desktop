@@ -1,39 +1,56 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// One progress card for creating and for changing: the steps in order, the current one marked,
-/// the job's own message under it, and a way to stop.
-private struct ActJobCard: View {
+/// Progress of a job in one quiet line: what is happening now, which of the three steps, and a way to stop. Tapping it opens the writer's own message.
+private struct ActJobStrip: View {
     let job: ActJobState
     let onCancel: () -> Void
+    @State private var expanded = false
+
+    private var stepNumber: Int { job.stage.rawValue + 1 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(ActStage.allCases, id: \.rawValue) { step in
-                HStack(spacing: 10) {
-                    Group {
-                        if step.rawValue < job.stage.rawValue {
-                            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.green)
-                        } else if step == job.stage {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "circle").foregroundStyle(.tertiary)
-                        }
-                    }
-                    .frame(width: 20, height: 20)
-                    Text(step.title)
-                        .font(.subheadline.weight(step == job.stage ? .semibold : .regular))
-                        .foregroundStyle(step.rawValue > job.stage.rawValue ? .secondary : .primary)
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                Text(job.stage.title)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                Text("\(stepNumber)/\(ActStage.allCases.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Button(action: onCancel) {
+                    Text("Durdur")
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .frame(height: 30)
+                        .background(Color.primary.opacity(0.08), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            // Three short segments: done, current, to come.
+            HStack(spacing: 4) {
+                ForEach(ActStage.allCases, id: \.rawValue) { step in
+                    Capsule()
+                        .fill(Color.primary.opacity(step.rawValue < job.stage.rawValue ? 0.55 : step == job.stage ? 0.35 : 0.10))
+                        .frame(height: 3)
                 }
             }
-            if !job.message.isEmpty {
-                Text(job.message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            if expanded, !job.message.isEmpty {
+                Text(job.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Button("Durdur", action: onCancel).font(.footnote.weight(.medium))
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { if !job.message.isEmpty { withAnimation(WiqoMotion.ease(0.25)) { expanded.toggle() } } }
+        .animation(WiqoMotion.ease(0.25), value: job.stage)
     }
 }
 
@@ -419,7 +436,7 @@ struct ActView: View {
     private var bottomBar: some View {
         VStack(spacing: 8) {
             if let job = model.job, job.projectID == nil {
-                ActJobCard(job: job) { Task { await model.cancel() } }
+                ActJobStrip(job: job) { Task { await model.cancel() } }
             }
             if let notice = model.notice {
                 Label(notice, systemImage: "exclamationmark.circle")
@@ -1127,13 +1144,6 @@ struct CodeProjectWorkspaceView: View {
             } else {
                 ProgressView()
             }
-            if let job = model.job, job.projectID == projectID {
-                ActJobCard(job: job) { Task { await model.cancel() } }
-                    .frame(maxWidth: 300)
-                    .padding(8)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .transition(.opacity)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -1239,7 +1249,12 @@ struct CodeProjectWorkspaceView: View {
                 .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             if showConsole { consoleStrip }
-            if !short, let latest = project?.history.first { changeStrip(latest) }
+            if let job = model.job, job.projectID == projectID {
+                ActJobStrip(job: job) { Task { await model.cancel() } }
+                    .transition(.opacity)
+            } else if !short, let latest = project?.history.first {
+                changeStrip(latest)
+            }
             ActComposerBar(
                 text: $draft,
                 placeholder: String(localized: "Ne değiştirelim?"),
@@ -1317,42 +1332,36 @@ struct CodeProjectWorkspaceView: View {
     }
 
     private func changeStrip(_ entry: ActHistoryEntry) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: entry.verified ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(entry.verified ? Color.green : Color.orange)
-            VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(entry.verified ? Color(red: 0.33, green: 0.62, blue: 0.42) : Color(red: 0.85, green: 0.62, blue: 0.28))
+                    .frame(width: 6, height: 6)
                 Text("v\(project?.versionNumber ?? 0) · \(entry.summary)")
                     .font(.footnote)
-                    .lineLimit(1)
-                Text("\(project?.files.count ?? 0) dosya · \(project?.mode.title ?? "")")
-                    .font(.custom("JetBrainsMono-Regular", size: 10, relativeTo: .caption2))
                     .foregroundStyle(.secondary)
-                if !entry.verified {
-                    Text("Telefonda denenemedi; çalışmıyorsa geri al.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else if let notes = entry.notes, !notes.isEmpty {
-                    Text("Tasarım notu: \(notes.joined(separator: "; "))")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                if let notes = entry.notes, !notes.isEmpty, entry.verified {
+                    Button { draft = String(localized: "Tasarım sorunlarını düzelt, başka bir şey değiştirme: ") + notes.joined(separator: "; "); focused = true } label: { Text("Düzelt").font(.footnote.weight(.medium)) }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(WiqoTheme.ink)
+                        .disabled(model.job != nil)
                 }
-            }
-            Spacer(minLength: 6)
-            if let notes = entry.notes, !notes.isEmpty, entry.verified {
-                Button { draft = String(localized: "Tasarım sorunlarını düzelt, başka bir şey değiştirme: ") + notes.joined(separator: "; "); focused = true } label: { Label("Düzelt", systemImage: "wand.and.stars").font(.footnote.weight(.medium)) }
+                Button { undo() } label: { Text("Geri al").font(.footnote.weight(.medium)) }
                     .buttonStyle(.plain)
                     .foregroundStyle(WiqoTheme.ink)
-                    .disabled(model.job != nil)
+                    .disabled(model.job != nil || !model.canUndo(projectID))
             }
-            Button { undo() } label: { Label("Geri al", systemImage: "arrow.uturn.backward").font(.footnote.weight(.medium)) }
-                .buttonStyle(.plain)
-                .foregroundStyle(WiqoTheme.ink)
-                .disabled(model.job != nil || !model.canUndo(projectID))
+            if !entry.verified {
+                Text("Telefonda denenemedi; çalışmıyorsa geri al.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 14)
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
     }
 
     private var menu: some View {
