@@ -357,6 +357,8 @@ final class MacBackendChannel: NSObject {
             "deviceId": info.id.uuidString,
             "displayName": info.displayName,
             "platform": info.platform,
+            // Which build people run, so a step the build lacks is answered with "update" rather than a failure; an older backend ignores it.
+            "appVersion": "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"))",
             "capabilities": info.capabilities,
             // Optional protocol features; an older backend ignores the field.
             "features": ["artifact-directory-v1", "bulk-document-move-v1", "file-inspect-v1"] + (CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2] : [])
