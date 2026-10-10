@@ -610,8 +610,15 @@ except Exception:
         guard !isSymbolicLink(target) else {
             return RovaError(code: "SYMLINK_REJECTED", message: "Sembolik bağlantı silinmedi.", category: "permission")
         }
-        guard !isDirectory(target) || payload.recursive else {
-            return RovaError(code: "RECURSIVE_REQUIRED", message: "Klasör silmek için recursive=true açıkça belirtilmeli.", category: "permission")
+        if isDirectory(target) && !payload.recursive {
+            do {
+                let children = try FileManager.default.contentsOfDirectory(atPath: target.path)
+                if !children.isEmpty {
+                    return RovaError(code: "RECURSIVE_REQUIRED", message: "Dolu klasörü silmek için recursive=true açıkça belirtilmeli.", category: "permission")
+                }
+            } catch {
+                return localFileError(code: "FILE_LIST_FAILED", fallback: "Klasörün boş olduğu doğrulanamadı; silinmedi.", error: error)
+            }
         }
         do {
             try FileManager.default.removeItem(at: target)
@@ -1139,7 +1146,10 @@ extension MacSystem {
             guard documents.count <= payload.limit else {
                 return fail("TOO_MANY_DOCUMENTS", "\(documents.count) belge bulundu; bu işlem en fazla \(payload.limit) belgeyi tek seferde taşıyabilir. Hiçbir dosya taşınmadı.")
             }
-            guard !documents.isEmpty else { return (listing([]), "Taşınacak belge bulunamadı.", nil) }
+            guard !documents.isEmpty else {
+                return (listing([]), "Taşınacak belge bulunamadı; hiçbir dosya taşınmadı.",
+                        RovaError(code: "NO_MATCHING_FILES", message: "Kaynak klasörde taşınacak belge bulunamadı.", category: "tool_failure"))
+            }
             guard documents.allSatisfy({ !manager.fileExists(atPath: destination.appendingPathComponent($0.lastPathComponent).path) && !isSymbolicLink(destination.appendingPathComponent($0.lastPathComponent)) }) else {
                 return fail("FILE_EXISTS", "Hedefte aynı adlı belge var; hiçbir dosya taşınmadı.", category: "permission")
             }
