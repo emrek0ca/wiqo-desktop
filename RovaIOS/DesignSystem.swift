@@ -99,17 +99,22 @@ struct RovaConnectionIcon: View {
     @ObservedObject var model: IOSConnectionModel
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Image(systemName: "laptopcomputer")
-                .font(.system(size: 19, weight: .medium))
-                .foregroundStyle(.primary)
-            Circle()
-                .fill(RovaConnectionStatus.color(for: model))
-                .frame(width: 7, height: 7)
-                .offset(x: 3, y: -2)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("PC bağlantısı: \(RovaConnectionStatus.label(for: model))")
+        Image(systemName: "laptopcomputer")
+            .font(.system(size: 17, weight: .regular))
+            .foregroundStyle(model.isPaired ? Color.primary.opacity(0.85) : Color.secondary)
+            .overlay(alignment: .bottomTrailing) {
+                // One small dot, set off from the glyph by a ring of the background colour; none while no PC is paired.
+                if model.isPaired {
+                    Circle()
+                        .fill(RovaConnectionStatus.color(for: model))
+                        .frame(width: 6, height: 6)
+                        .padding(1.5)
+                        .background(Color(uiColor: .systemBackground), in: Circle())
+                        .offset(x: 5, y: 4)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("PC bağlantısı: \(RovaConnectionStatus.label(for: model))")
     }
 }
 
@@ -122,12 +127,12 @@ enum RovaConnectionStatus {
 
     static func color(for model: IOSConnectionModel) -> Color {
         if !model.isPaired { return .secondary }
-        if model.isReconnecting { return .orange }
-        if model.isUsingRelay, model.state != .connected { return .blue }
+        if model.isReconnecting { return Color(red: 0.85, green: 0.62, blue: 0.28) }
+        if model.isUsingRelay, model.state != .connected { return Color(red: 0.36, green: 0.52, blue: 0.70) }
         switch model.state {
-        case .connected: return RovaDesign.signal
-        case .connecting: return .orange
-        case .failed, .disconnected: return .red
+        case .connected: return Color(red: 0.33, green: 0.62, blue: 0.42)
+        case .connecting: return Color(red: 0.85, green: 0.62, blue: 0.28)
+        case .failed, .disconnected: return Color(red: 0.78, green: 0.34, blue: 0.32)
         }
     }
 }
