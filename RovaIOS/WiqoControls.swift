@@ -14,14 +14,15 @@ enum WiqoHaptics {
 
     private static var engine: CHHapticEngine?
 
-    /// The microphone opened: a soft hum under the thumb that fades out over one second, so the person feels what they are holding.
-    /// Core Haptics where the hardware has it; a few softening taps otherwise.
+    /// The microphone opened: a low rumble under the thumb that lifts off and fades over two seconds, like a launch, so the person feels what they are holding.
+    /// Core Haptics where the hardware has it; a run of softening taps otherwise.
     static func listeningStart() {
         guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
-            let taps: [(Double, CGFloat)] = [(0, 0.8), (0.14, 0.55), (0.30, 0.38), (0.50, 0.25), (0.75, 0.14)]
+            let taps: [(Double, CGFloat)] = [(0, 1.0), (0.10, 0.9), (0.22, 0.85), (0.36, 0.75), (0.52, 0.65), (0.70, 0.55),
+                                             (0.90, 0.45), (1.12, 0.35), (1.36, 0.26), (1.62, 0.18), (1.88, 0.10)]
             for (delay, intensity) in taps {
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                    UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: intensity)
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: intensity)
                 }
             }
             return
@@ -35,25 +36,41 @@ enum WiqoHaptics {
             }
             guard let engine else { return }
             try engine.start()
+            let length = 2.0
             let events = [
+                // Ignition: a firm knock.
                 CHHapticEvent(eventType: .hapticTransient, parameters: [
-                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.7),
-                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.35)
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.0),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.5)
                 ], relativeTime: 0),
+                // The body of the rumble: deep, long.
                 CHHapticEvent(eventType: .hapticContinuous, parameters: [
                     CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.0),
-                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.18)
-                ], relativeTime: 0, duration: 1.0)
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.12)
+                ], relativeTime: 0.02, duration: length),
+                // Texture on top: the crackle of the engines, which dies away sooner than the rumble.
+                CHHapticEvent(eventType: .hapticContinuous, parameters: [
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.55),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.75)
+                ], relativeTime: 0.02, duration: 1.3)
             ]
-            // The hum dies away: full, then a smooth fall to nothing at one second.
+            // Lift-off: quick to full, held, then a long smooth fall to nothing at two seconds.
             let fade = CHHapticParameterCurve(parameterID: .hapticIntensityControl, controlPoints: [
-                .init(relativeTime: 0, value: 0.75),
-                .init(relativeTime: 0.2, value: 0.5),
-                .init(relativeTime: 0.5, value: 0.24),
-                .init(relativeTime: 0.8, value: 0.08),
-                .init(relativeTime: 1.0, value: 0)
+                .init(relativeTime: 0, value: 0.55),
+                .init(relativeTime: 0.12, value: 1.0),
+                .init(relativeTime: 0.55, value: 0.92),
+                .init(relativeTime: 1.0, value: 0.62),
+                .init(relativeTime: 1.5, value: 0.28),
+                .init(relativeTime: 1.85, value: 0.08),
+                .init(relativeTime: length, value: 0)
             ], relativeTime: 0)
-            let player = try engine.makePlayer(with: CHHapticPattern(events: events, parameterCurves: [fade]))
+            // The rumble gets a little rounder as it fades.
+            let sharpness = CHHapticParameterCurve(parameterID: .hapticSharpnessControl, controlPoints: [
+                .init(relativeTime: 0, value: 0.7),
+                .init(relativeTime: 0.8, value: 0.4),
+                .init(relativeTime: length, value: 0.1)
+            ], relativeTime: 0)
+            let player = try engine.makePlayer(with: CHHapticPattern(events: events, parameterCurves: [fade, sharpness]))
             try player.start(atTime: CHHapticTimeImmediate)
         } catch {
             UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.8)
