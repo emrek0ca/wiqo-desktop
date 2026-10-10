@@ -102,4 +102,29 @@ final class CopilotWireTests: XCTestCase {
         let restored = bubbles([try card()])
         XCTAssertEqual(WiqoClarification.activeQuestionID(in: restored), "q-8f31a2c4b7d9")
     }
+
+    // MARK: Voice commands
+
+    func testShortSpokenCommandsAreRecognisedWhateverTheCaseOrPunctuation() {
+        XCTAssertEqual(WiqoVoiceIntent.parse("Geri al!"), .undo)
+        XCTAssertEqual(WiqoVoiceIntent.parse("  DURDUR. "), .stop)
+        XCTAssertEqual(WiqoVoiceIntent.parse("tam ekran"), .fullscreen)
+        XCTAssertEqual(WiqoVoiceIntent.parse("Koyu tema"), .theme(.dark))
+        XCTAssertEqual(WiqoVoiceIntent.parse("Yazıyı büyüt"), .textSize(1))
+        XCTAssertEqual(WiqoVoiceIntent.parse("evet"), .confirm)
+        XCTAssertEqual(WiqoVoiceIntent.parse("Tekrar yap"), .repeatLast)
+    }
+
+    func testALongRequestIsNeverTakenForACommand() {
+        XCTAssertEqual(WiqoVoiceIntent.parse("kodu düzelt ve butonu büyüt"), .apply("kodu düzelt ve butonu büyüt"))
+        XCTAssertEqual(WiqoVoiceIntent.parse("geri al butonunu mavi yap"), .apply("geri al butonunu mavi yap"))
+    }
+
+    func testRiskyRequestsAreTheOnesThatRemoveOrOverwrite() {
+        XCTAssertTrue(WiqoVoiceIntent.isRisky("tüm dosyaları sil"))
+        XCTAssertTrue(WiqoVoiceIntent.isRisky("index.html üzerine yaz"))
+        XCTAssertTrue(WiqoVoiceIntent.isRisky("Hepsini kaldır"))
+        XCTAssertFalse(WiqoVoiceIntent.isRisky("butonu mavi yap"))
+        XCTAssertFalse(WiqoVoiceIntent.isRisky("silüet çiz"), "a word that merely contains a risky one is not risky")
+    }
 }

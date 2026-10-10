@@ -3,7 +3,8 @@ import SwiftUI
 import UIKit
 
 /// The input of the Act tab, shaped like the chat's: one rounded bar, a menu on the left, the text, then the
-/// microphone (dictation: the words land in the field, nothing is sent) or the send arrow.
+/// microphone or the send arrow. With `onVoiceCommand` the microphone starts a voice session (a listening orb in the bar's place,
+/// sentences handed over as they end); without it the words land in the field and nothing is sent.
 struct ActComposerBar<Leading: View>: View {
     @Binding var text: String
     let placeholder: String
@@ -11,15 +12,18 @@ struct ActComposerBar<Leading: View>: View {
     let canSend: Bool
     var focus: FocusState<Bool>.Binding
     let onSend: () -> Void
-    /// When set, the microphone is a voice command: a listening orb takes the bar's place, and the sentence is handed over the moment the person stops speaking.
     var onVoiceCommand: ((String) -> Void)? = nil
-    /// What the task is doing right now ("Yazılıyor · 1 sırada"), shown in the orb's place of words while the session goes on.
+    /// What the task is doing right now ("Yazılıyor · 1 sırada"), shown while the session goes on.
     var voiceStatus: String? = nil
+    /// Names the recognizer should expect: projects, files, the words of the commands.
+    var voiceHints: [String] = []
+    /// Sentences waiting behind the running job, and how to drop one.
+    var voiceQueue: [String] = []
+    var onRemoveQueued: (Int) -> Void = { _ in }
     @ViewBuilder let leading: () -> Leading
 
+    @StateObject private var voice = WiqoVoiceSession()
     @StateObject private var recorder = WiqoSpeechRecorder()
-    @State private var voiceActive = false
-    @State private var voiceWatch: Task<Void, Never>?
     @State private var starting = false
     @State private var spokenFrom = ""
     @State private var micMessage: String?
@@ -27,66 +31,23 @@ struct ActComposerBar<Leading: View>: View {
 
     var body: some View {
         Group {
-            if voiceActive {
-                listening
+            if voice.isActive {
+                WiqoVoiceSessionView(session: voice, status: voiceStatus, working: busy, queued: voiceQueue, onRemoveQueued: onRemoveQueued)
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
                 bar
                     .transition(.opacity)
             }
         }
-        .animation(WiqoMotion.ease(0.3), value: voiceActive)
-        .onChange(of: recorder.transcript) { _, transcript in
-            guard voiceActive, !transcript.isEmpty else { return }
-            armSilenceTimer(after: 1.1)
-        }
-        .onChange(of: recorder.isRecording) { _, recording in
-            // The recognizer stopped by itself: hand over what was heard, or just close.
-            if !recording, voiceActive { Task { await finishVoice(send: true) } }
-        }
-        .alert("Sesli giriş izni gerekli", isPresented: $micDenied) {
+        .animation(WiqoMotion.ease(0.3), value: voice.isActive)
+        .onAppear { voice.onCommand = { onVoiceCommand?($0) } }
+        .alert("Sesli giriş izni gerekli", isPresented: Binding(get: { micDenied || voice.micDenied }, set: { _ in micDenied = false; voice.micDenied = false })) {
             Button("Ayarları Aç") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
             Button("Vazgeç", role: .cancel) {}
         } message: { Text("Konuşarak yazmak için Ayarlar'dan mikrofon ve konuşma tanıma iznini aç.") }
-        .alert("Ses", isPresented: Binding(get: { micMessage != nil }, set: { if !$0 { micMessage = nil } })) {
+        .alert("Ses", isPresented: Binding(get: { (micMessage ?? voice.micMessage) != nil }, set: { if !$0 { micMessage = nil; voice.micMessage = nil } })) {
             Button("Tamam", role: .cancel) {}
-        } message: { Text(micMessage ?? "") }
-    }
-
-    /// Only the listening orb, in the composer's place: the words as they are heard in one quiet line, tap to send now, a small close.
-    private var listening: some View {
-        VStack(spacing: 0) {
-            Text(recorder.transcript.isEmpty ? (voiceStatus ?? " ") : recorder.transcript)
-                .font(.footnote)
-                .foregroundStyle(recorder.transcript.isEmpty ? .tertiary : .secondary)
-                .lineLimit(1)
-                .truncationMode(.head)
-                .padding(.horizontal, 48)
-                .frame(height: 18)
-            ZStack {
-                Button { deliverVoice() } label: {
-                    WiqoListeningOrb(level: CGFloat(recorder.level))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dinliyorum")
-                .accessibilityHint("Göndermek için dokun")
-                HStack {
-                    Spacer()
-                    Button { Task { await finishVoice(send: false) } } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 34, height: 34)
-                            .background(Color.primary.opacity(0.07), in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Vazgeç")
-                }
-                .padding(.trailing, 10)
-            }
-        }
-        .frame(maxWidth: .infinity)
+        } message: { Text(micMessage ?? voice.micMessage ?? "") }
     }
 
     private var bar: some View {
@@ -111,13 +72,13 @@ struct ActComposerBar<Leading: View>: View {
         .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
         .animation(.easeOut(duration: 0.15), value: canSend)
         .onChange(of: recorder.transcript) { _, transcript in
-            guard recorder.isRecording, !voiceActive, !transcript.isEmpty else { return }
+            guard recorder.isRecording, !transcript.isEmpty else { return }
             text = spokenFrom.isEmpty ? transcript : spokenFrom + " " + transcript
         }
     }
 
     @ViewBuilder private var trailing: some View {
-        if starting || (busy && onVoiceCommand == nil) {
+        if starting || voice.starting || (busy && onVoiceCommand == nil) {
             ProgressView().controlSize(.small)
         } else if canSend && !recorder.isRecording && !busy {
             Button(action: onSend) {
@@ -140,66 +101,12 @@ struct ActComposerBar<Leading: View>: View {
         }
     }
 
-    // MARK: Voice command
-
-    /// Quiet for a moment after the last word: that is the end of the sentence.
-    private func armSilenceTimer(after seconds: Double) {
-        voiceWatch?.cancel()
-        voiceWatch = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-            guard !Task.isCancelled, voiceActive else { return }
-            if recorder.transcript.isEmpty {
-                // Nobody spoke for a long while: the session closes by itself.
-                await finishVoice(send: false)
-            } else {
-                deliverVoice()
-            }
-        }
-    }
-
-    private func startVoice() {
-        guard !starting else { return }
-        starting = true
-        focus.wrappedValue = false
-        Task { @MainActor in
-            defer { starting = false }
-            switch await recorder.start() {
-            case .started, .startedWithNetworkFallback:
-                WiqoHaptics.selection()
-                voiceActive = true
-                armSilenceTimer(after: 12)
-            case .permissionDenied: micDenied = true
-            case .speechUnavailable: micMessage = String(localized: "Konuşma tanıma şu an kullanılamıyor. Siri ve Dikte'nin açık olduğundan emin ol; bu arada yazabilirsin.")
-            case .setupFailed: micMessage = String(localized: "Mikrofon başlatılamadı; başka bir uygulama kullanıyor olabilir.")
-            }
-        }
-    }
-
-    /// The sentence heard so far goes to the task now, and the session keeps listening for the next one on the same microphone:
-    /// speaking while the first command is being carried out is how it is meant to be used.
-    private func deliverVoice() {
-        guard voiceActive else { return }
-        let heard = recorder.rollover()
-        guard !heard.isEmpty else { return }
-        WiqoHaptics.success()
-        onVoiceCommand?(heard)
-        // Listening goes on; with nothing more said for a while, the session ends.
-        armSilenceTimer(after: 30)
-    }
-
-    /// Ends the session. `send` hands over a sentence that was still being spoken.
-    private func finishVoice(send: Bool) async {
-        guard voiceActive else { return }
-        voiceWatch?.cancel()
-        voiceActive = false
-        let heard = await recorder.stop()
-        guard send, !heard.isEmpty else { return }
-        WiqoHaptics.success()
-        onVoiceCommand?(heard)
-    }
-
     private func toggleMic() {
-        if onVoiceCommand != nil { startVoice(); return }
+        if onVoiceCommand != nil {
+            focus.wrappedValue = false
+            voice.start(hints: voiceHints)
+            return
+        }
         guard !starting else { return }
         starting = true
         Task { @MainActor in
@@ -223,10 +130,14 @@ struct ActComposerBar<Leading: View>: View {
 /// The listening orb: a real 3D sphere rendered with Metal (see `WiqoMetalOrb`); on a device without Metal, the drawn version below.
 struct WiqoListeningOrb: View {
     var level: CGFloat
+    /// A task is being carried out: the orb keeps a calm flow of its own, whether or not anyone is speaking.
+    var working = false
+    /// Changes each time a sentence is handed over: the orb flashes.
+    var flash = 0
 
     var body: some View {
         if WiqoMetalOrb.isAvailable {
-            WiqoMetalOrb(level: level)
+            WiqoMetalOrb(level: level, working: working, flash: flash)
                 // The view is larger than the space the orb takes, so its glow and shadow are never cut at an edge.
                 .frame(width: 220, height: 136)
                 .frame(width: 132, height: 92)
@@ -369,6 +280,8 @@ private struct WiqoCanvasOrb: View {
 /// The shader is compiled from source at run time, so it needs no resource file; if that fails the drawn orb is used.
 struct WiqoMetalOrb: UIViewRepresentable {
     var level: CGFloat
+    var working = false
+    var flash = 0
     @Environment(\.self) private var environment
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -381,7 +294,8 @@ struct WiqoMetalOrb: UIViewRepresentable {
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         view.colorPixelFormat = .bgra8Unorm
         view.framebufferOnly = true
-        view.preferredFramesPerSecond = 60
+        // Low Power Mode: half the frames; a still orb is as legible.
+        view.preferredFramesPerSecond = ProcessInfo.processInfo.isLowPowerModeEnabled ? 30 : 60
         view.delegate = context.coordinator
         return view
     }
@@ -395,6 +309,11 @@ struct WiqoMetalOrb: UIViewRepresentable {
         coordinator.accent = SIMD4<Float>(Float(red), Float(green), Float(blue), 1)
         coordinator.isDark = view.traitCollection.userInterfaceStyle == .dark ? 1 : 0
         coordinator.animated = !reduceMotion
+        coordinator.working = working
+        if coordinator.flashToken != flash {
+            coordinator.flashToken = flash
+            coordinator.flash = 1
+        }
         view.isPaused = reduceMotion
         view.enableSetNeedsDisplay = reduceMotion
         if reduceMotion { view.setNeedsDisplay() }
@@ -407,6 +326,10 @@ struct WiqoMetalOrb: UIViewRepresentable {
         var accent = SIMD4<Float>(0.2, 0.4, 0.9, 1)
         var isDark: Float = 0
         var animated = true
+        var working = false
+        var flashToken = 0
+        var flash: Float = 0
+        private var work: Float = 0
         private var shownLevel: Float = 0
         private var lastTarget: Float = 0
         private var lastFrame = CACurrentMediaTime()
@@ -443,6 +366,8 @@ struct WiqoMetalOrb: UIViewRepresentable {
                 squash = min(max(squash + squashVelocity * dt, -1.0), 1.0)
             }
             let time = animated ? Float(now - start) : 0.0
+            work += ((working ? 1 : 0) - work) * min(dt * 3, 1)
+            flash = max(0, flash - dt * 2.2)
             var uniforms = WiqoOrbRenderer.Uniforms(
                 accent: accent,
                 size: SIMD2<Float>(Float(view.drawableSize.width), Float(view.drawableSize.height)),
@@ -451,7 +376,9 @@ struct WiqoMetalOrb: UIViewRepresentable {
                 dark: isDark,
                 pulse: animated ? pulse : 0,
                 squash: animated ? squash : 0,
-                drift: animated ? sin(time * 1.1) * shownLevel : 0
+                drift: animated ? sin(time * 1.1) * shownLevel : 0,
+                work: animated ? work : 0,
+                flash: animated ? flash : 0
             )
             encoder.setRenderPipelineState(renderer.pipeline)
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WiqoOrbRenderer.Uniforms>.stride, index: 0)
@@ -480,6 +407,10 @@ final class WiqoOrbRenderer {
         var squash: Float
         /// Sideways drift while speaking.
         var drift: Float
+        /// 0...1: a task is running (the orb keeps a calm flow of its own).
+        var work: Float
+        /// 1 → 0 after a sentence was handed over: a brief brightening.
+        var flash: Float
     }
 
     let device: MTLDevice
@@ -507,7 +438,7 @@ final class WiqoOrbRenderer {
     using namespace metal;
 
     struct VOut { float4 position [[position]]; float2 uv; };
-    struct Uniforms { float4 accent; float2 size; float time; float level; float dark; float pulse; float squash; float drift; };
+    struct Uniforms { float4 accent; float2 size; float time; float level; float dark; float pulse; float squash; float drift; float work; float flash; };
 
     vertex VOut orb_vertex(uint vid [[vertex_id]]) {
         float2 p = float2(float((vid << 1) & 2), float(vid & 2));
@@ -548,7 +479,7 @@ final class WiqoOrbRenderer {
         p2.x -= u.drift * 0.22;                          // it sways with the voice
         p2.y -= u.squash * 0.20;                         // and rises as it stretches
 
-        float lv = clamp(u.level, 0.0, 1.0);
+        float lv = max(clamp(u.level, 0.0, 1.0), 0.28 * u.work);
         float3 ro = float3(p2, 3.0);
         float3 rd = float3(0.0, 0.0, -1.0);
 
@@ -612,6 +543,9 @@ final class WiqoOrbRenderer {
             // Light bounced back from the surface below.
             float bounce = smoothstep(0.1, 1.0, -n.y) * 0.22;
             color += mix(accent, float3(1.0), 0.35) * bounce;
+
+            // A sentence was just handed over: a brief brightening and a rim of light.
+            color += mix(accent, float3(1.0), 0.6) * u.flash * (0.18 + 0.30 * pow(1.0 - ndv, 2.0));
 
             color = clamp(color, 0.0, 1.0);
 

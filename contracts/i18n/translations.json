@@ -1431,7 +1431,9 @@
   "%lld sırada": "%lld in line",
   "Bu soru artık beklenmiyor": "This question is no longer pending",
   "Yanıtlandı": "Answered",
-  "Yanıtını yaz": "Type your answer"
+  "Yanıtını yaz": "Type your answer",
+  "Emin misin? \"Evet\" de ya da \"Hayır\".": "Are you sure? Tap \"Yes\" or \"No\".",
+  "Yanıt yazılıyor": "Replying..."
  },
  "de": {
   "Arkadaşını davet et": "Lade deinen Freund ein",
@@ -2865,7 +2867,9 @@
   "%lld sırada": "%lld in der Reihe",
   "Bu soru artık beklenmiyor": "Diese Frage wird nicht mehr erwartet",
   "Yanıtlandı": "Beantwortet",
-  "Yanıtını yaz": "Antworten"
+  "Yanıtını yaz": "Antworten",
+  "Emin misin? \"Evet\" de ya da \"Hayır\".": "Bist du sicher? Sag \"Ja\" oder \"Nein\".",
+  "Yanıt yazılıyor": "Antwort wird geschrieben"
  },
  "es": {
   "\"%@\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.": "\"%@\": se eliminarán los archivos y el historial de todos los dispositivos; irreversible.",
@@ -4299,7 +4303,9 @@
   "%lld sırada": "%lld en orden",
   "Bu soru artık beklenmiyor": "Esta pregunta ya no se espera",
   "Yanıtlandı": "Respondida",
-  "Yanıtını yaz": "Escribe tu respuesta"
+  "Yanıtını yaz": "Escribe tu respuesta",
+  "Emin misin? \"Evet\" de ya da \"Hayır\".": "¿Estás seguro? Di \"Sí\" o \"No\".",
+  "Yanıt yazılıyor": "Escribiendo respuesta"
  },
  "fr": {
   "Arkadaşını davet et": "Invite a friend",
@@ -5733,7 +5739,9 @@
   "%lld sırada": "%lld en attente",
   "Bu soru artık beklenmiyor": "Cette question n'est plus en attente",
   "Yanıtlandı": "Répondu",
-  "Yanıtını yaz": "Écrivez votre réponse"
+  "Yanıtını yaz": "Écrivez votre réponse",
+  "Emin misin? \"Evet\" de ya da \"Hayır\".": "Êtes‑vous sûr ? Dites « Oui » ou « Non ».",
+  "Yanıt yazılıyor": "Réponse en cours"
  },
  "ar": {
   "+%lld adım": "+%lld خطوة",
@@ -7167,7 +7175,9 @@
   "%lld sırada": "%lld في الصف",
   "Bu soru artık beklenmiyor": "لم يعد يُنتظر هذا السؤال",
   "Yanıtlandı": "تم الرد",
-  "Yanıtını yaz": "اكتب إجابتك"
+  "Yanıtını yaz": "اكتب إجابتك",
+  "Emin misin? \"Evet\" de ya da \"Hayır\".": "هل أنت متأكد؟ قل \"نعم\" أو \"لا\".",
+  "Yanıt yazılıyor": "يتم كتابة الرد"
  },
  "ru": {
   "Arkadaşını davet et": "Пригласить друга",
@@ -8601,6 +8611,8 @@
   "%lld sırada": "%lld в очереди",
   "Bu soru artık beklenmiyor": "Этот вопрос больше не ожидается",
   "Yanıtlandı": "Ответлено",
-  "Yanıtını yaz": "Написать ответ"
+  "Yanıtını yaz": "Написать ответ",
+  "Emin misin? \"Evet\" de ya da \"Hayır\".": "Вы уверены? Скажите «Да» или «Нет».",
+  "Yanıt yazılıyor": "Ответ пишется"
  }
 }

@@ -18328,6 +18328,47 @@
         }
       }
     },
+    "Emin misin? \"Evet\" de ya da \"Hayır\".": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Are you sure? Tap \"Yes\" or \"No\"."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bist du sicher? Sag \"Ja\" oder \"Nein\"."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Estás seguro? Di \"Sí\" o \"No\"."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Êtes‑vous sûr ? Dites « Oui » ou « Non »."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "هل أنت متأكد؟ قل \"نعم\" أو \"لا\"."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вы уверены? Скажите «Да» или «Нет»."
+          }
+        }
+      }
+    },
     "Emoji": {
       "extractionState": "manual",
       "localizations": {
@@ -49689,6 +49730,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "Тон ответа"
+          }
+        }
+      }
+    },
+    "Yanıt yazılıyor": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replying..."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antwort wird geschrieben"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escribiendo respuesta"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réponse en cours"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتم كتابة الرد"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ответ пишется"
           }
         }
       }

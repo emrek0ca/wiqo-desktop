@@ -26,6 +26,7 @@
  "\\b(m[ıiuü])(y[ıiuü]m|s[ıiuü]n|y[ıiuü]z|s[ıiuü]n[ıiuü]z)?\\s*$",
  "\\b(m[ıiuü])\\b",
  "^[\\s\\-+~≈$€₺£]*[\\d.,\\s]+\\s*(%|[A-Za-zİıÖöÜüÇçŞşĞğ]{0,3})?\\s*$",
+ "açık tema",
  "başarısız",
  "başka bir",
  "başla",
@@ -34,6 +35,7 @@
  "doğrulanamadı",
  "doğrulandı",
  "dur artık",
+ "geçmiş",
  "gönderme",
  "güncel hava",
  "hayır",
@@ -44,8 +46,12 @@
  "pc’ye ulaşılamıyor",
  "vazgeç",
  "yardımcı olabilir",
+ "yazıyı büyüt",
+ "yazıyı küçült",
  "Önemli olanı haber verir, gerisini sessizce not eder",
  "çıktı",
+ "önizleme",
  "İşlem bulunamadı.",
+ "ı",
  "“\\(widget.title ?? \"Uygulama\")” uygulaması çalışırken hata verdi (\\(problem)). A"
 ]

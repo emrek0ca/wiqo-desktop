@@ -40,9 +40,24 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
     /// Callbacks of an earlier recognition request (after a rollover) are ignored.
     private var generation = 0
 
+    /// Words the recognizer should expect (project and file names, command words): it prefers them over look-alikes.
+    var contextualStrings: [String] = []
+
     override init() {
-        speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "tr-TR"))
+        speechRecognizer = SFSpeechRecognizer(locale: Self.recognitionLocale())
         super.init()
+    }
+
+    /// The person's own language when the recognizer supports it (the app speaks the device language everywhere else), Turkish otherwise.
+    static func recognitionLocale() -> Locale {
+        let supported = SFSpeechRecognizer.supportedLocales()
+        for identifier in Locale.preferredLanguages {
+            let candidate = Locale(identifier: identifier)
+            if supported.contains(candidate) { return candidate }
+            if let code = candidate.language.languageCode?.identifier,
+               let match = supported.first(where: { $0.language.languageCode?.identifier == code }) { return match }
+        }
+        return Locale(identifier: "tr-TR")
     }
 
     func start() async -> StartResult {
@@ -98,6 +113,8 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+            // Without this, iOS silences every haptic while the microphone is open: the listening hum and the "sent" tap would never be felt.
+            try? session.setAllowHapticsAndSystemSoundsDuringRecording(true)
             // setActive(_:) is synchronous and can block for the duration of an audio route
             // negotiation (e.g. a Bluetooth headset) - AVFoundation's own runtime warning flags
             // calling it on the main thread ("can lead to UI unresponsiveness"). Off-loading it to
@@ -119,6 +136,7 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
 
             let request = SFSpeechAudioBufferRecognitionRequest()
             request.shouldReportPartialResults = true
+            request.contextualStrings = contextualStrings
             // Deliberately NOT forced to usesOnDeviceRecognition - see the comment above where
             // that capability is read. Leaving this false lets SFSpeechRecognizer choose on-device
             // when it's actually ready and fall back to network transparently, instead of a hard
@@ -202,6 +220,7 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
         let heard = normalizedTranscript
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        request.contextualStrings = contextualStrings
         let oldRequest = recognitionRequest
         let oldTask = recognitionTask
         generation += 1

@@ -81,6 +81,9 @@ struct CopilotView: View {
     @State private var openWork: RovaBackendClient.OpenWork?
     @State private var screenshotObservationCount = 0
     @StateObject private var audioRecorder = WiqoSpeechRecorder()
+    /// The voice session: sentences are sent as they end, and the microphone stays open for the next while the answer is written.
+    @StateObject private var voice = WiqoVoiceSession()
+    @State private var voiceWaiting: [String] = []
     @State private var isStartingAudio = false
     @State private var showingMicPermissionAlert = false
     @State private var showingDiscovery = false
@@ -1465,6 +1468,48 @@ struct CopilotView: View {
     /// (via `.safeAreaInset` on the body) with its own margin/shadow rather than sitting flush
     /// against the screen edges, so content can scroll all the way to the bottom behind it.
     private var inputBar: some View {
+        Group {
+            if voice.isActive {
+                WiqoVoiceSessionView(
+                    session: voice,
+                    status: isSending ? String(localized: "Yanıt yazılıyor") + (voiceWaiting.isEmpty ? "" : " · " + String(localized: "\(voiceWaiting.count) sırada")) : nil,
+                    working: isSending,
+                    queued: voiceWaiting,
+                    onRemoveQueued: { index in if voiceWaiting.indices.contains(index) { voiceWaiting.remove(at: index) } }
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            } else {
+                composerBar
+            }
+        }
+        .animation(WiqoMotion.ease(0.3), value: voice.isActive)
+        .onAppear { voice.onCommand = { handleVoice($0) } }
+        .onChange(of: isSending) { _, sending in
+            // The answer is done: the next spoken sentence goes at once.
+            guard !sending, !voiceWaiting.isEmpty else { return }
+            let next = voiceWaiting.removeFirst()
+            Task { await sendMessage(textOverride: next) }
+        }
+    }
+
+    /// A spoken sentence: the short commands run here and now; anything else is a message (queued while an answer is being written).
+    private func handleVoice(_ spoken: String) {
+        switch WiqoVoiceIntent.parse(spoken) {
+        case .stop: voiceWaiting.removeAll()
+        case .theme(let theme): WiqoAppearance.apply(theme: theme)
+        case .textSize(let step): WiqoAppearance.shiftTextSize(by: step)
+        case .apply(let sentence):
+            guard !sentence.isEmpty else { return }
+            if isSending { voiceWaiting.append(sentence); if voiceWaiting.count > 5 { voiceWaiting.removeFirst() } } else { Task { await sendMessage(textOverride: sentence) } }
+        default:
+            // "Geri al", "tekrar yap" and the rest are about Act's projects; in a conversation they are ordinary words.
+            Task { if isSending { voiceWaiting.append(spoken) } else { await sendMessage(textOverride: spoken) } }
+        }
+    }
+
+    private var composerBar: some View {
         VStack(spacing: 0) {
             if isCreatingAgent {
                 HStack(spacing: 8) {
@@ -1646,17 +1691,29 @@ struct CopilotView: View {
             .accessibilityLabel("Gönder")
             .transition(.wiqoBlur)
         } else {
-            Button {
-                toggleAudioRecording()
-            } label: {
-                Image(systemName: audioRecorder.isRecording ? "stop.fill" : "mic.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(audioRecorder.isRecording ? Color.white : Color.primary)
-                    .frame(width: 30, height: 30)
-                    .background(audioRecorder.isRecording ? Color.red : Color(.tertiarySystemFill), in: Circle())
-            }
-            .accessibilityLabel(audioRecorder.isRecording ? "Ses kaydını bitir" : "Sesli mesaj kaydet")
-            .transition(.wiqoBlur)
+            // Tap: the voice session (the orb; each sentence is sent as it ends). Press and hold: dictation into the field, as before.
+            Image(systemName: audioRecorder.isRecording ? "stop.fill" : "mic.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(audioRecorder.isRecording ? Color.white : Color.primary)
+                .frame(width: 30, height: 30)
+                .background(audioRecorder.isRecording ? Color.red : Color(.tertiarySystemFill), in: Circle())
+                .contentShape(Circle())
+                .onTapGesture {
+                    if audioRecorder.isRecording { toggleAudioRecording() } else {
+                        isComposerFocused = false
+                        voice.start(hints: ActVoiceWords.hints)
+                    }
+                }
+                .onLongPressGesture(minimumDuration: 0.45) {
+                    WiqoHaptics.selection()
+                    if !audioRecorder.isRecording { toggleAudioRecording() }
+                }
+                .accessibilityElement()
+                .accessibilityLabel(audioRecorder.isRecording ? "Ses kaydını bitir" : "Sesli mesaj kaydet")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { audioRecorder.isRecording ? toggleAudioRecording() : voice.start(hints: ActVoiceWords.hints) }
+                .accessibilityAction(named: Text("Konuşarak yaz")) { if !audioRecorder.isRecording { toggleAudioRecording() } }
+                .transition(.wiqoBlur)
         }
     }
 

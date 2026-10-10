@@ -79,32 +79,40 @@ private extension View {
 }
 
 /// Spoken sentences that arrive while a job is running wait their turn here and start the moment it ends, in order.
-/// "Durdur" / "dur" / "iptal" stop the running job instead of being queued.
+/// A risky sentence ("sil") waits for "evet" in `pendingConfirm`; `lastApplied` is what "tekrar yap" repeats.
 @MainActor
-private final class ActVoiceQueue: ObservableObject {
+final class ActVoiceQueue: ObservableObject {
     static let shared = ActVoiceQueue()
     @Published private(set) var waiting: [String] = []
-    nonisolated private static let stopWords: Set<String> = ["durdur", "dur", "dur artık", "iptal", "iptal et", "vazgeç", "bırak"]
-
-    nonisolated static func isStop(_ spoken: String) -> Bool {
-        let folded = spoken.lowercased(with: Locale(identifier: "tr_TR")).trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
-        return stopWords.contains(folded)
-    }
+    @Published var pendingConfirm: String?
+    var lastApplied: String?
 
     func push(_ spoken: String) {
         waiting.append(spoken)
         if waiting.count > 5 { waiting.removeFirst() }
     }
 
+    func remove(at index: Int) { if waiting.indices.contains(index) { waiting.remove(at: index) } }
     func next() -> String? { waiting.isEmpty ? nil : waiting.removeFirst() }
-    func clear() { waiting.removeAll() }
+    func clear() { waiting.removeAll(); pendingConfirm = nil }
+
+    /// What the orb shows while it waits: the question for a risky sentence, otherwise what the running job is doing.
+    func status(job: ActJobState?) -> String? {
+        if pendingConfirm != nil { return String(localized: "Emin misin? \"Evet\" de ya da \"Hayır\".") }
+        return job?.voiceLine(waiting: waiting.count)
+    }
 }
 
 extension ActJobState {
     /// "Yazılıyor · 2 sırada": what the running job is doing and how many spoken commands wait behind it.
-    fileprivate func voiceLine(waiting: Int) -> String {
+    func voiceLine(waiting: Int) -> String {
         waiting > 0 ? "\(stage.title) · \(String(localized: "\(waiting) sırada"))" : stage.title
     }
+}
+
+/// The words of the short voice commands, given to the recognizer so it hears them right.
+enum ActVoiceWords {
+    static let hints = ["durdur", "geri al", "tekrar yap", "tam ekran", "önizleme", "geçmiş", "yenile", "koyu tema", "açık tema", "yazıyı büyüt", "yazıyı küçült", "evet", "hayır"]
 }
 
 /// One button of the side dock.
@@ -493,13 +501,11 @@ struct ActView: View {
                 canSend: canCreate,
                 focus: $composerFocused,
                 onSend: requestCreate,
-                onVoiceCommand: { spoken in
-                    if ActVoiceQueue.isStop(spoken) { if model.job != nil { Task { await model.cancel() } }; voiceQueue.clear(); return }
-                    if model.job != nil { voiceQueue.push(spoken); return }
-                    draft = spoken
-                    if canCreate { requestCreate() } else { composerFocused = true }
-                },
-                voiceStatus: model.job.map { $0.voiceLine(waiting: voiceQueue.waiting.count) }
+                onVoiceCommand: handleVoice,
+                voiceStatus: voiceQueue.status(job: model.job),
+                voiceHints: model.projects.prefix(30).map(\.name) + ActVoiceWords.hints,
+                voiceQueue: voiceQueue.waiting,
+                onRemoveQueued: { voiceQueue.remove(at: $0) }
             ) {
                 Menu {
                     Section("Bu proje nerede dursun?") {
@@ -518,6 +524,38 @@ struct ActView: View {
         .padding(.top, 6)
         .padding(.bottom, 6)
         .background(Color(.systemBackground))
+    }
+
+    /// A spoken sentence: the short commands are carried out here and now, anything else is a request for the writer (queued while one runs).
+    private func handleVoice(_ spoken: String) {
+        switch WiqoVoiceIntent.parse(spoken) {
+        case .stop:
+            if voiceQueue.pendingConfirm != nil { voiceQueue.pendingConfirm = nil; return }
+            if model.job != nil { Task { await model.cancel() } }
+            voiceQueue.clear()
+        case .decline:
+            voiceQueue.pendingConfirm = nil
+        case .confirm:
+            if let sentence = voiceQueue.pendingConfirm { voiceQueue.pendingConfirm = nil; runVoice(sentence) }
+        case .repeatLast:
+            if let last = voiceQueue.lastApplied { runVoice(last) }
+        case .theme(let theme):
+            WiqoAppearance.apply(theme: theme)
+        case .textSize(let step):
+            WiqoAppearance.shiftTextSize(by: step)
+        case .apply(let sentence):
+            guard !sentence.isEmpty else { return }
+            if WiqoVoiceIntent.isRisky(sentence) { voiceQueue.pendingConfirm = sentence } else { runVoice(sentence) }
+        case .undo, .showPreview, .showCode, .showHistory, .fullscreen, .reload:
+            break
+        }
+    }
+
+    private func runVoice(_ sentence: String) {
+        if model.job != nil { voiceQueue.push(sentence); return }
+        voiceQueue.lastApplied = sentence
+        draft = sentence
+        if canCreate { requestCreate() } else { composerFocused = true }
     }
 
     private func requestCreate() {
@@ -1317,13 +1355,11 @@ struct CodeProjectWorkspaceView: View {
                 canSend: canSend,
                 focus: $focused,
                 onSend: requestSend,
-                onVoiceCommand: { spoken in
-                    if ActVoiceQueue.isStop(spoken) { if model.job != nil { Task { await model.cancel() } }; voiceQueue.clear(); return }
-                    if model.job != nil { voiceQueue.push(spoken); return }
-                    draft = spoken
-                    if canSend { requestSend() } else { focused = true }
-                },
-                voiceStatus: model.job.map { $0.voiceLine(waiting: voiceQueue.waiting.count) }
+                onVoiceCommand: handleVoice,
+                voiceStatus: voiceQueue.status(job: model.job),
+                voiceHints: voiceHints,
+                voiceQueue: voiceQueue.waiting,
+                onRemoveQueued: { voiceQueue.remove(at: $0) }
             ) {
                 Menu {
                     Section("Hazır istekler") {
@@ -1467,6 +1503,47 @@ struct CodeProjectWorkspaceView: View {
     }
 
     // MARK: İşlemler
+
+    /// Names the recognizer should expect: this project's name and files, and the words of the short commands.
+    private var voiceHints: [String] {
+        let files = (project?.files ?? [:]).keys.prefix(40).map { URL(fileURLWithPath: $0).lastPathComponent }
+        return [project?.name ?? ""] + files + ActVoiceWords.hints
+    }
+
+    /// A spoken sentence: the short commands are carried out here and now, anything else is a request to the writer (queued while one runs).
+    private func handleVoice(_ spoken: String) {
+        switch WiqoVoiceIntent.parse(spoken) {
+        case .stop:
+            if voiceQueue.pendingConfirm != nil { voiceQueue.pendingConfirm = nil; return }
+            if model.job != nil { Task { await model.cancel() } }
+            voiceQueue.clear()
+        case .decline:
+            voiceQueue.pendingConfirm = nil
+        case .confirm:
+            if let sentence = voiceQueue.pendingConfirm { voiceQueue.pendingConfirm = nil; runVoice(sentence) }
+        case .repeatLast:
+            if let last = voiceQueue.lastApplied { runVoice(last) }
+        case .undo:
+            if model.job == nil, model.canUndo(projectID) { undo() }
+        case .showPreview: tab = .preview
+        case .showCode: tab = .code
+        case .showHistory: tab = .history
+        case .fullscreen: if isWeb { showingFullScreen = true }
+        case .reload: reloadToken += 1
+        case .theme(let theme): WiqoAppearance.apply(theme: theme)
+        case .textSize(let step): WiqoAppearance.shiftTextSize(by: step)
+        case .apply(let sentence):
+            guard !sentence.isEmpty else { return }
+            if WiqoVoiceIntent.isRisky(sentence) { voiceQueue.pendingConfirm = sentence } else { runVoice(sentence) }
+        }
+    }
+
+    private func runVoice(_ sentence: String) {
+        if model.job != nil { voiceQueue.push(sentence); return }
+        voiceQueue.lastApplied = sentence
+        draft = sentence
+        if canSend { requestSend() } else { focused = true }
+    }
 
     private func requestSend() {
         focused = false

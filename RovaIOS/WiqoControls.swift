@@ -1,3 +1,5 @@
+import Combine
+import CoreHaptics
 import SwiftUI
 import UIKit
 
@@ -9,6 +11,54 @@ enum WiqoHaptics {
     static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
     static func failure() { UINotificationFeedbackGenerator().notificationOccurred(.error) }
     static func selection() { UISelectionFeedbackGenerator().selectionChanged() }
+
+    private static var engine: CHHapticEngine?
+
+    /// The microphone opened: a soft hum under the thumb that fades out over one second, so the person feels what they are holding.
+    /// Core Haptics where the hardware has it; a few softening taps otherwise.
+    static func listeningStart() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
+            let taps: [(Double, CGFloat)] = [(0, 0.8), (0.14, 0.55), (0.30, 0.38), (0.50, 0.25), (0.75, 0.14)]
+            for (delay, intensity) in taps {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: intensity)
+                }
+            }
+            return
+        }
+        do {
+            if engine == nil {
+                let created = try CHHapticEngine()
+                created.isAutoShutdownEnabled = true
+                created.resetHandler = { [weak created] in try? created?.start() }
+                engine = created
+            }
+            guard let engine else { return }
+            try engine.start()
+            let events = [
+                CHHapticEvent(eventType: .hapticTransient, parameters: [
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.7),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.35)
+                ], relativeTime: 0),
+                CHHapticEvent(eventType: .hapticContinuous, parameters: [
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.0),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.18)
+                ], relativeTime: 0, duration: 1.0)
+            ]
+            // The hum dies away: full, then a smooth fall to nothing at one second.
+            let fade = CHHapticParameterCurve(parameterID: .hapticIntensityControl, controlPoints: [
+                .init(relativeTime: 0, value: 0.75),
+                .init(relativeTime: 0.2, value: 0.5),
+                .init(relativeTime: 0.5, value: 0.24),
+                .init(relativeTime: 0.8, value: 0.08),
+                .init(relativeTime: 1.0, value: 0)
+            ], relativeTime: 0)
+            let player = try engine.makePlayer(with: CHHapticPattern(events: events, parameterCurves: [fade]))
+            try player.start(atTime: CHHapticTimeImmediate)
+        } catch {
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.8)
+        }
+    }
 }
 
 // MARK: - Blur transition
@@ -708,5 +758,221 @@ struct WiqoModeSwitch<Value: Hashable>: View {
         case .unread:
             Circle().fill(Color.accentColor).frame(width: 6, height: 6)
         }
+    }
+}
+
+// MARK: - Voice session
+
+/// What a spoken sentence means. Short, known commands are carried out on the phone at once; anything else is a request for the task.
+enum WiqoVoiceIntent: Equatable {
+    case stop, undo, repeatLast, confirm, decline
+    case showPreview, showCode, showHistory, fullscreen, reload
+    case theme(WiqoAppearance.Theme)
+    case textSize(Int)
+    case apply(String)
+
+    /// The sentence without case, accents or punctuation, so "Geri al!" and "geri al" are the same.
+    static func folded(_ spoken: String) -> String {
+        spoken.lowercased(with: Locale(identifier: "tr_TR"))
+            .folding(options: [.diacriticInsensitive], locale: Locale(identifier: "tr_TR"))
+            .replacingOccurrences(of: "ı", with: "i")
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    private static let table: [(Set<String>, WiqoVoiceIntent)] = [
+        (["durdur", "dur", "dur artik", "iptal", "iptal et", "birak", "vazgec"], .stop),
+        (["geri al", "son degisikligi geri al", "geri al lutfen"], .undo),
+        (["tekrar yap", "bir daha", "bir daha yap", "aynisini yap", "tekrarla"], .repeatLast),
+        (["evet", "onayla", "evet yap", "olur", "tamam yap"], .confirm),
+        (["hayir", "yapma", "hayir yapma"], .decline),
+        (["onizleme", "onizlemeyi goster", "sayfayi goster"], .showPreview),
+        (["kod", "kodu goster"], .showCode),
+        (["gecmis", "gecmisi goster"], .showHistory),
+        (["tam ekran", "tam ekran yap"], .fullscreen),
+        (["yenile", "sayfayi yenile"], .reload),
+        (["koyu tema", "karanlik mod", "karanlik tema", "koyu mod"], .theme(.dark)),
+        (["acik tema", "aydinlik mod", "aydinlik tema", "acik mod"], .theme(.light)),
+        (["sistem temasi"], .theme(.system)),
+        (["yaziyi buyut", "yazi boyutunu artir", "yazilari buyut"], .textSize(1)),
+        (["yaziyi kucult", "yazi boyutunu azalt", "yazilari kucult"], .textSize(-1))
+    ]
+
+    static func parse(_ spoken: String) -> WiqoVoiceIntent {
+        let words = folded(spoken)
+        for (phrases, intent) in table where phrases.contains(words) { return intent }
+        return .apply(spoken.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// A request that removes or overwrites something: it is read back and waits for "evet" or a tap on the orb.
+    static func isRisky(_ spoken: String) -> Bool {
+        let words = Set(folded(spoken).split(separator: " ").map(String.init))
+        let hot: Set<String> = ["sil", "silsin", "sileyim", "silelim", "kaldir", "temizle", "bosalt", "hepsini"]
+        return !words.isDisjoint(with: hot) || folded(spoken).contains("uzerine yaz")
+    }
+}
+
+extension WiqoAppearance {
+    /// "Koyu tema", "yazıyı büyüt": the same settings Ayarlar changes, applied at once (the app root listens to them).
+    static func apply(theme: Theme) {
+        UserDefaults.standard.set(theme.rawValue, forKey: themeKey)
+    }
+
+    static func shiftTextSize(by step: Int) {
+        let order: [TextSize] = [.small, .standard, .large]
+        let current = TextSize(rawValue: UserDefaults.standard.string(forKey: textKey) ?? "") ?? .standard
+        let index = min(max((order.firstIndex(of: current) ?? 1) + step, 0), order.count - 1)
+        UserDefaults.standard.set(order[index].rawValue, forKey: textKey)
+    }
+}
+
+/// A listening session on the microphone: sentences are handed over one after another while the task carries on.
+/// Quiet after a sentence is its end; nobody speaking for a long while closes the session.
+@MainActor
+final class WiqoVoiceSession: ObservableObject {
+    @Published private(set) var isActive = false
+    @Published private(set) var starting = false
+    @Published var micMessage: String?
+    @Published var micDenied = false
+    /// Counts the sentences handed over (the orb flashes on each).
+    @Published private(set) var delivered = 0
+
+    let recorder = WiqoSpeechRecorder()
+    var onCommand: (String) -> Void = { _ in }
+    private var watch: Task<Void, Never>?
+    private var bag = Set<AnyCancellable>()
+
+    init() {
+        recorder.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
+        recorder.$transcript.dropFirst().sink { [weak self] text in
+            guard let self, self.isActive, !text.isEmpty else { return }
+            self.arm(after: 1.0)
+        }.store(in: &bag)
+        recorder.$isRecording.dropFirst().sink { [weak self] recording in
+            // The recognizer stopped by itself: hand over what was heard, then close.
+            guard let self, !recording, self.isActive else { return }
+            Task { await self.finish(send: true) }
+        }.store(in: &bag)
+    }
+
+    var heard: String { recorder.transcript }
+    var level: CGFloat { CGFloat(recorder.level) }
+
+    func start(hints: [String]) {
+        guard !starting, !isActive else { return }
+        starting = true
+        recorder.contextualStrings = Array(hints.prefix(100))
+        Task {
+            defer { starting = false }
+            switch await recorder.start() {
+            case .started, .startedWithNetworkFallback:
+                WiqoHaptics.listeningStart()
+                isActive = true
+                arm(after: 12)
+                UIAccessibility.post(notification: .announcement, argument: String(localized: "Dinliyorum"))
+            case .permissionDenied: micDenied = true
+            case .speechUnavailable: micMessage = String(localized: "Konuşma tanıma şu an kullanılamıyor. Siri ve Dikte'nin açık olduğundan emin ol; bu arada yazabilirsin.")
+            case .setupFailed: micMessage = String(localized: "Mikrofon başlatılamadı; başka bir uygulama kullanıyor olabilir.")
+            }
+        }
+    }
+
+    /// The sentence heard so far goes out now; the microphone stays open for the next one.
+    func deliver() {
+        guard isActive else { return }
+        let sentence = recorder.rollover()
+        guard !sentence.isEmpty else { return }
+        WiqoHaptics.success()
+        delivered += 1
+        onCommand(sentence)
+        arm(after: 30)
+    }
+
+    func finish(send: Bool) async {
+        guard isActive else { return }
+        watch?.cancel()
+        isActive = false
+        let sentence = await recorder.stop()
+        guard send, !sentence.isEmpty else { return }
+        WiqoHaptics.success()
+        delivered += 1
+        onCommand(sentence)
+    }
+
+    private func arm(after seconds: Double) {
+        watch?.cancel()
+        watch = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled, isActive else { return }
+            if recorder.transcript.isEmpty { await finish(send: false) } else { deliver() }
+        }
+    }
+}
+
+/// The session's face, in the composer's place: the words as they are heard (or what the task is doing), the orb, a small close,
+/// and the sentences waiting their turn as chips that can be removed.
+struct WiqoVoiceSessionView: View {
+    @ObservedObject var session: WiqoVoiceSession
+    var status: String?
+    var working: Bool
+    var queued: [String] = []
+    var onRemoveQueued: (Int) -> Void = { _ in }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(session.heard.isEmpty ? (status ?? " ") : session.heard)
+                .font(.footnote)
+                .foregroundStyle(session.heard.isEmpty ? .tertiary : .secondary)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .padding(.horizontal, 48)
+                .frame(height: 18)
+            ZStack {
+                Button { session.deliver() } label: {
+                    WiqoListeningOrb(level: session.level, working: working, flash: session.delivered)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dinliyorum")
+                .accessibilityHint("Göndermek için dokun")
+                HStack {
+                    Spacer()
+                    Button { Task { await session.finish(send: false) } } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 34, height: 34)
+                            .background(Color.primary.opacity(0.07), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Vazgeç")
+                }
+                .padding(.trailing, 10)
+            }
+            if !queued.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Array(queued.prefix(3).enumerated()), id: \.offset) { index, sentence in
+                        Button { WiqoHaptics.selection(); onRemoveQueued(index) } label: {
+                            HStack(spacing: 5) {
+                                Text(sentence).lineLimit(1).truncationMode(.tail)
+                                Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .frame(height: 26)
+                            .frame(maxWidth: 150)
+                            .background(Color.primary.opacity(0.07), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.bottom, 4)
+                .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .animation(WiqoMotion.ease(0.25), value: queued)
     }
 }
