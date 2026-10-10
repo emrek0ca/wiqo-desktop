@@ -64,6 +64,8 @@ struct CopilotView: View {
     /// The voice session: sentences are sent as they end, and the microphone stays open for the next while the answer is written.
     @StateObject private var voice = WiqoVoiceSession()
     @State private var voiceWaiting: [String] = []
+    /// Where this voice session's replies begin; the voice screen shows the cards of the replies from here on.
+    @State private var voiceStageStart = 0
     @State private var isStartingAudio = false
     @State private var showingMicPermissionAlert = false
     @State private var showingDiscovery = false
@@ -132,13 +134,13 @@ struct CopilotView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !proactiveSuggestions.isEmpty {
+            if !proactiveSuggestions.isEmpty, !voice.isActive {
                 proactiveCards
             }
-            if !memoryCandidates.isEmpty {
+            if !memoryCandidates.isEmpty, !voice.isActive {
                 memoryCandidatesCard
             }
-            if let openWork, !bubbles.isEmpty, !isSending {
+            if let openWork, !bubbles.isEmpty, !isSending, !voice.isActive {
                 WiqoRecommendationCard(
                     title: String(localized: "Yarım kalan iş"),
                     message: "\(openWork.goal)\n\(openWork.detail)",
@@ -151,7 +153,9 @@ struct CopilotView: View {
                 )
                 .padding(.horizontal)
             }
-            if bubbles.isEmpty {
+            if voice.isActive {
+                voiceStage
+            } else if bubbles.isEmpty {
                 emptyState
             } else {
                 conversation
@@ -510,28 +514,9 @@ struct CopilotView: View {
                     }
                 }
                 ForEach(WiqoChatDeclutter.visible(bubble.widgets, hasArtifact: !bubble.artifacts.isEmpty), id: \.stableID) { widget in
-                    let widgetArtifact = widget.artifactId.flatMap { artifactID in
-                        bubble.artifacts.first(where: { $0.id == artifactID })
-                    }
-                    CopilotResultWidgetView(
-                        widget: widget,
-                        artifact: widgetArtifact,
-                        isOpeningArtifact: widgetArtifact.map { openingArtifactID == $0.id } ?? false
-                    ) {
-                        if let widgetArtifact {
-                            Task { await openArtifact(widgetArtifact) }
-                        } else {
-                            openCreatedResource(widget)
-                        }
-                    }
-                    .environment(\.wiqoFollowUp, WiqoFollowUp { text in Task { await sendMessage(textOverride: text) } })
-                    .environment(\.wiqoClarification, WiqoClarificationContext(
-                        activeQuestionID: WiqoClarification.activeQuestionID(in: bubbles),
-                        sending: isSending,
-                        answer: { widget, text in answerClarification(widget, text) }
-                    ))
-                    .padding(.horizontal)
-                    .transition(.wiqoFadeUp)
+                    widgetCard(widget, artifacts: bubble.artifacts)
+                        .padding(.horizontal)
+                        .transition(.wiqoFadeUp)
                 }
                 if let task = bubble.deferredTask {
                     DeferredTaskRow(task: task)
@@ -590,6 +575,71 @@ struct CopilotView: View {
         .frame(maxWidth: .infinity, alignment: bubble.role == .user ? .trailing : .leading)
         .padding(.horizontal)
         .animation(WiqoMotion.ease(), value: bubble.widgets.count)
+    }
+
+    /// One result card (weather, list, file, inline app, question, ...) with its actions wired to this conversation.
+    private func widgetCard(_ widget: RovaBackendClient.CopilotResultWidget, artifacts: [RovaBackendClient.ArtifactDescriptor]) -> some View {
+        let widgetArtifact = widget.artifactId.flatMap { artifactID in
+            artifacts.first(where: { $0.id == artifactID })
+        }
+        return CopilotResultWidgetView(
+            widget: widget,
+            artifact: widgetArtifact,
+            isOpeningArtifact: widgetArtifact.map { openingArtifactID == $0.id } ?? false
+        ) {
+            if let widgetArtifact {
+                Task { await openArtifact(widgetArtifact) }
+            } else {
+                openCreatedResource(widget)
+            }
+        }
+        .environment(\.wiqoFollowUp, WiqoFollowUp { text in Task { await sendMessage(textOverride: text) } })
+        .environment(\.wiqoClarification, WiqoClarificationContext(
+            activeQuestionID: WiqoClarification.activeQuestionID(in: bubbles),
+            sending: isSending,
+            answer: { widget, text in answerClarification(widget, text) }
+        ))
+    }
+
+    // MARK: Voice conversation screen
+
+    /// The spoken conversation has no messages on screen: only what Wiqo shows while it talks (cards, files, inline apps, questions)
+    /// from this session's replies, newest first. What it says is heard, not read.
+    private var voiceStage: some View {
+        let session = bubbles.suffix(from: min(voiceStageStart, bubbles.count))
+        let cards: [(RovaBackendClient.CopilotResultWidget, [RovaBackendClient.ArtifactDescriptor])] = session
+            .filter { $0.role == .assistant }
+            .flatMap { bubble in
+                WiqoChatDeclutter.visible(bubble.widgets, hasArtifact: !bubble.artifacts.isEmpty)
+                    .filter { WiqoVoiceStage.shows($0.type) }
+                    .map { ($0, bubble.artifacts) }
+            }
+            .reversed()
+        let attention = session.last(where: { $0.role == .assistant })
+        return ScrollView {
+            VStack(spacing: 12) {
+                if let attention {
+                    // A step that waits for the person (approval, a failure) is still shown, or the task would stall unseen.
+                    executionWidget(for: attention)
+                }
+                ForEach(Array(cards.prefix(6).enumerated()), id: \.element.0.stableID) { _, card in
+                    widgetCard(card.0, artifacts: card.1)
+                        .transition(.wiqoFadeUp)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 12)
+        }
+        .scrollIndicators(.hidden)
+        .overlay {
+            if cards.isEmpty {
+                Text("Konuşabilirsin")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .transition(.opacity)
+            }
+        }
+        .animation(WiqoMotion.ease(0.3), value: cards.count)
     }
 
     private func systemErrorView(for bubble: ChatBubble) -> some View {
@@ -1406,7 +1456,8 @@ struct CopilotView: View {
                     status: isSending ? String(localized: "Yanıt yazılıyor") + (voiceWaiting.isEmpty ? "" : " · " + String(localized: "\(voiceWaiting.count) sırada")) : nil,
                     working: isSending,
                     queued: voiceWaiting,
-                    onRemoveQueued: { index in if voiceWaiting.indices.contains(index) { voiceWaiting.remove(at: index) } }
+                    onRemoveQueued: { index in if voiceWaiting.indices.contains(index) { voiceWaiting.remove(at: index) } },
+                    prominent: true
                 )
                 .padding(.horizontal, 12)
                 .padding(.bottom, 6)
@@ -1417,6 +1468,9 @@ struct CopilotView: View {
         }
         .animation(WiqoMotion.ease(0.3), value: voice.isActive)
         .onAppear { voice.onCommand = { handleVoice($0) } }
+        .onChange(of: voice.isActive) { _, active in
+            if active { voiceStageStart = bubbles.count } else { WiqoSpeaker.shared.stop() }
+        }
         .onChange(of: isSending) { _, sending in
             // The answer is done: the next spoken sentence goes at once.
             guard !sending, !voiceWaiting.isEmpty else { return }
@@ -1492,31 +1546,35 @@ struct CopilotView: View {
                     .disabled(isSending || isPreparingAttachment)
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 17, weight: .medium))
                         .foregroundStyle(attachmentLimitReached && fileLimitReached ? Color(.tertiaryLabel) : .primary)
-                        .frame(width: 34, height: 34)
+                        .frame(width: 44, height: 44)
+                        .wiqoComposerGlass(Circle(), interactive: true)
                 }
                 .disabled(isSending || isPreparingAttachment)
                 .accessibilityLabel("Ekle")
 
+                // The field is a pill of its own: narrow while nothing is being written, the full width as soon as it is used.
+                let composing = isComposerFocused || !inputText.isEmpty || audioRecorder.isRecording || isCreatingAgent
                 TextField(audioRecorder.isRecording ? "Dinliyorum…" : (isCreatingAgent ? "Ajanın ne yapsın?" : "Wiqo'ya anlat"), text: $inputText, axis: .vertical)
                     .lineLimit(1...6)
-                    .padding(.vertical, 7)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                     .focused($isComposerFocused)
                     .disabled(isSending || audioRecorder.isRecording)
+                    .frame(maxWidth: composing ? .infinity : 220)
+                    .frame(minHeight: 44)
+                    .wiqoComposerGlass(RoundedRectangle(cornerRadius: 22, style: .continuous), active: composing)
+                    .animation(WiqoMotion.ease(0.3), value: composing)
 
                 trailingComposerButton
+                    .frame(width: 44, height: 44)
+                    .wiqoComposerGlass(Circle(), interactive: true)
             }
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 12)
-            .padding(.vertical, 7)
+            .padding(.vertical, 4)
         }
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .strokeBorder(Color.primary.opacity(isComposerFocused ? 0.22 : 0.08), lineWidth: 0.75)
-        )
-        .shadow(color: .black.opacity(0.06), radius: 12, y: 4)
-        .padding(.horizontal, 12)
         .padding(.bottom, 6)
         .animation(.easeOut(duration: 0.15), value: canSend)
         .animation(.easeOut(duration: 0.18), value: isComposerFocused)
@@ -1624,11 +1682,11 @@ struct CopilotView: View {
             .transition(.wiqoBlur)
         } else {
             // Tap: the voice session (the orb; each sentence is sent as it ends). Press and hold: dictation into the field, as before.
-            Image(systemName: audioRecorder.isRecording ? "stop.fill" : "mic.fill")
-                .font(.system(size: 14, weight: .semibold))
+            Image(systemName: audioRecorder.isRecording ? "stop.fill" : "waveform")
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(audioRecorder.isRecording ? Color.white : Color.primary)
-                .frame(width: 30, height: 30)
-                .background(audioRecorder.isRecording ? Color.red : Color(.tertiarySystemFill), in: Circle())
+                .frame(width: 34, height: 34)
+                .background(audioRecorder.isRecording ? Color.red : Color.clear, in: Circle())
                 .contentShape(Circle())
                 .onTapGesture {
                     if audioRecorder.isRecording { toggleAudioRecording() } else {

@@ -846,15 +846,35 @@ final class WiqoVoiceSession: ObservableObject {
     let recorder = WiqoSpeechRecorder()
     var onCommand: (String) -> Void = { _ in }
     private var watch: Task<Void, Never>?
+    private var reopen: Task<Void, Never>?
     private var bag = Set<AnyCancellable>()
 
     init() {
         recorder.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         recorder.$transcript.dropFirst().sink { [weak self] text in
             guard let self, self.isActive, !text.isEmpty else { return }
-            // The person speaks over the reading: it stops at once.
-            if WiqoSpeaker.shared.isSpeaking, text.count >= 3 { WiqoSpeaker.shared.stop() }
             self.arm(after: 1.0)
+        }.store(in: &bag)
+        // Half duplex: the microphone is closed to the recognizer while Wiqo speaks and opens a moment after it stops
+        // (the room still rings for a few hundred milliseconds), with whatever was caught in between thrown away.
+        WiqoSpeaker.shared.userIsSpeaking = { [weak self] in
+            guard let self else { return false }
+            return self.isActive && !self.recorder.transcript.isEmpty
+        }
+        WiqoSpeaker.shared.$isSpeaking.removeDuplicates().sink { [weak self] speaking in
+            guard let self, self.isActive else { return }
+            if speaking {
+                self.reopen?.cancel()
+                self.recorder.setMuted(true)
+            } else {
+                self.reopen?.cancel()
+                self.reopen = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 450_000_000)
+                    guard !Task.isCancelled, self.isActive, !WiqoSpeaker.shared.isSpeaking else { return }
+                    self.recorder.setMuted(false)
+                    _ = self.recorder.rollover()
+                }
+            }
         }.store(in: &bag)
         recorder.$isRecording.dropFirst().sink { [weak self] recording in
             // The recognizer stopped by itself: hand over what was heard, then close.
@@ -891,6 +911,8 @@ final class WiqoVoiceSession: ObservableObject {
         WiqoSpeaker.shared.stop()
         let sentence = recorder.rollover()
         guard !sentence.isEmpty else { return }
+        // Wiqo's own voice that got through is not a command.
+        guard !WiqoSpeaker.shared.isEcho(sentence) else { arm(after: 30); return }
         WiqoHaptics.success()
         delivered += 1
         onCommand(sentence)
@@ -903,7 +925,7 @@ final class WiqoVoiceSession: ObservableObject {
         isActive = false
         WiqoSpeaker.shared.stop()
         let sentence = await recorder.stop()
-        guard send, !sentence.isEmpty else { return }
+        guard send, !sentence.isEmpty, !WiqoSpeaker.shared.isEcho(sentence) else { return }
         WiqoHaptics.success()
         delivered += 1
         onCommand(sentence)
@@ -928,6 +950,8 @@ struct WiqoVoiceSessionView: View {
     var working: Bool
     var queued: [String] = []
     var onRemoveQueued: (Int) -> Void = { _ in }
+    /// The full-screen voice conversation: a larger orb.
+    var prominent = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -941,6 +965,8 @@ struct WiqoVoiceSessionView: View {
             ZStack {
                 Button { session.deliver() } label: {
                     WiqoListeningOrb(level: session.level, working: working, flash: session.delivered)
+                        .scaleEffect(prominent ? 1.45 : 1, anchor: .center)
+                        .frame(height: prominent ? 138 : 92)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1017,6 +1043,11 @@ final class WiqoSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate
     private var queued = 0
     private var capped = false
     private var ownsSession = false
+    /// What was said aloud most recently, and when it ended: a sentence that is only that coming back through the microphone is not the person.
+    private var lastSpoken = ""
+    private var lastEnded: Date?
+    /// Set by the voice session: true while the person is in the middle of a sentence. Wiqo then yields instead of talking over them.
+    var userIsSpeaking: () -> Bool = { false }
     /// A long answer (a whole document) is not read out: the first part, then a pointer to the screen.
     private static let characterLimit = 700
 
@@ -1083,7 +1114,21 @@ final class WiqoSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate
         }
     }
 
+    /// True for the sentence that is Wiqo's own voice: while it speaks, or just after, when what was "heard" is part of what was said.
+    func isEcho(_ heard: String) -> Bool {
+        if isSpeaking { return true }
+        guard let lastEnded, Date().timeIntervalSince(lastEnded) < 1.4 else { return false }
+        let words = WiqoVoiceIntent.folded(heard)
+        return !words.isEmpty && WiqoVoiceIntent.folded(lastSpoken).contains(words)
+    }
+
     private func enqueue(_ text: String) {
+        if userIsSpeaking() {
+            // The person started to speak between two sentences: they have the floor, the rest of the reply is not read.
+            stop()
+            capped = true
+            return
+        }
         guard !capped else { return }
         let clean = Self.speakable(text)
         guard !clean.isEmpty else { return }
@@ -1097,6 +1142,7 @@ final class WiqoSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate
     }
 
     private func say(_ text: String) {
+        lastSpoken = String((lastSpoken + " " + text).suffix(800))
         prepareSession()
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = Self.voice()
@@ -1165,7 +1211,37 @@ final class WiqoSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate
         queued = max(0, queued - 1)
         if queued == 0 {
             isSpeaking = false
+            lastEnded = Date()
             releaseSession()
+        }
+    }
+}
+
+/// Which result cards the voice conversation screen shows: what Wiqo presents, not the machinery of the task.
+enum WiqoVoiceStage {
+    static func shows(_ kind: RovaBackendClient.CopilotResultWidget.Kind) -> Bool {
+        switch kind {
+        case .task_plan, .task_result, .approval, .unknown: return false
+        default: return true
+        }
+    }
+}
+
+// MARK: - Composer glass
+
+extension View {
+    /// The composer's surfaces (the field and the round buttons beside it): Liquid Glass on iOS 26, tinted a little with the app's accent
+    /// (a touch more while the field is in use); a thin material with an accent hairline before that.
+    @ViewBuilder
+    func wiqoComposerGlass<S: InsettableShape>(_ shape: S, active: Bool = false, interactive: Bool = false) -> some View {
+        if #available(iOS 26.0, *) {
+            let glass = Glass.regular.tint(Color.accentColor.opacity(active ? 0.16 : 0.07))
+            self.glassEffect(interactive ? glass.interactive() : glass, in: shape)
+        } else {
+            self
+                .background(.ultraThinMaterial, in: shape)
+                .overlay(shape.strokeBorder(Color.accentColor.opacity(active ? 0.35 : 0.16), lineWidth: 0.75))
+                .shadow(color: .black.opacity(0.06), radius: 10, y: 3)
         }
     }
 }

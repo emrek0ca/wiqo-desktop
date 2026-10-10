@@ -51,25 +51,27 @@ struct ActComposerBar<Leading: View>: View {
     }
 
     private var bar: some View {
-        HStack(alignment: .bottom, spacing: 4) {
+        let composing = focus.wrappedValue || !text.isEmpty || recorder.isRecording || busy
+        return HStack(alignment: .bottom, spacing: 8) {
             leading()
-                .frame(width: 34, height: 34)
+                .frame(width: 44, height: 44)
+                .wiqoComposerGlass(Circle(), interactive: true)
+            // A pill of its own, narrow at rest and full width while it is used; the buttons beside it are separate round glass.
             TextField(recorder.isRecording ? String(localized: "Dinliyorum…") : placeholder, text: $text, axis: .vertical)
                 .lineLimit(1...5)
                 .focused(focus)
                 .disabled(busy || recorder.isRecording)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(maxWidth: composing ? .infinity : 220)
+                .frame(minHeight: 44)
+                .wiqoComposerGlass(RoundedRectangle(cornerRadius: 22, style: .continuous), active: composing)
+                .animation(WiqoMotion.ease(0.3), value: composing)
             trailing
-                .frame(width: 34, height: 34)
+                .frame(width: 44, height: 44)
+                .wiqoComposerGlass(Circle(), interactive: true)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(focus.wrappedValue ? RovaDesign.ink.opacity(0.45) : Color(.separator).opacity(0.4), lineWidth: focus.wrappedValue ? 1.2 : 0.75)
-        )
-        .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
+        .frame(maxWidth: .infinity)
         .animation(.easeOut(duration: 0.15), value: canSend)
         .onChange(of: recorder.transcript) { _, transcript in
             guard recorder.isRecording, !transcript.isEmpty else { return }
@@ -91,11 +93,11 @@ struct ActComposerBar<Leading: View>: View {
             .accessibilityLabel("Gönder")
         } else {
             Button(action: toggleMic) {
-                Image(systemName: recorder.isRecording ? "stop.fill" : "mic.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                Image(systemName: recorder.isRecording ? "stop.fill" : "waveform")
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(recorder.isRecording ? Color.white : Color.primary)
-                    .frame(width: 30, height: 30)
-                    .background(recorder.isRecording ? Color.red : Color(.tertiarySystemFill), in: Circle())
+                    .frame(width: 34, height: 34)
+                    .background(recorder.isRecording ? Color.red : Color.clear, in: Circle())
             }
             .accessibilityLabel(recorder.isRecording ? "Ses kaydını bitir" : "Konuşarak yaz")
         }

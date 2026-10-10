@@ -49,6 +49,12 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
     /// Callbacks of an earlier recognition request (after a rollover) are ignored.
     private var generation = 0
 
+    /// While Wiqo is speaking the microphone is not listened to: its own voice must never come back as the person's words.
+    func setMuted(_ muted: Bool) {
+        feeder?.setMuted(muted)
+        if muted { level = 0 }
+    }
+
     /// Words the recognizer should expect (project and file names, command words): it prefers them over look-alikes.
     var contextualStrings: [String] = []
 
@@ -311,6 +317,7 @@ private final class WiqoAudioFeeder: @unchecked Sendable {
     private let lock = NSLock()
     private var request: SFSpeechAudioBufferRecognitionRequest
     private var buffers = 0
+    private var muted = false
 
     @MainActor init(request: SFSpeechAudioBufferRecognitionRequest, recorder: WiqoSpeechRecorder) {
         self.request = request
@@ -323,10 +330,18 @@ private final class WiqoAudioFeeder: @unchecked Sendable {
         lock.unlock()
     }
 
+    func setMuted(_ value: Bool) {
+        lock.lock()
+        muted = value
+        lock.unlock()
+    }
+
     func consume(_ buffer: AVAudioPCMBuffer) {
         lock.lock()
         let current = request
+        let silent = muted
         lock.unlock()
+        guard !silent else { return }
         current.append(buffer)
         measure(buffer)
     }
