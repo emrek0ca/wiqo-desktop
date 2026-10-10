@@ -511,16 +511,35 @@ except Exception:
         guard !isSymbolicLink(source), !isSymbolicLink(destination) else {
             return RovaError(code: "SYMLINK_REJECTED", message: "Sembolik bağlantılar üzerinden dosya işlemi yapılmadı.", category: "permission")
         }
+        if source.standardizedFileURL == destination.standardizedFileURL {
+            return copy ? RovaError(code: "INVALID_FILE_PATH", message: "Kaynak ve hedef aynı dosya olamaz.", category: "validation") : nil
+        }
         if isDirectory(source), destination.standardizedFileURL.path.hasPrefix(source.standardizedFileURL.path + "/") {
             return RovaError(code: "NESTED_FOLDER_MOVE", message: "Klasör kendi altına taşınamaz.", category: "validation")
         }
         if isDirectory(source) && !payload.recursive {
             return RovaError(code: "RECURSIVE_REQUIRED", message: "Klasör işlemi için recursive=true açıkça belirtilmeli.", category: "permission")
         }
-        if FileManager.default.fileExists(atPath: destination.path) {
-            guard payload.overwrite else {
-                return RovaError(code: "FILE_EXISTS", message: "Hedef zaten var; üzerine yazma onayı verilmedi.", category: "permission")
+        var target = destination
+        if FileManager.default.fileExists(atPath: destination.path) && !payload.overwrite {
+            let extensionPart = destination.pathExtension
+            let stem = destination.deletingPathExtension().lastPathComponent
+            var available: URL?
+            for suffix in 2...10_000 {
+                let name = "\(stem) (\(suffix))"
+                let base = destination.deletingLastPathComponent().appendingPathComponent(name)
+                let candidate = extensionPart.isEmpty ? base : base.appendingPathExtension(extensionPart)
+                if !FileManager.default.fileExists(atPath: candidate.path), !isSymbolicLink(candidate) {
+                    available = candidate
+                    break
+                }
             }
+            guard let available else {
+                return RovaError(code: "FILE_EXISTS", message: "Hedefte boş dosya adı bulunamadı.", category: "tool_failure")
+            }
+            target = available
+        }
+        if FileManager.default.fileExists(atPath: destination.path) && payload.overwrite {
             if !isDirectory(destination), let failure = backUp(destination) {
                 return failure
             }
@@ -532,9 +551,9 @@ except Exception:
         }
         do {
             if copy {
-                try FileManager.default.copyItem(at: source, to: destination)
+                try FileManager.default.copyItem(at: source, to: target)
             } else {
-                try FileManager.default.moveItem(at: source, to: destination)
+                try FileManager.default.moveItem(at: source, to: target)
             }
             return nil
         } catch {

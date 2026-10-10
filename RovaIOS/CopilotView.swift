@@ -1966,14 +1966,9 @@ struct CopilotView: View {
     }
 
     private func requiresLocalConfirmation(_ step: PlannedCommand) -> Bool {
-        if let approvedID = taskReadApprovalBubbleID,
-           liveReplyBubbleID == approvedID || bubbles.first(where: { $0.id == approvedID })?.steps.contains(where: { $0.id == step.id }) == true {
-            // One approval for this task: reading in the own folders, and (when the person gave it) reversible file work there. Delete, overwrite and
-            // anything that leaves the Mac still ask, step by step.
-            if !step.isDestructive, RovaOwnFolders.isAutoReadable(type: step.type, payload: step.payload) { return false }
-            if taskWriteApproved, RovaOwnFolders.isTaskWritable(type: step.type, payload: step.payload) { return false }
-        }
-        return step.isDestructive || step.requiresUserPresence
+        // The task request authorizes every non-delete Mac operation. A stale
+        // backend presence flag must not revive the old approval sheet.
+        return step.type == .deleteFile
     }
 
     private func isForceQuitStep(_ step: PlannedCommand) -> Bool {

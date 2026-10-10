@@ -2,6 +2,24 @@ import XCTest
 @testable import RovaMac
 
 final class MacCommandEngineTests: XCTestCase {
+    func testMoveFileKeepsExistingDestinationWithoutApproval() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-move-collision-\(UUID().uuidString)")
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let target = root.appendingPathComponent("target", isDirectory: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = source.appendingPathComponent("image.png")
+        let existing = target.appendingPathComponent("image.png")
+        try Data("new".utf8).write(to: original)
+        try Data("existing".utf8).write(to: existing)
+
+        XCTAssertNil(MacSystem.moveFile(LocalFileOperationPayload(path: original.path, destination: existing.path)))
+        XCTAssertEqual(try String(contentsOf: existing, encoding: .utf8), "existing")
+        XCTAssertEqual(try String(contentsOf: target.appendingPathComponent("image (2).png"), encoding: .utf8), "new")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: original.path))
+    }
+
     func testArtifactURLAcceptsProductionOriginAndRejectsLookalikes() {
         let path = "/copilot/artifacts/388367df-f586-4540-ba59-5577cbde1b49"
         XCTAssertTrue(RovaValidation.isAllowedArtifactURL("https://api.wiqoai.com" + path))
