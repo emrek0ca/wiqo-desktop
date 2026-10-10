@@ -9,6 +9,7 @@ struct McpServersSection: View {
     @State private var isLoading = true
     @State private var showsForm = false
     @State private var removingID: Int?
+    @State private var checkingID: Int?
     @State private var errorMessage: String?
 
     var body: some View {
@@ -21,14 +22,17 @@ struct McpServersSection: View {
                     WiqoRow(
                         systemImage: "server.rack",
                         title: server.name,
-                        subtitle: Self.host(server.url) + (server.hasToken ? String(localized: " · anahtarlı") : ""),
+                        subtitle: Self.host(server.url) + (server.hasToken ? String(localized: " · anahtarlı") : "")
+                            + (server.toolCount.map { " · \($0) araç" } ?? ""),
                         showsDivider: true
                     ) {
-                        if removingID == server.id {
+                        if removingID == server.id || checkingID == server.id {
                             ProgressView().controlSize(.small)
                         } else {
-                            Button("Kaldır") { Task { await remove(server) } }
-                                .buttonStyle(.wiqoPill(.secondary))
+                            Menu {
+                                Button("Bağlantıyı kontrol et") { Task { await check(server) } }
+                                Button("Kaldır", role: .destructive) { Task { await remove(server) } }
+                            } label: { Image(systemName: "ellipsis.circle") }
                         }
                     }
                 }
@@ -80,6 +84,18 @@ struct McpServersSection: View {
             WiqoToastCenter.shared.show(String(localized: "Sunucu kaldırıldı"))
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? String(localized: "Sunucu kaldırılamadı.")
+        }
+    }
+
+    private func check(_ server: RovaBackendClient.McpServer) async {
+        checkingID = server.id
+        defer { checkingID = nil }
+        do {
+            let health = try await RovaBackendClient.checkMcpServer(id: server.id)
+            errorMessage = health.status == "connected" ? nil : String(localized: "MCP sunucusuna ulaşılamadı.")
+            if health.status == "connected" { await load() }
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? String(localized: "MCP bağlantısı doğrulanamadı.")
         }
     }
 }

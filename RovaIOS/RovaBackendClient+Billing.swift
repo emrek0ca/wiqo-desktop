@@ -131,6 +131,21 @@ extension RovaBackendClient {
         return try await authorizedGet("oauth", as: Response.self).connections
     }
 
+    struct ConnectionCapability: Decodable, Identifiable {
+        var id: String { "\(source):\(owner):\(name)" }
+        let source: String
+        let owner: String
+        let name: String
+        let description: String
+        let effect: String
+        let status: String
+    }
+
+    static func fetchConnectionCapabilities() async throws -> [ConnectionCapability] {
+        struct Response: Decodable { let capabilities: [ConnectionCapability] }
+        return try await authorizedGet("oauth/capabilities", as: Response.self).capabilities
+    }
+
     /// Returns the provider's own consent URL to open in an ASWebAuthenticationSession - this
     /// request itself carries the real Authorization header (a webview navigation couldn't), and
     /// the state that ties the resulting callback back to this account is embedded server-side.
@@ -147,6 +162,17 @@ extension RovaBackendClient {
         let name: String
         let url: String
         let hasToken: Bool
+        let toolCount: Int?
+        let toolsCheckedAt: Int?
+    }
+
+    struct McpHealth: Decodable {
+        let status: String
+        let toolCount: Int?
+    }
+
+    static func checkMcpServer(id: Int) async throws -> McpHealth {
+        try await authorizedGet("mcp/servers/\(id)/health", as: McpHealth.self)
     }
 
     static func fetchMcpServers() async throws -> [McpServer] {

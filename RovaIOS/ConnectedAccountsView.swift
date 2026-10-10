@@ -49,6 +49,7 @@ struct ConnectedAccountsView: View {
     @State private var runner = OAuthSessionRunner()
 
     @State private var providers: [RovaBackendClient.OAuthProviderInfo] = RovaBackendClient.OAuthProviderInfo.builtIn
+    @State private var capabilities: [RovaBackendClient.ConnectionCapability] = []
 
     private func connection(for provider: String) -> RovaBackendClient.OAuthConnection? {
         connections.first { $0.provider == provider }
@@ -75,6 +76,12 @@ struct ConnectedAccountsView: View {
                                 Text("Oku ve yaz").tag("write")
                             }
                             .pickerStyle(.segmented)
+                            ForEach(capabilities.filter { $0.owner == provider.id && $0.status != "available" }) { capability in
+                                Text(capability.status == "needs_scope" ? "\(capability.name): erişim eksik; yeniden bağla" :
+                                    capability.status == "needs_reconnect" ? "\(capability.name): bağlantıyı yenile" : "\(capability.name): sadece okunabilir")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -102,12 +109,13 @@ struct ConnectedAccountsView: View {
 
     private func row(for provider: RovaBackendClient.OAuthProviderInfo, isLast: Bool) -> some View {
         let connected = connection(for: provider.id)
-        let needsReconnect = connected?.status == "needs_reconnect"
+        let needsScope = capabilities.contains { $0.owner == provider.id && $0.status == "needs_scope" }
+        let needsReconnect = connected?.status == "needs_reconnect" || needsScope
         return WiqoRow(
             systemImage: provider.symbol,
             tint: needsReconnect ? WiqoTheme.red : WiqoTheme.ink,
             title: provider.name,
-            subtitle: needsReconnect ? String(localized: "Bağlantının süresi doldu") : connected != nil ? (connected?.accountLabel ?? String(localized: "Bağlı")) : (provider.summary ?? String(localized: "Bağlı değil")),
+            subtitle: needsReconnect ? (needsScope ? String(localized: "Bazı erişimler eksik") : String(localized: "Bağlantının süresi doldu")) : connected != nil ? (connected?.accountLabel ?? String(localized: "Bağlı")) : (provider.summary ?? String(localized: "Bağlı değil")),
             showsDivider: !isLast
         ) {
             if connectingProvider == provider.id {
@@ -139,6 +147,7 @@ struct ConnectedAccountsView: View {
         do {
             async let catalogue = RovaBackendClient.fetchOAuthProviders()
             connections = try await RovaBackendClient.fetchOAuthConnections()
+            capabilities = (try? await RovaBackendClient.fetchConnectionCapabilities()) ?? []
             providers = await catalogue
             errorMessage = nil
         } catch {

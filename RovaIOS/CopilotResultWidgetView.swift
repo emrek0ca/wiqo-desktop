@@ -31,6 +31,8 @@ struct CopilotResultWidgetView: View {
     let isOpeningArtifact: Bool
     let onTap: () -> Void
     @State private var isExpanded = false
+    @State private var showsConnections = false
+    @Environment(\.wiqoFollowUp) private var followUp
 
     @ViewBuilder
     var body: some View {
@@ -134,6 +136,14 @@ struct CopilotResultWidgetView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if widget.code?.hasPrefix("CONNECTION_") == true && widget.code?.hasSuffix("_REQUIRED") == true {
+                HStack(spacing: 12) {
+                    Button("Bağlantıyı aç") { showsConnections = true }
+                    Button("Devam et") { followUp?.send("devam et") }
+                }
+                .font(.footnote.weight(.semibold))
+                .padding(.top, 6)
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -141,6 +151,9 @@ struct CopilotResultWidgetView: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.red.opacity(0.12), lineWidth: 0.5))
         .accessibilityElement(children: .combine)
         .accessibilityValue(widget.code ?? "")
+        .sheet(isPresented: $showsConnections) {
+            NavigationStack { ConnectedAccountsView() }
+        }
     }
 
     @ViewBuilder
