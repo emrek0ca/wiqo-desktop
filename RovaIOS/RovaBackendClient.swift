@@ -976,7 +976,7 @@ enum RovaBackendClient {
         // The backend keeps the result in its request ledger; this timeout only bounds the live
         // stream. A dropped stream is resumed through copilot/requests below.
         request.timeoutInterval = 90
-        var body: [String: Any] = [
+        let body: [String: Any] = [
             "messages": messages.map { ["role": $0.role, "content": $0.content] },
             "availableApps": availableApps.map(\.rawValue),
             "applicationTargets": applicationTargets.map { target in
@@ -2109,7 +2109,7 @@ enum WiqoOnDeviceIntentModel {
             let response = try await session.respond(
                 to: message,
                 generating: Decision.self,
-                options: GenerationOptions(sampling: .greedy, maximumResponseTokens: 160)
+                options: GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 160)
             )
             let decision = response.content
             let value: [String: Any] = [
