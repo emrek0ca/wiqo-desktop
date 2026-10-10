@@ -47,12 +47,13 @@ struct CommandLedger: Sendable {
         self.fileURL = fileURL
     }
 
-    func load() -> [UUID: CommandResult] {
+    func load() -> (results: [UUID: CommandResult], healthy: Bool) {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
+        if !FileManager.default.fileExists(atPath: fileURL.path) { return ([:], true) }
         guard let data = try? Data(contentsOf: fileURL),
               let entries = try? decoder.decode([PersistedCommand].self, from: data) else {
-            return [:]
+            return ([:], false)
         }
         var results: [UUID: CommandResult] = [:]
         var hasUnfinished = false
@@ -76,16 +77,16 @@ struct CommandLedger: Sendable {
             // Persist the resolved denied states back to disk
             save(results)
         }
-        return results
+        return (results, true)
     }
 
-    func recordRunning(commandID: UUID, startedAt: Date, currentCompleted: [UUID: CommandResult]) {
+    func recordRunning(commandID: UUID, startedAt: Date, currentCompleted: [UUID: CommandResult]) throws {
         var entries = currentCompleted.values
             .sorted { $0.finishedAt < $1.finishedAt }
             .map { PersistedCommand(commandID: $0.commandID, status: $0.status, result: $0, recordedAt: $0.finishedAt) }
         entries.append(PersistedCommand(commandID: commandID, status: .running, result: nil, recordedAt: startedAt))
         let trimmed = Array(entries.suffix(128))
-        writeEntries(trimmed)
+        try writeEntries(trimmed)
     }
 
     func save(_ values: [UUID: CommandResult]) {
@@ -93,18 +94,14 @@ struct CommandLedger: Sendable {
             .sorted { $0.finishedAt < $1.finishedAt }
             .suffix(128)
             .map { PersistedCommand(commandID: $0.commandID, status: $0.status, result: $0, recordedAt: $0.finishedAt) }
-        writeEntries(Array(entries))
+        try? writeEntries(Array(entries))
     }
 
-    private func writeEntries(_ entries: [PersistedCommand]) {
+    private func writeEntries(_ entries: [PersistedCommand]) throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(entries) else { return }
-        do {
-            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try data.write(to: fileURL, options: .atomic)
-        } catch {
-            // Ledger persistence is best effort; command execution remains safe and in-memory dedupe stays active.
-        }
+        let data = try encoder.encode(entries)
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: fileURL, options: .atomic)
     }
 }

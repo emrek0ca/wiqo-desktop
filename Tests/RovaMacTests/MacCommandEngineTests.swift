@@ -169,12 +169,12 @@ final class MacCommandEngineTests: XCTestCase {
         XCTAssertEqual(result.error?.code, "INVALID_PAYLOAD")
     }
 
-    func testRestartWithUnfinishedRunningCommandYieldsUnknownWithoutReplay() async {
+    func testRestartWithUnfinishedRunningCommandYieldsUnknownWithoutReplay() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("rova-ledger-\(UUID().uuidString).json")
         let ledger = CommandLedger(fileURL: url)
         let id = UUID()
         // Simulate a command that was recorded as running before a crash
-        ledger.recordRunning(commandID: id, startedAt: Date(), currentCompleted: [:])
+        try ledger.recordRunning(commandID: id, startedAt: Date(), currentCompleted: [:])
 
         // Engine restarts after the crash
         let restartedEngine = MacCommandEngine(ledger: ledger)
@@ -183,6 +183,33 @@ final class MacCommandEngineTests: XCTestCase {
         XCTAssertEqual(result.status, .unknown)
         XCTAssertEqual(result.error?.code, "OUTCOME_UNKNOWN")
         try? FileManager.default.removeItem(at: url)
+    }
+
+    func testUnwritableLedgerPreventsFolderCreation() async {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rova-ledger-blocked-\(UUID().uuidString)", isDirectory: true)
+        let folder = root.appendingPathComponent("should-not-exist", isDirectory: true)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        // A directory at the ledger path makes the atomic file replacement fail.
+        let engine = MacCommandEngine(ledger: CommandLedger(fileURL: root))
+        let request = CommandRequest(type: .fileUtility, payload: .fileUtility(FileUtilityPayload(action: .createFolder, path: folder.path)))
+        let result = await engine.execute(request, runtimeStatus: "running")
+        XCTAssertEqual(result.error?.code, "LEDGER_UNAVAILABLE")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+    }
+
+    func testCorruptLedgerPreventsReplayableSideEffect() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rova-ledger-corrupt-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let ledgerURL = root.appendingPathComponent("command-ledger.json")
+        try Data("not-json".utf8).write(to: ledgerURL)
+        let folder = root.appendingPathComponent("should-not-exist", isDirectory: true)
+        let engine = MacCommandEngine(ledger: CommandLedger(fileURL: ledgerURL))
+        let request = CommandRequest(type: .fileUtility, payload: .fileUtility(FileUtilityPayload(action: .createFolder, path: folder.path)))
+        let result = await engine.execute(request, runtimeStatus: "running")
+        XCTAssertEqual(result.error?.code, "LEDGER_UNAVAILABLE")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
     }
 
     func testDuplicateWithDifferentPayloadIsStillDeduplicated() async {

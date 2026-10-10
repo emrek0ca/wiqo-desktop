@@ -147,6 +147,7 @@ actor MacCommandEngine {
     private let executionGate = MacExecutionGate()
     private let browserWorker = LocalBrowserWorkerClient()
     private var completed: [UUID: CommandResult]
+    private let ledgerHealthy: Bool
     private var inFlight: [UUID: Task<CommandResult, Never>] = [:]
     private var fileTransferToken: (@Sendable () async -> String?)?
 
@@ -156,7 +157,9 @@ actor MacCommandEngine {
 
     init(ledger: CommandLedger = CommandLedger()) {
         self.ledger = ledger
-        self.completed = ledger.load()
+        let persisted = ledger.load()
+        self.completed = persisted.results
+        self.ledgerHealthy = persisted.healthy
     }
 
     func persistedResults() -> [CommandResult] {
@@ -187,6 +190,11 @@ actor MacCommandEngine {
 
     private func executeFresh(_ request: CommandRequest, runtimeStatus: String) async -> CommandResult {
         if let previous = completed[request.id] { return previous }
+
+        guard ledgerHealthy else {
+            return failed(request.id, message: "Komut geçmişi okunamadı; işlem başlatılmadı.",
+                          error: RovaError(code: "LEDGER_UNAVAILABLE", message: "Komut geçmişi doğrulanamadı; işlem başlatılmadı.", category: "delivery"))
+        }
 
         guard RovaOperationManifest.supports(request.type, on: .macOS) else {
             let result = denied(request.id, error: RovaError(code: "UNSUPPORTED_OPERATION", message: "Bu Mac sürümünde bu işlem desteklenmiyor."))
@@ -224,7 +232,13 @@ actor MacCommandEngine {
 
         // 3. Write-ahead persist 'running' state BEFORE performing any side-effect on macOS.
         let startedAt = Date()
-        ledger.recordRunning(commandID: request.id, startedAt: startedAt, currentCompleted: completed)
+        do {
+            try ledger.recordRunning(commandID: request.id, startedAt: startedAt, currentCompleted: completed)
+        } catch {
+            await executionGate.release(lane)
+            return failed(request.id, message: "Komut güvenli biçimde kaydedilemedi; işlem başlatılmadı.",
+                          error: RovaError(code: "LEDGER_UNAVAILABLE", message: "Komut kaydı yazılamadı; işlem başlatılmadı.", category: "delivery"))
+        }
 
         // 4. Perform the operation away from the UI actor where the underlying API permits it.
         // A timed-out side effect keeps its execution slot until the underlying operation really
