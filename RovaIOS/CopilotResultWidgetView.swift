@@ -63,6 +63,8 @@ struct CopilotResultWidgetView: View {
             WiqoInlineAppCard(widget: widget)
         case .act_handoff:
             WiqoActHandoffCard(widget: widget)
+        case .clarification:
+            WiqoClarificationCard(widget: widget)
         case .approval:
             // Pending confirmations are rendered by the existing execution card, which owns
             // the live confirmation ID and approve/reject actions. Rendering this projection
@@ -809,5 +811,108 @@ enum WiqoChatDeclutter {
     /// The "Doğrulanan dosya" list: proof of a save, which the file card above it already is.
     private static func isFileEvidence(_ widget: RovaBackendClient.CopilotResultWidget) -> Bool {
         widget.widgetId?.hasPrefix("file-evidence-") == true || widget.title == String(localized: "Doğrulanan dosya")
+    }
+}
+
+// MARK: - Clarification
+
+/// What the conversation tells a question card: which question may still be answered, and how to send an answer.
+struct WiqoClarificationContext: @unchecked Sendable {
+    var activeQuestionID: String?
+    var sending: Bool = false
+    var answer: (RovaBackendClient.CopilotResultWidget, String) -> Void = { _, _ in }
+}
+
+private struct WiqoClarificationKey: EnvironmentKey {
+    static let defaultValue = WiqoClarificationContext()
+}
+
+extension EnvironmentValues {
+    var wiqoClarification: WiqoClarificationContext {
+        get { self[WiqoClarificationKey.self] }
+        set { self[WiqoClarificationKey.self] = newValue }
+    }
+}
+
+/// A question the running task is waiting on: the question, up to four ready answers, and a field for any other. Read-only once answered or replaced.
+struct WiqoClarificationCard: View {
+    let widget: RovaBackendClient.CopilotResultWidget
+    @Environment(\.wiqoClarification) private var context
+    @State private var text = ""
+    @State private var submitted = false
+    @FocusState private var focused: Bool
+
+    private var isActive: Bool {
+        !submitted && widget.questionId != nil && widget.questionId == context.activeQuestionID
+    }
+
+    private var canSend: Bool {
+        isActive && !context.sending && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(widget.question ?? widget.summary ?? "")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(isActive ? Color.primary : Color.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if isActive {
+                if let options = widget.options, !options.isEmpty {
+                    VStack(spacing: 8) {
+                        ForEach(options, id: \.self) { option in
+                            Button { send(option) } label: {
+                                Text(option)
+                                    .font(.subheadline.weight(.medium))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 14)
+                                    .frame(minHeight: 42)
+                                    .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(context.sending)
+                        }
+                    }
+                }
+                HStack(spacing: 8) {
+                    TextField("Yanıtını yaz", text: $text, axis: .vertical)
+                        .lineLimit(1...4)
+                        .focused($focused)
+                        .submitLabel(.send)
+                        .onSubmit { send(text) }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    Button { send(text) } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Color(uiColor: .systemBackground))
+                            .frame(width: 34, height: 34)
+                            .background(canSend ? Color.primary : Color.primary.opacity(0.25), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                    .accessibilityLabel("Gönder")
+                }
+            } else {
+                Text(submitted ? "Yanıtlandı" : "Bu soru artık beklenmiyor")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(WiqoTheme.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WiqoTheme.card, in: RoundedRectangle(cornerRadius: WiqoTheme.cardCorner, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+
+    private func send(_ answer: String) {
+        guard isActive, !context.sending else { return }
+        let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        // Locked here at once, so a second tap cannot send the same answer again; the conversation also refuses it.
+        submitted = true
+        focused = false
+        context.answer(widget, trimmed)
     }
 }

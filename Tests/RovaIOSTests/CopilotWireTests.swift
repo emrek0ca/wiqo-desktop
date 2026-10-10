@@ -33,4 +33,73 @@ final class CopilotWireTests: XCTestCase {
             XCTAssertTrue(context.codingPath.map(\.stringValue).contains("action"))
         }
     }
+
+    // MARK: Clarification cards (backend d39241f)
+
+    private func card(task: String = "3f9d1c52-8a47-4c0e-b6a1-5e1f2a9b7d10", question: String = "q-8f31a2c4b7d9", options: [String]? = ["Eylül", "Ekim"]) throws -> RovaBackendClient.CopilotResultWidget {
+        var object: [String: Any] = [
+            "type": "clarification", "taskId": task, "questionId": question, "question": "Hangi ayın raporu?",
+            "widgetId": "question:\(question)", "version": 1, "state": "active"
+        ]
+        if let options { object["options"] = options }
+        return try JSONDecoder().decode(RovaBackendClient.CopilotResultWidget.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    private func bubbles(_ widgets: [RovaBackendClient.CopilotResultWidget], thenUser: Bool = false) -> [ChatBubble] {
+        var list = [ChatBubble(role: .user, text: "raporu hazırla"), ChatBubble(role: .assistant, text: "Hangi ayın raporu?", widgets: widgets)]
+        if thenUser { list.append(ChatBubble(role: .user, text: "Eylül")) }
+        return list
+    }
+
+    func testClarificationWidgetDecodesWithQuestionAndOptions() throws {
+        let widget = try card()
+        XCTAssertEqual(widget.type, .clarification)
+        XCTAssertEqual(widget.question, "Hangi ayın raporu?")
+        XCTAssertEqual(widget.options, ["Eylül", "Ekim"])
+        XCTAssertEqual(widget.questionId, "q-8f31a2c4b7d9")
+        XCTAssertEqual(CopilotWidgetCatalog.normalized([widget]).count, 1, "a clarification card is kept, not dropped like the transient approval card")
+        XCTAssertNil(try card(options: nil).options)
+    }
+
+    func testAnswerKeepsTheCardsTaskAndQuestionIdsVerbatim() throws {
+        let widget = try card(task: "3F9D1C52-8A47-4C0E-B6A1-5E1F2A9B7D10")
+        let active = WiqoClarification.activeQuestionID(in: bubbles([widget]))
+        let answer = try XCTUnwrap(WiqoClarification.answer(for: widget, text: "  Eylül ", activeQuestionID: active, alreadySent: []))
+        XCTAssertEqual(answer.text, "Eylül")
+        var body: [String: Any] = [:]
+        RovaBackendClient.applyTaskIdentity(to: &body, taskID: UUID(), clarification: answer.ids)
+        XCTAssertEqual(body["taskId"] as? String, "3F9D1C52-8A47-4C0E-B6A1-5E1F2A9B7D10", "no new task id, and the card's own spelling")
+        XCTAssertEqual(body["questionId"] as? String, "q-8f31a2c4b7d9")
+        var plain: [String: Any] = [:]
+        let task = UUID()
+        RovaBackendClient.applyTaskIdentity(to: &plain, taskID: task, clarification: nil)
+        XCTAssertEqual(plain["taskId"] as? String, task.uuidString)
+        XCTAssertNil(plain["questionId"])
+    }
+
+    func testTheSameAnswerIsNotSentTwice() throws {
+        let widget = try card()
+        let active = WiqoClarification.activeQuestionID(in: bubbles([widget]))
+        XCTAssertNotNil(WiqoClarification.answer(for: widget, text: "Eylül", activeQuestionID: active, alreadySent: []))
+        XCTAssertNil(WiqoClarification.answer(for: widget, text: "Eylül", activeQuestionID: active, alreadySent: ["q-8f31a2c4b7d9"]))
+        XCTAssertNil(WiqoClarification.answer(for: widget, text: "   ", activeQuestionID: active, alreadySent: []), "an empty answer is not sent")
+    }
+
+    func testAnsweredOrReplacedCardsAreNotActive() throws {
+        let first = try card(task: "11111111-1111-4111-8111-111111111111", question: "q-first-0001")
+        let second = try card(task: "22222222-2222-4222-8222-222222222222", question: "q-second-0002")
+        XCTAssertEqual(WiqoClarification.activeQuestionID(in: bubbles([first])), "q-first-0001")
+        XCTAssertNil(WiqoClarification.activeQuestionID(in: bubbles([first], thenUser: true)), "after the person wrote something the card is read-only")
+        // A newer task asked its own question: the older card cannot be answered any more.
+        let both = bubbles([first], thenUser: true) + [ChatBubble(role: .assistant, text: "Hangi klasör?", widgets: [second])]
+        XCTAssertEqual(WiqoClarification.activeQuestionID(in: both), "q-second-0002")
+        XCTAssertNil(WiqoClarification.answer(for: first, text: "Eylül", activeQuestionID: WiqoClarification.activeQuestionID(in: both), alreadySent: []))
+        XCTAssertNil(WiqoClarification.activeQuestionID(in: []), "a new chat has no open question")
+    }
+
+    func testAPendingCardIsActiveAgainWhenTheChatIsReopened() throws {
+        // The conversation comes back from storage with its widgets: the unanswered card is the last message, so it can be answered.
+        let restored = bubbles([try card()])
+        XCTAssertEqual(WiqoClarification.activeQuestionID(in: restored), "q-8f31a2c4b7d9")
+    }
 }

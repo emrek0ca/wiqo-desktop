@@ -1427,7 +1427,11 @@
   "Onayla, her zaman izin ver": "Approve, always allow",
   "Yeni proje": "New project",
   "Dinliyorum": "Listening",
-  "Göndermek için dokun": "Tap to send"
+  "Göndermek için dokun": "Tap to send",
+  "%lld sırada": "%lld in line",
+  "Bu soru artık beklenmiyor": "This question is no longer pending",
+  "Yanıtlandı": "Answered",
+  "Yanıtını yaz": "Type your answer"
  },
  "de": {
   "Arkadaşını davet et": "Lade deinen Freund ein",
@@ -2857,7 +2861,11 @@
   "Onayla, her zaman izin ver": "Bestätigen, immer erlauben",
   "Yeni proje": "Neues Projekt",
   "Dinliyorum": "Ich höre",
-  "Göndermek için dokun": "Zum Senden tippen"
+  "Göndermek için dokun": "Zum Senden tippen",
+  "%lld sırada": "%lld in der Reihe",
+  "Bu soru artık beklenmiyor": "Diese Frage wird nicht mehr erwartet",
+  "Yanıtlandı": "Beantwortet",
+  "Yanıtını yaz": "Antworten"
  },
  "es": {
   "\"%@\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.": "\"%@\": se eliminarán los archivos y el historial de todos los dispositivos; irreversible.",
@@ -4287,7 +4295,11 @@
   "Onayla, her zaman izin ver": "Confirmar, siempre permitir",
   "Yeni proje": "Nuevo proyecto",
   "Dinliyorum": "Escuchando",
-  "Göndermek için dokun": "Toca para enviar"
+  "Göndermek için dokun": "Toca para enviar",
+  "%lld sırada": "%lld en orden",
+  "Bu soru artık beklenmiyor": "Esta pregunta ya no se espera",
+  "Yanıtlandı": "Respondida",
+  "Yanıtını yaz": "Escribe tu respuesta"
  },
  "fr": {
   "Arkadaşını davet et": "Invite a friend",
@@ -5717,7 +5729,11 @@
   "Onayla, her zaman izin ver": "Accepter, autoriser toujours",
   "Yeni proje": "Nouveau projet",
   "Dinliyorum": "Écoute",
-  "Göndermek için dokun": "Appuyez pour envoyer"
+  "Göndermek için dokun": "Appuyez pour envoyer",
+  "%lld sırada": "%lld en attente",
+  "Bu soru artık beklenmiyor": "Cette question n'est plus en attente",
+  "Yanıtlandı": "Répondu",
+  "Yanıtını yaz": "Écrivez votre réponse"
  },
  "ar": {
   "+%lld adım": "+%lld خطوة",
@@ -7147,7 +7163,11 @@
   "Onayla, her zaman izin ver": "موافقة، دائمًا اسمح",
   "Yeni proje": "مشروع جديد",
   "Dinliyorum": "أستمع",
-  "Göndermek için dokun": "انقر لإرسال"
+  "Göndermek için dokun": "انقر لإرسال",
+  "%lld sırada": "%lld في الصف",
+  "Bu soru artık beklenmiyor": "لم يعد يُنتظر هذا السؤال",
+  "Yanıtlandı": "تم الرد",
+  "Yanıtını yaz": "اكتب إجابتك"
  },
  "ru": {
   "Arkadaşını davet et": "Пригласить друга",
@@ -8577,6 +8597,10 @@
   "Onayla, her zaman izin ver": "Подтвердить, всегда разрешать",
   "Yeni proje": "Новый проект",
   "Dinliyorum": "Слушаю",
-  "Göndermek için dokun": "Нажмите, чтобы отправить"
+  "Göndermek için dokun": "Нажмите, чтобы отправить",
+  "%lld sırada": "%lld в очереди",
+  "Bu soru artık beklenmiyor": "Этот вопрос больше не ожидается",
+  "Yanıtlandı": "Ответлено",
+  "Yanıtını yaz": "Написать ответ"
  }
 }

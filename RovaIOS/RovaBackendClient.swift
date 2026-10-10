@@ -284,7 +284,7 @@ enum RovaBackendClient {
 
     struct CopilotResultWidget: Codable, Hashable, Sendable {
         enum Kind: String, Codable {
-            case created_resource, code_change, weather, sources, artifact, task_result, task_plan, approval, error, list, table, map, card, inline_app, act_handoff, unknown
+            case created_resource, code_change, weather, sources, artifact, task_result, task_plan, approval, clarification, error, list, table, map, card, inline_app, act_handoff, unknown
 
             init(from decoder: Decoder) throws {
                 let value = try decoder.singleValueContainer().decode(String.self)
@@ -383,6 +383,10 @@ enum RovaBackendClient {
         let byteCount: Int?
         let tablePreview: TablePreview?
         let taskId: String?
+        /// clarification: a question the running task is waiting on. The answer goes back with `taskId` and `questionId` unchanged.
+        let questionId: String?
+        let question: String?
+        let options: [String]?
         let capability: String?
         struct PlanRow: Codable, Hashable, Sendable, Identifiable {
             let id: String
@@ -937,6 +941,8 @@ enum RovaBackendClient {
         deviceID: UUID? = nil,
         conversationID: String = "default",
         taskID: UUID? = nil,
+        /// Set when this message answers a clarification card: the card's own task and question ids go out unchanged.
+        clarification: ClarificationAnswer? = nil,
         turnCount: Int? = nil,
         deviceResults: [DeviceExecutionResult] = [],
         requestID: UUID = UUID(),
@@ -1053,7 +1059,7 @@ enum RovaBackendClient {
            let object = try? JSONSerialization.jsonObject(with: hint) {
             requestBody["intentHint"] = object
         }
-        if let taskID { requestBody["taskId"] = taskID.uuidString }
+        Self.applyTaskIdentity(to: &requestBody, taskID: taskID, clarification: clarification)
         // What the person reads (replies, cards, notifications) is written in the phone's language.
         requestBody["locale"] = Locale.preferredLanguages.first ?? "tr"
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [.fragmentsAllowed])
@@ -1239,6 +1245,21 @@ enum RovaBackendClient {
             agentTask: agentTask,
             widgets: widgets
         )
+    }
+
+    /// The two ids that tie a request to its task. An answer to a clarification card carries the card's ids verbatim (no new task id).
+    struct ClarificationAnswer: Equatable, Sendable {
+        let taskId: String
+        let questionId: String
+    }
+
+    static func applyTaskIdentity(to body: inout [String: Any], taskID: UUID?, clarification: ClarificationAnswer?) {
+        if let clarification {
+            body["taskId"] = clarification.taskId
+            body["questionId"] = clarification.questionId
+        } else if let taskID {
+            body["taskId"] = taskID.uuidString
+        }
     }
 
     static func waitForCopilotRequest(

@@ -29,6 +29,26 @@ struct ActCodeEditor: UIViewRepresentable {
 
     func updateUIView(_ view: UITextView, context: Context) {
         if view.text != text { view.text = text }
+        // The app's appearance reaches the editor: text size (Ayarlar > Uygulama görünümü) and the accent colour (cursor, selection).
+        let size = 13 * Self.scale(for: context.environment.dynamicTypeSize)
+        if abs((view.font?.pointSize ?? 0) - size) > 0.1 {
+            view.font = UIFont(name: "JetBrainsMono-Regular", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .regular)
+        }
+        view.textColor = .label
+        view.tintColor = UIColor(cgColor: Color.accentColor.resolve(in: context.environment).cgColor)
+    }
+
+    private static func scale(for size: DynamicTypeSize) -> CGFloat {
+        switch size {
+        case .xSmall: return 0.85
+        case .small: return 0.92
+        case .medium: return 0.97
+        case .large: return 1
+        case .xLarge: return 1.08
+        case .xxLarge: return 1.16
+        case .xxxLarge: return 1.25
+        default: return 1.35
+        }
     }
 
     private static let symbols = ["⇥", "{", "}", "(", ")", "[", "]", "<", ">", "\"", "'", "`", ";", ":", "=", "/", "#", "$", "&", "|", "!", "-", "_", "."]

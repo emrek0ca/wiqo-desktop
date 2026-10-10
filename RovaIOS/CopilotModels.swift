@@ -48,6 +48,8 @@ struct ChatBubble: Identifiable {
     var inFlightStepIDs: Set<UUID> = []
     var artifacts: [RovaBackendClient.ArtifactDescriptor] = []
     var widgets: [RovaBackendClient.CopilotResultWidget] = []
+    /// The task this turn continues (the id of an answered clarification card); nil means the bubble's own id is the task.
+    var taskID: UUID? = nil
     var executionState: String? = nil
     var backendConfirmations: [BackendConfirmationRow] = []
     var executionUpdates: [UUID: RovaBackendClient.ExecutionStepUpdate] = [:]
@@ -106,6 +108,8 @@ extension RovaBackendClient.CopilotResultWidget {
             return "task:\(taskId ?? widgetId ?? "unknown")"
         case .approval:
             return "approval:\(confirmationId ?? widgetId ?? "unknown")"
+        case .clarification:
+            return "question:\(questionId ?? widgetId ?? "unknown")"
         case .error:
             return "error:\(taskId ?? widgetId ?? "unknown")"
         case .list:
@@ -175,6 +179,8 @@ enum CopilotWidgetCatalog {
             return "task:\(widget.taskId ?? widget.widgetId ?? "unknown")"
         case .approval:
             return "approval:\(widget.confirmationId ?? widget.widgetId ?? "unknown")"
+        case .clarification:
+            return "question:\(widget.questionId ?? widget.widgetId ?? "unknown")"
         case .error:
             return "error:\(widget.taskId ?? widget.widgetId ?? "unknown")"
         case .list:
@@ -192,5 +198,23 @@ enum CopilotWidgetCatalog {
         case .unknown:
             return "unknown"
         }
+    }
+}
+
+/// Which clarification card may still be answered: only the one in the last message of the conversation, and only once.
+/// A new message, an answer, a different task or a new chat all leave the older cards read-only.
+enum WiqoClarification {
+    static func activeQuestionID(in bubbles: [ChatBubble]) -> String? {
+        guard let last = bubbles.last(where: { $0.role != .system }), last.role == .assistant else { return nil }
+        return last.widgets.last(where: { $0.type == .clarification && ($0.questionId?.isEmpty == false) && ($0.taskId?.isEmpty == false) })?.questionId
+    }
+
+    /// The answer to send for a card, or nil when it must not be sent (not the active card, empty text, already being sent).
+    static func answer(for widget: RovaBackendClient.CopilotResultWidget, text: String, activeQuestionID: String?, alreadySent: Set<String>) -> (text: String, ids: RovaBackendClient.ClarificationAnswer)? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard widget.type == .clarification, let questionId = widget.questionId, let taskId = widget.taskId,
+              !trimmed.isEmpty, trimmed.count <= 1_200,
+              questionId == activeQuestionID, !alreadySent.contains(questionId) else { return nil }
+        return (trimmed, RovaBackendClient.ClarificationAnswer(taskId: taskId, questionId: questionId))
     }
 }

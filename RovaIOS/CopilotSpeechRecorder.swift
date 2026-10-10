@@ -35,6 +35,10 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
     private var inputTapInstalled = false
     private var audioSessionIsActive = false
     private var isFinishing = false
+    /// The audio thread appends to whatever request the feeder holds; `rollover()` swaps it without a gap.
+    private var feeder: WiqoAudioFeeder?
+    /// Callbacks of an earlier recognition request (after a rollover) are ignored.
+    private var generation = 0
 
     override init() {
         speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "tr-TR"))
@@ -123,14 +127,19 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
             recognitionRequest = request
             isRecording = true
 
+            generation += 1
+            let currentGeneration = generation
             recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
                 let text = result?.bestTranscription.formattedString
                 let isFinal = result?.isFinal == true
                 let didFail = error != nil
                 Task { @MainActor [weak self] in
+                    guard self?.generation == currentGeneration else { return }
                     self?.handleRecognitionUpdate(text: text, isFinal: isFinal, didFail: didFail)
                 }
             }
+            let feeder = WiqoAudioFeeder(request: request, recorder: self)
+            self.feeder = feeder
 
             // The tap block runs on AVAudioEngine's own realtime audio thread, never on the main
             // actor - a closure literal written directly here would still lexically inherit this
@@ -141,7 +150,7 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
             // buffer - exactly the "says Dinliyorum then gets stuck" crash this fixes. Building
             // the block in a `nonisolated` factory instead means the closure is lexically declared
             // in a context with no actor isolation to inherit, so no such check is attached.
-            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format, block: Self.makeTapBlock(for: request, meter: WiqoLevelMeter(recorder: self)))
+            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format, block: Self.makeTapBlock(feeder: feeder))
             inputTapInstalled = true
             engine.prepare()
             try engine.start()
@@ -181,11 +190,38 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
     /// inside). `SFSpeechAudioBufferRecognitionRequest.append(_:)` being called from the realtime
     /// audio thread while the rest of the request's lifecycle runs on the main actor is Apple's
     /// own documented pattern for this API, not a real data race this happens to paper over.
-    nonisolated private static func makeTapBlock(for request: SFSpeechAudioBufferRecognitionRequest, meter: WiqoLevelMeter) -> (AVAudioPCMBuffer, AVAudioTime) -> Void {
-        { buffer, _ in
-            request.append(buffer)
-            meter.measure(buffer)
+    nonisolated private static func makeTapBlock(feeder: WiqoAudioFeeder) -> (AVAudioPCMBuffer, AVAudioTime) -> Void {
+        { buffer, _ in feeder.consume(buffer) }
+    }
+
+    /// Hands the sentence heard so far over and goes on listening at once, on the same microphone and the same audio session:
+    /// a voice session that carries on while the first command is already being carried out.
+    /// Returns what was heard before the call ("" when nothing was).
+    func rollover() -> String {
+        guard isRecording, let speechRecognizer, let feeder else { return "" }
+        let heard = normalizedTranscript
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        let oldRequest = recognitionRequest
+        let oldTask = recognitionTask
+        generation += 1
+        let currentGeneration = generation
+        // The new request takes the audio first, so no word falls between the two.
+        feeder.replace(request)
+        recognitionRequest = request
+        transcript = ""
+        recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
+            let text = result?.bestTranscription.formattedString
+            let isFinal = result?.isFinal == true
+            let didFail = error != nil
+            Task { @MainActor [weak self] in
+                guard self?.generation == currentGeneration else { return }
+                self?.handleRecognitionUpdate(text: text, isFinal: isFinal, didFail: didFail)
+            }
         }
+        oldRequest?.endAudio()
+        oldTask?.cancel()
+        return heard
     }
 
     fileprivate func applyLevel(_ value: Float) {
@@ -224,6 +260,7 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionRequest = nil
+        feeder = nil
         audioEngine = nil
         if audioSessionIsActive {
             audioSessionIsActive = false
@@ -238,15 +275,34 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
     }
 }
 
-/// Reads the loudness of each audio buffer on the audio thread and hands a 0...1 value to the recorder on the main actor.
+/// Lives on the audio thread: gives every buffer to the current recognition request and measures its loudness (0...1) for the listening orb.
 /// A plain (non-actor) class on purpose: the tap block that calls it runs off the main actor.
-private final class WiqoLevelMeter: @unchecked Sendable {
+private final class WiqoAudioFeeder: @unchecked Sendable {
     private weak var recorder: WiqoSpeechRecorder?
+    private let lock = NSLock()
+    private var request: SFSpeechAudioBufferRecognitionRequest
     private var buffers = 0
 
-    @MainActor init(recorder: WiqoSpeechRecorder) { self.recorder = recorder }
+    @MainActor init(request: SFSpeechAudioBufferRecognitionRequest, recorder: WiqoSpeechRecorder) {
+        self.request = request
+        self.recorder = recorder
+    }
 
-    func measure(_ buffer: AVAudioPCMBuffer) {
+    func replace(_ next: SFSpeechAudioBufferRecognitionRequest) {
+        lock.lock()
+        request = next
+        lock.unlock()
+    }
+
+    func consume(_ buffer: AVAudioPCMBuffer) {
+        lock.lock()
+        let current = request
+        lock.unlock()
+        current.append(buffer)
+        measure(buffer)
+    }
+
+    private func measure(_ buffer: AVAudioPCMBuffer) {
         buffers += 1
         guard buffers % 2 == 0, let samples = buffer.floatChannelData?[0] else { return }
         let count = Int(buffer.frameLength)

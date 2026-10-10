@@ -38,6 +38,8 @@ struct CopilotView: View {
     @ObservedObject var subscriptionStore: SubscriptionStore
     @Environment(\.scenePhase) private var scenePhase
     @State private var bubbles: [ChatBubble] = []
+    /// Questions already answered from their card in this session (a second tap or a replayed card cannot send them again).
+    @State private var answeredQuestionIDs: Set<String> = []
     @State private var inputText = ""
     @State private var isCreatingAgent = false
     @State private var isSending = false
@@ -589,6 +591,11 @@ struct CopilotView: View {
                         }
                     }
                     .environment(\.wiqoFollowUp, WiqoFollowUp { text in Task { await sendMessage(textOverride: text) } })
+                    .environment(\.wiqoClarification, WiqoClarificationContext(
+                        activeQuestionID: WiqoClarification.activeQuestionID(in: bubbles),
+                        sending: isSending,
+                        answer: { widget, text in answerClarification(widget, text) }
+                    ))
                     .padding(.horizontal)
                     .transition(.wiqoFadeUp)
                 }
@@ -636,7 +643,8 @@ struct CopilotView: View {
             if bubble.role == .assistant && !bubble.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 // Only the latest question can still be answered: older ones keep just their copy button.
                 if !isSending, bubbles.last(where: { $0.role != .system })?.id == bubble.id {
-                    let quickReplies = bubbleAwaitingApproval?.id == bubble.id ? ["Onayla", "Vazgeç"] : QuickReplyChips.options(for: bubble.text)
+                    let asksWithCard = bubble.widgets.contains { $0.type == .clarification }
+                    let quickReplies = bubbleAwaitingApproval?.id == bubble.id ? ["Onayla", "Vazgeç"] : (asksWithCard ? [] : QuickReplyChips.options(for: bubble.text))
                     if !quickReplies.isEmpty {
                         QuickReplyChips(options: quickReplies) { option in
                             Task { await sendMessage(textOverride: option) }
@@ -1665,7 +1673,16 @@ struct CopilotView: View {
         model.deviceInfo?.availableApplications.map(\.id) ?? []
     }
 
-    private func sendMessage(textOverride: String? = nil) async {
+    /// Answers a clarification card: the card's own task and question ids go back with the answer, once.
+    private func answerClarification(_ widget: RovaBackendClient.CopilotResultWidget, _ text: String) {
+        guard !isSending,
+              let answer = WiqoClarification.answer(for: widget, text: text, activeQuestionID: WiqoClarification.activeQuestionID(in: bubbles), alreadySent: answeredQuestionIDs)
+        else { return }
+        answeredQuestionIDs.insert(answer.ids.questionId)
+        Task { await sendMessage(textOverride: answer.text, clarification: answer.ids) }
+    }
+
+    private func sendMessage(textOverride: String? = nil, clarification: RovaBackendClient.ClarificationAnswer? = nil) async {
         let createAgent = isCreatingAgent
         let typedText = (textOverride ?? inputText).trimmingCharacters(in: .whitespacesAndNewlines)
         let hasInput = createAgent
@@ -1719,7 +1736,9 @@ struct CopilotView: View {
         turnCount += 1
         CopilotConversationStore.saveTurnCount(turnCount, for: conversationID)
         let requestID = UUID()
-        let responseBubble = ChatBubble(role: .assistant, text: "")
+        var responseBubble = ChatBubble(role: .assistant, text: "")
+        // An answered question goes on with the card's task; the turn does not start a task of its own.
+        if let clarification, let task = UUID(uuidString: clarification.taskId) { responseBubble.taskID = task }
         bubbles.append(responseBubble)
         liveReplyBubbleID = responseBubble.id
         persistConversation()
@@ -1734,7 +1753,8 @@ struct CopilotView: View {
                 authorities: model.deviceInfo?.authorities ?? [],
                 deviceID: model.pairedDeviceIDForTransfer,
                 conversationID: conversationID,
-                taskID: responseBubble.id,
+                taskID: responseBubble.taskID ?? responseBubble.id,
+                clarification: clarification,
                 turnCount: turnCount,
                 deviceResults: recentDeviceResults,
                 requestID: requestID,
@@ -2230,7 +2250,7 @@ struct CopilotView: View {
                 authorities: model.deviceInfo?.authorities ?? [],
                 deviceID: model.pairedDeviceIDForTransfer,
                 conversationID: conversationID,
-                taskID: bubbleID,
+                taskID: priorBubble?.taskID ?? bubbleID,
                 turnCount: turnCount,
                 deviceResults: localResults,
                 requestID: UUID(),

@@ -46,6 +46,8 @@ struct WiqoHomeView: View {
                     .allowsHitTesting(mode == .chat)
                     .accessibilityHidden(mode != .chat)
                 ActView()
+                    // Theme, accent and text size are applied here again so Act can never miss a change made in Settings.
+                    .wiqoAppearance()
                     .onReceive(actHandoffs) { _ in mode = .act }
                     .onReceive(actProjectOpens) { _ in mode = .act }
                     .opacity(mode == .act ? 1 : 0)

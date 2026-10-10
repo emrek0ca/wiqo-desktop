@@ -78,6 +78,35 @@ private extension View {
     }
 }
 
+/// Spoken sentences that arrive while a job is running wait their turn here and start the moment it ends, in order.
+/// "Durdur" / "dur" / "iptal" stop the running job instead of being queued.
+@MainActor
+private final class ActVoiceQueue: ObservableObject {
+    static let shared = ActVoiceQueue()
+    @Published private(set) var waiting: [String] = []
+    nonisolated private static let stopWords: Set<String> = ["durdur", "dur", "dur artık", "iptal", "iptal et", "vazgeç", "bırak"]
+
+    nonisolated static func isStop(_ spoken: String) -> Bool {
+        let folded = spoken.lowercased(with: Locale(identifier: "tr_TR")).trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        return stopWords.contains(folded)
+    }
+
+    func push(_ spoken: String) {
+        waiting.append(spoken)
+        if waiting.count > 5 { waiting.removeFirst() }
+    }
+
+    func next() -> String? { waiting.isEmpty ? nil : waiting.removeFirst() }
+    func clear() { waiting.removeAll() }
+}
+
+extension ActJobState {
+    /// "Yazılıyor · 2 sırada": what the running job is doing and how many spoken commands wait behind it.
+    fileprivate func voiceLine(waiting: Int) -> String {
+        waiting > 0 ? "\(stage.title) · \(String(localized: "\(waiting) sırada"))" : stage.title
+    }
+}
+
 /// One button of the side dock.
 private struct ActDockItem: Identifiable {
     let id: String
@@ -193,6 +222,7 @@ struct ActView: View {
     @State private var showingImporter = false
     @State private var query = ""
     @State private var showsSearch = false
+    @ObservedObject private var voiceQueue = ActVoiceQueue.shared
     @State private var pinned = ActPins.load()
     @FocusState private var composerFocused: Bool
 
@@ -233,6 +263,17 @@ struct ActView: View {
         // a change to an open project is applied to that project.
         .onReceive(NotificationCenter.default.publisher(for: .wiqoActHome)) { _ in
             withAnimation(WiqoMotion.ease(0.25)) { openedID = nil }
+        }
+        .onChange(of: model.job) { _, job in
+            // The job that was running ended: the next spoken command starts at once.
+            guard job == nil, !voiceQueue.waiting.isEmpty else { return }
+            // A project that was just created opens next, and the workspace takes the waiting sentence (it is about that project).
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                guard model.job == nil, openedID == nil, let spoken = voiceQueue.next() else { return }
+                draft = spoken
+                if canCreate { requestCreate() }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .wiqoOpenInAct)) { note in
             guard let open = note.object as? ActOpenRequest else { return }
@@ -453,9 +494,12 @@ struct ActView: View {
                 focus: $composerFocused,
                 onSend: requestCreate,
                 onVoiceCommand: { spoken in
+                    if ActVoiceQueue.isStop(spoken) { if model.job != nil { Task { await model.cancel() } }; voiceQueue.clear(); return }
+                    if model.job != nil { voiceQueue.push(spoken); return }
                     draft = spoken
                     if canCreate { requestCreate() } else { composerFocused = true }
-                }
+                },
+                voiceStatus: model.job.map { $0.voiceLine(waiting: voiceQueue.waiting.count) }
             ) {
                 Menu {
                     Section("Bu proje nerede dursun?") {
@@ -663,6 +707,7 @@ struct CodeProjectWorkspaceView: View {
     @State private var fileNameField = ""
     @State private var pendingFileDelete: String?
     @State private var showingFullScreen = false
+    @ObservedObject private var voiceQueue = ActVoiceQueue.shared
     @State private var packageError: String?
     @State private var loadingPackages = false
     @State private var pendingErrors: [(level: String, text: String)] = []
@@ -747,6 +792,12 @@ struct CodeProjectWorkspaceView: View {
             reloadToken += 1
         }
         .onChange(of: reloadToken) { _, _ in console.removeAll() }
+        .onChange(of: model.job) { _, job in
+            // The job that was running ended: the next spoken command starts at once.
+            guard job == nil, let spoken = voiceQueue.next() else { return }
+            draft = spoken
+            if canSend { requestSend() }
+        }
     }
 
     private func workspaceHeader(short: Bool) -> some View {
@@ -1267,9 +1318,12 @@ struct CodeProjectWorkspaceView: View {
                 focus: $focused,
                 onSend: requestSend,
                 onVoiceCommand: { spoken in
+                    if ActVoiceQueue.isStop(spoken) { if model.job != nil { Task { await model.cancel() } }; voiceQueue.clear(); return }
+                    if model.job != nil { voiceQueue.push(spoken); return }
                     draft = spoken
                     if canSend { requestSend() } else { focused = true }
-                }
+                },
+                voiceStatus: model.job.map { $0.voiceLine(waiting: voiceQueue.waiting.count) }
             ) {
                 Menu {
                     Section("Hazır istekler") {
