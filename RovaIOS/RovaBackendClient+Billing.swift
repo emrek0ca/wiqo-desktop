@@ -115,7 +115,13 @@ extension RovaBackendClient {
             OAuthProviderInfo(id: "google", name: "Google", symbol: "envelope.badge", summary: "Gmail, Takvim ve Drive", available: true),
             OAuthProviderInfo(id: "notion", name: "Notion", symbol: "doc.text", summary: String(localized: "Sayfalar ve notlar"), available: true),
             OAuthProviderInfo(id: "slack", name: "Slack", symbol: "number", summary: "Kanallar ve mesajlar", available: false),
-            OAuthProviderInfo(id: "github", name: "GitHub", symbol: "chevron.left.forwardslash.chevron.right", summary: "Depolar ve issue'lar", available: false)
+            OAuthProviderInfo(id: "github", name: "GitHub", symbol: "chevron.left.forwardslash.chevron.right", summary: "Depolar ve issue'lar", available: false),
+            OAuthProviderInfo(id: "linear", name: "Linear", symbol: "list.bullet.rectangle", summary: "Issue ve ekipler", available: false),
+            OAuthProviderInfo(id: "dropbox", name: "Dropbox", symbol: "shippingbox", summary: "Dosyalar ve klasörler", available: false),
+            OAuthProviderInfo(id: "microsoft", name: "Microsoft 365", symbol: "square.grid.2x2", summary: "OneDrive dosyaları", available: false),
+            OAuthProviderInfo(id: "jira", name: "Jira", symbol: "checkmark.square", summary: "Projeler ve issue'lar", available: false),
+            OAuthProviderInfo(id: "gitlab", name: "GitLab", symbol: "chevron.left.forwardslash.chevron.right", summary: "Projeler ve issue'lar", available: false),
+            OAuthProviderInfo(id: "asana", name: "Asana", symbol: "checklist", summary: "Projeler ve görevler", available: false)
         ]
     }
 

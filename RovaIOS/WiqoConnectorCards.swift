@@ -32,7 +32,7 @@ struct ConnectorListCard: View {
     @Environment(\.wiqoFollowUp) private var followUp
 
     private enum Domain: String {
-        case mail, calendar, drive, notion, contacts, files, slack, github, linear, dropbox, discord
+        case mail, calendar, drive, notion, contacts, files, slack, github, linear, dropbox, microsoft, jira, gitlab, asana, discord
 
         var symbol: String {
             switch self {
@@ -46,6 +46,10 @@ struct ConnectorListCard: View {
             case .github: return "chevron.left.forwardslash.chevron.right"
             case .linear: return "list.bullet.rectangle"
             case .dropbox: return "shippingbox"
+            case .microsoft: return "square.grid.2x2"
+            case .jira: return "checkmark.square"
+            case .gitlab: return "chevron.left.forwardslash.chevron.right"
+            case .asana: return "checklist"
             case .discord: return "bubble.left.and.bubble.right"
             }
         }
@@ -62,8 +66,9 @@ struct ConnectorListCard: View {
             case .contacts: return String(localized: "kişi")
             case .files: return "dosya"
             case .slack, .discord: return "mesaj"
-            case .github, .linear: return "kayıt"
-            case .dropbox: return "dosya"
+            case .github, .linear, .jira, .gitlab: return "kayıt"
+            case .dropbox, .microsoft: return "dosya"
+            case .asana: return "görev"
             }
         }
     }

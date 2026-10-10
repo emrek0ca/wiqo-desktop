@@ -58,6 +58,10 @@ enum WiqoBrandIcon {
         case "github": "ConnectorGitHub"
         case "linear": "ConnectorLinear"
         case "dropbox": "ConnectorDropbox"
+        case "microsoft", "onedrive": "ConnectorMicrosoft"
+        case "jira": "ConnectorJira"
+        case "gitlab": "ConnectorGitLab"
+        case "asana": "ConnectorAsana"
         case "discord": "ConnectorDiscord"
         default: nil
         }
