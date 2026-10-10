@@ -21,6 +21,7 @@ struct McpServersSection: View {
                 ForEach(Array(servers.enumerated()), id: \.element.id) { index, server in
                     WiqoRow(
                         systemImage: "server.rack",
+                        brand: server.name.lowercased(),
                         title: server.name,
                         subtitle: Self.host(server.url) + (server.hasToken ? String(localized: " · anahtarlı") : "")
                             + (server.toolCount.map { " · \($0) araç" } ?? ""),

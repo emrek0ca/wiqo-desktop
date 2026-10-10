@@ -49,8 +49,24 @@ struct WiqoChevron: View {
 
 /// One row: a tinted icon tile, a title with an optional second line, and whatever belongs on the
 /// trailing edge (a chevron by default).
+enum WiqoBrandIcon {
+    static func assetName(for provider: String) -> String? {
+        switch provider.lowercased() {
+        case "google", "gmail", "calendar", "drive", "contacts": "ConnectorGoogle"
+        case "notion": "ConnectorNotion"
+        case "slack": "ConnectorSlack"
+        case "github": "ConnectorGitHub"
+        case "linear": "ConnectorLinear"
+        case "dropbox": "ConnectorDropbox"
+        case "discord": "ConnectorDiscord"
+        default: nil
+        }
+    }
+}
+
 struct WiqoRow<Trailing: View>: View {
     let systemImage: String
+    var brand: String? = nil
     var tint: Color = WiqoTheme.ink
     let title: String
     var subtitle: String?
@@ -60,6 +76,7 @@ struct WiqoRow<Trailing: View>: View {
 
     init(
         systemImage: String,
+        brand: String? = nil,
         tint: Color = WiqoTheme.ink,
         title: String,
         subtitle: String? = nil,
@@ -68,6 +85,7 @@ struct WiqoRow<Trailing: View>: View {
         @ViewBuilder trailing: () -> Trailing
     ) {
         self.systemImage = systemImage
+        self.brand = brand
         self.tint = tint
         self.title = title
         self.subtitle = subtitle
@@ -79,12 +97,19 @@ struct WiqoRow<Trailing: View>: View {
     var body: some View {
         let accent = isDestructive ? WiqoTheme.red : tint
         HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(accent)
-                .frame(width: 28, height: 28)
-                .background(WiqoTheme.tint(accent), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .accessibilityHidden(true)
+            if let brand, let asset = WiqoBrandIcon.assetName(for: brand) {
+                Image(asset).resizable().scaledToFit()
+                    .frame(width: 22, height: 22)
+                    .frame(width: 28, height: 28)
+                    .accessibilityHidden(true)
+            } else {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .frame(width: 28, height: 28)
+                    .background(WiqoTheme.tint(accent), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .accessibilityHidden(true)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.subheadline.weight(.medium))

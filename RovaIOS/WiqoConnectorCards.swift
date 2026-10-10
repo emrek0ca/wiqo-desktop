@@ -32,7 +32,7 @@ struct ConnectorListCard: View {
     @Environment(\.wiqoFollowUp) private var followUp
 
     private enum Domain: String {
-        case mail, calendar, drive, notion, contacts, files
+        case mail, calendar, drive, notion, contacts, files, slack, github, linear, dropbox, discord
 
         var symbol: String {
             switch self {
@@ -42,6 +42,11 @@ struct ConnectorListCard: View {
             case .notion: return "doc.text.fill"
             case .contacts: return "person.2.fill"
             case .files: return "doc.text.magnifyingglass"
+            case .slack: return "number"
+            case .github: return "chevron.left.forwardslash.chevron.right"
+            case .linear: return "list.bullet.rectangle"
+            case .dropbox: return "shippingbox"
+            case .discord: return "bubble.left.and.bubble.right"
             }
         }
 
@@ -56,6 +61,9 @@ struct ConnectorListCard: View {
             case .notion: return "sayfa"
             case .contacts: return String(localized: "kişi")
             case .files: return "dosya"
+            case .slack, .discord: return "mesaj"
+            case .github, .linear: return "kayıt"
+            case .dropbox: return "dosya"
             }
         }
     }
@@ -92,12 +100,19 @@ struct ConnectorListCard: View {
 
     private var header: some View {
         HStack(spacing: 11) {
-            Image(systemName: domain.symbol)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(domain.tint)
-                .frame(width: 38, height: 38)
-                .background(domain.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .accessibilityHidden(true)
+            if let asset = WiqoBrandIcon.assetName(for: domain.rawValue) {
+                Image(asset).resizable().scaledToFit()
+                    .frame(width: 24, height: 24)
+                    .frame(width: 38, height: 38)
+                    .accessibilityHidden(true)
+            } else {
+                Image(systemName: domain.symbol)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(domain.tint)
+                    .frame(width: 38, height: 38)
+                    .background(domain.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .accessibilityHidden(true)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(widget.title ?? domain.noun.capitalized)
                     .font(.subheadline.weight(.semibold))

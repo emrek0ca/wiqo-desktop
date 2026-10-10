@@ -113,15 +113,18 @@ struct ConnectedAccountsView: View {
         let needsReconnect = connected?.status == "needs_reconnect" || needsScope
         return WiqoRow(
             systemImage: provider.symbol,
+            brand: provider.id,
             tint: needsReconnect ? WiqoTheme.red : WiqoTheme.ink,
             title: provider.name,
-            subtitle: needsReconnect ? (needsScope ? String(localized: "Bazı erişimler eksik") : String(localized: "Bağlantının süresi doldu")) : connected != nil ? (connected?.accountLabel ?? String(localized: "Bağlı")) : (provider.summary ?? String(localized: "Bağlı değil")),
+            subtitle: provider.available == false ? String(localized: "Sunucuda henüz yapılandırılmadı") : needsReconnect ? (needsScope ? String(localized: "Bazı erişimler eksik") : String(localized: "Bağlantının süresi doldu")) : connected != nil ? (connected?.accountLabel ?? String(localized: "Bağlı")) : (provider.summary ?? String(localized: "Bağlı değil")),
             showsDivider: !isLast
         ) {
             if connectingProvider == provider.id {
                 ProgressView().controlSize(.small)
             } else if isLoading && connections.isEmpty {
                 WiqoSkeleton(width: 56, height: 28)
+            } else if provider.available == false {
+                Text("Hazırlanıyor").font(.caption).foregroundStyle(.secondary)
             } else if needsReconnect {
                 Button("Yeniden bağla") {
                     Task { await connect(provider.id) }

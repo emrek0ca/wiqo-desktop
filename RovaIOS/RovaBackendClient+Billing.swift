@@ -113,7 +113,9 @@ extension RovaBackendClient {
 
         static let builtIn: [OAuthProviderInfo] = [
             OAuthProviderInfo(id: "google", name: "Google", symbol: "envelope.badge", summary: "Gmail, Takvim ve Drive", available: true),
-            OAuthProviderInfo(id: "notion", name: "Notion", symbol: "doc.text", summary: String(localized: "Sayfalar ve notlar"), available: true)
+            OAuthProviderInfo(id: "notion", name: "Notion", symbol: "doc.text", summary: String(localized: "Sayfalar ve notlar"), available: true),
+            OAuthProviderInfo(id: "slack", name: "Slack", symbol: "number", summary: "Kanallar ve mesajlar", available: false),
+            OAuthProviderInfo(id: "github", name: "GitHub", symbol: "chevron.left.forwardslash.chevron.right", summary: "Depolar ve issue'lar", available: false)
         ]
     }
 
@@ -123,7 +125,7 @@ extension RovaBackendClient {
         guard let providers = try? await authorizedGet("oauth/providers", as: Response.self).providers, !providers.isEmpty else {
             return OAuthProviderInfo.builtIn
         }
-        return providers.filter { $0.available != false }
+        return providers
     }
 
     static func fetchOAuthConnections() async throws -> [OAuthConnection] {
