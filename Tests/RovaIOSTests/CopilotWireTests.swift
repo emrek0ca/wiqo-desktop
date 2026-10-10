@@ -127,4 +127,14 @@ final class CopilotWireTests: XCTestCase {
         XCTAssertFalse(WiqoVoiceIntent.isRisky("butonu mavi yap"))
         XCTAssertFalse(WiqoVoiceIntent.isRisky("silüet çiz"), "a word that merely contains a risky one is not risky")
     }
+
+    // MARK: Spoken replies
+
+    func testWhatIsReadAloudHasNoMarkdownLinksCodeOrEmoji() {
+        XCTAssertEqual(WiqoSpeaker.speakable("**Merhaba** Emre! Rapor [burada](https://example.com/a?b=1) 🎉"), "Merhaba Emre! Rapor burada")
+        XCTAssertEqual(WiqoSpeaker.speakable("# Başlık\n- ilk madde\n- ikinci madde"), "Başlık ilk madde ikinci madde")
+        XCTAssertEqual(WiqoSpeaker.speakable("Şunu çalıştır:\n```swift\nprint(1)\n```\nBitti."), "Şunu çalıştır: Bitti.")
+        XCTAssertEqual(WiqoSpeaker.speakable("Bkz. https://wiqoai.com/yardim ve `ls -la` komutu"), "Bkz. ve ls -la komutu")
+        XCTAssertEqual(WiqoSpeaker.speakable("   "), "")
+    }
 }

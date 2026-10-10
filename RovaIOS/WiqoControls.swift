@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import CoreHaptics
 import SwiftUI
@@ -851,6 +852,8 @@ final class WiqoVoiceSession: ObservableObject {
         recorder.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         recorder.$transcript.dropFirst().sink { [weak self] text in
             guard let self, self.isActive, !text.isEmpty else { return }
+            // The person speaks over the reading: it stops at once.
+            if WiqoSpeaker.shared.isSpeaking, text.count >= 3 { WiqoSpeaker.shared.stop() }
             self.arm(after: 1.0)
         }.store(in: &bag)
         recorder.$isRecording.dropFirst().sink { [weak self] recording in
@@ -885,6 +888,7 @@ final class WiqoVoiceSession: ObservableObject {
     /// The sentence heard so far goes out now; the microphone stays open for the next one.
     func deliver() {
         guard isActive else { return }
+        WiqoSpeaker.shared.stop()
         let sentence = recorder.rollover()
         guard !sentence.isEmpty else { return }
         WiqoHaptics.success()
@@ -897,6 +901,7 @@ final class WiqoVoiceSession: ObservableObject {
         guard isActive else { return }
         watch?.cancel()
         isActive = false
+        WiqoSpeaker.shared.stop()
         let sentence = await recorder.stop()
         guard send, !sentence.isEmpty else { return }
         WiqoHaptics.success()
@@ -918,6 +923,7 @@ final class WiqoVoiceSession: ObservableObject {
 /// and the sentences waiting their turn as chips that can be removed.
 struct WiqoVoiceSessionView: View {
     @ObservedObject var session: WiqoVoiceSession
+    @ObservedObject private var speaker = WiqoSpeaker.shared
     var status: String?
     var working: Bool
     var queued: [String] = []
@@ -941,6 +947,16 @@ struct WiqoVoiceSessionView: View {
                 .accessibilityLabel("Dinliyorum")
                 .accessibilityHint("Göndermek için dokun")
                 HStack {
+                    Button { WiqoSpeaker.shared.muted.toggle(); WiqoSpeaker.shared.stop() } label: {
+                        Image(systemName: speaker.muted ? "speaker.slash" : "speaker.wave.2")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 34, height: 34)
+                            .background(Color.primary.opacity(0.07), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(speaker.muted ? "Sesli yanıtı aç" : "Sesli yanıtı kapat")
+                    .padding(.leading, 10)
                     Spacer()
                     Button { Task { await session.finish(send: false) } } label: {
                         Image(systemName: "xmark")
@@ -978,5 +994,178 @@ struct WiqoVoiceSessionView: View {
         }
         .frame(maxWidth: .infinity)
         .animation(WiqoMotion.ease(0.25), value: queued)
+    }
+}
+
+// MARK: - Spoken replies
+
+/// Reads Wiqo's reply aloud in the person's language, sentence by sentence as it is written, so a spoken conversation does not wait for the whole answer.
+/// It speaks only while a voice session is open; the person speaking over it (barge-in) or tapping the orb stops it at once.
+@MainActor
+final class WiqoSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
+    static let shared = WiqoSpeaker()
+    static let settingKey = "wiqo.voice.speak"
+
+    @Published private(set) var isSpeaking = false
+    /// The speaker button of the voice session: muted for this session only.
+    @Published var muted = false
+
+    private let synthesizer = AVSpeechSynthesizer()
+    private var raw = ""            // every character of the reply fed so far
+    private var pending = ""        // the part not yet cut into a sentence
+    private var spoken = 0          // characters handed to the synthesizer for this reply
+    private var queued = 0
+    private var capped = false
+    private var ownsSession = false
+    /// A long answer (a whole document) is not read out: the first part, then a pointer to the screen.
+    private static let characterLimit = 700
+
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+    }
+
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: settingKey) as? Bool ?? true
+    }
+
+    /// A new reply starts: whatever was still being read is dropped.
+    func begin() {
+        stop()
+        raw = ""
+        pending = ""
+        spoken = 0
+        capped = false
+    }
+
+    func feed(_ delta: String, listening: Bool) {
+        guard listening, Self.isEnabled, !muted, !delta.isEmpty else { return }
+        raw += delta
+        pending += delta
+        drain(final: false)
+    }
+
+    /// The reply is complete. What was already read stays; the rest is read, or all of it again if the final text is not an extension of what streamed.
+    func finish(reply: String, listening: Bool) {
+        guard listening, Self.isEnabled, !muted else { return }
+        if reply.hasPrefix(raw) {
+            pending += reply.dropFirst(raw.count)
+        } else {
+            stop()
+            spoken = 0
+            capped = false
+            pending = reply
+        }
+        raw = reply
+        drain(final: true)
+    }
+
+    /// The person spoke (or tapped the orb): quiet at once.
+    func stop() {
+        synthesizer.stopSpeaking(at: .immediate)
+        pending = ""
+        queued = 0
+        isSpeaking = false
+        releaseSession()
+    }
+
+    // MARK: Cutting and cleaning
+
+    private func drain(final: Bool) {
+        while let range = pending.range(of: #"[.!?…]+[\s)"”']*|\n+"#, options: .regularExpression) {
+            let sentence = String(pending[..<range.upperBound])
+            pending.removeSubrange(..<range.upperBound)
+            enqueue(sentence)
+        }
+        if final, !pending.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            enqueue(pending)
+            pending = ""
+        }
+    }
+
+    private func enqueue(_ text: String) {
+        guard !capped else { return }
+        let clean = Self.speakable(text)
+        guard !clean.isEmpty else { return }
+        if spoken + clean.count > Self.characterLimit {
+            capped = true
+            say(String(localized: "Devamı ekranda."))
+            return
+        }
+        spoken += clean.count
+        say(clean)
+    }
+
+    private func say(_ text: String) {
+        prepareSession()
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = Self.voice()
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.04
+        utterance.pitchMultiplier = 1.0
+        utterance.postUtteranceDelay = 0.05
+        queued += 1
+        isSpeaking = true
+        synthesizer.speak(utterance)
+    }
+
+    /// Markdown, links, code and emoji are not read: what is left is what a person would say.
+    nonisolated static func speakable(_ text: String) -> String {
+        var value = text
+        let rules: [(String, String)] = [
+            (#"```[\s\S]*?```"#, " "),                       // code blocks
+            (#"`([^`]*)`"#, "$1"),                              // inline code
+            (#"!?\[([^\]]*)\]\([^)]*\)"#, "$1"),              // links and images keep their text
+            (#"https?://\S+"#, " "),                           // bare addresses
+            (#"^\s{0,3}#{1,6}\s*"#, ""),                       // headings
+            (#"[*_~>|]+"#, " "),                                // emphasis, quotes, table bars
+            (#"^\s*[-•]\s+"#, ""),                             // bullets
+            (#"\s+"#, " ")
+        ]
+        for (pattern, replacement) in rules {
+            value = value.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
+        }
+        value = value.unicodeScalars.filter { !($0.properties.isEmojiPresentation || ($0.properties.isEmoji && $0.value > 0x2000)) }
+            .map(String.init).joined()
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The voice of the person's language (best quality installed), Turkish when there is none.
+    private static func voice() -> AVSpeechSynthesisVoice? {
+        let code = WiqoSpeechRecorder.recognitionLocale().language.languageCode?.identifier ?? "tr"
+        let candidates = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix(code) }
+        return candidates.max { $0.quality.rawValue < $1.quality.rawValue } ?? AVSpeechSynthesisVoice(language: "tr-TR")
+    }
+
+    // MARK: Audio session
+
+    /// While the microphone is open the recorder's session (play and record, echo-cancelled) is used as it is; otherwise a playback session.
+    private func prepareSession() {
+        guard !ownsSession, !WiqoSpeechRecorder.hasOpenMicrophone else { return }
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        try? session.setActive(true)
+        ownsSession = true
+    }
+
+    private func releaseSession() {
+        guard ownsSession else { return }
+        ownsSession = false
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.utteranceEnded() }
+    }
+
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.utteranceEnded() }
+    }
+
+    private func utteranceEnded() {
+        queued = max(0, queued - 1)
+        if queued == 0 {
+            isSpeaking = false
+            releaseSession()
+        }
     }
 }

@@ -22,7 +22,16 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
         case setupFailed
     }
 
-    @Published private(set) var isRecording = false
+    /// True while any recorder has the microphone open (the speaker then leaves the audio session alone).
+    @MainActor private(set) static var openMicrophones = 0
+    @MainActor static var hasOpenMicrophone: Bool { openMicrophones > 0 }
+
+    @Published private(set) var isRecording = false {
+        didSet {
+            guard isRecording != oldValue else { return }
+            Self.openMicrophones = max(0, Self.openMicrophones + (isRecording ? 1 : -1))
+        }
+    }
     @Published private(set) var transcript = ""
     @Published private(set) var lastErrorMessage: String?
     /// How loud the person is speaking right now, 0...1, smoothed (quick to rise, slow to fall); drives the listening orb.
@@ -112,7 +121,8 @@ final class WiqoSpeechRecorder: NSObject, ObservableObject {
 
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+            // Play and record with the system's voice processing (echo cancellation): Wiqo can answer aloud while the microphone stays open.
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
             // Without this, iOS silences every haptic while the microphone is open: the listening hum and the "sent" tap would never be felt.
             try? session.setAllowHapticsAndSystemSoundsDuringRecording(true)
             // setActive(_:) is synchronous and can block for the duration of an audio route

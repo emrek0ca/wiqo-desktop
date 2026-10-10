@@ -1435,7 +1435,11 @@
   "Emin misin? \"Evet\" de ya da \"Hayır\".": "Are you sure? Tap \"Yes\" or \"No\".",
   "Yanıt yazılıyor": "Replying...",
   "Dock'u gizle": "Hide Dock",
-  "Dock'u göster": "Show Dock"
+  "Dock'u göster": "Show Dock",
+  "Devamı ekranda.": "Continue on screen.",
+  "Sesli sohbette yanıtı sesli oku": "Read reply aloud in voice chat",
+  "Sesli yanıtı aç": "Turn on voice reply",
+  "Sesli yanıtı kapat": "Turn off voice reply"
  },
  "de": {
   "Arkadaşını davet et": "Lade deinen Freund ein",
@@ -2873,7 +2877,11 @@
   "Emin misin? \"Evet\" de ya da \"Hayır\".": "Bist du sicher? Sag \"Ja\" oder \"Nein\".",
   "Yanıt yazılıyor": "Antwort wird geschrieben",
   "Dock'u gizle": "Dock ausblenden",
-  "Dock'u göster": "Dock anzeigen"
+  "Dock'u göster": "Dock anzeigen",
+  "Devamı ekranda.": "Fortsetzung auf dem Bildschirm.",
+  "Sesli sohbette yanıtı sesli oku": "Antwort im Sprachchat laut vorlesen",
+  "Sesli yanıtı aç": "Sprachantwort aktivieren",
+  "Sesli yanıtı kapat": "Sprachantwort deaktivieren"
  },
  "es": {
   "\"%@\": dosyalar ve geçmiş tüm cihazlardan silinir; geri alınamaz.": "\"%@\": se eliminarán los archivos y el historial de todos los dispositivos; irreversible.",
@@ -4311,7 +4319,11 @@
   "Emin misin? \"Evet\" de ya da \"Hayır\".": "¿Estás seguro? Di \"Sí\" o \"No\".",
   "Yanıt yazılıyor": "Escribiendo respuesta",
   "Dock'u gizle": "Ocultar Dock",
-  "Dock'u göster": "Mostrar Dock"
+  "Dock'u göster": "Mostrar Dock",
+  "Devamı ekranda.": "Continúa en pantalla.",
+  "Sesli sohbette yanıtı sesli oku": "Lee la respuesta en voz alta en la conversación de voz",
+  "Sesli yanıtı aç": "Activar respuesta de voz",
+  "Sesli yanıtı kapat": "Desactivar respuesta de voz"
  },
  "fr": {
   "Arkadaşını davet et": "Invite a friend",
@@ -5749,7 +5761,11 @@
   "Emin misin? \"Evet\" de ya da \"Hayır\".": "Êtes‑vous sûr ? Dites « Oui » ou « Non ».",
   "Yanıt yazılıyor": "Réponse en cours",
   "Dock'u gizle": "Masquer le Dock",
-  "Dock'u göster": "Afficher le Dock"
+  "Dock'u göster": "Afficher le Dock",
+  "Devamı ekranda.": "Continuer à l'écran.",
+  "Sesli sohbette yanıtı sesli oku": "Lire la réponse à voix haute en conversation vocale",
+  "Sesli yanıtı aç": "Activer la réponse vocale",
+  "Sesli yanıtı kapat": "Désactiver la réponse vocale"
  },
  "ar": {
   "+%lld adım": "+%lld خطوة",
@@ -7187,7 +7203,11 @@
   "Emin misin? \"Evet\" de ya da \"Hayır\".": "هل أنت متأكد؟ قل \"نعم\" أو \"لا\".",
   "Yanıt yazılıyor": "يتم كتابة الرد",
   "Dock'u gizle": "إخفاء Dock",
-  "Dock'u göster": "إظهار Dock"
+  "Dock'u göster": "إظهار Dock",
+  "Devamı ekranda.": "الاستمرار على الشاشة.",
+  "Sesli sohbette yanıtı sesli oku": "اقرأ الرد الصوتي في المحادثة الصوتية",
+  "Sesli yanıtı aç": "تشغيل الرد الصوتي",
+  "Sesli yanıtı kapat": "إيقاف الرد الصوتي"
  },
  "ru": {
   "Arkadaşını davet et": "Пригласить друга",
@@ -8625,6 +8645,10 @@
   "Emin misin? \"Evet\" de ya da \"Hayır\".": "Вы уверены? Скажите «Да» или «Нет».",
   "Yanıt yazılıyor": "Ответ пишется",
   "Dock'u gizle": "Скрыть Dock",
-  "Dock'u göster": "Показать Dock"
+  "Dock'u göster": "Показать Dock",
+  "Devamı ekranda.": "Продолжить на экране.",
+  "Sesli sohbette yanıtı sesli oku": "Воспроизвести ответ голосом в разговоре",
+  "Sesli yanıtı aç": "Включить голосовой ответ",
+  "Sesli yanıtı kapat": "Выключить голосовой ответ"
  }
 }

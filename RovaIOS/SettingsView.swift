@@ -218,6 +218,10 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .tint(.secondary)
             }
+            WiqoRow(systemImage: "speaker.wave.2", title: String(localized: "Sesli sohbette yanıtı sesli oku"), showsDivider: true) {
+                Toggle("Sesli sohbette yanıtı sesli oku", isOn: $speakReplies)
+                    .labelsHidden()
+            }
             WiqoRow(systemImage: "lightbulb", title: String(localized: "Proaktif öneriler"), showsDivider: false) {
                 Toggle("Proaktif öneriler", isOn: Binding(
                     get: { profileStore.profile.proactiveEnabled },
@@ -238,6 +242,7 @@ struct SettingsView: View {
 
     // MARK: Appearance (applied at the app's root; see WiqoAppearanceModifier)
 
+    @AppStorage(WiqoSpeaker.settingKey) private var speakReplies = true
     @AppStorage(WiqoAppearance.themeKey) private var theme = WiqoAppearance.Theme.system.rawValue
     @AppStorage(WiqoAppearance.accentKey) private var accent = WiqoAppearance.Accent.wiqo.rawValue
     @AppStorage(WiqoAppearance.textKey) private var textSize = WiqoAppearance.TextSize.standard.rawValue
