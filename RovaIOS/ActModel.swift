@@ -207,7 +207,9 @@ final class ActModel: ObservableObject {
                 let state = try await hub.writerJob(writerID)
                 failures = 0
                 if state.finished {
-                    await hub.acknowledgeWriter(writerID)
+                    // A page this phone still has to try is acknowledged after its result is reported (commit), not before.
+                    let deviceCheckPending = state.status == "done" && state.result?.needsDeviceCheck == true && state.result?.kind != "python"
+                    if !deviceCheckPending { await hub.acknowledgeWriter(writerID) }
                     if state.errorCode == "RETRYABLE_RESTART", !restarted {
                         job?.message = String(localized: "Sunucu yeniden başladı; istek yeniden gönderiliyor.")
                         return try await runWriter(operation: operation, request: request, project: project, errors: errors, restarted: true)
@@ -243,11 +245,21 @@ final class ActModel: ObservableObject {
         var verified = true
         var warning: String?
         var notes: [String]?
+        let deviceCheckJob = result.needsDeviceCheck && result.kind != "python" ? job?.writerJobID : nil
+        /// The server learns what the phone found, then forgets the job.
+        func reportDeviceCheck(_ passed: Bool) async {
+            guard let deviceCheckJob, !deviceCheckJob.isEmpty else { return }
+            await hub.reportWriterDeviceResult(deviceCheckJob, verified: passed)
+            await hub.acknowledgeWriter(deviceCheckJob)
+        }
         if result.needsDeviceCheck && result.kind != "python" {
             job?.stage = .verifying
             job?.message = String(localized: "Sayfa bu telefonun tarayıcısında açılıp deneniyor.")
             let list = files.sorted { $0.key < $1.key }.map { ActBundler.File(path: $0.key, content: $0.value) }
-            guard let raw = ActBundler.bundleWeb(list).map(ActBundler.ensureViewport) else { throw ActError(String(localized: "Projede açılacak bir sayfa yok.")) }
+            guard let raw = ActBundler.bundleWeb(list).map(ActBundler.ensureViewport) else {
+                await reportDeviceCheck(false)
+                throw ActError(String(localized: "Projede açılacak bir sayfa yok."))
+            }
             // A page that uses packages is tried with the device's verified copies; without them it is not verified.
             var page = raw
             var packageProblem: String?
@@ -265,13 +277,16 @@ final class ActModel: ObservableObject {
                 switch await ActWebVerifier().verify(page) {
                 case .passed: break
                 case .passedWithNotes(let found): notes = found
-                case .problems(let problems): throw ActError(problems.first ?? String(localized: "Sayfa doğrulanamadı; proje değişmedi."))
+                case .problems(let problems):
+                    await reportDeviceCheck(false)
+                    throw ActError(problems.first ?? String(localized: "Sayfa doğrulanamadı; proje değişmedi."))
                 case .unavailable:
                     verified = false
                     warning = String(localized: "Telefonda denenemedi; değişiklik kaydedildi. Çalışmıyorsa geri alabilirsin.")
                 }
             }
         }
+        await reportDeviceCheck(verified)
         job?.stage = .saving
         job?.message = ""
         let summaryLine = result.summary.isEmpty ? String(request.prefix(80)) : result.summary

@@ -156,6 +156,8 @@ public struct ActHub: Sendable {
     public func cancelWriter(_ id: String) async throws { _ = try await send("POST", "code-sync/writer/jobs/\(id)/cancel", body: [:], as: Ok.self) }
     /// The device has the result; the server forgets it.
     public func acknowledgeWriter(_ id: String) async { _ = try? await send("DELETE", "code-sync/writer/jobs/\(id)", body: nil, as: Ok.self) }
+    /// What trying the page on this device showed, before the job is acknowledged: without it the server can only record "never reported".
+    public func reportWriterDeviceResult(_ id: String, verified: Bool) async { _ = try? await send("POST", "code-sync/writer/jobs/\(id)/device-result", body: ["verified": verified], as: Ok.self) }
 
     /// The JavaScript packages a web project may use, and the pinned Python ones (public metadata only).
     public func packages() async throws -> ActPackageCatalog { try await get("code-sync/packages", as: ActPackageCatalog.self) }

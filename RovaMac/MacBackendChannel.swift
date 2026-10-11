@@ -106,6 +106,13 @@ final class MacBackendChannel: NSObject {
         }
     }
     private var terminalJobs: [String: TerminalJobRecord] = [:]
+    /// Terminal commands running now (request digest by command id) and the last results of finished ones, so a repeat is never a rerun.
+    private var runningTerminal: [String: String] = [:]
+    private var completedTerminal: [String: (digest: String, result: CommandResult, at: Date)] = [:]
+    /// Command results that finished while the socket was down (see sendInteractiveCommandResult).
+    private var undeliveredResults: [String: (text: String, at: Date)] = [:]
+    /// The socket whose registration was sent: results may go on it even when they started on an older one.
+    private var registeredTask: URLSessionWebSocketTask?
     /// Where each terminal session's shell last ended (after `cd`), keyed by grant id; always
     /// re-checked to be inside the grant before use.
     private var terminalSessionDirectories: [String: String] = [:]
@@ -403,6 +410,8 @@ final class MacBackendChannel: NSObject {
                 self.publishConnectionState()
                 self.startHeartbeat(on: task)
                 self.sendAutomationReceipts(on: task)
+                self.registeredTask = task
+                self.flushUndeliveredResults(on: task)
                 self.requestTerminalProfile()
             }
         }
@@ -499,6 +508,12 @@ final class MacBackendChannel: NSObject {
         }
     }
 
+    /// request.payload exactly as the phone sent it, canonicalised: what the signature covers.
+    private nonisolated static func canonicalRequestPayload(_ envelope: [String: Any]) -> Data? {
+        guard let request = envelope["request"] as? [String: Any], let payload = request["payload"] else { return nil }
+        return try? RovaCanonicalJSON.data(jsonObject: payload)
+    }
+
     private nonisolated static func parseIncoming(_ data: Data) -> ParsedBackendMessage? {
         guard let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = envelope["type"] as? String else { return nil }
@@ -514,17 +529,20 @@ final class MacBackendChannel: NSObject {
             return .automationComplete
         case "interactiveCommand":
             decoder.dateDecodingStrategy = .iso8601
-            guard let payload = try? decoder.decode(InteractiveCommandPayload.self, from: data) else { return nil }
+            guard var payload = try? decoder.decode(InteractiveCommandPayload.self, from: data) else { return nil }
+            payload.canonicalPayload = Self.canonicalRequestPayload(envelope)
             return .interactiveCommand(payload)
         case "terminalCommand":
-            guard let payload = try? decoder.decode(TerminalCommandPayload.self, from: data) else { return nil }
+            guard var payload = try? decoder.decode(TerminalCommandPayload.self, from: data) else { return nil }
+            payload.requestDigest = (envelope["request"]).flatMap { try? RovaCanonicalJSON.data(jsonObject: $0) }.map(RovaCrypto.sha256Hex)
             return .terminalCommand(payload)
         case "agentCommand":
             decoder.dateDecodingStrategy = .iso8601
-            guard let payload = try? decoder.decode(InteractiveCommandPayload.self, from: data) else {
+            guard var payload = try? decoder.decode(InteractiveCommandPayload.self, from: data) else {
                 // Answer instead of dropping it, so the agent does not wait out its timeout.
                 return (envelope["commandId"] as? String).map { .invalidAgentCommand(commandId: $0) }
             }
+            payload.canonicalPayload = Self.canonicalRequestPayload(envelope)
             return .agentCommand(payload)
         default:
             return nil
@@ -579,7 +597,7 @@ final class MacBackendChannel: NSObject {
             sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)
             return
         }
-        guard let token = pairedDeviceToken(), RovaValidation.verifyRequestSignature(request: payload.request, token: token) else {
+        guard let token = pairedDeviceToken(), RovaValidation.verifyRequestSignature(request: payload.request, token: token, canonicalPayload: payload.canonicalPayload) else {
             let now = Date()
             let error = RovaError(code: "INVALID_SIGNATURE", message: "Komut kriptografik imzası geçersiz.")
             let result = CommandResult(commandID: payload.request.id, status: .failed, message: error.message, startedAt: now, finishedAt: now, error: error)
@@ -601,6 +619,18 @@ final class MacBackendChannel: NSObject {
         let request = payload.request
         pruneTerminalJobs()
         let action = request.action ?? "run"
+        // A command id seen before is never run again (Windows does the same): a finished one gets its stored result, a running one its result
+        // when it ends, and a different request under a known id is refused.
+        if let done = completedTerminal[payload.commandId] {
+            if done.digest == (payload.requestDigest ?? "") {
+                sendInteractiveCommandResult(commandId: payload.commandId, result: done.result, on: task)
+            } else {
+                sendTerminalDenial(payload.commandId, code: "TERMINAL_GRANT_INVALID", message: "Terminal isteği doğrulanamadı.", on: task)
+            }
+            return
+        }
+        if runningTerminal[payload.commandId] != nil { return }
+        runningTerminal[payload.commandId] = payload.requestDigest ?? ""
         if action == "get_job" || action == "cancel_job" {
             handleTerminalJobAction(action, jobId: request.jobId, grant: request.grant, commandId: payload.commandId, on: task)
             return
@@ -954,10 +984,28 @@ final class MacBackendChannel: NSObject {
     }
 
     private func sendInteractiveCommandResult(commandId: String, result: CommandResult, on task: URLSessionWebSocketTask) {
-        guard self.task === task else { return }
+        if let digest = runningTerminal.removeValue(forKey: commandId) {
+            completedTerminal[commandId] = (digest, result, Date())
+            if completedTerminal.count > 256 {
+                for key in completedTerminal.sorted(by: { $0.value.at < $1.value.at }).prefix(128).map(\.key) { completedTerminal.removeValue(forKey: key) }
+            }
+        }
         let payload = InteractiveCommandResultPayload(commandId: commandId, result: result)
         guard let data = try? Self.iso8601Encoder.encode(payload), let text = String(data: data, encoding: .utf8) else { return }
-        task.send(.string(text)) { _ in }
+        // The work already ran: a socket that was replaced while it ran must not lose its result. It goes on the live socket, or waits
+        // for the next one (terminal results are not in the command ledger that the reconnect receipts replay).
+        if let current = self.task, current === task || registeredTask === current {
+            current.send(.string(text)) { _ in }
+        } else {
+            undeliveredResults[commandId] = (text, Date())
+        }
+    }
+
+    /// Results finished while no socket was live, sent once the next one has registered; older than two minutes, the server has stopped waiting.
+    private func flushUndeliveredResults(on task: URLSessionWebSocketTask) {
+        let fresh = undeliveredResults.filter { Date().timeIntervalSince($0.value.at) < 120 }
+        undeliveredResults = [:]
+        for (_, entry) in fresh { task.send(.string(entry.text)) { _ in } }
     }
 
     /// CommandRequest/CommandResult carry Date fields, encoded as ISO-8601 strings everywhere
@@ -1204,6 +1252,10 @@ private struct TerminalCommandPayload: Decodable, Sendable {
     let type: String
     let commandId: String
     let request: TerminalCommandRequest
+    /// Canonical request as it arrived: the same command id must carry the same request to get the stored result.
+    var requestDigest: String?
+
+    private enum CodingKeys: String, CodingKey { case type, commandId, request }
 }
 
 private struct AutomationRunPayload: Decodable, Sendable {
@@ -1267,6 +1319,10 @@ private struct InteractiveCommandPayload: Decodable, Sendable {
     let type: String
     let commandId: String
     let request: CommandRequest
+    /// The request's payload in canonical form as it arrived, for the signature check.
+    var canonicalPayload: Data?
+
+    private enum CodingKeys: String, CodingKey { case type, commandId, request }
 }
 
 private struct InteractiveCommandResultPayload: Encodable {

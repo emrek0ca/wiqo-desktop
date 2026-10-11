@@ -28,6 +28,12 @@ public enum RovaCanonicalJSON {
         return Data(try serialize(object).utf8)
     }
 
+    /// The canonical form of JSON exactly as it arrived (JSONSerialization output), without passing through this build's models: a field a
+    /// newer sender added is part of what it signed, and a re-encoded model would have dropped it.
+    public static func data(jsonObject: Any) throws -> Data {
+        Data(try serialize(jsonObject).utf8)
+    }
+
     private static func serialize(_ value: Any) throws -> String {
         if value is NSNull { return "null" }
         if let string = value as? String {
@@ -724,17 +730,19 @@ public enum RovaValidation {
         return CommandRequest(id: id, type: type, payload: payload, createdAt: createdAt, signatureVersion: 2, createdAtEpochMs: unsigned.createdAtEpochMs, signature: signature, nonce: nonce)
     }
 
-    public static func signRequest(request: CommandRequest, token: String) -> String {
+    public static func signRequest(request: CommandRequest, token: String, canonicalPayload: Data? = nil) -> String {
         guard request.signatureVersion == 2,
               let nonce = request.nonce, !nonce.isEmpty, nonce.count <= 200,
               let timestamp = request.createdAtEpochMs,
-              let payload = try? RovaCanonicalJSON.data(request.payload) else { return "" }
+              let payload = canonicalPayload ?? (try? RovaCanonicalJSON.data(request.payload)) else { return "" }
         let digest = RovaCrypto.sha256Hex(payload)
         let message = "wiqo-command:v2:\(request.id.uuidString.lowercased()):\(request.type.rawValue):\(timestamp):\(nonce):\(digest)"
         return RovaCrypto.hmacSHA256Hex(key: token, message: message)
     }
 
-    public static func verifyRequestSignature(request: CommandRequest, token: String) -> Bool {
+    /// `canonicalPayload`: the payload as received (RovaCanonicalJSON.data(jsonObject:)); without it the decoded payload is re-encoded, which
+    /// fails whenever the sender's build carries a field this build does not know.
+    public static func verifyRequestSignature(request: CommandRequest, token: String, canonicalPayload: Data? = nil) -> Bool {
         guard let signature = request.signature, !signature.isEmpty,
               request.signatureVersion == 2,
               let timestamp = request.createdAtEpochMs,
@@ -743,7 +751,7 @@ public enum RovaValidation {
               let nonce = request.nonce, !nonce.isEmpty, nonce.count <= 200 else {
             return false
         }
-        let expected = signRequest(request: request, token: token)
+        let expected = signRequest(request: request, token: token, canonicalPayload: canonicalPayload)
         guard !expected.isEmpty else { return false }
         guard RovaCrypto.constantTimeEquals(signature, expected), requestNonceCache.claim(token: token, nonce: nonce, now: Date()) else { return false }
         return true
