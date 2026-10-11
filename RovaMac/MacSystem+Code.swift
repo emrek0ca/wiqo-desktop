@@ -101,10 +101,32 @@ extension MacSystem {
         _ command: String,
         workingDirectory: String,
         timeoutSeconds: Int,
+        writeScope: TerminalWriteScope? = nil,
         processStarted: @escaping @Sendable (Int32) -> Void
     ) -> (data: CommandData?, error: RovaError?) {
         let payload = CodeExecutionPayload(language: "shell", code: command, timeoutSeconds: timeoutSeconds, allowNetwork: true, scope: "computer", shell: "zsh", workingDirectory: workingDirectory)
-        return executeComputerTerminal(payload, processStarted: processStarted)
+        return executeComputerTerminal(payload, processStarted: processStarted, writeScope: writeScope)
+    }
+
+    /// Where a terminal command may write. The grant names one folder; without this a command could still write anywhere the user can
+    /// (the command rules are a list, not a boundary).
+    enum TerminalWriteScope: Sendable {
+        /// A read grant (or a card-less read): only the temporary folders.
+        case readOnly
+        /// A full grant: the granted folder, the temporary folders, and the caches package managers write to.
+        case folder(String)
+    }
+
+    /// A sandbox that allows everything a shell needs (reads, network, processes) and confines file writes to the scope.
+    static func terminalSandboxProfile(_ scope: TerminalWriteScope, home: String = NSHomeDirectory()) -> String {
+        let quote = { (path: String) in "\"" + path.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\"" }
+        var writable = ["/private/tmp", "/private/var/folders", "/dev"].map { "(subpath \(quote($0)))" }
+        if case .folder(let root) = scope {
+            writable.append("(subpath \(quote(root)))")
+            writable += ["/Library/Caches", "/Library/Logs", "/.npm", "/.cache", "/.cargo", "/.local", "/.config", "/go"].map { "(subpath \(quote(home + $0)))" }
+            writable += ["/opt/homebrew", "/usr/local"].map { "(subpath \(quote($0)))" }
+        }
+        return "(version 1) (allow default) (deny file-write*) (allow file-write* \(writable.joined(separator: " ")))"
     }
 
     static func terminateTerminalProcess(_ processIdentifier: Int32) {
@@ -209,7 +231,7 @@ extension MacSystem {
     /// Explicit terminal scope for a user-approved PC task. The historical sandbox path above
     /// remains the default; this branch is deliberately opt-in so old requests cannot silently
     /// gain access to the user's files or applications.
-    private static func executeComputerTerminal(_ payload: CodeExecutionPayload, processStarted: (@Sendable (Int32) -> Void)? = nil) -> (data: CommandData?, error: RovaError?) {
+    private static func executeComputerTerminal(_ payload: CodeExecutionPayload, processStarted: (@Sendable (Int32) -> Void)? = nil, writeScope: TerminalWriteScope? = nil) -> (data: CommandData?, error: RovaError?) {
         let directoryPath = payload.workingDirectory ?? NSHomeDirectory()
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directoryPath, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -228,9 +250,11 @@ extension MacSystem {
             default:
                 return (nil, RovaError(code: "UNSUPPORTED_SHELL", message: "Bu shell Mac'te desteklenmiyor.", category: "validation"))
             }
+            // A terminal session runs its shell inside the write sandbox of its grant.
+            let sandboxed = writeScope.map { ["-p", terminalSandboxProfile($0), executable] }
             snapshot = runProcess(
-                executable: executable,
-                arguments: ["-lc", payload.code, "wiqo-terminal"] + payload.arguments,
+                executable: sandboxed == nil ? executable : "/usr/bin/sandbox-exec",
+                arguments: (sandboxed ?? []) + ["-lc", payload.code, "wiqo-terminal"] + payload.arguments,
                 timeoutSeconds: payload.timeoutSeconds,
                 workingDirectory: URL(fileURLWithPath: directoryPath),
                 environment: environment,
@@ -430,27 +454,49 @@ extension MacSystem {
     }()
 
     private static let cwdMarker = "__WIQO_PWD__"
+    private static let envMarker = "__WIQO_ENV__"
+    /// Shell bookkeeping that must not carry over: the folder is carried separately, the rest belongs to each run.
+    private static let unsharedVariables: Set<String> = ["PWD", "OLDPWD", "SHLVL", "_", "__wiqo_rc", "TMPDIR"]
 
-    /// Runs one terminal command and reports the folder the shell ended in, so a `cd` carries over
-    /// to the next command of the session. The marker line is removed from the output.
+    /// Runs one terminal command and reports the folder the shell ended in and the variables it exported, so a `cd`, an `export` or an
+    /// activated virtualenv carries over to the next command of the session the way it does in one open terminal. The marker lines are
+    /// removed from the output; the exports stay on this Mac (never sent anywhere) and are applied before the next command.
     static func executeTerminalCommandTrackingDirectory(
         _ command: String,
         workingDirectory: String,
         timeoutSeconds: Int,
+        writeScope: TerminalWriteScope? = nil,
+        exports: String? = nil,
         processStarted: @escaping @Sendable (Int32) -> Void
-    ) -> (data: CommandData?, error: RovaError?, endDirectory: String?) {
-        let wrapped = "\(command)\n__wiqo_rc=$?; printf '\\n\(cwdMarker)%s\\n' \"$PWD\"; exit $__wiqo_rc"
-        let outcome = executeTerminalCommand(wrapped, workingDirectory: workingDirectory, timeoutSeconds: timeoutSeconds, processStarted: processStarted)
-        guard case let .processOutput(output)? = outcome.data else { return (outcome.data, outcome.error, nil) }
+    ) -> (data: CommandData?, error: RovaError?, endDirectory: String?, exports: String?) {
+        let restore = exports.map { "eval \"$(printf %s '\(Data($0.utf8).base64EncodedString())' | /usr/bin/base64 -D)\" 2>/dev/null\n" } ?? ""
+        let wrapped = "\(restore)\(command)\n__wiqo_rc=$?; printf '\\n\(cwdMarker)%s\\n' \"$PWD\"; printf '\(envMarker)%s\\n' \"$(export -p | /usr/bin/base64)\"; exit $__wiqo_rc"
+        let outcome = executeTerminalCommand(wrapped, workingDirectory: workingDirectory, timeoutSeconds: timeoutSeconds, writeScope: writeScope, processStarted: processStarted)
+        guard case let .processOutput(output)? = outcome.data else { return (outcome.data, outcome.error, nil, nil) }
         var endDirectory: String?
+        var exported: String?
         var stdout = output.stdout
+        if let range = stdout.range(of: envMarker, options: .backwards) {
+            let encoded = stdout[range.upperBound...].split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
+            exported = Data(base64Encoded: encoded.trimmingCharacters(in: .whitespaces)).flatMap { String(data: $0, encoding: .utf8) }.map(sharedExports)
+            stdout = String(stdout[..<range.lowerBound])
+        }
         if let range = stdout.range(of: "\n\(cwdMarker)", options: .backwards) ?? stdout.range(of: cwdMarker, options: .backwards) {
             let tail = stdout[range.upperBound...]
             endDirectory = tail.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first.map { String($0).trimmingCharacters(in: .whitespaces) }
             stdout = String(stdout[..<range.lowerBound])
         }
         let cleaned = ProcessOutputContent(language: output.language, exitCode: output.exitCode, stdout: stdout, stderr: output.stderr, truncated: output.truncated, durationMs: output.durationMs)
-        return (.processOutput(cleaned), outcome.error, endDirectory)
+        return (.processOutput(cleaned), outcome.error, endDirectory, exported)
+    }
+
+    /// `export -p` output without the shell's own bookkeeping variables.
+    static func sharedExports(_ script: String) -> String {
+        script.split(separator: "\n").filter { line in
+            let declaration = line.split(separator: " ").drop { $0 == "export" || $0 == "typeset" || $0.hasPrefix("-") }.first ?? ""
+            let name = declaration.split(separator: "=", maxSplits: 1).first.map(String.init) ?? ""
+            return !name.isEmpty && !unsharedVariables.contains(name)
+        }.joined(separator: "\n")
     }
 
     /// Reads a UTF-8 text file (line range, numbered), masking credentials before it leaves the Mac.
@@ -490,19 +536,44 @@ extension MacSystem {
         }
     }
 
-    static func writeTerminalFile(_ path: String, content: String) -> (created: Bool, error: RovaError?) {
+    /// The file as it was before a terminal write or edit, kept for a week (at most 200) so a change can be undone by copying it back.
+    /// Returns the copy's path; nil when there was nothing to keep or the copy failed (the change still goes ahead).
+    static func backupBeforeChange(_ path: String) -> String? {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: path),
+              let support = manager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        let folder = support.appendingPathComponent("Wiqo/TerminalBackups", isDirectory: true)
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let target = folder.appendingPathComponent("\(stamp)-\(UUID().uuidString.prefix(6))", isDirectory: true)
+        do {
+            try manager.createDirectory(at: target, withIntermediateDirectories: true)
+            let copy = target.appendingPathComponent((path as NSString).lastPathComponent)
+            try manager.copyItem(atPath: path, toPath: copy.path)
+            let kept = (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.creationDateKey])) ?? []
+            let dated = kept.map { ($0, (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) }.sorted { $0.1 > $1.1 }
+            for (index, entry) in dated.enumerated() where index >= 200 || Date().timeIntervalSince(entry.1) > 7 * 24 * 60 * 60 {
+                try? manager.removeItem(at: entry.0)
+            }
+            return copy.path
+        } catch {
+            return nil
+        }
+    }
+
+    static func writeTerminalFile(_ path: String, content: String) -> (created: Bool, backup: String?, error: RovaError?) {
         guard content.utf8.count <= 400_000, !content.contains("\0") else {
-            return (false, RovaError(code: "TERMINAL_FILE_TOO_LARGE", message: "Yazılacak içerik 400 KB'tan büyük ya da ikili.", category: "validation"))
+            return (false, nil, RovaError(code: "TERMINAL_FILE_TOO_LARGE", message: "Yazılacak içerik 400 KB'tan büyük ya da ikili.", category: "validation"))
         }
         let existed = FileManager.default.fileExists(atPath: path)
         if existed, let error = brokenJSON(path: path, before: try? String(contentsOfFile: path, encoding: .utf8), after: content, display: (path as NSString).lastPathComponent) {
-            return (false, error)
+            return (false, nil, error)
         }
+        let backup = existed ? backupBeforeChange(path) : nil
         do {
             try Data(content.utf8).write(to: URL(fileURLWithPath: path), options: [.atomic])
-            return (!existed, nil)
+            return (!existed, backup, nil)
         } catch {
-            return (false, localFileError(code: "TERMINAL_FILE_WRITE_FAILED", fallback: "Dosya yazılamadı.", error: error))
+            return (false, nil, localFileError(code: "TERMINAL_FILE_WRITE_FAILED", fallback: "Dosya yazılamadı.", error: error))
         }
     }
 
@@ -518,14 +589,16 @@ extension MacSystem {
             if let error = brokenJSON(path: edit.path, before: current, after: result, display: edit.display) { return (nil, error) }
             updated.append((edit.path, result))
         }
+        var backups: [String] = []
         for item in updated {
+            if let backup = backupBeforeChange(item.path) { backups.append(backup) }
             do {
                 try Data(item.content.utf8).write(to: URL(fileURLWithPath: item.path), options: [.atomic])
             } catch {
                 return (nil, localFileError(code: "TERMINAL_PATCH_WRITE_FAILED", fallback: "Yama yazılamadı.", error: error))
             }
         }
-        return (edits.map(\.patch).joined(separator: "\n"), nil)
+        return (edits.map(\.patch).joined(separator: "\n") + backupNote(backups), nil)
     }
 
     /// Exact find-and-replace edits (the form models get right far more often than unified diffs):
@@ -562,14 +635,21 @@ extension MacSystem {
         for path in order {
             if let error = brokenJSON(path: path, before: originals[path], after: contents[path]!, display: (path as NSString).lastPathComponent) { return (nil, error) }
         }
+        var backups: [String] = []
         for path in order {
+            if let backup = backupBeforeChange(path) { backups.append(backup) }
             do {
                 try Data(contents[path]!.utf8).write(to: URL(fileURLWithPath: path), options: [.atomic])
             } catch {
                 return (nil, localFileError(code: "TERMINAL_FILE_WRITE_FAILED", fallback: "Dosya yazılamadı.", error: error))
             }
         }
-        return (counts.map { "\($0.key): \($0.value) değişiklik" }.sorted().joined(separator: "\n"), nil)
+        return (counts.map { "\($0.key): \($0.value) değişiklik" }.sorted().joined(separator: "\n") + backupNote(backups), nil)
+    }
+
+    /// Where the earlier versions are, for the model and the person: copying one back undoes the change.
+    private static func backupNote(_ backups: [String]) -> String {
+        backups.isEmpty ? "" : "\nÖnceki hali (geri almak için geri kopyala): " + backups.joined(separator: ", ")
     }
 
     /// Searches file contents under `directory` without a shell (arguments are passed as-is, so

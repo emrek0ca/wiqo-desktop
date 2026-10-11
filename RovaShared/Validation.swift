@@ -1046,8 +1046,12 @@ public enum RovaTerminalPolicy {
     public static let feature = "terminal-session-v1"
     /// Plans, session folder, file read/write/search, multi-file edits, longer grants.
     public static let featureV2 = "terminal-session-v2"
-    /// Longest grant the phone may sign; the backend offers more than 30 minutes only to v2 Macs.
-    public static let maxGrantSeconds = 8 * 60 * 60
+    /// Reads in the person's own folders without a card, and folder grants of up to 30 days.
+    public static let featureV3 = "terminal-session-v3"
+    /// Longest grant the phone may sign; the backend offers more than 30 minutes only to v2 Macs, more than 8 hours only to v3.
+    public static let maxGrantSeconds = 30 * 24 * 60 * 60
+    /// The id of the grant a card-less read runs under (never signed; read mode, one folder, checked by readFolderWithoutGrant).
+    public static let readWithoutGrantId = "read-without-grant"
 
     public static func grantMessage(grantId: String, rootDirectory: String, mode: String, expiresAt: Int) -> String {
         "wiqo-terminal-grant:v1:\(grantId.lowercased()):\(rootDirectory):\(mode):\(expiresAt)"
@@ -1141,6 +1145,16 @@ public enum RovaTerminalPolicy {
         else if trimmed.hasPrefix("/") { expanded = trimmed }
         else { return nil }
         return URL(fileURLWithPath: expanded).standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    /// The folder a read may run in without a card: inside the home folder, under a folder of the person's own (not the home itself, not
+    /// Library, not a hidden folder such as .ssh or .aws). The read stays inside this folder, never above it.
+    public static func readFolderWithoutGrant(_ path: String, home: String = NSHomeDirectory()) -> String? {
+        let resolvedHome = URL(fileURLWithPath: home).standardizedFileURL.resolvingSymlinksInPath().path
+        guard let directory = resolveDirectory(path, home: home), directory != resolvedHome, isWithin(directory, root: resolvedHome) else { return nil }
+        let first = directory.dropFirst(resolvedHome.count + 1).split(separator: "/").first.map(String.init) ?? ""
+        guard !first.isEmpty, !first.hasPrefix("."), first != "Library" else { return nil }
+        return directory
     }
 
     public static func isWithin(_ directory: String, root: String) -> Bool {

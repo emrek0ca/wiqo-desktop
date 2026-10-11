@@ -833,9 +833,12 @@ struct CopilotView: View {
                         if maxSeconds > 1_800 {
                             Button("Bu klasör için 8 saat") { terminalGrantDurations[row.id] = 8 * 60 * 60 }
                         }
+                        if maxSeconds > 8 * 60 * 60 {
+                            Button("Bu klasör için 30 gün") { terminalGrantDurations[row.id] = 30 * 24 * 60 * 60 }
+                        }
                     } label: {
                         Label(
-                            String(localized: "İzin: \(selectedDuration == 0 ? String(localized: "bu görev") : selectedDuration > 1_800 ? String(localized: "8 saat") : String(localized: "30 dakika"))"),
+                            String(localized: "İzin: \(selectedDuration == 0 ? String(localized: "bu görev") : selectedDuration > 8 * 60 * 60 ? String(localized: "30 gün") : selectedDuration > 1_800 ? String(localized: "8 saat") : String(localized: "30 dakika"))"),
                             systemImage: "lock.shield"
                         )
                         .font(.caption)
@@ -1321,16 +1324,12 @@ struct CopilotView: View {
         var terminalGrantScope = "task"
         let details = row.confirmation.details
         if approved, let grantId = details["wiqoGrantId"] {
-            let maximumSeconds = details["wiqoGrantMaxSeconds"].flatMap(Int.init).map { min($0, 8 * 60 * 60) }
+            let maximumSeconds = details["wiqoGrantMaxSeconds"].flatMap(Int.init).map { min($0, RovaTerminalPolicy.maxGrantSeconds) }
             let selectedDuration = terminalGrantDurations[confirmationID] ?? 0
             if selectedDuration > 0 {
                 terminalGrantScope = "session"
-                let duration: Int
-                if selectedDuration > 1_800 {
-                    duration = maximumSeconds ?? selectedDuration
-                } else {
-                    duration = selectedDuration
-                }
+                // The chosen length, never more than the PC accepts.
+                let duration = min(selectedDuration, maximumSeconds ?? selectedDuration)
                 terminalGrantExpiresAt = Int(Date().timeIntervalSince1970) + duration - 30
             }
             guard let root = details["wiqoGrantRoot"], let mode = details["wiqoGrantMode"],

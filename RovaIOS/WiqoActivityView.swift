@@ -198,8 +198,11 @@ struct WiqoActivityView: View {
                     if (confirmation.details["wiqoGrantMaxSeconds"].flatMap(Int.init) ?? 1_800) > 1_800 {
                         Button("Bu klasör için 8 saat") { terminalGrantDurations[confirmation.id] = 8 * 60 * 60 }
                     }
+                    if (confirmation.details["wiqoGrantMaxSeconds"].flatMap(Int.init) ?? 1_800) > 8 * 60 * 60 {
+                        Button("Bu klasör için 30 gün") { terminalGrantDurations[confirmation.id] = 30 * 24 * 60 * 60 }
+                    }
                 } label: {
-                    Label("İzin: \(duration == 0 ? "bu görev" : duration > 1_800 ? "8 saat" : "30 dakika")", systemImage: "lock.shield")
+                    Label("İzin: \(duration == 0 ? "bu görev" : duration > 8 * 60 * 60 ? "30 gün" : duration > 1_800 ? "8 saat" : "30 dakika")", systemImage: "lock.shield")
                         .font(.caption.weight(.medium))
                 }
             }
@@ -253,11 +256,11 @@ struct WiqoActivityView: View {
         var terminalGrantScope = "task"
         let details = confirmation.details
         if approved, let grantId = details["wiqoGrantId"] {
-            let maximumSeconds = details["wiqoGrantMaxSeconds"].flatMap(Int.init).map { min($0, 8 * 60 * 60) }
+            let maximumSeconds = details["wiqoGrantMaxSeconds"].flatMap(Int.init).map { min($0, RovaTerminalPolicy.maxGrantSeconds) }
             let selectedDuration = terminalGrantDurations[confirmation.id] ?? 0
             if selectedDuration > 0 {
                 terminalGrantScope = "session"
-                let duration = selectedDuration > 1_800 ? maximumSeconds ?? selectedDuration : selectedDuration
+                let duration = min(selectedDuration, maximumSeconds ?? selectedDuration)
                 terminalGrantExpiresAt = Int(Date().timeIntervalSince1970) + duration - 30
             }
             guard let root = details["wiqoGrantRoot"], let mode = details["wiqoGrantMode"],

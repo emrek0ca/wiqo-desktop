@@ -116,6 +116,8 @@ final class MacBackendChannel: NSObject {
     /// Where each terminal session's shell last ended (after `cd`), keyed by grant id; always
     /// re-checked to be inside the grant before use.
     private var terminalSessionDirectories: [String: String] = [:]
+    /// What each terminal session's shell exported (export -p, bookkeeping removed), keyed by grant id; applied before its next command.
+    private var terminalSessionExports: [String: String] = [:]
     /// This Mac's developer-environment summary (MacSystem.terminalProfile), computed once.
     private var terminalProfileJSON: Data?
     private var terminalProfileRequested = false
@@ -368,7 +370,7 @@ final class MacBackendChannel: NSObject {
             "appVersion": "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"))",
             "capabilities": info.capabilities,
             // Optional protocol features; an older backend ignores the field.
-            "features": ["artifact-directory-v1", "bulk-document-move-v1", "file-inspect-v1"] + (CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2] : [])
+            "features": ["artifact-directory-v1", "bulk-document-move-v1", "file-inspect-v1"] + (CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2, RovaTerminalPolicy.featureV3] : [])
                 + (AgentAccessStore.shared.isEnabled ? [AgentAccessStore.feature] : [])
                 + (AgentAccessStore.shared.isActive && !AgentAccessStore.shared.isEnabled ? [AgentAccessStore.taskActiveFeature] : [])
                 + [AgentAccessStore.grantFeature],
@@ -635,7 +637,15 @@ final class MacBackendChannel: NSObject {
             handleTerminalJobAction(action, jobId: request.jobId, grant: request.grant, commandId: payload.commandId, on: task)
             return
         }
-        guard let grant = request.grant else {
+        // No card: only a read, only in a folder of the person's own (RovaTerminalPolicy.readFolderWithoutGrant), and only commands this
+        // Mac itself judges read-only. Anything else still needs the phone-signed grant.
+        let readFolder = request.grant == nil ? request.workingDirectory.flatMap { RovaTerminalPolicy.readFolderWithoutGrant($0) } : nil
+        let readsOnly = action == "read_file" || action == "search"
+            || (action == "run" && RovaTerminalPolicy.isReadOnly(request.command ?? ""))
+            || (action == "run_plan" && !(request.steps ?? []).isEmpty && (request.steps ?? []).allSatisfy { RovaTerminalPolicy.isReadOnly($0.command) })
+        guard let grant = request.grant ?? (readFolder != nil && readsOnly
+            ? TerminalGrantPayload(id: RovaTerminalPolicy.readWithoutGrantId, rootDirectory: readFolder!, mode: "read", expiresAt: Int(Date().timeIntervalSince1970) + 60, signature: "")
+            : nil) else {
             sendTerminalDenial(payload.commandId, code: "TERMINAL_GRANT_INVALID", message: "Terminal oturum izni eksik.", on: task)
             return
         }
@@ -646,8 +656,8 @@ final class MacBackendChannel: NSObject {
             deny("TERMINAL_DISABLED", "Kod çalıştırma Wiqo Mac ayarlarında kapalı.")
             return
         }
-        guard let token = pairedDeviceToken(),
-              RovaTerminalPolicy.verifyGrant(grantId: grant.id, rootDirectory: grant.rootDirectory, mode: grant.mode, expiresAt: grant.expiresAt, signature: grant.signature, token: token) else {
+        guard request.grant == nil || (pairedDeviceToken().map { token in
+              RovaTerminalPolicy.verifyGrant(grantId: grant.id, rootDirectory: grant.rootDirectory, mode: grant.mode, expiresAt: grant.expiresAt, signature: grant.signature, token: token) } ?? false) else {
             deny("TERMINAL_GRANT_INVALID", "Terminal oturum izni geçersiz ya da süresi dolmuş; telefondan yeniden onay gerekiyor.")
             return
         }
@@ -720,19 +730,26 @@ final class MacBackendChannel: NSObject {
                 return
             }
             let remainingSeconds = max(1, grant.expiresAt - Int(Date().timeIntervalSince1970))
-            startTerminalJob(id: jobId, grantId: grant.id, command: command, directory: directory, timeoutSeconds: max(1, min(1800, min(request.timeoutSeconds ?? 600, remainingSeconds))))
+            startTerminalJob(id: jobId, grantId: grant.id, command: command, directory: directory, timeoutSeconds: max(1, min(1800, min(request.timeoutSeconds ?? 600, remainingSeconds))), writeScope: Self.writeScope(grant: grant, root: root))
             sendTerminalJobSnapshot(jobId, commandId: payload.commandId, on: task)
             return
         }
         let timeoutSeconds = max(1, min(110, request.timeoutSeconds ?? 60))
         let commandId = payload.commandId
         let grantId = grant.id
+        let writeScope = Self.writeScope(grant: grant, root: root)
+        // A card-less read has no session of its own to carry variables in.
+        let keepsSession = grant.id != RovaTerminalPolicy.readWithoutGrantId
+        let exports = keepsSession ? terminalSessionExports[grant.id] : nil
         Task.detached(priority: .userInitiated) { [weak self] in
             let started = Date()
-            let tracked = MacSystem.executeTerminalCommandTrackingDirectory(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, processStarted: { _ in })
+            let tracked = MacSystem.executeTerminalCommandTrackingDirectory(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, writeScope: writeScope, exports: exports, processStarted: { _ in })
             let outcome = (data: tracked.data, error: tracked.error)
             if let end = tracked.endDirectory, let resolvedEnd = RovaTerminalPolicy.resolveDirectory(end), RovaTerminalPolicy.isWithin(resolvedEnd, root: root) {
                 await MainActor.run { [weak self] in self?.terminalSessionDirectories[grantId] = resolvedEnd }
+            }
+            if let exported = tracked.exports, keepsSession {
+                await MainActor.run { [weak self] in self?.terminalSessionExports[grantId] = exported }
             }
             let finished = Date()
             let status: CommandStatus = outcome.error == nil ? .completed : (outcome.error?.category == "timeout" ? .unknown : .failed)
@@ -794,7 +811,7 @@ final class MacBackendChannel: NSObject {
             }
             let written = MacSystem.writeTerminalFile(path, content: content)
             if let error = written.error { finish(.failed, error.message, nil, error); return }
-            finish(.completed, written.created ? "Dosya oluşturuldu." : "Dosya güncellendi.", TerminalResultContent(kind: "write", workingDirectory: directory, text: written.created ? "created" : "updated", files: [raw]), nil)
+            finish(.completed, written.created ? "Dosya oluşturuldu." : "Dosya güncellendi.\(written.backup.map { " Önceki hali: \($0)" } ?? "")", TerminalResultContent(kind: "write", workingDirectory: directory, text: written.created ? "created" : "updated\(written.backup.map { "; önceki hali \($0)" } ?? "")", files: [raw]), nil)
         case "search":
             let pattern = request.pattern ?? ""
             let glob = request.glob
@@ -850,9 +867,13 @@ final class MacBackendChannel: NSObject {
                 if grant.mode != "full" && !RovaTerminalPolicy.isReadOnly(step.command) { deny("TERMINAL_READ_ONLY", "Bu oturum yalnızca okuma izni veriyor; plandaki değiştiren komut için yeni onay gerekiyor."); return }
             }
             let budget = max(5, min(110, request.timeoutSeconds ?? 110))
+            let writeScope = Self.writeScope(grant: grant, root: root)
+            let keepsSession = grant.id != RovaTerminalPolicy.readWithoutGrantId
+            let startingExports = keepsSession ? terminalSessionExports[grant.id] : nil
             let grantId = grant.id
             Task.detached(priority: .userInitiated) { [weak self] in
                 var current = directory
+                var exports = startingExports
                 var results: [TerminalStepResult] = []
                 var failed = false
                 for step in steps {
@@ -861,10 +882,11 @@ final class MacBackendChannel: NSObject {
                         results.append(TerminalStepResult(command: step.command, exitCode: -1, stdout: "", stderr: "", durationMs: 0, truncated: false, skipped: true))
                         continue
                     }
-                    let outcome = MacSystem.executeTerminalCommandTrackingDirectory(step.command, workingDirectory: current, timeoutSeconds: remaining, processStarted: { _ in })
+                    let outcome = MacSystem.executeTerminalCommandTrackingDirectory(step.command, workingDirectory: current, timeoutSeconds: remaining, writeScope: writeScope, exports: exports, processStarted: { _ in })
                     if let end = outcome.endDirectory, let resolvedEnd = RovaTerminalPolicy.resolveDirectory(end), RovaTerminalPolicy.isWithin(resolvedEnd, root: root) {
                         current = resolvedEnd
                     }
+                    if let exported = outcome.exports { exports = exported }
                     if case let .processOutput(output)? = outcome.data {
                         results.append(TerminalStepResult(command: step.command, exitCode: output.exitCode, stdout: output.stdout, stderr: output.stderr, durationMs: output.durationMs, truncated: output.truncated, skipped: false))
                         if output.exitCode != 0 && step.continueOnError != true { failed = true }
@@ -875,8 +897,10 @@ final class MacBackendChannel: NSObject {
                 }
                 let endDirectory = current
                 let allOk = results.allSatisfy { $0.exitCode == 0 && !$0.skipped }
+                let endExports = exports
                 await MainActor.run { [weak self] in
                     self?.terminalSessionDirectories[grantId] = endDirectory
+                    if keepsSession, let endExports { self?.terminalSessionExports[grantId] = endExports }
                     finish(allOk ? .completed : .failed, allOk ? "Plan tamamlandı." : "Plandaki bir komut hata verdi.", TerminalResultContent(kind: "plan", workingDirectory: endDirectory, steps: results), nil)
                 }
             }
@@ -915,7 +939,12 @@ final class MacBackendChannel: NSObject {
         sendTerminalJobSnapshot(jobId, commandId: commandId, on: task)
     }
 
-    private func startTerminalJob(id: String, grantId: String, command: String, directory: String, timeoutSeconds: Int) {
+    /// The write sandbox for a grant: its folder under a full grant, nothing under a read one.
+    private static func writeScope(grant: TerminalGrantPayload, root: String) -> MacSystem.TerminalWriteScope {
+        grant.mode == "full" ? .folder(root) : .readOnly
+    }
+
+    private func startTerminalJob(id: String, grantId: String, command: String, directory: String, timeoutSeconds: Int, writeScope: MacSystem.TerminalWriteScope?) {
         guard terminalJobs[id] == nil else { return }
         let job = TerminalJobRecord(id: id, grantId: grantId, workingDirectory: directory)
         terminalJobs[id] = job
@@ -929,7 +958,7 @@ final class MacBackendChannel: NSObject {
             }
         }
         Task.detached(priority: .userInitiated) { [weak self] in
-            let outcome = MacSystem.executeTerminalCommand(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, processStarted: processStarted)
+            let outcome = MacSystem.executeTerminalCommand(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, writeScope: writeScope, processStarted: processStarted)
             await MainActor.run { [weak self] in
                 guard let self, let current = self.terminalJobs[id] else { return }
                 if case let .processOutput(output)? = outcome.data { current.output = output }
