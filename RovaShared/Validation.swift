@@ -1052,6 +1052,16 @@ public enum RovaTerminalPolicy {
     public static let maxGrantSeconds = 30 * 24 * 60 * 60
     /// The id of the grant a card-less read runs under (never signed; read mode, one folder, checked by readFolderWithoutGrant).
     public static let readWithoutGrantId = "read-without-grant"
+    /// The folder name the backend sends for a read that names no folder ("pmset -g batt", "df -h"): an empty scratch folder of this
+    /// companion, so a relative path in the command can reach nothing of the person's.
+    public static let scratchFolder = "@scratch"
+
+    /// The scratch folder itself, created on first use.
+    public static func scratchDirectory() -> String {
+        let path = (NSTemporaryDirectory() as NSString).appendingPathComponent("wiqo-terminal-scratch")
+        try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        return URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+    }
 
     public static func grantMessage(grantId: String, rootDirectory: String, mode: String, expiresAt: Int) -> String {
         "wiqo-terminal-grant:v1:\(grantId.lowercased()):\(rootDirectory):\(mode):\(expiresAt)"
@@ -1070,14 +1080,20 @@ public enum RovaTerminalPolicy {
     private static let readOnlyPrograms: Set<String> = [
         "ls", "pwd", "cat", "head", "tail", "wc", "grep", "egrep", "rg", "find", "file", "stat", "du", "df", "tree", "which", "whereis",
         "type", "echo", "date", "uname", "sw_vers", "whoami", "ps", "sort", "uniq", "cut", "jq", "diff", "cmp", "basename", "dirname",
-        "realpath", "md5", "shasum", "lsof", "uptime", "hostname", "xcodebuild", "system_profiler", "cd", "mdls"
+        "realpath", "md5", "shasum", "lsof", "uptime", "hostname", "xcodebuild", "system_profiler", "cd", "mdls",
+        "ifconfig", "vm_stat", "ioreg", "ping", "nslookup", "dig", "host", "pbpaste"
     ]
     private static let versionOnlyPrograms: Set<String> = ["node", "npm", "npx", "python", "python3", "pip", "pip3", "brew", "java", "swift", "go", "cargo", "ruby", "git", "docker", "pnpm", "yarn"]
     private static let gitReadSubcommands: Set<String> = ["status", "log", "diff", "show", "branch", "remote", "rev-parse", "ls-files", "blame", "describe", "tag", "shortlog", "config"]
     private static let packageReadSubcommands: [String: Set<String>] = [
         "npm": ["ls", "list", "outdated", "view"], "pnpm": ["ls", "list", "outdated"], "yarn": ["list", "outdated", "info"],
         "pip": ["list", "show", "freeze"], "pip3": ["list", "show", "freeze"], "brew": ["list", "info", "outdated", "search"],
-        "docker": ["ps", "images", "version", "info"]
+        "docker": ["ps", "images", "version", "info"],
+        // System readings: read-only only with these first arguments (`defaults read` is, `defaults write` is not).
+        "pmset": ["-g"], "defaults": ["read", "domains", "read-type", "find"], "scutil": ["--get", "--dns", "--proxy", "--nwi"],
+        "ipconfig": ["getifaddr", "getpacket", "ifcount", "getoption", "getsummary"], "sips": ["-g"], "plutil": ["-p", "-lint"],
+        "top": ["-l"], "sysctl": ["-n", "-a"],
+        "networksetup": ["-listallnetworkservices", "-listallhardwareports", "-getinfo", "-getairportnetwork", "-getairportpower", "-getdnsservers", "-getwebproxy", "-getcomputername"]
     ]
     private static let forbiddenPatterns: [String] = [
         #"(^|[\s;&|(])sudo(\s|$)"#,
@@ -1090,7 +1106,8 @@ public enum RovaTerminalPolicy {
         #"\bchown\s+-R\b[^;&|]*\s(/|~)(\s|$)"#,
         #":\(\)\s*\{\s*:\|:&\s*\};:"#,
         #"\bsecurity\s+(dump-keychain|find-generic-password|find-internet-password)"#,
-        #"\bosascript\b"#,
+        // AppleScript runs under a full grant like any command; sending mail or messages as the person and asking for admin rights do not.
+        #"\bosascript\b[\s\S]*(application\s+\"(Mail|Messages)\"|administrator\s+privileges)"#,
         #"\bcrontab\s+-r\b"#
     ]
 
@@ -1150,6 +1167,7 @@ public enum RovaTerminalPolicy {
     /// The folder a read may run in without a card: inside the home folder, under a folder of the person's own (not the home itself, not
     /// Library, not a hidden folder such as .ssh or .aws). The read stays inside this folder, never above it.
     public static func readFolderWithoutGrant(_ path: String, home: String = NSHomeDirectory()) -> String? {
+        if path == scratchFolder { return scratchDirectory() }
         let resolvedHome = URL(fileURLWithPath: home).standardizedFileURL.resolvingSymlinksInPath().path
         guard let directory = resolveDirectory(path, home: home), directory != resolvedHome, isWithin(directory, root: resolvedHome) else { return nil }
         let first = directory.dropFirst(resolvedHome.count + 1).split(separator: "/").first.map(String.init) ?? ""

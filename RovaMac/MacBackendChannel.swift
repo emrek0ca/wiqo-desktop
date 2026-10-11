@@ -661,8 +661,9 @@ final class MacBackendChannel: NSObject {
             deny("TERMINAL_GRANT_INVALID", "Terminal oturum izni geçersiz ya da süresi dolmuş; telefondan yeniden onay gerekiyor.")
             return
         }
-        // No folder given: continue where this session's shell last was (after a `cd`).
-        let requestedDirectory = request.workingDirectory ?? terminalSessionDirectories[grant.id] ?? grant.rootDirectory
+        // No folder given: continue where this session's shell last was (after a `cd`). The scratch name is the scratch folder.
+        let namedDirectory = request.workingDirectory == RovaTerminalPolicy.scratchFolder ? RovaTerminalPolicy.scratchDirectory() : request.workingDirectory
+        let requestedDirectory = namedDirectory ?? terminalSessionDirectories[grant.id] ?? grant.rootDirectory
         guard let root = RovaTerminalPolicy.resolveDirectory(grant.rootDirectory),
               let directory = RovaTerminalPolicy.resolveDirectory(requestedDirectory),
               RovaTerminalPolicy.isWithin(directory, root: root) else {
