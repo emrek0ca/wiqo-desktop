@@ -71,6 +71,28 @@ public class ValidationTests
     }
 
     [Fact]
+    public void CardlessTerminalReadIsLimitedToVisibleProfileFoldersAndScratch()
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var visible = Path.Combine(profile, $"WiqoReadTest-{Guid.NewGuid():N}");
+        var hidden = Path.Combine(profile, $".WiqoReadTest-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(visible);
+        Directory.CreateDirectory(hidden);
+        try
+        {
+            Assert.Equal(Path.GetFullPath(visible), RovaTerminalPolicy.ReadFolderWithoutGrant(visible));
+            Assert.Null(RovaTerminalPolicy.ReadFolderWithoutGrant(profile));
+            Assert.Null(RovaTerminalPolicy.ReadFolderWithoutGrant(hidden));
+            Assert.NotNull(RovaTerminalPolicy.ReadFolderWithoutGrant("@scratch"));
+        }
+        finally
+        {
+            Directory.Delete(visible, recursive: true);
+            Directory.Delete(hidden, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ArtifactsOnlyFromTheWiqoBackend()
     {
         var good = new { artifactID = "0123456789abcdef0123-4567", filename = "rapor.pdf", mimeType = "application/pdf", downloadURL = "https://api.wiqoai.com/copilot/artifacts/0123456789abcdef0123-4567", overwrite = false };
@@ -131,8 +153,8 @@ public class FileSearchTests
         return path;
     }
 
-    private static FileSearch.Spec Spec(TempFolder folder, string query = "", string? kind = null, int? days = null, bool content = false, bool recent = false, bool hidesSensitive = true) =>
-        new(FileSearch.Tokens(query), [folder.Path], kind, days is { } d ? DateTimeOffset.UtcNow.AddDays(-d) : null, content, recent, hidesSensitive);
+    private static FileSearch.Spec Spec(TempFolder folder, string query = "", string? kind = null, int? days = null, bool content = false, bool recent = false) =>
+        new(FileSearch.Tokens(query), [folder.Path], kind, days is { } d ? DateTimeOffset.UtcNow.AddDays(-d) : null, content, recent);
 
     private static string[] Names(FileSearch.Spec spec) => FileSearch.Scan(spec, CancellationToken.None, out _).Select(hit => hit.Name).Order().ToArray();
 
@@ -155,15 +177,17 @@ public class FileSearchTests
     }
 
     [Fact]
-    public void KeyMaterialStaysOutOfAutomaticSearches()
+    public void KeyMaterialStaysOutOfEverySearch()
     {
         using var folder = new TempFolder();
         Make(folder, "anahtar/id_rsa");
         Make(folder, "banka parola.txt");
+        var privateKey = Make(folder, "AuthKey_ABC123.p8", text: "synthetic test credential");
         Make(folder, "rapor.pdf");
         Assert.Equal(["rapor.pdf"], Names(Spec(folder, kind: "pdf")));
         Assert.Empty(Names(Spec(folder, "parola")));
-        Assert.Equal(["banka parola.txt"], Names(Spec(folder, "parola", hidesSensitive: false)));
+        Assert.Empty(Names(Spec(folder, "ABC123")));
+        Assert.Equal("SENSITIVE_FILE_BLOCKED", FileOperations.Read(new LocalFileOperationPayload(privateKey)).Error?.Code);
     }
 
     [Fact]

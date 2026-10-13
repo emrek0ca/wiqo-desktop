@@ -28,12 +28,15 @@ internal static class RovaTerminalPolicy
         "Get-ChildItem", "Get-Item", "Get-Content", "Get-Location", "Get-Help", "Get-Date", "Get-ComputerInfo",
         "Get-Process", "Get-Service", "Get-Command", "Get-FileHash", "Get-ItemProperty", "Get-Member", "Test-Path",
         "Select-Object", "Where-Object", "Sort-Object", "Measure-Object", "Format-Table", "Format-List", "Out-String",
-        "ConvertTo-Json", "Write-Output", "Write-Host", "git", "dotnet", "node", "npm", "python", "python3"
+        "ConvertTo-Json", "Write-Output", "Write-Host", "git", "dotnet", "node", "npm", "python", "python3",
+        "Get-NetIPAddress", "Get-NetAdapter", "Get-NetConnectionProfile", "Get-CimInstance", "Get-Volume", "Get-PSDrive",
+        "Get-Clipboard", "Test-Connection", "Resolve-DnsName", "Get-TimeZone", "Get-Culture", "Get-HotFix"
     };
 
     private static readonly HashSet<string> CmdReadOnly = new(StringComparer.OrdinalIgnoreCase)
     {
-        "dir", "cd", "type", "more", "find", "findstr", "where", "ver", "whoami", "hostname", "tasklist", "git", "dotnet", "node", "npm", "python", "python3"
+        "dir", "cd", "type", "more", "find", "findstr", "where", "ver", "whoami", "hostname", "tasklist", "git", "dotnet", "node", "npm", "python", "python3",
+        "ipconfig", "nslookup", "ping", "systeminfo"
     };
 
     private static Regex Rx(string pattern, RegexOptions extra = RegexOptions.None) => new(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | extra, TimeSpan.FromMilliseconds(100));
@@ -67,6 +70,26 @@ internal static class RovaTerminalPolicy
         if (!Directory.Exists(full) || HasReparseComponent(full)) return null;
         var trimmed = full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         return trimmed.Length > 0 ? trimmed : Path.GetPathRoot(full);
+    }
+
+    /// The cardless read boundary mirrors the Mac: a named folder below a user's own visible
+    /// folders, or an isolated empty scratch directory. Callers still resolve every file under it.
+    internal static string? ReadFolderWithoutGrant(string value)
+    {
+        if (value == "@scratch")
+        {
+            var scratch = Path.Combine(Path.GetTempPath(), "wiqo-terminal-scratch");
+            try { Directory.CreateDirectory(scratch); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return null; }
+            return ResolveDirectory(scratch);
+        }
+        var profile = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)).TrimEnd(Path.DirectorySeparatorChar);
+        var directory = ResolveDirectory(value);
+        if (directory is null || directory.Equals(profile, StringComparison.OrdinalIgnoreCase) || !IsWithin(directory, profile)) return null;
+        var relative = Path.GetRelativePath(profile, directory);
+        var first = relative.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (string.IsNullOrEmpty(first) || first.StartsWith('.') || first.Equals("AppData", StringComparison.OrdinalIgnoreCase)) return null;
+        return directory;
     }
 
     /// The granted folder as a full path, whether or not it exists yet (for creating it).

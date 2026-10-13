@@ -31,6 +31,127 @@ public class TerminalFileTests
     }
 
     [Fact]
+    public void TerminalUndoRestoresOriginalAndRejectsStaleContent()
+    {
+        using var folder = new TempFolder();
+        var path = folder.File("draft.txt", "before");
+        var before = File.ReadAllBytes(path);
+        File.WriteAllText(path, "after");
+        var undoId = TerminalFiles.RegisterUndo(folder.Path, [(path, before, File.ReadAllBytes(path))]);
+        Assert.NotNull(undoId);
+        File.WriteAllText(path, "newer user edit");
+        var stale = TerminalFiles.Undo(undoId!, folder.Path);
+        Assert.Equal("TERMINAL_UNDO_STALE", stale.Error?.Code);
+        Assert.Equal("newer user edit", File.ReadAllText(path));
+
+        File.WriteAllText(path, "after");
+        var freshId = TerminalFiles.RegisterUndo(folder.Path, [(path, before, File.ReadAllBytes(path))]);
+        Assert.NotNull(freshId);
+        var restored = TerminalFiles.Undo(freshId!, folder.Path);
+        Assert.Null(restored.Error);
+        Assert.Equal("before", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void LocalFileUndoResolvesItsOwnScopeAndIsOneShot()
+    {
+        using var folder = new TempFolder();
+        var path = folder.File("created.txt", "created");
+        var undoId = TerminalFiles.RegisterLocalFileUndo(path, null, File.ReadAllBytes(path));
+        Assert.NotNull(undoId);
+        var undone = TerminalFiles.UndoLocalFile(undoId!);
+        Assert.Null(undone.Error);
+        Assert.False(File.Exists(path));
+        Assert.Equal("TERMINAL_UNDO_INVALID", TerminalFiles.UndoLocalFile(undoId!).Error?.Code);
+    }
+
+    [Fact]
+    public void LocalFileUndoPreservesNewerContent()
+    {
+        using var folder = new TempFolder();
+        var path = folder.File("draft.txt", "written by Wiqo");
+        var undoId = TerminalFiles.RegisterLocalFileUndo(path, System.Text.Encoding.UTF8.GetBytes("before"), File.ReadAllBytes(path));
+        Assert.NotNull(undoId);
+        File.WriteAllText(path, "newer user edit");
+
+        var result = TerminalFiles.UndoLocalFile(undoId!);
+        Assert.Equal("TERMINAL_UNDO_STALE", result.Error?.Code);
+        Assert.Equal("newer user edit", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void LocalFileMoveUndoRestoresSourceAndRejectsOccupiedSource()
+    {
+        using var folder = new TempFolder();
+        var sourceFolder = Directory.CreateDirectory(Path.Combine(folder.Path, "source")).FullName;
+        var targetFolder = Directory.CreateDirectory(Path.Combine(folder.Path, "target")).FullName;
+        var source = Path.Combine(sourceFolder, "note.txt");
+        var moved = Path.Combine(targetFolder, "note.txt");
+        File.WriteAllText(source, "original");
+        File.Move(source, moved);
+        var undoId = TerminalFiles.RegisterLocalFileMoveUndo(moved, source);
+        Assert.NotNull(undoId);
+
+        var undone = TerminalFiles.UndoLocalFile(undoId!);
+        Assert.Null(undone.Error);
+        Assert.Equal("original", File.ReadAllText(source));
+        Assert.False(File.Exists(moved));
+        Assert.Equal("TERMINAL_UNDO_INVALID", TerminalFiles.UndoLocalFile(undoId!).Error?.Code);
+    }
+
+    [Fact]
+    public void LocalFileMoveUndoRecordRejectsReparseSourceAndTargetParents()
+    {
+        using var folder = new TempFolder();
+        var real = Directory.CreateDirectory(Path.Combine(folder.Path, "real")).FullName;
+        var linked = Path.Combine(folder.Path, "linked");
+        try { Directory.CreateSymbolicLink(linked, real); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or PlatformNotSupportedException) { return; }
+        var original = Path.Combine(real, "source.txt");
+        var moved = Path.Combine(linked, "moved.txt");
+        File.WriteAllText(moved, "content");
+        Assert.Null(TerminalFiles.RegisterLocalFileMoveUndo(moved, original));
+    }
+
+    [Fact]
+    public void LocalFileMoveUndoPreservesNewSourceCollision()
+    {
+        using var folder = new TempFolder();
+        var sourceFolder = Directory.CreateDirectory(Path.Combine(folder.Path, "source")).FullName;
+        var targetFolder = Directory.CreateDirectory(Path.Combine(folder.Path, "target")).FullName;
+        var source = Path.Combine(sourceFolder, "note.txt");
+        var moved = Path.Combine(targetFolder, "note.txt");
+        File.WriteAllText(moved, "original");
+        var undoId = TerminalFiles.RegisterLocalFileMoveUndo(moved, source);
+        Assert.NotNull(undoId);
+        File.WriteAllText(source, "new source");
+
+        var result = TerminalFiles.UndoLocalFile(undoId!);
+        Assert.Equal("TERMINAL_UNDO_STALE", result.Error?.Code);
+        Assert.Equal("new source", File.ReadAllText(source));
+        Assert.Equal("original", File.ReadAllText(moved));
+    }
+
+    [Fact]
+    public async Task OwnFolderFileReadWorksWithoutAGrant()
+    {
+        var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), $"WiqoReadTest-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(folder);
+        await using var terminal = Terminal();
+        try
+        {
+            File.WriteAllText(Path.Combine(folder, "note.txt"), "hello");
+            var result = await terminal.ExecuteAsync(Guid.NewGuid().ToString(), Grants.Request(new { action = "read_file", workingDirectory = folder, filePath = "note.txt" }));
+            Assert.Equal("completed", result.Status);
+            Assert.Contains("hello", Value(result).GetProperty("text").GetString());
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task EditsKeepCrlfAndMatchLfFinds()
     {
         using var folder = new TempFolder();

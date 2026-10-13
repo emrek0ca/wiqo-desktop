@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Diagnostics;
 using RovaWindows.Operations;
 using RovaWindows.Terminal;
 
@@ -65,7 +66,7 @@ public sealed class WindowsRuntime : IAsyncDisposable
     /// the PC agent needs a paired device and full access on.
     public IReadOnlyList<string> Features => pairingToken is null
         ? []
-        : (settings.TerminalEnabled ? new[] { WindowsTerminal.FeatureV1, WindowsTerminal.FeatureV2 } : Array.Empty<string>())
+        : (settings.TerminalEnabled ? new[] { WindowsTerminal.FeatureV1, WindowsTerminal.FeatureV2, WindowsTerminal.FeatureV4 } : Array.Empty<string>())
             .Concat(settings.AgentFullAccess ? new[] { AgentFeature } : Array.Empty<string>()).ToArray();
 
     public IReadOnlyList<string> Capabilities => WindowsCapabilityManifest.Capabilities
@@ -170,7 +171,19 @@ public sealed class WindowsRuntime : IAsyncDisposable
             case "mediaControl": return SystemOperations.Media(PayloadReader.String(payload, "media")!);
             case "setClipboardText": return SystemOperations.SetClipboard(PayloadReader.String(payload, "clipboardText")!);
             case "getClipboardText": return SystemOperations.GetClipboard();
-            case "captureScreen": return SystemOperations.Screenshot(PayloadReader.Object<ScreenCapturePayload>(payload, "screenCapture")!.MaxWidth);
+            case "captureScreen":
+                var capture = PayloadReader.Object<ScreenCapturePayload>(payload, "screenCapture")!;
+                if (!string.IsNullOrWhiteSpace(capture.TargetApplication))
+                {
+                    var activation = await ApplicationOperations.Control(new ApplicationControlPayload("activate", capture.TargetApplication), cancellationToken).ConfigureAwait(false);
+                    if (activation.Error is not null) return activation;
+                    var receipt = JsonSerializer.SerializeToElement(activation.Data, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                    if (!receipt.TryGetProperty("value", out var activationValue)
+                        || !activationValue.TryGetProperty("verified", out var verified)
+                        || verified.ValueKind != JsonValueKind.True)
+                        return Outcome.Fail("APPLICATION_ACTIVATION_UNVERIFIED", $"{capture.TargetApplication} öne getirilemedi; başka bir pencerenin görüntüsünü almadım.");
+                }
+                return SystemOperations.Screenshot(capture.MaxWidth);
             case "computerDesktop":
                 return desktopController?.Execute(PayloadReader.Object<ComputerDesktopPayload>(payload, "computerDesktop")!, cancellationToken)
                     ?? Outcome.Fail("DESKTOP_ADAPTER_UNAVAILABLE", "Windows masaüstü denetimi bu kurulumda kullanılamıyor.", "unavailable");
@@ -198,7 +211,8 @@ public sealed class WindowsRuntime : IAsyncDisposable
                 if (accessToken is null) return Outcome.Fail("BACKEND_AUTH_REQUIRED", "Artifact indirmek için Wiqo oturumu gerekli.");
                 return await FileOperations.SaveArtifact(PayloadReader.Object<ArtifactFilePayload>(payload, "artifactFile")!, accessToken, http, cancellationToken).ConfigureAwait(false);
             case "computerBrowser":
-                return await browserWorker.ExecuteAsync(PayloadReader.Object<ComputerBrowserPayload>(payload, "computerBrowser")!, cancellationToken).ConfigureAwait(false);
+                var browserPayload = PayloadReader.Object<ComputerBrowserPayload>(payload, "computerBrowser")!;
+                return await browserWorker.ExecuteAsync(browserPayload, cancellationToken).ConfigureAwait(false);
             case "endBrowserTask":
                 return await browserWorker.CloseAsync(PayloadReader.Object<BrowserTaskPayload>(payload, "browserTask")!.TaskId, cancellationToken).ConfigureAwait(false);
             case "localAnalyze":

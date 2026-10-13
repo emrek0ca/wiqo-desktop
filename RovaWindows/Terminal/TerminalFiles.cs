@@ -3,6 +3,7 @@ using System.IO.Enumeration;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 
 namespace RovaWindows.Terminal;
 
@@ -15,6 +16,221 @@ internal static class TerminalFiles
 {
     private const int MaxReadBytes = 2_000_000;
     private const int MaxReadText = 60_000;
+    private sealed record UndoFile(string Path, string? BeforeBase64, string AfterSha256);
+    private sealed record UndoRecord(string Id, string Root, DateTimeOffset CreatedAt, UndoFile[] Files);
+    private sealed record LocalUndoRecord(string Id, string Path, DateTimeOffset CreatedAt, string? BeforeBase64, string AfterSha256, string? RestorePath = null);
+
+    internal static string? RegisterUndo(string root, IReadOnlyList<(string Path, byte[]? Before, byte[]? After)> changes)
+    {
+        if (changes.Count is < 1 or > 10) return null;
+        var resolvedRoot = RovaTerminalPolicy.ResolveDirectory(root);
+        if (resolvedRoot is null) return null;
+        var files = new List<UndoFile>();
+        foreach (var change in changes)
+        {
+            var path = RovaTerminalPolicy.ResolveExistingFile(change.Path, resolvedRoot, resolvedRoot);
+            if (path is null || change.After is null) return null;
+            files.Add(new UndoFile(path, change.Before is null ? null : Convert.ToBase64String(change.Before), Convert.ToHexString(SHA256.HashData(change.After))));
+        }
+        var id = Guid.NewGuid().ToString("D");
+        try
+        {
+            var folder = UndoFolder(create: true);
+            SaveText(Path.Combine(folder, id + ".json"), JsonSerializer.Serialize(new UndoRecord(id, resolvedRoot, DateTimeOffset.UtcNow, files.ToArray())));
+            var records = new DirectoryInfo(folder).GetFiles("*.json").OrderByDescending(file => file.CreationTimeUtc).ToArray();
+            foreach (var stale in records.Skip(200).Concat(records.Where(file => DateTimeOffset.UtcNow - file.CreationTimeUtc > TimeSpan.FromDays(7))).Distinct()) try { stale.Delete(); } catch { }
+            return id;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { return null; }
+    }
+
+    internal static (string Message, WireError? Error) Undo(string id, string root)
+    {
+        try
+        {
+            if (!Guid.TryParse(id, out _) || RovaTerminalPolicy.ResolveDirectory(root) is not { } resolvedRoot) return UndoInvalid();
+            var path = Path.Combine(UndoFolder(create: false), id.ToLowerInvariant() + ".json");
+            if (!File.Exists(path)) return UndoInvalid();
+            var record = JsonSerializer.Deserialize<UndoRecord>(File.ReadAllText(path));
+            if (record is null || !record.Id.Equals(id, StringComparison.OrdinalIgnoreCase) || !record.Root.Equals(resolvedRoot, StringComparison.OrdinalIgnoreCase)
+                || DateTimeOffset.UtcNow - record.CreatedAt > TimeSpan.FromDays(7) || record.Files.Length is < 1 or > 10) return UndoInvalid();
+            var current = new List<(UndoFile File, byte[] Bytes, byte[]? Before)>();
+            foreach (var file in record.Files)
+            {
+                var target = RovaTerminalPolicy.ResolveExistingFile(file.Path, resolvedRoot, resolvedRoot);
+                if (target is null) return UndoStale();
+                var bytes = File.ReadAllBytes(target);
+                if (!Convert.ToHexString(SHA256.HashData(bytes)).Equals(file.AfterSha256, StringComparison.OrdinalIgnoreCase)) return UndoStale();
+                current.Add((file, bytes, file.BeforeBase64 is null ? null : Convert.FromBase64String(file.BeforeBase64)));
+            }
+            var restored = new List<(string Path, byte[] Bytes)>();
+            try
+            {
+                foreach (var entry in current)
+                {
+                    if (entry.Before is null) File.Delete(entry.File.Path);
+                    else SaveBytes(entry.File.Path, entry.Before);
+                    restored.Add((entry.File.Path, entry.Bytes));
+                }
+                File.Delete(path);
+            }
+            catch
+            {
+                foreach (var item in restored) SaveBytes(item.Path, item.Bytes);
+                throw;
+            }
+            return ($"{restored.Count} dosya önceki haline döndürüldü.", null);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or FormatException)
+        {
+            return ("Geri alma tamamlanamadı; dosyaların durumu doğrulanamadı.", new WireError("TERMINAL_UNDO_FAILED", "Geri alma tamamlanamadı; dosyaların durumu doğrulanamadı.", "tool_failure"));
+        }
+    }
+
+    internal static (string Message, WireError? Error) UndoLocalFile(string id)
+    {
+        try
+        {
+            if (!Guid.TryParse(id, out _)) return LocalUndoInvalid();
+            var path = Path.Combine(UndoFolder(create: false), id.ToLowerInvariant() + ".json");
+            if (!File.Exists(path)) return UndoLegacyFile(id);
+            var json = File.ReadAllText(path);
+            var local = JsonSerializer.Deserialize<LocalUndoRecord>(json);
+            if (local is not null && local.Id.Equals(id, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(local.Path)) return UndoRegisteredLocalFile(id);
+            var record = JsonSerializer.Deserialize<UndoRecord>(json);
+            if (record is null || !record.Id.Equals(id, StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(record.Root)) return LocalUndoInvalid();
+            return MapLegacyFileUndo(Undo(id, record.Root));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return LocalUndoInvalid();
+        }
+    }
+
+    private static (string Message, WireError? Error) UndoLegacyFile(string id)
+    {
+        var path = Path.Combine(UndoFolder(create: false), id.ToLowerInvariant() + ".json");
+        if (!File.Exists(path)) return LocalUndoInvalid();
+        try
+        {
+            var record = JsonSerializer.Deserialize<UndoRecord>(File.ReadAllText(path));
+            return record is null || !record.Id.Equals(id, StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(record.Root)
+                ? LocalUndoInvalid()
+                : MapLegacyFileUndo(Undo(id, record.Root));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return LocalUndoInvalid();
+        }
+    }
+
+    private static (string Message, WireError? Error) MapLegacyFileUndo((string Message, WireError? Error) result)
+    {
+        if (result.Error is not { } error) return result;
+        var code = error.Code.Replace("TERMINAL_UNDO_", "FILE_UNDO_", StringComparison.Ordinal);
+        return (result.Message, new WireError(code, error.Message, error.Category));
+    }
+
+    /// File-tool undo is scoped to the exact path resolved by the file operation layer. Its
+    /// journal lives locally and does not require a terminal grant for the parent folder.
+    internal static string? RegisterLocalFileUndo(string path, byte[]? before, byte[] after)
+    {
+        if (after.Length > MaxReadBytes || (before?.Length ?? 0) > MaxReadBytes ||
+            !File.Exists(path) || RovaTerminalPolicy.HasReparseComponent(path)) return null;
+        var resolved = Path.GetFullPath(path);
+        var id = Guid.NewGuid().ToString("D");
+        var record = new LocalUndoRecord(id, resolved, DateTimeOffset.UtcNow,
+            before is null ? null : Convert.ToBase64String(before), Convert.ToHexString(SHA256.HashData(after)));
+        try
+        {
+            var folder = UndoFolder(create: true);
+            SaveText(Path.Combine(folder, id + ".json"), JsonSerializer.Serialize(record));
+            var records = new DirectoryInfo(folder).GetFiles("*.json").OrderByDescending(file => file.CreationTimeUtc).ToArray();
+            foreach (var stale in records.Skip(200).Concat(records.Where(file => DateTimeOffset.UtcNow - file.CreationTimeUtc > TimeSpan.FromDays(7))).Distinct()) try { stale.Delete(); } catch { }
+            return id;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException) { return null; }
+    }
+
+    internal static string? RegisterLocalFileMoveUndo(string movedPath, string originalPath)
+    {
+        try
+        {
+            if (!File.Exists(movedPath) || File.Exists(originalPath) || Directory.Exists(originalPath) ||
+                RovaTerminalPolicy.HasReparseComponent(movedPath) || RovaTerminalPolicy.HasReparseComponent(Path.GetDirectoryName(originalPath) ?? "")) return null;
+            var bytes = File.ReadAllBytes(movedPath);
+            if (bytes.Length > MaxReadBytes) return null;
+            var id = Guid.NewGuid().ToString("D");
+            var record = new LocalUndoRecord(id, Path.GetFullPath(movedPath), DateTimeOffset.UtcNow, null,
+                Convert.ToHexString(SHA256.HashData(bytes)), Path.GetFullPath(originalPath));
+            var folder = UndoFolder(create: true);
+            SaveText(Path.Combine(folder, id + ".json"), JsonSerializer.Serialize(record));
+            var records = new DirectoryInfo(folder).GetFiles("*.json").OrderByDescending(file => file.CreationTimeUtc).ToArray();
+            foreach (var stale in records.Skip(200).Concat(records.Where(file => DateTimeOffset.UtcNow - file.CreationTimeUtc > TimeSpan.FromDays(7))).Distinct()) try { stale.Delete(); } catch { }
+            return id;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { return null; }
+    }
+
+    private static (string Message, WireError? Error) UndoRegisteredLocalFile(string id)
+    {
+        try
+        {
+            var recordPath = Path.Combine(UndoFolder(create: false), id.ToLowerInvariant() + ".json");
+            if (!File.Exists(recordPath)) return LocalUndoInvalid();
+            var record = JsonSerializer.Deserialize<LocalUndoRecord>(File.ReadAllText(recordPath));
+            if (record is null || !record.Id.Equals(id, StringComparison.OrdinalIgnoreCase) ||
+                DateTimeOffset.UtcNow - record.CreatedAt > TimeSpan.FromDays(7)) return LocalUndoInvalid();
+            var target = Path.GetFullPath(record.Path);
+            var parent = Path.GetDirectoryName(target);
+            if (!Path.IsPathFullyQualified(target) || parent is null || !File.Exists(target) ||
+                RovaTerminalPolicy.HasReparseComponent(target) || RovaTerminalPolicy.HasReparseComponent(parent)) return UndoStale();
+            var current = File.ReadAllBytes(target);
+            if (!Convert.ToHexString(SHA256.HashData(current)).Equals(record.AfterSha256, StringComparison.OrdinalIgnoreCase)) return UndoStale();
+            var before = record.BeforeBase64 is null ? null : Convert.FromBase64String(record.BeforeBase64);
+            if (record.RestorePath is { } restorePath)
+            {
+                var restore = Path.GetFullPath(restorePath);
+                var restoreParent = Path.GetDirectoryName(restore);
+                if (!Path.IsPathFullyQualified(restorePath) || restoreParent is null || !Directory.Exists(restoreParent) ||
+                    RovaTerminalPolicy.HasReparseComponent(restoreParent) || File.Exists(restore) || Directory.Exists(restore)) return UndoStale();
+                File.Move(target, restore);
+            }
+            else if (before is null) File.Delete(target);
+            else SaveBytes(target, before);
+            File.Delete(recordPath);
+            return ("Dosya önceki haline döndürüldü.", null);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or FormatException or ArgumentException)
+        {
+            return ("Geri alma tamamlanamadı; dosyanın durumu doğrulanamadı.", new WireError("FILE_UNDO_FAILED", "Geri alma tamamlanamadı; dosyanın durumu doğrulanamadı.", "tool_failure"));
+        }
+    }
+
+    private static string UndoFolder(bool create)
+    {
+        var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Wiqo", "TerminalUndo");
+        if (create) Directory.CreateDirectory(folder);
+        return folder;
+    }
+
+    private static void SaveBytes(string path, byte[] bytes)
+    {
+        var temporary = path + ".wiqo-" + Guid.NewGuid().ToString("N") + ".tmp";
+        try { File.WriteAllBytes(temporary, bytes); File.Move(temporary, path, true); }
+        finally { try { File.Delete(temporary); } catch { } }
+    }
+
+    private static void SaveText(string path, string text)
+    {
+        var temporary = path + ".wiqo-" + Guid.NewGuid().ToString("N") + ".tmp";
+        try { File.WriteAllText(temporary, text, new UTF8Encoding(false)); File.Move(temporary, path, true); }
+        finally { try { File.Delete(temporary); } catch { } }
+    }
+
+    private static (string Message, WireError? Error) UndoInvalid() => ("Geri alma kaydı bulunamadı, süresi doldu veya bu klasör iznine ait değil.", new WireError("TERMINAL_UNDO_INVALID", "Geri alma kaydı bulunamadı, süresi doldu veya bu klasör iznine ait değil.", "permission"));
+    private static (string Message, WireError? Error) UndoStale() => ("Dosyalardan biri bu işlemden sonra değişmiş; geri alma yapılmadı.", new WireError("TERMINAL_UNDO_STALE", "Dosyalardan biri bu işlemden sonra değişmiş; geri alma yapılmadı.", "validation"));
+    private static (string Message, WireError? Error) LocalUndoInvalid() => ("Geri alma kaydı bulunamadı veya süresi doldu.", new WireError("FILE_UNDO_INVALID", "Geri alma kaydı bulunamadı veya süresi doldu.", "validation"));
 
     internal static (string? Text, int TotalLines, WireError? Error) Read(string path, int? startLine, int? endLine)
     {

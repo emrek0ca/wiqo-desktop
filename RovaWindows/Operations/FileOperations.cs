@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using RovaWindows.Native;
+using RovaWindows.Terminal;
 
 namespace RovaWindows.Operations;
 
@@ -22,7 +23,8 @@ internal static class FileOperations
         try
         {
             WriteAtomically(path, Encoding.UTF8.GetBytes(payload.Content));
-            return Outcome.Ok($"{payload.Filename} masaüstüne kaydedildi.");
+            var undoId = RegisterCreatedFileUndo(path);
+            return Outcome.WithData("files", new[] { Entry(new FileInfo(path), undoId) }, $"{payload.Filename} masaüstüne kaydedildi.");
         }
         catch (Exception error) when (IsFileError(error)) { return FileError("FILE_WRITE_FAILED", "Dosya yazılamadı.", error); }
     }
@@ -33,7 +35,7 @@ internal static class FileOperations
         {
             var desktop = WindowsPaths.Desktop;
             var entries = new DirectoryInfo(desktop).EnumerateFileSystemInfos()
-                .Where(info => (info.Attributes & (FileAttributes.Hidden | FileAttributes.System)) == 0 && WindowsValidation.IsValidDesktopFilename(info.Name))
+                .Where(info => (info.Attributes & (FileAttributes.Hidden | FileAttributes.System)) == 0 && WindowsValidation.IsValidDesktopFilename(info.Name) && !FileSearch.IsSensitive(info.Name))
                 .OrderBy(info => info.Name, StringComparer.CurrentCultureIgnoreCase)
                 .Take(100)
                 .Select(info => new { filename = info.Name, byteCount = info is FileInfo file ? file.Length : 0, modifiedAt = info.LastWriteTimeUtc, isDirectory = info is DirectoryInfo })
@@ -45,6 +47,7 @@ internal static class FileOperations
 
     internal static Outcome ReadDesktop(string filename)
     {
+        if (FileSearch.IsSensitive(filename)) return Outcome.Fail("SENSITIVE_FILE_BLOCKED", "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından okunamaz.", "permission");
         var path = DesktopEntry(filename);
         if (path is null || !File.Exists(path) || IsReparsePoint(path)) return Outcome.Fail("FILE_NOT_FOUND", "Masaüstünde bu dosya bulunamadı.");
         try
@@ -73,12 +76,14 @@ internal static class FileOperations
 
     internal static Outcome List(LocalFileOperationPayload payload)
     {
+        if (FileSearch.IsSensitive(payload.Path)) return Outcome.Fail("SENSITIVE_FILE_BLOCKED", "Kimlik bilgisi içerebilecek klasörler Wiqo tarafından listelenemez.", "permission");
         var directory = Resolve(payload.Path);
         if (directory is null || !Directory.Exists(directory)) return Outcome.Fail(File.Exists(directory ?? "") ? "NOT_A_DIRECTORY" : "FILE_NOT_FOUND", File.Exists(directory ?? "") ? "İstenen yol bir klasör değil." : "İstenen klasör bulunamadı.");
+        if (FileSearch.IsSensitive(directory)) return Outcome.Fail("SENSITIVE_FILE_BLOCKED", "Kimlik bilgisi içerebilecek klasörler Wiqo tarafından listelenemez.", "permission");
         try
         {
             var entries = new DirectoryInfo(directory).EnumerateFileSystemInfos()
-                .Where(info => (info.Attributes & FileAttributes.Hidden) == 0 && info.LinkTarget is null)
+                .Where(info => (info.Attributes & FileAttributes.Hidden) == 0 && info.LinkTarget is null && !FileSearch.IsSensitive(info.Name))
                 .OrderBy(info => info.Name, StringComparer.CurrentCultureIgnoreCase)
                 .Skip(Math.Max(0, payload.Page) * Math.Max(1, payload.PageSize))
                 .Take(Math.Max(1, payload.PageSize))
@@ -91,8 +96,10 @@ internal static class FileOperations
 
     internal static Outcome Read(LocalFileOperationPayload payload)
     {
+        if (FileSearch.IsSensitive(payload.Path)) return Outcome.Fail("SENSITIVE_FILE_BLOCKED", "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından okunamaz.", "permission");
         var path = Resolve(payload.Path);
         if (path is null || !File.Exists(path)) return Outcome.Fail(Directory.Exists(path ?? "") ? "FILE_NOT_REGULAR" : "FILE_NOT_FOUND", Directory.Exists(path ?? "") ? "Yalnızca normal dosyalar okunabilir." : "İstenen dosya bulunamadı.");
+        if (FileSearch.IsSensitive(path)) return Outcome.Fail("SENSITIVE_FILE_BLOCKED", "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından okunamaz.", "permission");
         try
         {
             if (new FileInfo(path).Length > MaxLocalReadBytes)
@@ -117,8 +124,11 @@ internal static class FileOperations
         if (File.Exists(destination) && !payload.Overwrite) return Outcome.Fail("FILE_EXISTS", "Aynı dosya zaten var; üzerine yazma onayı verilmedi.", "permission");
         try
         {
+            var existed = File.Exists(destination);
+            byte[]? before = existed && new FileInfo(destination).Length <= 2_000_000 ? File.ReadAllBytes(destination) : null;
             WriteAtomically(destination, Encoding.UTF8.GetBytes(payload.Content));
-            return Outcome.Ok("Dosya yazıldı.");
+            var undoId = !existed || before is not null ? RegisterFileUndo(destination, before) : null;
+            return Outcome.WithData("files", new[] { Entry(new FileInfo(destination), undoId) }, "Dosya yazıldı.");
         }
         catch (Exception error) when (IsFileError(error)) { return FileError("FILE_WRITE_FAILED", "Dosya yazılamadı.", error); }
     }
@@ -127,6 +137,8 @@ internal static class FileOperations
     {
         var source = Resolve(payload.Path);
         var destination = payload.Destination is null ? null : Resolve(payload.Destination, allowMissingLast: true);
+        if (source is not null && destination is not null && Directory.Exists(destination))
+            destination = Path.Combine(destination, Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
         if (source is null || destination is null || !(File.Exists(source) || Directory.Exists(source)) || !Directory.Exists(Path.GetDirectoryName(destination)))
             return Outcome.Fail("INVALID_FILE_PATH", "Kaynak, hedef veya hedef klasör geçersiz.");
         var isDirectory = Directory.Exists(source);
@@ -139,6 +151,8 @@ internal static class FileOperations
         }
         try
         {
+            var newRegularCopy = copy && !isDirectory && !File.Exists(destination) && !Directory.Exists(destination);
+            var newRegularMove = !copy && !isDirectory && !File.Exists(destination) && !Directory.Exists(destination);
             if (copy)
             {
                 if (isDirectory) CopyDirectory(source, destination, payload.Overwrite);
@@ -150,6 +164,25 @@ internal static class FileOperations
                 Directory.Move(source, destination);
             }
             else File.Move(source, destination, payload.Overwrite);
+            if (newRegularCopy)
+            {
+                var undoId = RegisterCreatedFileUndo(destination);
+                return Outcome.WithData("files", new[] { Entry(new FileInfo(destination), undoId) }, "Dosya kopyalandı.");
+            }
+            if (newRegularMove)
+            {
+                var undoId = TerminalFiles.RegisterLocalFileMoveUndo(destination, source);
+                if (undoId is null)
+                {
+                    try { File.Move(destination, source); }
+                    catch (Exception error) when (IsFileError(error))
+                    {
+                        return FileError("FILE_UNDO_RECORD_FAILED", "Geri alma kaydı oluşturulamadı; taşıma sonucu doğrulanamadı.", error);
+                    }
+                    return Outcome.Fail("FILE_UNDO_RECORD_FAILED", "Geri alma kaydı oluşturulamadı; taşıma geri alındı.");
+                }
+                return Outcome.WithData("files", new[] { Entry(new FileInfo(destination), undoId) }, "Dosya taşındı.");
+            }
             return Outcome.Ok(copy ? "Dosya kopyalandı." : "Dosya taşındı.");
         }
         catch (Exception error) when (IsFileError(error)) { return FileError(copy ? "FILE_COPY_FAILED" : "FILE_MOVE_FAILED", copy ? "Dosya kopyalanamadı." : "Dosya taşınamadı.", error); }
@@ -212,8 +245,10 @@ internal static class FileOperations
 
     internal static Outcome? ValidateTransferSource(LocalFileOperationPayload payload, out string path)
     {
+        if (FileSearch.IsSensitive(payload.Path)) { path = ""; return Outcome.Fail("SENSITIVE_FILE_BLOCKED", "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından aktarılamaz.", "permission"); }
         path = Resolve(payload.Path) ?? "";
         if (path.Length == 0 || !File.Exists(path)) return Outcome.Fail("INVALID_FILE", "Dosya bulunamadı veya erişilemiyor.");
+        if (FileSearch.IsSensitive(path)) return Outcome.Fail("SENSITIVE_FILE_BLOCKED", "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından aktarılamaz.", "permission");
         var length = new FileInfo(path).Length;
         if (length is < 1 or > MaxTransferBytes) return Outcome.Fail("FILE_TOO_LARGE", "Yalnızca 25 MB veya daha küçük normal dosyalar gönderilebilir.");
         return null;
@@ -244,14 +279,28 @@ internal static class FileOperations
         return string.Equals(Path.GetDirectoryName(path), Path.GetFullPath(desktop).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) ? path : null;
     }
 
-    private static object Entry(FileSystemInfo info) => new
+    private static string? RegisterCreatedFileUndo(string path) => RegisterFileUndo(path, null);
+
+    private static string? RegisterFileUndo(string path, byte[]? before)
+    {
+        try
+        {
+            if (new FileInfo(path).Length > 2_000_000) return null;
+            var after = File.ReadAllBytes(path);
+            return TerminalFiles.RegisterLocalFileUndo(path, before, after);
+        }
+        catch (Exception error) when (IsFileError(error)) { return null; }
+    }
+
+    private static object Entry(FileSystemInfo info, string? undoId = null) => new
     {
         path = info.FullName,
         name = info.Name,
         fileType = info is FileInfo file ? file.Extension.TrimStart('.').ToLowerInvariant() : null,
         byteCount = info is FileInfo sized ? sized.Length : 0,
         modifiedAt = info.LastWriteTimeUtc,
-        isDirectory = info is DirectoryInfo
+        isDirectory = info is DirectoryInfo,
+        undoId
     };
 
     private static bool IsProtected(string path)

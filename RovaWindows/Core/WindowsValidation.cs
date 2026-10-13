@@ -82,7 +82,9 @@ public static class WindowsValidation
                     ? null : Invalid("Kaynak veya hedef dosya yolu geçersiz.");
             case "captureScreen":
                 var capture = PayloadReader.Object<ScreenCapturePayload>(payload, "screenCapture");
-                return capture is not null && capture.MaxWidth is >= 400 and <= 2_400 ? null : Invalid("Ekran görüntüsü ayarları geçersiz.");
+                return capture is not null && capture.MaxWidth is >= 400 and <= 2_400
+                    && (capture.TargetApplication is null || IsSafeText(capture.TargetApplication, 200))
+                    ? null : Invalid("Ekran görüntüsü ayarları geçersiz.");
             case "computerDesktop":
                 var desktop = PayloadReader.Object<ComputerDesktopPayload>(payload, "computerDesktop");
                 return desktop is not null && IsValidDesktopPayload(desktop) ? null : Invalid("Masaüstü işlemi geçersiz.", "validation");
@@ -209,6 +211,7 @@ public static class WindowsValidation
         if (offset is not null && (action != "read" || offset is < 0 or > 2_000_000)) return false;
         return action switch
         {
+            "handoff" => IsPublicBrowserUrl(url) && noTarget && noValue && noDirection && scrollAmount is null && submit is null && key is null && offset is null,
             "read" => noUrl && noTarget && noValue && noDirection && scrollAmount is null,
             "press" => noUrl && noTarget && noValue && noDirection && scrollAmount is null && key is "Enter" or "Escape" or "Tab" or "ArrowDown" or "ArrowUp",
             "navigate" => IsPublicBrowserUrl(url) && noTarget && noValue && noDirection && scrollAmount is null,

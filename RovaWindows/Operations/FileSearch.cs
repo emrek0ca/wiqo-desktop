@@ -18,7 +18,7 @@ internal static class FileSearch
     private const int ContentReadLimit = 1_500;
     private const long ContentBytesLimit = 5L * 1024 * 1024;
 
-    internal sealed record Spec(string[] Tokens, string[] Roots, string? Kind, DateTimeOffset? Since, bool Content, bool Recent, bool HidesSensitive);
+    internal sealed record Spec(string[] Tokens, string[] Roots, string? Kind, DateTimeOffset? Since, bool Content, bool Recent);
     internal sealed record Hit(string Path, string Name, string Extension, long Bytes, DateTime ModifiedUtc, bool IsDirectory);
 
     private static readonly HashSet<string> NoisyDirectories = new(StringComparer.OrdinalIgnoreCase)
@@ -63,13 +63,6 @@ internal static class FileSearch
         new[] { WindowsPaths.Desktop, WindowsPaths.Documents, WindowsPaths.Downloads }
             .Where(Directory.Exists).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
-    private static bool IsOwnFolder(string path)
-    {
-        var full = Path.GetFullPath(path).TrimEnd('\\');
-        return OwnFolders().Any(own => string.Equals(full, own.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)
-            || full.StartsWith(own.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase));
-    }
-
     /// Words worth matching; anything else is dropped.
     internal static string[] Tokens(string query) =>
         query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
@@ -80,7 +73,6 @@ internal static class FileSearch
     {
         error = null;
         string[] roots;
-        var hides = false;
         if (payload.Everywhere == true)
         {
             roots = [WindowsPaths.UserProfile];
@@ -94,12 +86,10 @@ internal static class FileSearch
                 return null;
             }
             roots = [resolved];
-            hides = IsOwnFolder(resolved);
         }
         else
         {
             roots = OwnFolders();
-            hides = true;
         }
         if (roots.Length == 0)
         {
@@ -111,8 +101,7 @@ internal static class FileSearch
             tokens, roots, payload.Kind,
             payload.ModifiedWithinDays is { } days ? now.AddDays(-days) : null,
             payload.Content == true,
-            payload.Sort == "recent" || (tokens.Length == 0 && payload.Sort != "relevance"),
-            hides);
+            payload.Sort == "recent" || (tokens.Length == 0 && payload.Sort != "relevance"));
     }
 
     internal static Outcome Search(FileSearchPayload payload, CancellationToken cancellationToken)
@@ -199,7 +188,7 @@ internal static class FileSearch
         return hits;
     }
 
-    private static bool Admissible(string path, Spec spec) => path.Length <= 500 && !(spec.HidesSensitive && IsSensitive(path));
+    private static bool Admissible(string path, Spec spec) => path.Length <= 500 && !IsSensitive(path);
 
     private static bool MatchesName(string name, string[] folded)
     {

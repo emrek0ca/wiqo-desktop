@@ -12,6 +12,7 @@ public sealed class WindowsTerminal : IAsyncDisposable
 {
     public const string FeatureV1 = "terminal-session-v1";
     public const string FeatureV2 = "terminal-session-v2";
+    public const string FeatureV4 = "terminal-session-v4";
 
     private readonly Func<string?> pairingToken;
     private readonly Func<bool> enabled;
@@ -50,11 +51,30 @@ public sealed class WindowsTerminal : IAsyncDisposable
     {
         var started = DateTimeOffset.UtcNow;
         var action = Text(request, "action") is { Length: > 0 } value ? value : "run";
+        if (action == "undo_file")
+        {
+            var undone = TerminalFiles.UndoLocalFile(Text(request, "undoId"));
+            return new WindowsCommandResult(commandId, undone.Error is null ? "completed" : "failed", undone.Message, started, DateTimeOffset.UtcNow, null, undone.Error);
+        }
         if (action is "get_job" or "cancel_job") return await JobActionAsync(commandId, request, action, started, cancellationToken).ConfigureAwait(false);
         if (!enabled()) return Denied(commandId, started, "TERMINAL_DISABLED", "Terminal oturumları Wiqo Windows ayarlarında kapalı.");
-        if (!request.TryGetProperty("grant", out var grantElement) || grantElement.ValueKind != JsonValueKind.Object ||
-            !RovaTerminalPolicy.VerifyGrant(grantElement, pairingToken(), out var rawRoot, out var mode))
-            return Denied(commandId, started, "TERMINAL_GRANT_INVALID", "Terminal oturum izni geçersiz ya da süresi dolmuş; telefondan yeniden onay gerekiyor.");
+        request.TryGetProperty("grant", out var grantElement);
+        var hasGrantPayload = grantElement.ValueKind == JsonValueKind.Object;
+        var hasSignedGrant = hasGrantPayload && RovaTerminalPolicy.VerifyGrant(grantElement, pairingToken(), out _, out _);
+        var rawRoot = hasSignedGrant ? RovaTerminalPolicy.String(grantElement, "rootDirectory") : "";
+        var mode = hasSignedGrant ? RovaTerminalPolicy.String(grantElement, "mode") : "";
+        if (!hasSignedGrant)
+        {
+            if (hasGrantPayload)
+                return Denied(commandId, started, "TERMINAL_GRANT_INVALID", "Terminal oturum izni geçersiz ya da süresi dolmuş; telefondan yeniden onay gerekiyor.");
+            var cardlessFolder = action is "read_file" or "search"
+                ? RovaTerminalPolicy.ReadFolderWithoutGrant(Text(request, "workingDirectory"))
+                : null;
+            if (cardlessFolder is null)
+                return Denied(commandId, started, "TERMINAL_GRANT_INVALID", "Terminal oturum izni geçersiz ya da süresi dolmuş; telefondan yeniden onay gerekiyor.");
+            rawRoot = cardlessFolder;
+            mode = "read";
+        }
 
         // The folder the user approved on the card may not exist yet: create exactly that one.
         if (RovaTerminalPolicy.CreatableRoot(rawRoot, mode) is { } missingRoot)
@@ -65,13 +85,14 @@ public sealed class WindowsTerminal : IAsyncDisposable
                 return Denied(commandId, started, "TERMINAL_DIRECTORY_CREATE_FAILED", $"{rawRoot} klasörü yoktu ve oluşturulamadı.");
             }
         }
-        var grantId = RovaTerminalPolicy.String(grantElement, "id");
+        var grantId = hasSignedGrant ? RovaTerminalPolicy.String(grantElement, "id") : "read-without-grant";
         var root = RovaTerminalPolicy.ResolveDirectory(rawRoot);
-        var requested = Text(request, "workingDirectory") is { Length: > 0 } named ? named : sessionDirectories.TryGetValue(grantId, out var last) ? last : rawRoot;
+        var requested = Text(request, "workingDirectory") is { Length: > 0 } named && named != "@scratch" ? named : sessionDirectories.TryGetValue(grantId, out var last) ? last : rawRoot;
         var directory = RovaTerminalPolicy.ResolveDirectory(requested);
         if (root is null || directory is null || !RovaTerminalPolicy.IsWithin(directory, root))
             return Denied(commandId, started, "TERMINAL_OUTSIDE_GRANT", $"{requested} onaylanan klasörün ({rawRoot}) dışında ya da bulunamadı; o klasör için directory vererek yeni onay iste.");
-        var grant = new Grant(grantId, rawRoot, mode, grantElement.GetProperty("expiresAt").GetInt64(), root);
+        var grant = new Grant(grantId, rawRoot, mode,
+            hasSignedGrant ? grantElement.GetProperty("expiresAt").GetInt64() : DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 60, root);
 
         try
         {
@@ -81,6 +102,7 @@ public sealed class WindowsTerminal : IAsyncDisposable
                 "run_plan" => await PlanAsync(commandId, request, grant, directory, started, cancellationToken).ConfigureAwait(false),
                 "read_file" => ReadFile(commandId, request, grant, directory, started),
                 "write_file" => WriteFile(commandId, request, grant, directory, started),
+                "undo" => Undo(commandId, request, grant, directory, started),
                 "search" => await SearchAsync(commandId, request, directory, started, cancellationToken).ConfigureAwait(false),
                 "edit_file" => EditFile(commandId, request, grant, directory, started),
                 "apply_patch" => ApplyPatch(commandId, request, grant, directory, started),
@@ -198,9 +220,19 @@ public sealed class WindowsTerminal : IAsyncDisposable
         var path = RovaTerminalPolicy.ResolveWritableFile(raw, directory, grant.Root);
         if (path is null || !request.TryGetProperty("content", out var contentElement) || contentElement.ValueKind != JsonValueKind.String)
             return Denied(commandId, started, "TERMINAL_FILE_SCOPE", $"{(raw.Length > 0 ? raw : "Dosya")} yazılamadı: onaylı klasörün ({grant.RawRoot}) içinde, var olan bir klasörde olmalı. Alt klasör gerekiyorsa önce run ile New-Item -ItemType Directory -Force çalıştır.");
+        var beforeBytes = File.Exists(path) ? File.ReadAllBytes(path) : null;
         var written = TerminalFiles.Write(path, contentElement.GetString() ?? "", Path.GetFileName(path));
         if (written.Error is { } error) return Failed(commandId, started, error.Code, error.Message, category: error.Category);
-        return Result(commandId, started, "completed", written.Created ? "Dosya oluşturuldu." : "Dosya güncellendi.", new { kind = "write", workingDirectory = directory, text = written.Created ? "created" : "updated", files = new[] { raw } });
+        var undoId = TerminalFiles.RegisterUndo(grant.Root, [(path, written.Created ? null : beforeBytes, File.ReadAllBytes(path))]);
+        return Result(commandId, started, "completed", written.Created ? "Dosya oluşturuldu." : "Dosya güncellendi.", new { kind = "write", workingDirectory = directory, text = written.Created ? "created" : "updated", files = new[] { raw }, undoId });
+    }
+
+    private WindowsCommandResult Undo(string commandId, JsonElement request, Grant grant, string directory, DateTimeOffset started)
+    {
+        if (grant.Mode != "full") return Denied(commandId, started, "TERMINAL_READ_ONLY", "Geri alma için tam klasör izni gerekiyor.");
+        var result = TerminalFiles.Undo(Text(request, "undoId"), grant.Root);
+        if (result.Error is { } error) return Failed(commandId, started, error.Code, error.Message, category: error.Category);
+        return Result(commandId, started, "completed", result.Message, new { kind = "undo", workingDirectory = directory, text = result.Message });
     }
 
     private async Task<WindowsCommandResult> SearchAsync(string commandId, JsonElement request, string directory, DateTimeOffset started, CancellationToken cancellationToken)
@@ -226,10 +258,13 @@ public sealed class WindowsTerminal : IAsyncDisposable
                 return Denied(commandId, started, "TERMINAL_EDIT_INVALID", "Her değişiklikte find ve replace metni olmalı.");
             edits.Add(new Replacement(path, display, find.GetString()!, replace.GetString()!, item.TryGetProperty("replaceAll", out var all) && all.ValueKind == JsonValueKind.True));
         }
+        var before = edits.Select(item => item.Path).Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(path => (Path: path, Bytes: File.ReadAllBytes(path))).ToArray();
         var edited = TerminalFiles.Edit(edits);
         if (edited.Error is { } error) return Failed(commandId, started, error.Code, error.Message, category: error.Category);
+        var undoId = TerminalFiles.RegisterUndo(grant.Root, before.Select(item => (item.Path, (byte[]?)item.Bytes, (byte[]?)File.ReadAllBytes(item.Path))).ToArray());
         return Result(commandId, started, "completed", "Dosyalar düzenlendi.",
-            new { kind = "edits", workingDirectory = directory, text = edited.Summary, files = edits.Select(edit => edit.Display).Distinct().Order(StringComparer.Ordinal).ToArray() });
+            new { kind = "edits", workingDirectory = directory, text = edited.Summary, files = edits.Select(edit => edit.Display).Distinct().Order(StringComparer.Ordinal).ToArray(), undoId });
     }
 
     /// v1: one file + one unified diff; v2: edits[] (1-10 files), applied all or nothing.
