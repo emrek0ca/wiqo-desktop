@@ -212,7 +212,7 @@ struct AccountSettingsView: View {
                         Label("Kurucu üye", systemImage: "seal.fill")
                     }
                     if let code = firstUnusedInviteCode {
-                        ShareLink(item: String(localized: "Wiqo'yu deniyorum, davet kodumla katıl ve ikimiz de Pro kazanalım: \(code)")) {
+                        ShareLink(item: WiqoGrowth.inviteMessage(code: code)) {
                             Label(code, systemImage: "gift.fill")
                         }
                     }

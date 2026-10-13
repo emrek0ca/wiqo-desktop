@@ -42,16 +42,16 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Wiqo, PC eşleşme QR kodunu ve belgelerini taramak için kamerayı kullanır. Taranan sayfalar telefonda okunur.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Wiqo, "Ali'yi ara" gibi isteklerde rehberinde o kişiyi bulmak için rehberine bakar. Rehber telefonda kalır, sunucuya gönderilmez.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Wiqo, aynı ağdaki PC’nizi bulup komut göndermek için yerel ağınızı kullanır.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Wiqo, hava durumu için şehir adını, haritada da rota ve yakındaki yerleri bulmak için konumunu kullanır. Koordinatlar sunucuya gönderilmez; harita sonuçları telefonda Apple Haritalar ile hesaplanır.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Wiqo, ürettiği görselleri istersen Fotoğraflar'a kaydetmek için erişim ister. Fotoğraflarını okumaz.</string>
-	<key>NSContactsUsageDescription</key>
-	<string>Wiqo, "Ali'yi ara" gibi isteklerde rehberinde o kişiyi bulmak için rehberine bakar. Rehber telefonda kalır, sunucuya gönderilmez.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Wiqo, sesli komutunuzu metne dönüştürmek için mikrofonu kullanır.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Wiqo, ürettiği görselleri istersen Fotoğraflar'a kaydetmek için erişim ister. Fotoğraflarını okumaz.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Wiqo, sesli komutunuzu iPhone’unuzda metne dönüştürmek için konuşma tanımayı kullanır.</string>
 	<key>UIAppFonts</key>

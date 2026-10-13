@@ -1149,6 +1149,11 @@ struct NamedAgentsView: View {
     @State private var notice: String?
     @State private var agentToDelete: RovaBackendClient.NamedAgent?
     @State private var confirmingDelete = false
+    @State private var messagingAgents: [RovaBackendClient.NamedAgent] = []
+    @State private var selectingGroup = false
+    @State private var selectedGroupIDs: Set<Int> = []
+    @State private var launchedTasks: [RovaBackendClient.AgentTaskLaunch] = []
+    @State private var groupConversations: [RovaBackendClient.AgentGroupSummary] = []
 
     var body: some View {
         List {
@@ -1252,6 +1257,21 @@ struct NamedAgentsView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
+                        if selectingGroup {
+                            Button {
+                                if selectedGroupIDs.contains(agent.id) { selectedGroupIDs.remove(agent.id) }
+                                else if selectedGroupIDs.count < 3 { selectedGroupIDs.insert(agent.id) }
+                                else { notice = "Bir grup için en fazla 3 ajan seçebilirsin." }
+                            } label: {
+                                Image(systemName: selectedGroupIDs.contains(agent.id) ? "checkmark.circle.fill" : "circle")
+                                    .font(.title2).foregroundStyle(selectedGroupIDs.contains(agent.id) ? WiqoTheme.green : Color.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button("Mesaj") { messagingAgents = [agent] }
+                                .font(.caption.weight(.semibold))
+                                .buttonStyle(.bordered)
+                        }
                         Menu {
                             if !agent.memory.isEmpty {
                                 Button("Hafızayı sil", systemImage: "eraser") {
@@ -1287,6 +1307,36 @@ struct NamedAgentsView: View {
                 }
                 .padding(.vertical, 6)
             }
+            if !launchedTasks.isEmpty {
+                Section("Başlatılan görevler") {
+                    ForEach(launchedTasks) { task in
+                        NavigationLink {
+                            ScrollView {
+                                AgentTaskCard(task: RovaBackendClient.AgentTaskRef(id: task.id, title: task.title, persona: task.persona))
+                                    .padding()
+                            }
+                            .navigationTitle(task.title)
+                            .navigationBarTitleDisplayMode(.inline)
+                        } label: {
+                            Label(task.title, systemImage: "bubble.left.and.bubble.right")
+                        }
+                    }
+                }
+            }
+            if !groupConversations.isEmpty {
+                Section("Ajan grup sohbetleri") {
+                    ForEach(groupConversations) { group in
+                        NavigationLink {
+                            AgentGroupConversationView(conversationId: group.conversationId, agents: group.agents, tasks: [])
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(group.agents.map(\.name).joined(separator: " · "))
+                                Text(group.preview).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            }
+                        }
+                    }
+                }
+            }
             if let notice {
                 Text(notice)
                     .font(.footnote)
@@ -1297,6 +1347,34 @@ struct NamedAgentsView: View {
         .scrollContentBackground(.hidden)
         .background(Color(uiColor: .systemBackground))
         .navigationTitle("Ajanlarım")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(selectingGroup ? "Grup başlat" : "Grup") {
+                    if selectingGroup {
+                        guard selectedGroupIDs.count >= 2 else { notice = "En az 2 ajan seç."; return }
+                        messagingAgents = agents.filter { selectedGroupIDs.contains($0.id) }
+                    } else { selectingGroup = true }
+                }
+                .disabled(agents.count < 2)
+            }
+            if selectingGroup {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Vazgeç") { selectingGroup = false; selectedGroupIDs.removeAll() }
+                }
+            }
+        }
+        .sheet(isPresented: Binding(get: { !messagingAgents.isEmpty }, set: { if !$0 { messagingAgents = [] } })) {
+            AgentMessageComposer(agents: messagingAgents) { _, tasks in
+                launchedTasks = tasks
+                if messagingAgents.count > 1 {
+                    Task { groupConversations = (try? await RovaBackendClient.fetchAgentGroups()) ?? groupConversations }
+                }
+                selectingGroup = false
+                selectedGroupIDs.removeAll()
+                messagingAgents = []
+            }
+            .presentationDetents([.medium])
+        }
         .task { await load() }
         .refreshable { await load() }
         .wiqoConfirmation(String(localized: "Ajan silinsin mi?"), isPresented: $confirmingDelete, onCancel: { agentToDelete = nil }) {
@@ -1334,6 +1412,7 @@ struct NamedAgentsView: View {
 
     private func load() async {
         agents = (try? await RovaBackendClient.fetchAgents()) ?? agents
+        groupConversations = (try? await RovaBackendClient.fetchAgentGroups()) ?? groupConversations
         watch = (try? await RovaBackendClient.fetchWatchSources()) ?? watch
         events = (try? await RovaBackendClient.fetchAgentEvents()) ?? events
         budget = (try? await RovaBackendClient.fetchAgentBudget()) ?? budget
@@ -1361,6 +1440,128 @@ struct NamedAgentsView: View {
         case "ignored": return String(localized: "Önemsiz bulundu")
         default: return String(localized: "Bekliyor")
         }
+    }
+}
+
+private struct AgentMessageComposer: View {
+    let agents: [RovaBackendClient.NamedAgent]
+    let onStarted: (String?, [RovaBackendClient.AgentTaskLaunch]) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var message = ""
+    @State private var sending = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(agents.count == 1 ? "\(agents[0].name) ile DM" : "Ajan grubu") {
+                    Text(agents.map(\.name).joined(separator: ", ")).foregroundStyle(.secondary)
+                    TextField("Görevini yaz", text: $message, axis: .vertical).lineLimit(3...7)
+                }
+                if let error { Text(error).foregroundStyle(WiqoTheme.red) }
+                Section {
+                    Button(sending ? "Başlatılıyor…" : "Gönder") { Task { await send() } }
+                        .disabled(sending || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .navigationTitle("Ajanla konuş")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Kapat") { dismiss() } } }
+        }
+    }
+
+    private func send() async {
+        sending = true
+        defer { sending = false }
+        do {
+            if agents.count == 1 {
+                let task = try await RovaBackendClient.messageAgent(id: agents[0].id, message: message)
+                onStarted(nil, [task])
+            } else {
+                let result = try await RovaBackendClient.messageAgentGroup(ids: agents.map(\.id), message: message)
+                onStarted(result.conversationId, result.tasks)
+            }
+        } catch {
+            self.error = "Ajan görevi başlatılamadı. Biraz sonra tekrar dene."
+        }
+    }
+}
+
+private struct AgentGroupConversationView: View {
+    let conversationId: String
+    let agents: [RovaBackendClient.AgentGroupParticipant]
+    let tasks: [RovaBackendClient.AgentTaskLaunch]
+    @State private var messages: [RovaBackendClient.AgentConversationMessage] = []
+    @State private var draft = ""
+    @State private var sending = false
+    @State private var error: String?
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                Text(agents.map(\.name).joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                ForEach(messages) { message in
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(message.role == "user" ? "Sen" : agentName(for: message.content))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(message.content).textSelection(.enabled)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(message.role == "user" ? Color.accentColor.opacity(0.12) : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+                }
+                ForEach(tasks.filter { $0.status == "running" }) { task in
+                    AgentTaskCard(task: RovaBackendClient.AgentTaskRef(id: task.id, title: task.title, persona: task.persona))
+                }
+                if let error { Text(error).font(.footnote).foregroundStyle(WiqoTheme.red) }
+            }
+            .padding()
+        }
+        .safeAreaInset(edge: .bottom) {
+            HStack(alignment: .bottom, spacing: 10) {
+                TextField("Gruba mesaj yaz", text: $draft, axis: .vertical).lineLimit(1...4)
+                    .padding(10)
+                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+                Button {
+                    Task { await send() }
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 30))
+                }
+                .disabled(sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(.bar)
+        }
+        .navigationTitle("Ajan grubu")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private func agentName(for content: String) -> String {
+        agents.first(where: { content.hasPrefix("**\($0.name)**") })?.name ?? "Ajan"
+    }
+
+    private func load() async {
+        do { messages = try await RovaBackendClient.fetchAgentGroupConversation(conversationId); error = nil }
+        catch { self.error = "Grup konuşması yüklenemedi." }
+    }
+
+    private func send() async {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        sending = true
+        defer { sending = false }
+        do {
+            _ = try await RovaBackendClient.messageAgentGroup(ids: agents.map(\.id), message: text, conversationId: conversationId)
+            draft = ""
+            await load()
+        } catch { self.error = "Ajanlara mesaj gönderilemedi." }
     }
 }
 

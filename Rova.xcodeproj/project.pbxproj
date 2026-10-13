@@ -71,6 +71,9 @@
 		CC224180A9C29B5B70DB3EC1 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D40ECA86D390584A080B2810 /* InfoPlist.xcstrings */; };
 		D10000000000000000000001 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* OnboardingView.swift */; };
 		D20000000000000000000002 /* WiqoTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* WiqoTheme.swift */; };
+		D2000000000000000000FA02 /* WiqoImageForge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000FA03 /* WiqoImageForge.swift */; };
+		D2000000000000000000FA04 /* WiqoGrowth.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000FA05 /* WiqoGrowth.swift */; };
+		D2000000000000000000FA06 /* ActPyodideRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000FA07 /* ActPyodideRunner.swift */; };
 		D20000000000000000000004 /* WiqoToolChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000005 /* WiqoToolChips.swift */; };
 		D20000000000000000000006 /* WiqoApprovalCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* WiqoApprovalCard.swift */; };
 		D20000000000000000000008 /* WiqoCodeBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000009 /* WiqoCodeBlock.swift */; };
@@ -243,6 +246,9 @@
 		C119 /* WiqoBluetoothOff.shortcut */ = {isa = PBXFileReference; lastKnownFileType = file.bplist; path = WiqoBluetoothOff.shortcut; sourceTree = "<group>"; };
 		D10000000000000000000002 /* OnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		D20000000000000000000003 /* WiqoTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoTheme.swift; sourceTree = "<group>"; };
+		D2000000000000000000FA03 /* WiqoImageForge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoImageForge.swift; sourceTree = "<group>"; };
+		D2000000000000000000FA05 /* WiqoGrowth.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoGrowth.swift; sourceTree = "<group>"; };
+		D2000000000000000000FA07 /* ActPyodideRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ActPyodideRunner.swift; sourceTree = "<group>"; };
 		D20000000000000000000005 /* WiqoToolChips.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoToolChips.swift; sourceTree = "<group>"; };
 		D20000000000000000000007 /* WiqoApprovalCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoApprovalCard.swift; sourceTree = "<group>"; };
 		D20000000000000000000009 /* WiqoCodeBlock.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WiqoCodeBlock.swift; sourceTree = "<group>"; };
@@ -554,6 +560,9 @@
 				D2000000000000000000002D /* WiqoSettingsKit.swift */,
 				D2000000000000000000002B /* WiqoControls.swift */,
 				D20000000000000000000003 /* WiqoTheme.swift */,
+				D2000000000000000000FA03 /* WiqoImageForge.swift */,
+				D2000000000000000000FA05 /* WiqoGrowth.swift */,
+				D2000000000000000000FA07 /* ActPyodideRunner.swift */,
 				D20000000000000000000005 /* WiqoToolChips.swift */,
 				D30000000000000000000C01 /* WiqoConnectorCards.swift */,
 				D30000000000000000000C03 /* McpServersView.swift */,
@@ -970,6 +979,9 @@
 				D2000000000000000000002C /* WiqoSettingsKit.swift in Sources */,
 				D2000000000000000000002A /* WiqoControls.swift in Sources */,
 				D20000000000000000000002 /* WiqoTheme.swift in Sources */,
+				D2000000000000000000FA02 /* WiqoImageForge.swift in Sources */,
+				D2000000000000000000FA04 /* WiqoGrowth.swift in Sources */,
+				D2000000000000000000FA06 /* ActPyodideRunner.swift in Sources */,
 				D20000000000000000000004 /* WiqoToolChips.swift in Sources */,
 				D30000000000000000000C02 /* WiqoConnectorCards.swift in Sources */,
 				D30000000000000000000C04 /* McpServersView.swift in Sources */,
@@ -1176,7 +1188,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = wiqo;
 				CODE_SIGN_ENTITLEMENTS = RovaIOS/RovaIOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = 7SRKKF75MC;
 				ENABLE_TESTABILITY = YES;
 				INFOPLIST_FILE = RovaIOS/Info.plist;
@@ -1201,7 +1213,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = wiqo;
 				CODE_SIGN_ENTITLEMENTS = RovaIOS/RovaIOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = 7SRKKF75MC;
 				INFOPLIST_FILE = RovaIOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = wiqo;

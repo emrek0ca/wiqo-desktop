@@ -110,6 +110,8 @@ extension RovaBackendClient.CopilotResultWidget {
             return "approval:\(confirmationId ?? widgetId ?? "unknown")"
         case .clarification:
             return "question:\(questionId ?? widgetId ?? "unknown")"
+        case .suggestions:
+            return "suggestions"
         case .error:
             return "error:\(taskId ?? widgetId ?? "unknown")"
         case .list:
@@ -120,6 +122,10 @@ extension RovaBackendClient.CopilotResultWidget {
             return "inlineapp:\((title ?? "").lowercased()):\(html?.count ?? 0)"
         case .act_handoff:
             return "act:\(operation ?? ""):\(String((request ?? "").prefix(80)).lowercased())"
+        case .terminal_undo:
+            return "terminal-undo:\(undoId ?? widgetId ?? "unknown")"
+        case .file_undo:
+            return "file-undo:\(deviceId ?? "unknown"):\(undoId ?? widgetId ?? "unknown")"
         case .card:
             return "card:\(kind ?? ""):\((title ?? "").lowercased())|\((query ?? contactQuery ?? original ?? expression ?? seconds.map { String(Int($0)) } ?? "").lowercased())"
         case .map:
@@ -181,6 +187,8 @@ enum CopilotWidgetCatalog {
             return "approval:\(widget.confirmationId ?? widget.widgetId ?? "unknown")"
         case .clarification:
             return "question:\(widget.questionId ?? widget.widgetId ?? "unknown")"
+        case .suggestions:
+            return "suggestions"
         case .error:
             return "error:\(widget.taskId ?? widget.widgetId ?? "unknown")"
         case .list:
@@ -191,6 +199,10 @@ enum CopilotWidgetCatalog {
             return "inlineapp:\((widget.title ?? "").lowercased()):\(widget.html?.count ?? 0)"
         case .act_handoff:
             return "act:\(widget.operation ?? ""):\(String((widget.request ?? "").prefix(80)).lowercased())"
+        case .terminal_undo:
+            return "terminal-undo:\(widget.undoId ?? widget.widgetId ?? "unknown")"
+        case .file_undo:
+            return "file-undo:\(widget.deviceId ?? "unknown"):\(widget.undoId ?? widget.widgetId ?? "unknown")"
         case .card:
             return "card:\(widget.kind ?? ""):\((widget.title ?? "").lowercased())|\((widget.query ?? widget.contactQuery ?? widget.original ?? widget.expression ?? widget.seconds.map { String(Int($0)) } ?? "").lowercased())"
         case .map:

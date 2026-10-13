@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
    LastUpgradeVersion = "2630"
-   version = "1.3">
+   version = "1.8">
    <BuildAction
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES">
@@ -14,37 +14,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "T001"
-               BuildableName = "Wiqo.app"
-               BlueprintName = "RovaMac"
-               ReferencedContainer = "container:Rova.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "NO"
-            buildForProfiling = "NO"
-            buildForArchiving = "NO"
-            buildForAnalyzing = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "T003"
-               BuildableName = "RovaSharedTests.xctest"
-               BlueprintName = "RovaSharedTests"
-               ReferencedContainer = "container:Rova.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "NO"
-            buildForProfiling = "NO"
-            buildForArchiving = "NO"
-            buildForAnalyzing = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "T004"
-               BuildableName = "RovaMacTests.xctest"
-               BlueprintName = "RovaMacTests"
+               BlueprintIdentifier = "T002"
+               BuildableName = "Rova.app"
+               BlueprintName = "RovaIOS"
                ReferencedContainer = "container:Rova.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -60,23 +32,17 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "T003"
-               BuildableName = "RovaSharedTests.xctest"
-               BlueprintName = "RovaSharedTests"
-               ReferencedContainer = "container:Rova.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "T004"
-               BuildableName = "RovaMacTests.xctest"
-               BlueprintName = "RovaMacTests"
+               BlueprintIdentifier = "7D84C17E5E11CF811876373E"
+               BuildableName = "RovaIOSTests.xctest"
+               BlueprintName = "RovaIOSTests"
                ReferencedContainer = "container:Rova.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
+      <StoreKitConfigurationFileReference
+         identifier = "D30000000000000000000073"
+         path = "RovaIOS/StoreKit/WiqoLocal.storekit">
+      </StoreKitConfigurationFileReference>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -92,12 +58,16 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "T001"
-            BuildableName = "Wiqo.app"
-            BlueprintName = "RovaMac"
+            BlueprintIdentifier = "T002"
+            BuildableName = "Rova.app"
+            BlueprintName = "RovaIOS"
             ReferencedContainer = "container:Rova.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <StoreKitConfigurationFileReference
+         identifier = "D30000000000000000000073"
+         path = "RovaIOS/StoreKit/WiqoLocal.storekit">
+      </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -105,16 +75,6 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "T001"
-            BuildableName = "Wiqo.app"
-            BlueprintName = "RovaMac"
-            ReferencedContainer = "container:Rova.xcodeproj">
-         </BuildableReference>
-      </BuildableProductRunnable>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">

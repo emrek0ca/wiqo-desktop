@@ -65,8 +65,15 @@ struct CopilotResultWidgetView: View {
             WiqoInlineAppCard(widget: widget)
         case .act_handoff:
             WiqoActHandoffCard(widget: widget)
+        case .terminal_undo:
+            terminalUndoCard
+        case .file_undo:
+            terminalUndoCard
         case .clarification:
             WiqoClarificationCard(widget: widget)
+        case .suggestions:
+            // Drawn under the latest reply by the conversation itself (CopilotView): not a card.
+            EmptyView()
         case .approval:
             // Pending confirmations are rendered by the existing execution card, which owns
             // the live confirmation ID and approve/reject actions. Rendering this projection
@@ -75,6 +82,20 @@ struct CopilotResultWidgetView: View {
         case .unknown:
             EmptyView()
         }
+    }
+
+    private var terminalUndoCard: some View {
+        Button(action: onTap) {
+            Label(widget.state == "completed" ? String(localized: "Geri alındı") : String(localized: "Değişikliği geri al"), systemImage: widget.state == "completed" ? "checkmark.circle" : "arrow.uturn.backward.circle")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(widget.state == "completed" ? Color.secondary : Color.orange)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(WiqoTheme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(widget.state == "completed" || widget.state == "active")
+        .accessibilityHint(String(localized: "Dosyayı bu işlemden önceki haline döndürür."))
     }
 
     private var taskResultCard: some View {
@@ -87,31 +108,19 @@ struct CopilotResultWidgetView: View {
             : widget.capability == "backend" ? "checkmark.seal" : "desktopcomputer"
         let tint: Color = status == "failed" ? .red : status == "partial" ? .orange : .green
 
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+        return VStack(alignment: .leading, spacing: 8) {
+            // One quiet line on the conversation: no title, no tile, no status pill (the colour of the icon carries the status).
+            Label {
+                Text(widget.summary ?? String(localized: "\(completed)/\(total) adım tamamlandı"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            } icon: {
                 Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(tint)
-                    .frame(width: 40, height: 40)
-                    .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(widget.title ?? String(localized: "Görev sonucu"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    Text(widget.summary ?? String(localized: "\(completed)/\(total) adım tamamlandı"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
-                Spacer(minLength: 4)
-                Text(label)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(tint)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(tint.opacity(0.1), in: Capsule())
-                    .fixedSize()
             }
+            .accessibilityLabel("\(label): \(widget.summary ?? String(localized: "\(completed)/\(total) adım tamamlandı"))")
             if status != "completed", total > 0 {
                 ProgressView(value: Double(completed), total: Double(total))
                     .tint(tint)
@@ -127,14 +136,16 @@ struct CopilotResultWidgetView: View {
     private var errorResultCard: some View {
         // The reason, not a code: the technical code stays out of sight (it is in the accessibility value and the server's task timeline), the card stays small.
         VStack(alignment: .leading, spacing: 3) {
-            Label(widget.title ?? String(localized: "İşlem tamamlanamadı"), systemImage: "exclamationmark.circle.fill")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.red)
-            if let message = widget.message, !message.isEmpty {
-                Text(message)
+            // No heading: the reason is the whole card, one line of text on the conversation.
+            Label {
+                Text((widget.message?.isEmpty == false ? widget.message : nil) ?? widget.title ?? String(localized: "İşlem tamamlanamadı"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
             }
             if widget.code?.hasPrefix("CONNECTION_") == true && widget.code?.hasSuffix("_REQUIRED") == true {
                 HStack(spacing: 12) {
@@ -145,10 +156,7 @@ struct CopilotResultWidgetView: View {
                 .padding(.top, 6)
             }
         }
-        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.red.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.red.opacity(0.12), lineWidth: 0.5))
         .accessibilityElement(children: .combine)
         .accessibilityValue(widget.code ?? "")
         .sheet(isPresented: $showsConnections) {
@@ -156,9 +164,17 @@ struct CopilotResultWidgetView: View {
         }
     }
 
+    /// A generated or attached picture: the card is the picture and nothing else (no file row, no name, no size above it).
+    private var isPlainPicture: Bool {
+        guard let artifact, widget.variant != "table" else { return false }
+        if case .image = ArtifactInlineKind(mimeType: artifact.mimeType) { return true }
+        return false
+    }
+
     @ViewBuilder
     private var artifactResultCard: some View {
         VStack(alignment: .leading, spacing: 9) {
+            if !isPlainPicture {
             Button(action: onTap) {
                 HStack(spacing: 10) {
                     Image(systemName: artifactSymbol)
@@ -189,6 +205,7 @@ struct CopilotResultWidgetView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("Dosyayı açar")
+            }
 
             if widget.variant == "table", let preview = widget.tablePreview,
                !preview.columns.isEmpty || !preview.rows.isEmpty {
@@ -806,6 +823,8 @@ struct CopilotResultWidgetView: View {
 enum WiqoChatDeclutter {
     static func visible(_ widgets: [RovaBackendClient.CopilotResultWidget], hasArtifact: Bool) -> [RovaBackendClient.CopilotResultWidget] {
         let hasArtifactCard = hasArtifact || widgets.contains { $0.type == .artifact }
+        // The phone and the server each write a "Doğrulanan dosya" list for the same save: one of them is enough.
+        var shownEvidenceNames = Set<String>()
         return widgets.filter { widget in
             switch widget.type {
             case .task_plan:
@@ -814,7 +833,12 @@ enum WiqoChatDeclutter {
             case .task_result:
                 return (widget.taskStatus ?? "completed") != "completed"
             case .list:
-                return !(hasArtifactCard && widget.domain == "files" && isFileEvidence(widget))
+                guard widget.domain == "files", isFileEvidence(widget) else { return true }
+                if hasArtifactCard { return false }
+                let names = Set((widget.items ?? []).map(\.title))
+                if !names.isEmpty, names.isSubset(of: shownEvidenceNames) { return false }
+                shownEvidenceNames.formUnion(names)
+                return true
             default:
                 return true
             }

@@ -63,6 +63,10 @@ struct InlineArtifactPreview: View {
 
     @State private var localURL: URL?
     @State private var failed = false
+    /// 0 -> 1 while the picture is unveiled along the ribbon's way (left to right); 1 when it is simply there.
+    @State private var unveil: CGFloat = 1
+    /// The placeholder was on screen while the file came down: it stays under the picture until the unveiling is done.
+    @State private var unveiling = false
     // PDF gets its own in-app, all-pages viewer instead of routing through the shared Quick Look
     // sheet (onOpenFullscreen) - Quick Look works fine, but this reads far more like a first-class
     // part of the app rather than a hand-off to iOS chrome, and it's the one artifact type common
@@ -70,14 +74,31 @@ struct InlineArtifactPreview: View {
     @State private var showingFullScreenPDF = false
     @State private var showingCanvas = false
 
+    private var isPicture: Bool {
+        if case .image = ArtifactInlineKind(mimeType: artifact.mimeType) { return true }
+        return false
+    }
+
     var body: some View {
         Group {
             if let localURL {
-                content(for: localURL)
+                ZStack(alignment: .topLeading) {
+                    if unveiling {
+                        // The ribbon that was drawing while the file came down fades out as the picture is uncovered along its way.
+                        WiqoImageForge(arriving: true)
+                            .opacity(1 - Double(unveil))
+                            .allowsHitTesting(false)
+                    }
+                    content(for: localURL)
+                        .mask { WiqoUnveilMask(progress: unveil) }
+                }
             } else if failed {
                 // A download failure degrades to the ordinary file row instead of an error state -
                 // the file is still perfectly openable, it just won't preview inline.
                 ArtifactFileRow(artifact: artifact, isBusy: false, action: onOpenFullscreen)
+            } else if isPicture {
+                // The picture comes down into the place of the placeholder that was already showing it.
+                WiqoImageForge(arriving: true)
             } else {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color(.secondarySystemBackground))
@@ -87,7 +108,18 @@ struct InlineArtifactPreview: View {
         }
         .task(id: artifact.id) {
             do {
-                localURL = try await RovaBackendClient.downloadArtifact(artifact)
+                let url = try await RovaBackendClient.downloadArtifact(artifact)
+                if isPicture, localURL == nil {
+                    unveil = 0
+                    unveiling = true
+                    localURL = url
+                    withAnimation(.easeInOut(duration: 1.0)) { unveil = 1 }
+                    try? await Task.sleep(for: .seconds(1.15))
+                    unveiling = false
+                } else {
+                    localURL = url
+                }
+                WiqoForgeClock.finish()
             } catch {
                 failed = true
             }
@@ -112,7 +144,7 @@ struct InlineArtifactPreview: View {
                 .accessibilityLabel("Görseli büyüt")
                 .contextMenu {
                     Button { Task { await InlineImageActions.save(uiImage) } } label: { Label("Fotoğraflara kaydet", systemImage: "square.and.arrow.down") }
-                    ShareLink(item: url) { Label("Paylaş", systemImage: "square.and.arrow.up") }
+                    ShareLink(item: url, message: Text(WiqoGrowth.imageShareMessage)) { Label("Paylaş", systemImage: "square.and.arrow.up") }
                     Button { UIPasteboard.general.image = uiImage } label: { Label("Kopyala", systemImage: "doc.on.doc") }
                 }
             } else {
@@ -346,4 +378,21 @@ private struct PDFKitFullView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: PDFView, context: Context) {}
+}
+
+/// A soft-edged cover that moves from the leading edge to the trailing one: what is behind it is uncovered along the way the ribbon was drawn.
+private struct WiqoUnveilMask: View {
+    var progress: CGFloat
+
+    var body: some View {
+        let front = min(max(progress, 0), 1)
+        LinearGradient(
+            stops: [
+                .init(color: .black, location: max(0, front * 1.3 - 0.3)),
+                .init(color: .clear, location: min(1, front * 1.3))
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+    }
 }

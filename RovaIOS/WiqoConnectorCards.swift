@@ -84,8 +84,7 @@ struct ConnectorListCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider().padding(.horizontal, 12)
+            // No heading row: the rows are the card, straight on the conversation.
             content
             footer
         }
@@ -103,35 +102,6 @@ struct ConnectorListCard: View {
         } message: { _ in EmptyView() }
     }
 
-    private var header: some View {
-        HStack(spacing: 11) {
-            if let asset = WiqoBrandIcon.assetName(for: domain.rawValue) {
-                Image(asset).resizable().scaledToFit()
-                    .frame(width: 24, height: 24)
-                    .frame(width: 38, height: 38)
-                    .accessibilityHidden(true)
-            } else {
-                Image(systemName: domain.symbol)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(domain.tint)
-                    .frame(width: 38, height: 38)
-                    .background(domain.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .accessibilityHidden(true)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(widget.title ?? domain.noun.capitalized)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text("\(total) \(domain.noun)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-    }
-
     @ViewBuilder
     private var content: some View {
         if domain == .calendar {
@@ -140,10 +110,9 @@ struct ConnectorListCard: View {
             VStack(spacing: 0) {
                 ForEach(Array(visible.enumerated()), id: \.offset) { index, item in
                     row(item)
-                    if index < visible.count - 1 { Divider().padding(.leading, 12) }
+                    if index < visible.count - 1 { Divider() }
                 }
             }
-            .padding(.horizontal, 12)
         }
     }
 
@@ -163,7 +132,6 @@ struct ConnectorListCard: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
         .padding(.bottom, 4)
     }
 
@@ -394,25 +362,6 @@ struct ConnectorTableCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 11) {
-                Image(systemName: "tablecells.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.green)
-                    .frame(width: 38, height: 38)
-                    .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(widget.title ?? String(localized: "Tablo"))
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    Text("\(totalRows) satır")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(12)
-            Divider().padding(.horizontal, 12)
             let columnCount = max(columns.count, rows.map(\.count).max() ?? 1, 1)
             FlexTable(columnCount: columnCount) {
                 ForEach(0..<columnCount, id: \.self) { column in
@@ -429,13 +378,12 @@ struct ConnectorTableCard: View {
                     }
                 }
             }
-            .padding(.horizontal, 12)
             .padding(.bottom, 6)
             if totalRows > rows.count {
                 Text("\(totalRows - rows.count) satır daha")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-                    .padding(12)
+                    .padding(.vertical, 8)
             }
         }
         .background(connectorCardBackground)

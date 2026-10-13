@@ -2,6 +2,7 @@ import AVFoundation
 import PhotosUI
 import QuickLook
 import Speech
+import StoreKit
 import SwiftUI
 import UIKit
 
@@ -17,6 +18,8 @@ struct CopilotView: View {
     @ObservedObject var authSession: AuthSessionStore
     @ObservedObject var subscriptionStore: SubscriptionStore
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.requestReview) private var requestReview
+    @ObservedObject private var forgeBrief = WiqoForgeBrief.shared
     @State private var bubbles: [ChatBubble] = []
     /// Questions already answered from their card in this session (a second tap or a replayed card cannot send them again).
     @State private var answeredQuestionIDs: Set<String> = []
@@ -444,9 +447,17 @@ struct CopilotView: View {
     /// A plain answer is one sentence about what is happening right now; a task grows into a
     /// timeline of what Wiqo already did, with the current line and its clock at the bottom.
     private var thinkingStagesView: some View {
-        ThinkingTimelineView(trace: thinking)
-            .padding(.horizontal)
-            .id("thinkingStages")
+        VStack(alignment: .leading, spacing: 12) {
+            ThinkingTimelineView(trace: thinking)
+            // While a picture is being made the conversation shows its placeholder, not just a line of text.
+            if forgeBrief.active || (thinking.current?.label.hasPrefix("Görsel oluşturuluyor") ?? false) || (thinking.current?.label.hasPrefix("Görsel düzenleniyor") ?? false) {
+                WiqoImageForge(editing: thinking.current?.label.hasPrefix("Görsel düzenleniyor") ?? false, persona: thinking.persona)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal)
+        .animation(WiqoMotion.ease(0.3), value: forgeBrief.active)
+        .id("thinkingStages")
     }
 
     /// A background project reached its end: the reply becomes its verified summary and the
@@ -483,9 +494,25 @@ struct CopilotView: View {
     /// Ends the turn's timeline and keeps it on the reply bubble, so the steps stay readable later.
     private func commitThinking(to bubbleID: UUID, failed: Bool = false) {
         thinking.finish(failed: failed)
+        WiqoForgeBrief.shared.endTurn()
         let trace = thinking
         if trace.showsTimeline { failed ? WiqoHaptics.failure() : WiqoHaptics.success() }
         setBubble(bubbleID) { $0.thinking = trace.showsTimeline ? trace : nil }
+        if !failed, trace.showsTimeline { askForReviewAfterGoodWork() }
+    }
+
+    /// A finished task is the moment the person has just been helped: count it, and once enough of them have happened ask for the store review
+    /// (the system limits how often it really shows). Never straight after a failure, never while something is still running.
+    private func askForReviewAfterGoodWork() {
+        WiqoGrowth.recordSuccess()
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        guard WiqoGrowth.reviewIsDue(version: version) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !isSending, !isConfirming else { return }
+            WiqoGrowth.markReviewAsked(version: version)
+            requestReview()
+        }
     }
 
     private func bubbleView(_ bubble: ChatBubble) -> some View {
@@ -563,7 +590,10 @@ struct CopilotView: View {
                 // Only the latest question can still be answered: older ones keep just their copy button.
                 if !isSending, bubbles.last(where: { $0.role != .system })?.id == bubble.id {
                     let asksWithCard = bubble.widgets.contains { $0.type == .clarification }
-                    let quickReplies = bubbleAwaitingApproval?.id == bubble.id ? ["Onayla", "Vazgeç"] : (asksWithCard ? [] : QuickReplyChips.options(for: bubble.text))
+                    let answers = bubbleAwaitingApproval?.id == bubble.id ? ["Onayla", "Vazgeç"] : (asksWithCard ? [] : QuickReplyChips.options(for: bubble.text))
+                    // No question to answer: the next steps the server offered for what was just made (groq/followUps.ts).
+                    let offered = bubble.widgets.first(where: { $0.type == .suggestions })?.suggestions ?? []
+                    let quickReplies = answers.isEmpty ? Array(offered.prefix(3)) : answers
                     if !quickReplies.isEmpty {
                         QuickReplyChips(options: quickReplies) { option in
                             Task { await sendMessage(textOverride: option) }
@@ -589,6 +619,10 @@ struct CopilotView: View {
         ) {
             if let widgetArtifact {
                 Task { await openArtifact(widgetArtifact) }
+            } else if widget.type == .terminal_undo {
+                performTerminalUndo(widget)
+            } else if widget.type == .file_undo {
+                performFileUndo(widget)
             } else {
                 openCreatedResource(widget)
             }
@@ -599,6 +633,58 @@ struct CopilotView: View {
             sending: isSending,
             answer: { widget, text in answerClarification(widget, text) }
         ))
+    }
+
+    private func performTerminalUndo(_ widget: RovaBackendClient.CopilotResultWidget) {
+        guard widget.type == .terminal_undo, let undoId = widget.undoId, let grantId = widget.grantId,
+              widget.state != "active", widget.state != "stale" else { return }
+        updateTerminalUndoWidget(undoId, state: "active", summary: "Geri alınıyor…")
+        Task {
+            do {
+                let result = try await RovaBackendClient.undoTerminalChange(undoId: undoId, grantId: grantId)
+                updateTerminalUndoWidget(undoId, state: "completed", summary: result.message)
+            } catch {
+                updateTerminalUndoWidget(undoId, state: "error", summary: String(localized: "Geri alma yapılamadı. Dosya değişmiş olabilir veya PC bağlantısı kesilmiş olabilir."))
+            }
+        }
+    }
+
+    private func performFileUndo(_ widget: RovaBackendClient.CopilotResultWidget) {
+        guard widget.type == .file_undo, let undoId = widget.undoId, let deviceId = widget.deviceId,
+              widget.state != "active", widget.state != "completed" else { return }
+        updateFileUndoWidget(undoId, deviceId: deviceId, state: "active", summary: "Geri alınıyor…")
+        Task {
+            do {
+                let result = try await RovaBackendClient.undoFileChange(undoId: undoId, deviceId: deviceId)
+                updateFileUndoWidget(undoId, deviceId: deviceId, state: "completed", summary: result.message)
+            } catch {
+                updateFileUndoWidget(undoId, deviceId: deviceId, state: "error", summary: String(localized: "Geri alma yapılamadı. Dosya değişmiş olabilir veya PC bağlantısı kesilmiş olabilir."))
+            }
+        }
+    }
+
+    private func updateFileUndoWidget(_ undoId: String, deviceId: String, state: String, summary: String) {
+        for index in bubbles.indices {
+            bubbles[index].widgets = bubbles[index].widgets.map { widget in
+                guard widget.type == .file_undo, widget.undoId == undoId, widget.deviceId == deviceId else { return widget }
+                var updated = widget
+                updated.state = state
+                updated.summary = summary
+                return updated
+            }
+        }
+    }
+
+    private func updateTerminalUndoWidget(_ undoId: String, state: String, summary: String) {
+        for index in bubbles.indices {
+            bubbles[index].widgets = bubbles[index].widgets.map { widget in
+                guard widget.type == .terminal_undo, widget.undoId == undoId else { return widget }
+                var updated = widget
+                updated.state = state
+                updated.summary = summary
+                return updated
+            }
+        }
     }
 
     // MARK: Voice conversation screen
@@ -1832,6 +1918,7 @@ struct CopilotView: View {
                     persistConversation()
                 },
                 onActivity: { activity in
+                    WiqoForgeBrief.shared.note(activity)
                     thinking.apply(
                         id: activity.id,
                         phase: activity.phase,
@@ -2317,6 +2404,7 @@ struct CopilotView: View {
                     persistConversation()
                 },
                 onActivity: { activity in
+                    WiqoForgeBrief.shared.note(activity)
                     thinking.apply(
                         id: activity.id,
                         phase: activity.phase,
@@ -2469,6 +2557,7 @@ struct CopilotView: View {
                 "pending_local_execution",
                 "awaiting_local_confirmation",
                 "awaiting_backend_confirmation",
+                "awaiting_human",
                 "awaiting_weather_location"
             ]
             if let executionState = result.executionState, !pendingStates.contains(executionState) {

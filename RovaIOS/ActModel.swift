@@ -264,7 +264,7 @@ final class ActModel: ObservableObject {
             var page = raw
             var packageProblem: String?
             do {
-                try await ActPackages.shared.prepare(raw) { [hub] in try await hub.packages() }
+                try await ActPackages.shared.prepare(raw, loadCatalog: { [hub] in try await hub.packages() }, resolve: { [hub] path in try await hub.resolvePackage(path: path) })
                 let packaged = ActPackages.shared.inlineCached(raw)
                 if packaged.missing.isEmpty { page = packaged.html } else { packageProblem = ActPackageError("\(packaged.missing.joined(separator: ", ")) cihazda yok").errorDescription }
             } catch let error as ActPackageError {
@@ -546,14 +546,17 @@ final class ActModel: ObservableObject {
 
     func runPython(_ id: String) async throws -> ActHub.RunResult {
         guard let p = project(id) else { throw ActError(String(localized: "Proje bulunamadı.")) }
-        return try await hub.run(files: p.sortedFiles.map { (path: $0.path, content: $0.content) })
+        let files = p.sortedFiles.map { (path: $0.path, content: $0.content) }
+        // On the phone itself first when it is switched on (nothing leaves the device and the server's sandbox is spared); the server otherwise.
+        if ActPyodideRunner.isEnabled, let local = await ActPyodideRunner.shared.run(files: files) { return local }
+        return try await hub.run(files: files)
     }
 
     /// The page with its JavaScript packages put in from the device's verified cache (downloaded and checked first when
     /// they are not there yet). Throws `ActPackageError` (DEVICE_PACKAGE_MISSING) when that cannot be done.
     func readyPage(for project: ActLocalProject) async throws -> String {
         guard let raw = project.bundle else { throw ActError(String(localized: "Projede açılacak bir sayfa (index.html) yok.")) }
-        try await ActPackages.shared.prepare(raw) { [hub] in try await hub.packages() }
+        try await ActPackages.shared.prepare(raw, loadCatalog: { [hub] in try await hub.packages() }, resolve: { [hub] path in try await hub.resolvePackage(path: path) })
         let packaged = ActPackages.shared.inlineCached(raw)
         guard packaged.missing.isEmpty else { throw ActPackageError("\(packaged.missing.joined(separator: ", ")) cihazda yok") }
         return packaged.html

@@ -251,6 +251,15 @@ enum RovaBackendClient {
         let state: String
         /// general / research / developer / execution: the sub-agent doing this line (mascot).
         let persona: String?
+        /// A picture in the making: the real step, its shape and three colours from the request (see WiqoForgeBrief).
+        let hint: ActivityHint?
+    }
+
+    struct ActivityHint: Decodable, Equatable, Sendable {
+        let kind: String
+        let stage: String
+        let aspect: String?
+        let palette: [String]?
     }
 
     struct ExecutionStepUpdate: Decodable, Equatable {
@@ -286,7 +295,7 @@ enum RovaBackendClient {
 
     struct CopilotResultWidget: Codable, Hashable, Sendable {
         enum Kind: String, Codable {
-            case created_resource, code_change, weather, sources, artifact, task_result, task_plan, approval, clarification, error, list, table, map, card, inline_app, act_handoff, unknown
+            case created_resource, code_change, weather, sources, artifact, task_result, task_plan, approval, clarification, suggestions, error, list, table, map, card, inline_app, act_handoff, terminal_undo, file_undo, unknown
 
             init(from decoder: Decoder) throws {
                 let value = try decoder.singleValueContainer().decode(String.self)
@@ -373,8 +382,8 @@ enum RovaBackendClient {
         /// history. These are optional for messages written by older backend versions.
         let widgetId: String?
         let version: Int?
-        let state: String?
-        let summary: String?
+        var state: String?
+        var summary: String?
         let current: WeatherCurrent?
         let hourly: [WeatherHour]?
         let days: [WeatherDay]?
@@ -389,6 +398,8 @@ enum RovaBackendClient {
         let questionId: String?
         let question: String?
         let options: [String]?
+        /// One-tap next steps under the reply (backend groq/followUps.ts); shown on the latest reply only.
+        let suggestions: [String]?
         let capability: String?
         struct PlanRow: Codable, Hashable, Sendable, Identifiable {
             let id: String
@@ -462,6 +473,11 @@ enum RovaBackendClient {
         let projectId: String?
         let projectKind: String?
         let projectName: String?
+        /// terminal_undo: opaque companion record and the original signed grant identity.
+        let undoId: String?
+        let grantId: String?
+        let fileCount: Int?
+        let deviceId: String?
     }
 
     struct CardQuote: Codable, Hashable, Sendable {
@@ -570,6 +586,63 @@ enum RovaBackendClient {
         let nextRunAt: String?
         let lastRunAt: String?
         let memory: String
+    }
+
+    struct AgentTaskLaunch: Decodable, Identifiable, Sendable {
+        let id: Int
+        let title: String
+        let persona: String
+        let status: String
+        let conversationId: String
+    }
+
+    struct AgentConversationMessage: Decodable, Identifiable, Sendable {
+        let role: String
+        let content: String
+        let createdAt: String
+        var id = UUID()
+        private enum CodingKeys: String, CodingKey { case role, content, createdAt }
+    }
+
+    struct AgentGroupLaunch: Decodable, Sendable {
+        let conversationId: String
+        let tasks: [AgentTaskLaunch]
+    }
+
+    struct AgentGroupParticipant: Decodable, Identifiable, Sendable {
+        let id: Int
+        let name: String
+        let persona: String?
+    }
+
+    struct AgentGroupSummary: Decodable, Identifiable, Sendable {
+        let conversationId: String
+        let title: String
+        let preview: String
+        let updatedAt: String
+        let agents: [AgentGroupParticipant]
+        var id: String { conversationId }
+    }
+
+    static func messageAgent(id: Int, message: String) async throws -> AgentTaskLaunch {
+        struct Response: Decodable { let task: AgentTaskLaunch }
+        return try await authorizedPost("agents/\(id)/message", body: ["message": message], as: Response.self).task
+    }
+
+    static func messageAgentGroup(ids: [Int], message: String, conversationId: String? = nil) async throws -> AgentGroupLaunch {
+        var body: [String: Any] = ["agentIds": ids, "message": message]
+        if let conversationId { body["conversationId"] = conversationId }
+        return try await authorizedPost("agents/group/message", body: body, as: AgentGroupLaunch.self)
+    }
+
+    static func fetchAgentGroupConversation(_ conversationId: String) async throws -> [AgentConversationMessage] {
+        struct Response: Decodable { let messages: [AgentConversationMessage] }
+        return try await authorizedGet("agents/group/\(conversationId)", as: Response.self).messages
+    }
+
+    static func fetchAgentGroups() async throws -> [AgentGroupSummary] {
+        struct Response: Decodable { let groups: [AgentGroupSummary] }
+        return try await authorizedGet("agents/groups", as: Response.self).groups
     }
 
     /// What the primary agent watches (opt-in) and what it noticed (backend agent/events.ts).
@@ -1512,6 +1585,16 @@ enum RovaBackendClient {
 
     static func revokeTerminalGrant(id: String) async throws -> TerminalGrantRevocationResponse {
         try await authorizedPost("terminal-grants/\(id)/revoke", body: [:], as: TerminalGrantRevocationResponse.self)
+    }
+
+    struct TerminalUndoResponse: Decodable { let ok: Bool; let message: String }
+
+    static func undoTerminalChange(undoId: String, grantId: String) async throws -> TerminalUndoResponse {
+        try await authorizedPost("terminal-undos/\(undoId)/execute", body: ["grantId": grantId], as: TerminalUndoResponse.self)
+    }
+
+    static func undoFileChange(undoId: String, deviceId: String) async throws -> TerminalUndoResponse {
+        try await authorizedPost("file-undos/\(undoId)/execute", body: ["deviceId": deviceId], as: TerminalUndoResponse.self)
     }
 
     struct StoredMemory: Decodable, Identifiable {

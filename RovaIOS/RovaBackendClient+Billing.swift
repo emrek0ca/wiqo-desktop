@@ -121,7 +121,10 @@ extension RovaBackendClient {
             OAuthProviderInfo(id: "microsoft", name: "Microsoft 365", symbol: "square.grid.2x2", summary: "OneDrive dosyaları", available: false),
             OAuthProviderInfo(id: "jira", name: "Jira", symbol: "checkmark.square", summary: "Projeler ve issue'lar", available: false),
             OAuthProviderInfo(id: "gitlab", name: "GitLab", symbol: "chevron.left.forwardslash.chevron.right", summary: "Projeler ve issue'lar", available: false),
-            OAuthProviderInfo(id: "asana", name: "Asana", symbol: "checklist", summary: "Projeler ve görevler", available: false)
+            OAuthProviderInfo(id: "asana", name: "Asana", symbol: "checklist", summary: "Projeler ve görevler", available: false),
+            OAuthProviderInfo(id: "x", name: "X", symbol: "xmark", summary: "Profil, gönderiler ve paylaşım", available: false),
+            OAuthProviderInfo(id: "reddit", name: "Reddit", symbol: "bubble.left.and.bubble.right", summary: "Profil, gönderiler ve paylaşım", available: false),
+            OAuthProviderInfo(id: "linkedin", name: "LinkedIn", symbol: "person.crop.rectangle", summary: "Profil ve üye adına gönderi", available: false)
         ]
     }
 
