@@ -5,6 +5,7 @@
   "scripts": {
     "studio": "remotion studio src/index.ts",
     "render:act": "remotion render src/index.ts WiqoAct25 out/wiqo-act-25-tr.mp4 --codec=h264 --crf=16 --pixel-format=yuv420p --color-space=bt709 --concurrency=4 --overwrite",
+    "render:act:30": "remotion render src/index.ts WiqoAct30 out/wiqo-act-30-en.mp4 --codec=h264 --crf=16 --pixel-format=yuv420p --color-space=bt709 --concurrency=4 --overwrite",
     "lint": "tsc --noEmit",
     "render:main": "remotion render src/index.ts WiqoLaunch60 out/wiqo-launch-60.mp4 --codec=h264 --crf=16 --pixel-format=yuv420p --concurrency=4 --overwrite",
     "render:square": "remotion render src/index.ts WiqoLaunch60Square out/wiqo-launch-60-square.mp4 --codec=h264 --crf=16 --pixel-format=yuv420p --concurrency=4 --overwrite",
