@@ -1,0 +1,77 @@
+{
+  "expo": {
+    "name": "Wiqo",
+    "slug": "wiqo-android",
+    "version": "1.0.2",
+    "platforms": [
+      "android"
+    ],
+    "orientation": "portrait",
+    "icon": "./assets/wiqo/mark.png",
+    "scheme": "wiqo",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "wiqo.android.com",
+      "versionCode": 3,
+      "googleServicesFile": "./google-services.json",
+      "intentFilters": [
+        {
+          "action": "OPEN_WIQO",
+          "category": ["DEFAULT"]
+        }
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/wiqo/mark.png",
+        "monochromeImage": "./assets/wiqo/mark.png"
+      },
+      "predictiveBackGestureEnabled": true,
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/wiqo/mark.png",
+          "imageWidth": 96
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 28,
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36
+          }
+        }
+      ],
+      "expo-font",
+      "expo-notifications",
+      "expo-speech-recognition",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Wiqo, sohbete fotoğraf eklemek için kameranı kullanır.",
+          "photosPermission": "Wiqo, sohbetine eklemek üzere seçtiğin görsellere erişir.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-asset",
+      "expo-sharing",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      "expo-iap"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
