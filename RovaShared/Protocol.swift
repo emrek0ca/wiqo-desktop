@@ -917,10 +917,12 @@ public struct CodeExecutionPayload: Codable, Equatable, Sendable {
 public struct ScreenCapturePayload: Codable, Equatable, Sendable {
     public let displayID: UInt32?
     public let maxWidth: Int
+    public let targetApplication: String?
 
-    public init(displayID: UInt32? = nil, maxWidth: Int = 1600) {
+    public init(displayID: UInt32? = nil, maxWidth: Int = 1600, targetApplication: String? = nil) {
         self.displayID = displayID
         self.maxWidth = maxWidth
+        self.targetApplication = targetApplication
     }
 }
 
@@ -1003,14 +1005,17 @@ public struct TerminalResultContent: Codable, Equatable, Sendable {
     public let text: String?
     public let files: [String]?
     public let totalLines: Int?
+    /// Opaque companion-owned rollback token for a successful, reversible file change.
+    public let undoId: String?
 
-    public init(kind: String, workingDirectory: String? = nil, steps: [TerminalStepResult]? = nil, text: String? = nil, files: [String]? = nil, totalLines: Int? = nil) {
+    public init(kind: String, workingDirectory: String? = nil, steps: [TerminalStepResult]? = nil, text: String? = nil, files: [String]? = nil, totalLines: Int? = nil, undoId: String? = nil) {
         self.kind = kind
         self.workingDirectory = workingDirectory
         self.steps = steps
         self.text = text
         self.files = files
         self.totalLines = totalLines
+        self.undoId = undoId
     }
 }
 
@@ -1650,10 +1655,12 @@ public struct FileSystemEntry: Codable, Equatable, Sendable, Identifiable {
     public let byteCount: Int64
     public let modifiedAt: Date?
     public let isDirectory: Bool
+    /// Opaque, one-time rollback token created by the companion for a verified file write.
+    public let undoId: String?
 
     public var id: String { path }
 
-    public init(path: String, name: String, byteCount: Int64, modifiedAt: Date?, isDirectory: Bool, fileType: String? = nil, requestedPath: String? = nil) {
+    public init(path: String, name: String, byteCount: Int64, modifiedAt: Date?, isDirectory: Bool, fileType: String? = nil, requestedPath: String? = nil, undoId: String? = nil) {
         self.path = path
         self.requestedPath = requestedPath
         self.name = name
@@ -1661,6 +1668,7 @@ public struct FileSystemEntry: Codable, Equatable, Sendable, Identifiable {
         self.byteCount = byteCount
         self.modifiedAt = modifiedAt
         self.isDirectory = isDirectory
+        self.undoId = undoId
     }
 }
 

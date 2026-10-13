@@ -162,6 +162,13 @@ public struct ActHub: Sendable {
     /// The JavaScript packages a web project may use, and the pinned Python ones (public metadata only).
     public func packages() async throws -> ActPackageCatalog { try await get("code-sync/packages", as: ActPackageCatalog.self) }
 
+    /// One library of the open registry for a path a page asks for; nil when the backend does not offer it (licence, size, known hole).
+    public func resolvePackage(path: String) async throws -> ActWebPackage? {
+        struct Response: Decodable { let package: ActWebPackage }
+        let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? path
+        return try? await get("code-sync/packages/resolve?path=\(encoded)", as: Response.self).package
+    }
+
     /// Runs a Python project in the server's sandbox for this one request.
     public func run(files: [(path: String, content: String)]) async throws -> RunResult {
         try await send("POST", "code-sync/run", body: ["files": files.map { ["path": $0.path, "content": $0.content] }], as: RunResult.self, timeout: 60)

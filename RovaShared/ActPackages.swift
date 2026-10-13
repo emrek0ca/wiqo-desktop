@@ -36,6 +36,9 @@ public struct ActPackageError: LocalizedError, Sendable {
 /// never sees it, and the page makes no network request.
 public final class ActPackages: @unchecked Sendable {
     public typealias CatalogLoader = @Sendable () async throws -> ActPackageCatalog
+    /// Asked for a path the catalog does not list ("act-vendor/d3-7.9.0.js"): the backend resolves it from the registry's own metadata
+    /// into the same entry shape. The archive is still downloaded and verified here exactly like a catalog entry.
+    public typealias PackageResolver = @Sendable (_ path: String) async throws -> ActWebPackage?
     public typealias Downloader = @Sendable (URL) async throws -> Data
 
     public static let shared = ActPackages()
@@ -107,7 +110,7 @@ public final class ActPackages: @unchecked Sendable {
 
     /// Makes sure every package the page needs is on the device, verified. Downloads only what is not cached already.
     /// Throws `ActPackageError` (DEVICE_PACKAGE_MISSING) when something cannot be fetched or does not check out.
-    public func prepare(_ html: String, loadCatalog: CatalogLoader) async throws {
+    public func prepare(_ html: String, loadCatalog: CatalogLoader, resolve: PackageResolver? = nil) async throws {
         let paths = Self.referencedPaths(in: html)
         guard !paths.isEmpty else { return }
         if inlineCached(html).missing.isEmpty { return }
@@ -118,10 +121,19 @@ public final class ActPackages: @unchecked Sendable {
             catalog = known
         }
         saveCatalog(catalog)
+        var added: [ActWebPackage] = []
         for path in paths {
-            guard let package = catalog.web.first(where: { $0.path == path }), Self.isSane(package) else { throw ActPackageError("\(path) izinli paketler arasında yok") }
+            var found = catalog.web.first(where: { $0.path == path }) ?? added.first(where: { $0.path == path })
+            if found == nil, let resolve, let resolved = try? await resolve(path), resolved.path == path { found = resolved; added.append(resolved) }
+            guard let package = found, Self.isSane(package) else { throw ActPackageError("\(path) izinli paketler arasında yok") }
             if cachedCode(for: package) != nil { continue }
             try await fetch(package)
+        }
+        // What was resolved is remembered with the catalog, so the page is inlined offline the next time.
+        if !added.isEmpty {
+            let latest = cachedCatalog() ?? catalog
+            let known = Set(latest.web.map(\.path))
+            saveCatalog(ActPackageCatalog(version: latest.version, web: latest.web + added.filter { !known.contains($0.path) }, python: latest.python))
         }
     }
 

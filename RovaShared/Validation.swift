@@ -309,7 +309,8 @@ public enum RovaValidation {
             }
         case .captureScreen:
             guard case .screenCapture(let capture) = request.payload,
-                  (400...2_400).contains(capture.maxWidth) else {
+                  (400...2_400).contains(capture.maxWidth),
+                  capture.targetApplication.map({ isSafeText($0, maxLength: 200) }) ?? true else {
                 return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Ekran görüntüsü ayarları geçersiz."))
             }
         case .runShortcut:
@@ -415,7 +416,7 @@ public enum RovaValidation {
         case .computerBrowser:
             guard case .computerBrowser(let browser) = request.payload,
                   UUID(uuidString: browser.taskId) != nil,
-                  ["navigate", "observe", "observe_diff", "read", "click", "fill", "select", "press", "scroll", "back", "submit", "run_steps"].contains(browser.action),
+                  ["navigate", "observe", "observe_diff", "read", "click", "fill", "select", "press", "scroll", "back", "submit", "run_steps", "handoff"].contains(browser.action),
                   browser.submit == nil || browser.action == "fill",
                   browser.key == nil || browser.action == "press",
                   browser.offset == nil || (browser.action == "read" && (0...2_000_000).contains(browser.offset!)) else {
@@ -429,6 +430,13 @@ public enum RovaValidation {
                     return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Toplu tarayıcı adımları geçersiz."), category: "validation")
                 }
                 break
+            }
+            if browser.action == "handoff" {
+                guard browser.url.map(isAllowedBrowserURL) == true, browser.targetRef == nil, browser.targetBy == nil,
+                      browser.target == nil, browser.role == nil, browser.value == nil, browser.direction == nil,
+                      browser.scrollAmount == nil, browser.submit == nil, browser.key == nil, browser.offset == nil else {
+                    return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Canlı tarayıcı devri geçersiz."), category: "validation")
+                }
             }
             guard browser.steps == nil else {
                 return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Tarayıcı adımları yalnızca run_steps ile kullanılabilir."), category: "validation")
@@ -962,6 +970,7 @@ public enum RovaCommandAuthority {
             return RovaValidation.uiElementRequiresUserPresence(element)
         case .computerBrowser:
             guard case .computerBrowser(let browser) = payload else { return true }
+            if browser.action == "handoff" { return false }
             if browser.action == "run_steps" {
                 return browser.steps?.contains(where: { $0.action == "submit" }) == true
                     && browser.interactionAccessGranted != true
@@ -1048,6 +1057,8 @@ public enum RovaTerminalPolicy {
     public static let featureV2 = "terminal-session-v2"
     /// Reads in the person's own folders without a card, and folder grants of up to 30 days.
     public static let featureV3 = "terminal-session-v3"
+    /// Companion-owned undo records for terminal file changes.
+    public static let featureV4 = "terminal-session-v4"
     /// Longest grant the phone may sign; the backend offers more than 30 minutes only to v2 Macs, more than 8 hours only to v3.
     public static let maxGrantSeconds = 30 * 24 * 60 * 60
     /// The id of the grant a card-less read runs under (never signed; read mode, one folder, checked by readFolderWithoutGrant).
