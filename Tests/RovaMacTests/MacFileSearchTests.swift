@@ -22,7 +22,7 @@ final class MacFileSearchTests: XCTestCase {
         return url
     }
 
-    private func spec(_ query: String = "", alternatives: [String] = [], kind: String? = nil, days: Int? = nil, recent: Bool = false, hidesSensitive: Bool = true) -> MacFileSearch.Spec {
+    private func spec(_ query: String = "", alternatives: [String] = [], kind: String? = nil, days: Int? = nil, recent: Bool = false) -> MacFileSearch.Spec {
         let groups = ([MacFileSearch.tokens(from: query)] + alternatives.map(MacFileSearch.tokens(from:))).filter { !$0.isEmpty }
         return MacFileSearch.Spec(
             tokens: MacFileSearch.tokens(from: query),
@@ -32,8 +32,7 @@ final class MacFileSearchTests: XCTestCase {
             kind: kind,
             since: days.map { Date().addingTimeInterval(-Double($0) * 86_400) },
             content: false,
-            recent: recent,
-            hidesSensitive: hidesSensitive
+            recent: recent
         )
     }
 
@@ -109,6 +108,9 @@ final class MacFileSearchTests: XCTestCase {
     @MainActor
     func testATaskGrantCoversFileWorkInItsFoldersOnly() throws {
         let store = AgentAccessStore.shared
+        let previousFullAccess = store.isEnabled
+        store.setEnabled(false)
+        defer { store.setEnabled(previousFullAccess) }
         store.revokeTaskGrant()
         func request(_ type: CommandType, _ payload: CommandPayload) -> CommandRequest { CommandRequest(type: type, payload: payload) }
         let inside = root.appendingPathComponent("a.pdf").path
@@ -207,7 +209,7 @@ final class MacFileSearchTests: XCTestCase {
         XCTAssertEqual(names(MacFileSearch.walk(spec("mart ra"))), ["rapor-mart.pdf"], "every word must be in the name")
     }
 
-    func testKeyMaterialStaysOutOfAutomaticSearchesButNotOutOfAnApprovedOne() throws {
+    func testKeyMaterialStaysOutOfEverySearch() throws {
         try make("anahtar/id_rsa")
         try make("banka parola.txt")
         try make("kubernetes.pem")
@@ -215,7 +217,17 @@ final class MacFileSearchTests: XCTestCase {
         XCTAssertEqual(names(MacFileSearch.walk(spec("", kind: "pdf"))), ["rapor.pdf"])
         XCTAssertTrue(names(MacFileSearch.walk(spec("id_rsa"))).isEmpty)
         XCTAssertTrue(names(MacFileSearch.walk(spec("parola"))).isEmpty)
-        XCTAssertEqual(names(MacFileSearch.walk(spec("parola", hidesSensitive: false))), ["banka parola.txt"])
+        XCTAssertTrue(names(MacFileSearch.walk(spec("parola"))).isEmpty)
+    }
+
+    func testCredentialFilesAreBlockedAtDirectReadAndTransferBoundaries() async throws {
+        let key = try make("AuthKey_TEST123.p8", bytes: 64)
+        let read = MacSystem.readFile(LocalFileOperationPayload(path: key.path))
+        XCTAssertEqual(read.error?.code, "SENSITIVE_FILE_BLOCKED")
+        XCTAssertEqual(MacSystem.readDesktopFile("AuthKey_TEST123.p8").error?.code, "SENSITIVE_FILE_BLOCKED")
+        XCTAssertEqual(MacSystem.readDocument("AuthKey_TEST123.p8").error?.code, "SENSITIVE_FILE_BLOCKED")
+        let transfer = await MacSystem.sendFileToPhone(LocalFileOperationPayload(path: key.path), commandID: UUID(), accessToken: "test")
+        XCTAssertEqual(transfer.error?.code, "SENSITIVE_FILE_BLOCKED")
     }
 
     // MARK: The whole request

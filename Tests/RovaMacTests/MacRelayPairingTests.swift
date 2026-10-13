@@ -44,6 +44,7 @@ final class MacRelayPairingTests: XCTestCase {
     private final class Recorder {
         var states: [RelayPairingState] = []
         var claims: [(pairingToken: String, backendToken: String?, deviceAccessToken: String?, deviceRefreshToken: String?)] = []
+        var handoffFailure: String?
     }
 
     private let fast = MacRelayPairing.Timing(
@@ -58,13 +59,17 @@ final class MacRelayPairingTests: XCTestCase {
         RelayPairingSession(id: id, secret: String(repeating: "s", count: 43), expiresAt: Date().addingTimeInterval(600))
     }
 
-    private func run(_ backend: FakeBackend, until condition: @MainActor (Recorder) -> Bool) async -> Recorder {
+    private func run(_ backend: FakeBackend, handoffFailure: String? = nil, until condition: @MainActor (Recorder) -> Bool) async -> Recorder {
         let recorder = Recorder()
+        recorder.handoffFailure = handoffFailure
         let pairing = MacRelayPairing(
             api: backend.api,
             timing: fast,
             onState: { recorder.states.append($0) },
-            onClaimed: { recorder.claims.append(($0, $1, $2, $3)) }
+            onClaimed: {
+                recorder.claims.append(($0, $1, $2, $3))
+                return recorder.handoffFailure
+            }
         )
         pairing.start()
         var waited = 0
@@ -87,6 +92,18 @@ final class MacRelayPairingTests: XCTestCase {
         XCTAssertEqual(recorder.states.first, .preparing)
         guard case .waiting(let payload)? = recorder.states.dropFirst().first else { return XCTFail("the code must be shown once it exists") }
         XCTAssertEqual(payload.sessionID, "a")
+    }
+
+    func testFailedHandoffShowsErrorWithoutGeneratingAnotherQr() async {
+        let backend = FakeBackend(
+            sessions: [.success(session("claimed"))],
+            polls: [.success(.claimed(pairingToken: "pair", backendToken: "backend", deviceAccessToken: nil, deviceRefreshToken: nil))]
+        )
+        let recorder = await run(backend, handoffFailure: "Keychain write failed") {
+            $0.states.contains(.failed("Keychain write failed"))
+        }
+        XCTAssertEqual(backend.createCalls, 1)
+        XCTAssertTrue(recorder.states.contains(.failed("Keychain write failed")))
     }
 
     func testExpiredSessionIsReplacedWithANewCode() async {

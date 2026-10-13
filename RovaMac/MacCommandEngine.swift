@@ -477,9 +477,7 @@ actor MacCommandEngine {
             guard case .textFile(let file) = request.payload else {
                 return (nil, "Geçersiz dosya isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya isteği geçersiz."))
             }
-            let error = await Task.detached(priority: .userInitiated) { MacSystem.saveTextFile(file) }.value
-            if let error { return (nil, error.message, error) }
-            return await Task.detached { MacSystem.verifiedDesktopFileResult(filename: file.filename, expectedContent: file.content) }.value
+            return await Task.detached(priority: .userInitiated) { MacSystem.saveTextFileResult(file) }.value
         case .saveArtifact:
             guard case .artifactFile(let artifact) = request.payload else {
                 return (nil, "Geçersiz artifact isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Artifact isteği geçersiz."))
@@ -605,9 +603,7 @@ actor MacCommandEngine {
             guard case .fileOperation(let payload) = request.payload else {
                 return (nil, "Geçersiz dosya yazma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolu veya içeriği geçersiz.", category: "tool_failure"))
             }
-            let error = await Task.detached(priority: .userInitiated) { MacSystem.writeFile(payload) }.value
-            if let error { return (nil, error.message, error) }
-            return await Task.detached { MacSystem.verifiedFileResult(path: payload.path, expectedContent: payload.content) }.value
+            return await Task.detached(priority: .userInitiated) { MacSystem.writeFileResult(payload) }.value
         case .moveFile:
             guard case .fileOperation(let payload) = request.payload else {
                 return (nil, "Geçersiz dosya taşıma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolları geçersiz.", category: "tool_failure"))
@@ -640,8 +636,8 @@ actor MacCommandEngine {
             guard case .fileOperation(let payload) = request.payload else {
                 return (nil, "Geçersiz dosya silme isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Dosya yolu geçersiz.", category: "tool_failure"))
             }
-            let error = await Task.detached(priority: .userInitiated) { MacSystem.deleteFile(payload) }.value
-            return (nil, error == nil ? "Dosya silindi." : error!.message, error)
+            let outcome = await Task.detached(priority: .userInitiated) { MacSystem.deleteFile(payload) }.value
+            return (outcome.data, outcome.error == nil ? "Öğe Çöp Sepeti'ne taşındı." : outcome.error!.message, outcome.error)
         case .executeCode:
             guard case .codeExecution(let payload) = request.payload else {
                 return (nil, "Geçersiz kod çalıştırma isteği.", RovaError(code: "INVALID_PAYLOAD", message: "Kod çalıştırma isteği geçersiz.", category: "tool_failure"))

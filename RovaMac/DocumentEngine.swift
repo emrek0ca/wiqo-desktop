@@ -27,6 +27,9 @@ enum DocumentEngine {
 
     /// Text of a document at an already-validated location (Desktop or a resolved local path).
     static func extractText(from fileURL: URL, displayName filename: String) -> (data: DocumentContent?, error: RovaError?) {
+        guard !RovaOwnFolders.isSensitive(fileURL.resolvingSymlinksInPath().path) else {
+            return (nil, RovaError(code: "SENSITIVE_FILE_BLOCKED", message: "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından okunamaz.", category: "permission"))
+        }
         do {
             let values = try fileURL.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey])
             guard values.isDirectory != true, values.isRegularFile == true else {

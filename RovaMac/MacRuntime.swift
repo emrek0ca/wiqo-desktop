@@ -139,7 +139,18 @@ final class MacRuntime: ObservableObject {
         startNetworkMonitor()
         startTask = Task { @MainActor [weak self] in
             await self?.bringUp()
+            await self?.requestInitialPermissionsIfNeeded()
         }
+    }
+
+    /// Start the macOS permission requests once during onboarding. macOS owns each native
+    /// approval separately; the Settings screen remains the place to retry or enable manual-only
+    /// permissions such as Full Disk Access.
+    private func requestInitialPermissionsIfNeeded() async {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: MacStorage.initialPermissionsRequestedKey) else { return }
+        defaults.set(true, forKey: MacStorage.initialPermissionsRequestedKey)
+        await warmUpAutomationPermissions()
     }
 
     /// The listener and the pairing code come first: a phone that scans the QR code must find
@@ -275,6 +286,7 @@ final class MacRuntime: ObservableObject {
     }
 
     func regeneratePairing() {
+        serviceError = nil
         refreshPairingCode()
         relayPairingService.start()
     }
@@ -306,6 +318,7 @@ final class MacRuntime: ObservableObject {
             MacSystem.warmUpAutomationPermissions()
         }.value
         let calendarGranted = await MacSystem.requestCalendarAccessForWarmUp()
+        MacSystem.registerForFullDiskAccess()
         let fullDiskGranted = MacSystem.hasFullDiskAccess()
         automationPermissions = results
         installedWiqoShortcuts = await Task.detached(priority: .utility) {
@@ -389,25 +402,31 @@ final class MacRuntime: ObservableObject {
 
     /// The phone claimed the internet pairing code: keep the token it will sign commands with and
     /// sign in to the backend with the account it belongs to.
-    private func relayPairingClaimed(pairingToken: String, backendToken: String?, deviceAccessToken: String?, deviceRefreshToken: String?) async {
+    private func relayPairingClaimed(pairingToken: String, backendToken: String?, deviceAccessToken: String?, deviceRefreshToken: String?) async -> String? {
         do {
             try await pairedDeviceTokenStore.save(pairingToken)
         } catch {
             errorLogger.error("Relay pairing token could not be stored")
-            serviceError = "Eşleşme kaydedilemedi. Anahtar Zinciri erişimini kontrol edip yeniden dene."
-            relayPairingService.start()
-            return
+            let status = (error as? RovaKeychainError).flatMap { error -> OSStatus? in
+                guard case .status(let status) = error else { return nil }
+                return status
+            }
+            let detail = status.map { " (Keychain hata kodu: \($0))" } ?? ""
+            let message = "Eşleşme Mac'e kaydedilemedi. Wiqo'ya Anahtar Zinciri erişimi verip yeniden dene.\(detail)"
+            serviceError = message
+            return message
         }
         token = pairingToken
         pairedDeviceName = "iPhone"
         UserDefaults.standard.set("iPhone", forKey: MacStorage.pairedNameKey)
         relayPairing = .paired
         guard let accessToken = deviceAccessToken ?? backendToken else {
-            serviceError = "İnternet bağlantısı kurulamadı. Eşleştirmeyi yeniden dene."
-            relayPairingService.start()
-            return
+            let message = "Eşleşme alındı ama sunucu oturum anahtarı gelmedi. Yeni QR oluşturup tekrar dene."
+            serviceError = message
+            return message
         }
         await backendChannel.connect(token: accessToken, refreshToken: deviceRefreshToken)
+        return nil
     }
 
     func refreshAutomations() async {

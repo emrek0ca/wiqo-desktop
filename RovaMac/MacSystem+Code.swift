@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Darwin
 import Foundation
 
@@ -534,6 +535,197 @@ extension MacSystem {
             let reason = ((error as NSError).userInfo["NSDebugDescription"] as? String) ?? "geçersiz JSON"
             return RovaError(code: "TERMINAL_EDIT_INVALID_JSON", message: "\(display): değişiklik sonrası JSON geçersiz olurdu (\(reason)); hiçbir dosya değiştirilmedi. Virgül ve parantezleri kontrol edip tekrar dene.", category: "validation")
         }
+    }
+
+    private struct TerminalUndoRecord: Codable {
+        struct File: Codable { let path: String; let created: Bool; let before: Data?; let afterSHA256: String }
+        let id: String
+        let root: String
+        let createdAt: Date
+        let files: [File]
+    }
+
+    private struct LocalFileUndoRecord: Codable {
+        let id: String
+        let path: String
+        let createdAt: Date
+        let before: Data?
+        let afterSHA256: String
+        let restorePath: String?
+    }
+
+    /// Saves a local, opaque undo token. File contents and absolute paths stay on this Mac.
+    static func registerTerminalUndo(root: String, changes: [(path: String, before: Data?, created: Bool, after: Data?)]) -> String? {
+        guard !changes.isEmpty, changes.count <= 10,
+              let resolvedRoot = RovaTerminalPolicy.resolveDirectory(root) else { return nil }
+        let files = changes.compactMap { change -> TerminalUndoRecord.File? in
+            guard let after = change.after,
+                  let path = RovaTerminalPolicy.resolveExistingFile(change.path, workingDirectory: resolvedRoot, root: resolvedRoot),
+                  RovaTerminalPolicy.isWithin(path, root: resolvedRoot) else { return nil }
+            guard change.created || change.before != nil else { return nil }
+            return TerminalUndoRecord.File(path: path, created: change.created, before: change.before, afterSHA256: SHA256.hash(data: after).map { String(format: "%02x", $0) }.joined())
+        }
+        guard files.count == changes.count else { return nil }
+        let id = UUID().uuidString.lowercased()
+        let record = TerminalUndoRecord(id: id, root: resolvedRoot, createdAt: Date(), files: files)
+        guard let folder = terminalUndoFolder(create: true),
+              let data = try? JSONEncoder().encode(record) else { return nil }
+        do {
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+            let recordURL = folder.appendingPathComponent("\(id).json")
+            try data.write(to: recordURL, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: recordURL.path)
+            pruneTerminalUndo(folder)
+            return id
+        } catch { return nil }
+    }
+
+    /// Restores a record only when every target still has the exact post-edit bytes; stale or
+    /// replayed buttons cannot overwrite newer user changes.
+    static func undoTerminalChange(undoId: String, root: String) -> (message: String, error: RovaError?) {
+        guard UUID(uuidString: undoId) != nil, let resolvedRoot = RovaTerminalPolicy.resolveDirectory(root),
+              let folder = terminalUndoFolder(create: false),
+              let data = try? Data(contentsOf: folder.appendingPathComponent("\(undoId.lowercased()).json")),
+              let record = try? JSONDecoder().decode(TerminalUndoRecord.self, from: data),
+              record.id == undoId.lowercased(), record.root == resolvedRoot,
+              Date().timeIntervalSince(record.createdAt) <= 7 * 24 * 60 * 60,
+              !record.files.isEmpty else {
+            return ("Geri alma kaydı bulunamadı, süresi doldu veya bu klasör iznine ait değil.", RovaError(code: "TERMINAL_UNDO_INVALID", message: "Geri alma kaydı bulunamadı, süresi doldu veya bu klasör iznine ait değil.", category: "permission"))
+        }
+        var current: [(path: String, bytes: Data, created: Bool, before: Data?)] = []
+        for file in record.files {
+            guard let path = RovaTerminalPolicy.resolveExistingFile(file.path, workingDirectory: resolvedRoot, root: resolvedRoot),
+                  let bytes = try? Data(contentsOf: URL(fileURLWithPath: path)),
+                  SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == file.afterSHA256 else {
+                return ("Dosyalardan biri bu işlemden sonra değişmiş; yeni değişikliği korumak için geri alma yapılmadı.", RovaError(code: "TERMINAL_UNDO_STALE", message: "Dosyalardan biri bu işlemden sonra değişmiş; geri alma yapılmadı.", category: "validation"))
+            }
+            current.append((path, bytes, file.created, file.before))
+        }
+        var restored: [String] = []
+        do {
+            for item in current {
+                if item.created { try FileManager.default.removeItem(atPath: item.path) }
+                else if let before = item.before { try before.write(to: URL(fileURLWithPath: item.path), options: .atomic) }
+                else { throw CocoaError(.fileReadCorruptFile) }
+                restored.append(item.path)
+            }
+        } catch {
+            for item in current where restored.contains(item.path) { try? item.bytes.write(to: URL(fileURLWithPath: item.path), options: .atomic) }
+            return ("Geri alma tamamlanamadı; değişiklik korunmaya çalışıldı.", RovaError(code: "TERMINAL_UNDO_FAILED", message: "Geri alma tamamlanamadı; dosyaların durumu doğrulanamadı.", category: "tool_failure"))
+        }
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(undoId.lowercased()).json"))
+        return ("\(current.count) dosya önceki haline döndürüldü.", nil)
+    }
+
+    /// File-tool writes use a device-local journal bound to the exact changed file. The token is
+    /// returned only after the companion has read back the committed file.
+    static func registerFileUndo(path: String, before: Data?, restorePath: String? = nil) -> String? {
+        let url = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
+        guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+              let after = try? Data(contentsOf: url, options: .mappedIfSafe),
+              after.count <= 2_000_000, (before?.count ?? 0) <= 2_000_000,
+              restorePath.map({ safeLocalUndoDestinationURL($0) != nil && !FileManager.default.fileExists(atPath: $0) }) ?? true else { return nil }
+        let id = UUID().uuidString.lowercased()
+        let record = LocalFileUndoRecord(id: id, path: url.path, createdAt: Date(), before: before,
+            afterSHA256: SHA256.hash(data: after).map { String(format: "%02x", $0) }.joined(), restorePath: restorePath)
+        guard let folder = fileUndoFolder(create: true), let data = try? JSONEncoder().encode(record) else { return nil }
+        do {
+            let recordURL = folder.appendingPathComponent("\(id).json")
+            try data.write(to: recordURL, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: recordURL.path)
+            pruneTerminalUndo(folder)
+            return id
+        } catch { return nil }
+    }
+
+    /// A file undo is authorized by the authenticated, user-initiated one-tap request. The record
+    /// supplies its own narrow parent-folder scope; callers cannot choose a path or root.
+    static func undoFileChange(undoId: String) -> (message: String, error: RovaError?) {
+        guard UUID(uuidString: undoId) != nil else {
+            return ("Geri alma kaydı bulunamadı veya süresi doldu.", RovaError(code: "FILE_UNDO_INVALID", message: "Geri alma kaydı bulunamadı veya süresi doldu.", category: "validation"))
+        }
+        guard let folder = fileUndoFolder(create: false),
+              let data = try? Data(contentsOf: folder.appendingPathComponent("\(undoId.lowercased()).json")) else {
+            return undoLegacyFileChange(undoId: undoId)
+        }
+        guard let record = try? JSONDecoder().decode(LocalFileUndoRecord.self, from: data),
+              record.id == undoId.lowercased(), Date().timeIntervalSince(record.createdAt) <= 7 * 24 * 60 * 60 else {
+            return ("Geri alma kaydı bulunamadı veya süresi doldu.", RovaError(code: "FILE_UNDO_INVALID", message: "Geri alma kaydı bulunamadı veya süresi doldu.", category: "validation"))
+        }
+        guard let url = safeLocalUndoURL(record.path),
+              let current = try? Data(contentsOf: url, options: .mappedIfSafe),
+              SHA256.hash(data: current).map({ String(format: "%02x", $0) }).joined() == record.afterSHA256 else {
+            return ("Dosya işlemden sonra değişmiş; yeni içerik korundu.", RovaError(code: "FILE_UNDO_STALE", message: "Dosya işlemden sonra değişmiş; yeni içerik korundu.", category: "validation"))
+        }
+        do {
+            if let restorePath = record.restorePath {
+                guard let destination = safeLocalUndoDestinationURL(restorePath), !FileManager.default.fileExists(atPath: destination.path) else {
+                    return ("Özgün konum dolu veya güvenli değil; dosya taşınmadı.", RovaError(code: "FILE_UNDO_STALE", message: "Özgün konum dolu veya güvenli değil; dosya taşınmadı.", category: "validation"))
+                }
+                try FileManager.default.moveItem(at: url, to: destination)
+            } else if let before = record.before { try before.write(to: url, options: .atomic) }
+            else { try FileManager.default.removeItem(at: url) }
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(undoId.lowercased()).json"))
+            return ("Dosya önceki haline döndürüldü.", nil)
+        } catch {
+            return ("Geri alma tamamlanamadı; dosyanın durumu doğrulanamadı.", RovaError(code: "FILE_UNDO_FAILED", message: "Geri alma tamamlanamadı; dosyanın durumu doğrulanamadı.", category: "tool_failure"))
+        }
+    }
+
+    private static func undoLegacyFileChange(undoId: String) -> (message: String, error: RovaError?) {
+        guard let folder = terminalUndoFolder(create: false),
+              let data = try? Data(contentsOf: folder.appendingPathComponent("\(undoId.lowercased()).json")),
+              let record = try? JSONDecoder().decode(TerminalUndoRecord.self, from: data),
+              record.id == undoId.lowercased() else {
+            return ("Geri alma kaydı bulunamadı veya süresi doldu.", RovaError(code: "FILE_UNDO_INVALID", message: "Geri alma kaydı bulunamadı veya süresi doldu.", category: "validation"))
+        }
+        let result = undoTerminalChange(undoId: undoId, root: record.root)
+        guard let error = result.error else { return result }
+        let code = error.code.replacingOccurrences(of: "TERMINAL_UNDO_", with: "FILE_UNDO_")
+        return (result.message, RovaError(code: code, message: error.message, category: error.category))
+    }
+
+    private static func safeLocalUndoURL(_ path: String) -> URL? {
+        let raw = URL(fileURLWithPath: path).standardizedFileURL
+        guard path.hasPrefix("/"), raw.path == path,
+              (try? raw.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]).isRegularFile) == true,
+              (try? raw.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true,
+              raw.resolvingSymlinksInPath().standardizedFileURL.path == path else { return nil }
+        return raw
+    }
+
+    private static func safeLocalUndoDestinationURL(_ path: String) -> URL? {
+        let raw = URL(fileURLWithPath: path).standardizedFileURL
+        let parent = raw.deletingLastPathComponent()
+        guard path.hasPrefix("/"), raw.path == path,
+              FileManager.default.fileExists(atPath: parent.path),
+              parent.resolvingSymlinksInPath().standardizedFileURL.path == parent.path,
+              (try? parent.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]).isDirectory) == true,
+              (try? parent.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else { return nil }
+        return raw
+    }
+
+    private static func fileUndoFolder(create: Bool) -> URL? {
+        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        let folder = support.appendingPathComponent("Wiqo/FileUndo", isDirectory: true)
+        if create {
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        }
+        return create || FileManager.default.fileExists(atPath: folder.path) ? folder : nil
+    }
+
+    private static func terminalUndoFolder(create: Bool) -> URL? {
+        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        let folder = support.appendingPathComponent("Wiqo/TerminalUndo", isDirectory: true)
+        if create { try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        return create || FileManager.default.fileExists(atPath: folder.path) ? folder : nil
+    }
+
+    private static func pruneTerminalUndo(_ folder: URL) {
+        let entries = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.creationDateKey])) ?? []
+        let recent = entries.map { ($0, (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) }.sorted { $0.1 > $1.1 }
+        for (index, entry) in recent.enumerated() where index >= 200 || Date().timeIntervalSince(entry.1) > 7 * 24 * 60 * 60 { try? FileManager.default.removeItem(at: entry.0) }
     }
 
     /// The file as it was before a terminal write or edit, kept for a week (at most 200) so a change can be undone by copying it back.

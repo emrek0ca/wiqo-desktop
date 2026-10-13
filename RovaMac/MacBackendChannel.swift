@@ -370,7 +370,7 @@ final class MacBackendChannel: NSObject {
             "appVersion": "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"))",
             "capabilities": info.capabilities,
             // Optional protocol features; an older backend ignores the field.
-            "features": ["artifact-directory-v1", "bulk-document-move-v1", "file-inspect-v1"] + (CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2, RovaTerminalPolicy.featureV3] : [])
+            "features": ["artifact-directory-v1", "bulk-document-move-v1", "file-inspect-v1"] + (CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2, RovaTerminalPolicy.featureV3, RovaTerminalPolicy.featureV4] : [])
                 + (AgentAccessStore.shared.isEnabled ? [AgentAccessStore.feature] : [])
                 + (AgentAccessStore.shared.isActive && !AgentAccessStore.shared.isEnabled ? [AgentAccessStore.taskActiveFeature] : [])
                 + [AgentAccessStore.grantFeature],
@@ -633,16 +633,24 @@ final class MacBackendChannel: NSObject {
         }
         if runningTerminal[payload.commandId] != nil { return }
         runningTerminal[payload.commandId] = payload.requestDigest ?? ""
+        if action == "undo_file" {
+            let now = Date()
+            let outcome = request.undoId.map(MacSystem.undoFileChange(undoId:))
+                ?? ("Geri alma kaydı geçersiz.", RovaError(code: "FILE_UNDO_INVALID", message: "Geri alma kaydı geçersiz.", category: "validation"))
+            let result = CommandResult(commandID: UUID(), status: outcome.error == nil ? .completed : .failed,
+                message: outcome.message, startedAt: now, finishedAt: now, error: outcome.error)
+            completedTerminal[payload.commandId] = (payload.requestDigest ?? "", result, now)
+            runningTerminal.removeValue(forKey: payload.commandId)
+            sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)
+            return
+        }
         if action == "get_job" || action == "cancel_job" {
             handleTerminalJobAction(action, jobId: request.jobId, grant: request.grant, commandId: payload.commandId, on: task)
             return
         }
-        // No card: only a read, only in a folder of the person's own (RovaTerminalPolicy.readFolderWithoutGrant), and only commands this
-        // Mac itself judges read-only. Anything else still needs the phone-signed grant.
+        // Without a card, only scoped file reading and search are allowed.
         let readFolder = request.grant == nil ? request.workingDirectory.flatMap { RovaTerminalPolicy.readFolderWithoutGrant($0) } : nil
         let readsOnly = action == "read_file" || action == "search"
-            || (action == "run" && RovaTerminalPolicy.isReadOnly(request.command ?? ""))
-            || (action == "run_plan" && !(request.steps ?? []).isEmpty && (request.steps ?? []).allSatisfy { RovaTerminalPolicy.isReadOnly($0.command) })
         guard let grant = request.grant ?? (readFolder != nil && readsOnly
             ? TerminalGrantPayload(id: RovaTerminalPolicy.readWithoutGrantId, rootDirectory: readFolder!, mode: "read", expiresAt: Int(Date().timeIntervalSince1970) + 60, signature: "")
             : nil) else {
@@ -680,7 +688,7 @@ final class MacBackendChannel: NSObject {
                 return
             }
         }
-        if ["read_file", "write_file", "search", "run_plan", "edit_file"].contains(action) || (action == "apply_patch" && !(request.edits ?? []).isEmpty) {
+        if ["read_file", "write_file", "search", "run_plan", "edit_file", "undo"].contains(action) || (action == "apply_patch" && !(request.edits ?? []).isEmpty) {
             executeTerminalV2Action(action, request: request, grant: grant, directory: directory, root: root, commandId: payload.commandId, on: task, deny: deny)
             return
         }
@@ -795,6 +803,11 @@ final class MacBackendChannel: NSObject {
             self?.sendInteractiveCommandResult(commandId: commandId, result: result, on: task)
         }
         switch action {
+        case "undo":
+            guard grant.mode == "full", let undoId = request.undoId else { deny("TERMINAL_UNDO_INVALID", "Geri alma kaydı veya tam klasör izni bulunamadı."); return }
+            let undone = MacSystem.undoTerminalChange(undoId: undoId, root: root)
+            if let error = undone.error { finish(.failed, error.message, nil, error); return }
+            finish(.completed, undone.message, TerminalResultContent(kind: "undo", workingDirectory: directory, text: undone.message), nil)
         case "read_file":
             guard let raw = request.filePath, let path = RovaTerminalPolicy.resolveExistingFile(raw, workingDirectory: directory, root: root) else {
                 deny("TERMINAL_FILE_SCOPE", "\(request.filePath ?? "Dosya") bulunamadı ya da onaylı klasörün (\(grant.rootDirectory)) dışında. search ile doğru yolu bul.")
@@ -810,9 +823,16 @@ final class MacBackendChannel: NSObject {
                 deny("TERMINAL_FILE_SCOPE", "\(request.filePath ?? "Dosya") yazılamadı: onaylı klasörün (\(grant.rootDirectory)) içinde, var olan bir klasörde olmalı. Alt klasör gerekiyorsa önce run ile mkdir -p çalıştır.")
                 return
             }
+            let before = try? Data(contentsOf: URL(fileURLWithPath: path))
+            if FileManager.default.fileExists(atPath: path), before == nil {
+                deny("TERMINAL_UNDO_BACKUP_FAILED", "Dosyanın önceki hali güvenle okunamadı; değişiklik uygulanmadı.")
+                return
+            }
             let written = MacSystem.writeTerminalFile(path, content: content)
             if let error = written.error { finish(.failed, error.message, nil, error); return }
-            finish(.completed, written.created ? "Dosya oluşturuldu." : "Dosya güncellendi.\(written.backup.map { " Önceki hali: \($0)" } ?? "")", TerminalResultContent(kind: "write", workingDirectory: directory, text: written.created ? "created" : "updated\(written.backup.map { "; önceki hali \($0)" } ?? "")", files: [raw]), nil)
+            let after = try? Data(contentsOf: URL(fileURLWithPath: path))
+            let undoId = MacSystem.registerTerminalUndo(root: root, changes: [(path: path, before: before, created: written.created, after: after)])
+            finish(.completed, written.created ? "Dosya oluşturuldu." : "Dosya güncellendi.", TerminalResultContent(kind: "write", workingDirectory: directory, text: written.created ? "created" : "updated", files: [raw], undoId: undoId), nil)
         case "search":
             let pattern = request.pattern ?? ""
             let glob = request.glob
@@ -838,9 +858,12 @@ final class MacBackendChannel: NSObject {
                 }
                 resolved.append((path, edit.patch, edit.filePath))
             }
+            let before = resolved.map { (path: $0.path, before: try? Data(contentsOf: URL(fileURLWithPath: $0.path))) }
+            guard before.allSatisfy({ $0.before != nil }) else { deny("TERMINAL_UNDO_BACKUP_FAILED", "Dosyaların önceki hali güvenle okunamadı; yama uygulanmadı."); return }
             let applied = MacSystem.applyTerminalEdits(resolved)
             if let error = applied.error { finish(.failed, error.message, nil, error); return }
-            finish(.completed, "Yama uygulandı.", TerminalResultContent(kind: "edits", workingDirectory: directory, text: applied.diff, files: edits.map(\.filePath)), nil)
+            let undoId = MacSystem.registerTerminalUndo(root: root, changes: before.compactMap { item in guard let original = item.before, let after = try? Data(contentsOf: URL(fileURLWithPath: item.path)) else { return nil }; return (path: item.path, before: Optional(original), created: false, after: Optional(after)) })
+            finish(.completed, "Yama uygulandı.", TerminalResultContent(kind: "edits", workingDirectory: directory, text: applied.diff, files: edits.map(\.filePath), undoId: undoId), nil)
         case "edit_file":
             guard grant.mode == "full" else { deny("TERMINAL_READ_ONLY", "Dosya düzenlemek için tam izin gerekiyor."); return }
             let replacements = request.replacements ?? []
@@ -856,9 +879,12 @@ final class MacBackendChannel: NSObject {
                 }
                 resolved.append((path, item.filePath, item.find, item.replace, item.replaceAll == true))
             }
+            let before = Array(Set(resolved.map(\.path))).map { (path: $0, before: try? Data(contentsOf: URL(fileURLWithPath: $0))) }
+            guard before.allSatisfy({ $0.before != nil }) else { deny("TERMINAL_UNDO_BACKUP_FAILED", "Dosyaların önceki hali güvenle okunamadı; düzenleme uygulanmadı."); return }
             let edited = MacSystem.applyTerminalReplacements(resolved)
             if let error = edited.error { finish(.failed, error.message, nil, error); return }
-            finish(.completed, "Dosyalar düzenlendi.", TerminalResultContent(kind: "edits", workingDirectory: directory, text: edited.summary, files: Array(Set(replacements.map(\.filePath))).sorted()), nil)
+            let undoId = MacSystem.registerTerminalUndo(root: root, changes: before.compactMap { item in guard let original = item.before, let after = try? Data(contentsOf: URL(fileURLWithPath: item.path)) else { return nil }; return (path: item.path, before: Optional(original), created: false, after: Optional(after)) })
+            finish(.completed, "Dosyalar düzenlendi.", TerminalResultContent(kind: "edits", workingDirectory: directory, text: edited.summary, files: Array(Set(replacements.map(\.filePath))).sorted(), undoId: undoId), nil)
         case "run_plan":
             let steps = request.steps ?? []
             guard (1...8).contains(steps.count) else { deny("TERMINAL_PLAN_INVALID", "Plan 1-8 komut içermeli."); return }
@@ -1259,6 +1285,7 @@ private struct TerminalCommandRequest: Decodable, Sendable {
     let glob: String?
     let edits: [TerminalEditRequest]?
     let replacements: [TerminalReplacementRequest]?
+    let undoId: String?
 }
 
 private struct TerminalReplacementRequest: Decodable, Sendable {

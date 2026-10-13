@@ -174,16 +174,16 @@ except Exception:
         }
     }
 
-    static func verifiedDesktopFileResult(filename: String, expectedContent: String? = nil, expectedBytes: Int64? = nil, expectedSHA256: String? = nil) -> (data: CommandData?, message: String, error: RovaError?) {
+    static func verifiedDesktopFileResult(filename: String, expectedContent: String? = nil, expectedBytes: Int64? = nil, expectedSHA256: String? = nil, undoId: String? = nil) -> (data: CommandData?, message: String, error: RovaError?) {
         guard let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first else {
             let error = RovaError(code: "DESKTOP_UNAVAILABLE", message: "Masaüstü klasörüne erişilemedi.")
             return (nil, error.message, error)
         }
-        return verifiedFileResult(path: desktop.appendingPathComponent(filename).path, expectedContent: expectedContent, expectedBytes: expectedBytes, expectedSHA256: expectedSHA256)
+        return verifiedFileResult(path: desktop.appendingPathComponent(filename).path, expectedContent: expectedContent, expectedBytes: expectedBytes, expectedSHA256: expectedSHA256, undoId: undoId)
     }
 
     /// Read back the committed file before reporting success. Evidence contains metadata only.
-    static func verifiedFileResult(path: String, expectedContent: String? = nil, expectedBytes: Int64? = nil, expectedSHA256: String? = nil) -> (data: CommandData?, message: String, error: RovaError?) {
+    static func verifiedFileResult(path: String, expectedContent: String? = nil, expectedBytes: Int64? = nil, expectedSHA256: String? = nil, undoId: String? = nil) -> (data: CommandData?, message: String, error: RovaError?) {
         let failure = RovaError(code: "FILE_VERIFICATION_FAILED", message: "İşlem uygulandı ancak dosya sonucu doğrulanamadı; otomatik tekrar yapılmadı.", category: "tool_failure")
         guard let url = resolvedLocalURL(path), isRegularFile(url),
               let attributes = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
@@ -198,11 +198,34 @@ except Exception:
                 return (nil, failure.message, failure)
             }
         }
-        let entry = FileSystemEntry(path: url.path, name: url.lastPathComponent, byteCount: Int64(size), modifiedAt: attributes.contentModificationDate, isDirectory: false, fileType: url.pathExtension)
+        let entry = FileSystemEntry(path: url.path, name: url.lastPathComponent, byteCount: Int64(size), modifiedAt: attributes.contentModificationDate, isDirectory: false, fileType: url.pathExtension, undoId: undoId)
         return (.files([entry]), "Doğrulandı: \(url.path) · \(size) bayt\(expectedSHA256.map { " · SHA-256: \($0.lowercased())" } ?? "")", nil)
     }
 
+    static func writeFileResult(_ payload: LocalFileOperationPayload) -> (data: CommandData?, message: String, error: RovaError?) {
+        let path = canonicalUserPath(payload.path)
+        let existed = FileManager.default.fileExists(atPath: path)
+        let before = (try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe)).flatMap { $0.count <= 2_000_000 ? $0 : nil }
+        if let error = writeFile(payload) { return (nil, error.message, error) }
+        let undoId = !existed || before != nil ? registerFileUndo(path: path, before: before) : nil
+        return verifiedFileResult(path: path, expectedContent: payload.content, undoId: undoId)
+    }
+
+    static func saveTextFileResult(_ payload: TextFilePayload) -> (data: CommandData?, message: String, error: RovaError?) {
+        guard let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first else {
+            let error = RovaError(code: "DESKTOP_UNAVAILABLE", message: "Masaüstü klasörüne erişilemedi.")
+            return (nil, error.message, error)
+        }
+        let path = desktop.appendingPathComponent(payload.filename).path
+        if let error = saveTextFile(payload) { return (nil, error.message, error) }
+        let undoId = registerFileUndo(path: path, before: nil)
+        return verifiedDesktopFileResult(filename: payload.filename, expectedContent: payload.content, undoId: undoId)
+    }
+
     static func readDocument(_ filename: String) -> (data: CommandData?, error: RovaError?) {
+        guard !RovaOwnFolders.isSensitive(filename) else {
+            return (nil, RovaError(code: "SENSITIVE_FILE_BLOCKED", message: "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından okunamaz.", category: "permission"))
+        }
         let outcome = DocumentEngine.read(filename: filename)
         return (outcome.data.map(CommandData.documentContent), outcome.error)
     }
@@ -268,6 +291,8 @@ except Exception:
             let files = urls.compactMap { url -> DesktopFileInfo? in
                 guard isDirectDesktopEntry(url, desktop: desktopURL) else { return nil }
                 guard RovaValidation.isValidDesktopFilename(url.lastPathComponent),
+                      !RovaOwnFolders.isSensitive(url.lastPathComponent),
+                      !RovaOwnFolders.isSensitive(url.resolvingSymlinksInPath().path),
                       let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey]) else { return nil }
                 return DesktopFileInfo(filename: url.lastPathComponent, byteCount: Int64(values.fileSize ?? 0), modifiedAt: values.contentModificationDate, isDirectory: values.isDirectory ?? false)
             }.sorted { $0.filename.localizedStandardCompare($1.filename) == .orderedAscending }
@@ -278,9 +303,15 @@ except Exception:
     }
 
     static func readDesktopFile(_ filename: String) -> (data: CommandData?, error: RovaError?) {
+        guard !RovaOwnFolders.isSensitive(filename) else {
+            return (nil, RovaError(code: "SENSITIVE_FILE_BLOCKED", message: "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından okunamaz.", category: "permission"))
+        }
         guard let desktop = desktopURL(), let url = safeDesktopURL(filename),
               isDirectDesktopEntry(url, desktop: desktop), FileManager.default.fileExists(atPath: url.path) else {
             return (nil, missingPathError("~/Desktop/\(filename)", message: "Masaüstünde \"\(filename)\" bulunamadı."))
+        }
+        guard !RovaOwnFolders.isSensitive(url.resolvingSymlinksInPath().path) else {
+            return (nil, RovaError(code: "SENSITIVE_FILE_BLOCKED", message: "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından okunamaz.", category: "permission"))
         }
         do {
             let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey])
@@ -327,12 +358,16 @@ except Exception:
         guard let directory = resolvedLocalURL(payload.path), FileManager.default.fileExists(atPath: directory.path) else {
             return (nil, missingPathError(payload.path, message: "\"\(payload.path)\" klasörü bulunamadı."))
         }
+        guard !RovaOwnFolders.isSensitive(directory.resolvingSymlinksInPath().path) else {
+            return (nil, RovaError(code: "SENSITIVE_FILE_BLOCKED", message: "Kimlik bilgisi içerebilecek klasörler Wiqo tarafından listelenemez.", category: "permission"))
+        }
         guard isDirectory(directory) else {
             return (nil, RovaError(code: "NOT_A_DIRECTORY", message: "İstenen yol bir klasör değil.", category: "tool_failure"))
         }
         do {
             let urls = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey, .contentModificationDateKey], options: [.skipsHiddenFiles])
                 .filter { !$0.lastPathComponent.isEmpty }
+                .filter { !RovaOwnFolders.isSensitive($0.lastPathComponent) }
                 .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
             let start = min(max(payload.page, 0) * max(payload.pageSize, 1), urls.count)
             let page = urls.dropFirst(start).prefix(max(payload.pageSize, 1)).compactMap(fileSystemEntry)
@@ -353,8 +388,14 @@ except Exception:
     }
 
     static func sendFileToPhone(_ payload: LocalFileOperationPayload, commandID: UUID, accessToken: String) async -> (data: CommandData?, error: RovaError?) {
+        guard !RovaOwnFolders.isSensitive(payload.path) else {
+            return (nil, RovaError(code: "SENSITIVE_FILE_BLOCKED", message: "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından aktarılamaz.", category: "permission"))
+        }
         guard let file = resolvedLocalURL(payload.path), FileManager.default.fileExists(atPath: file.path) else {
             return (nil, missingPathError(payload.path, message: "Gönderilecek dosya bulunamadı."))
+        }
+        guard !RovaOwnFolders.isSensitive(file.resolvingSymlinksInPath().path) else {
+            return (nil, RovaError(code: "SENSITIVE_FILE_BLOCKED", message: "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından aktarılamaz.", category: "permission"))
         }
         guard isRegularFile(file), !isSymbolicLink(file) else {
             return (nil, RovaError(code: "INVALID_FILE", message: "Yalnızca normal dosyalar gönderilebilir; klasör veya sembolik bağlantı seçilemez."))
@@ -404,11 +445,17 @@ except Exception:
     }
 
     static func readFile(_ payload: LocalFileOperationPayload) -> (data: CommandData?, error: RovaError?) {
+        guard !RovaOwnFolders.isSensitive(payload.path) else {
+            return (nil, RovaError(code: "SENSITIVE_FILE_BLOCKED", message: "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından okunamaz.", category: "permission"))
+        }
         guard let file = resolvedLocalURL(payload.path), FileManager.default.fileExists(atPath: file.path) else {
             return (nil, missingPathError(payload.path, message: "\"\(payload.path)\" bulunamadı."))
         }
         guard !isDirectory(file), isRegularFile(file) else {
             return (nil, RovaError(code: "FILE_NOT_REGULAR", message: "Yalnızca normal dosyalar okunabilir.", category: "tool_failure"))
+        }
+        guard !RovaOwnFolders.isSensitive(file.resolvingSymlinksInPath().path) else {
+            return (nil, RovaError(code: "SENSITIVE_FILE_BLOCKED", message: "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından okunamaz.", category: "permission"))
         }
         do {
             let values = try file.resourceValues(forKeys: [.fileSizeKey])
@@ -509,14 +556,35 @@ except Exception:
     }
 
     private static func transferResult(_ payload: LocalFileOperationPayload, copy: Bool) -> (data: CommandData?, message: String, error: RovaError?) {
-        let requested = requestedTransferTarget(payload)?.standardizedFileURL.path
+        let sourceURL = resolvedLocalURL(payload.path)
+        let requestedURL = requestedTransferTarget(payload)?.standardizedFileURL
+        let requested = requestedURL?.path
+        let requestedExisted = requestedURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? true
         let outcome = transferFile(payload, copy: copy)
         if let error = outcome.error { return (nil, error.message, error) }
         guard let actual = outcome.actualPath, let entry = fileSystemEntry(actual) else {
             let error = RovaError(code: "OUTCOME_UNKNOWN", message: "Dosya işleminin hedefi doğrulanamadı; otomatik tekrar yapılmadı.", category: "tool_failure")
             return (nil, error.message, error)
         }
-        let receipt = FileSystemEntry(path: entry.path, name: entry.name, byteCount: entry.byteCount, modifiedAt: entry.modifiedAt, isDirectory: entry.isDirectory, fileType: entry.fileType, requestedPath: requested)
+        let createdTarget = !requestedExisted || actual.standardizedFileURL.path != requested
+        var undoId: String?
+        if !entry.isDirectory && createdTarget {
+            if copy {
+                undoId = registerFileUndo(path: actual.path, before: nil)
+            } else if let source = sourceURL, source.path != actual.path {
+                undoId = registerFileUndo(path: actual.path, before: nil, restorePath: source.path)
+                if undoId == nil {
+                    do { try FileManager.default.moveItem(at: actual, to: source) }
+                    catch {
+                        let failure = localFileError(code: "FILE_UNDO_RECORD_FAILED", fallback: "Taşıma için geri alma kaydı oluşturulamadı; kaynak konuma dönüş doğrulanamadı.", error: error)
+                        return (nil, failure.message, failure)
+                    }
+                    let failure = RovaError(code: "FILE_UNDO_RECORD_FAILED", message: "Geri alma kaydı oluşturulamadı; taşıma geri alındı.", category: "tool_failure")
+                    return (nil, failure.message, failure)
+                }
+            }
+        }
+        let receipt = FileSystemEntry(path: entry.path, name: entry.name, byteCount: entry.byteCount, modifiedAt: entry.modifiedAt, isDirectory: entry.isDirectory, fileType: entry.fileType, requestedPath: requested, undoId: undoId)
         return (.files([receipt]), "\(entry.name) \(copy ? "kopyalandı" : "taşındı").", nil)
     }
 
@@ -598,33 +666,48 @@ except Exception:
         return isDirectory(destination) ? destination.appendingPathComponent(source.lastPathComponent) : destination
     }
 
-    static func deleteFile(_ payload: LocalFileOperationPayload) -> RovaError? {
+    static func deleteFile(_ payload: LocalFileOperationPayload) -> (data: CommandData?, error: RovaError?) {
         guard let target = resolvedLocalURL(payload.path), FileManager.default.fileExists(atPath: target.path) else {
-            return missingPathError(payload.path, message: "Silinecek \"\(payload.path)\" bulunamadı.")
+            return (nil, missingPathError(payload.path, message: "Silinecek \"\(payload.path)\" bulunamadı."))
         }
         let normalized = target.standardizedFileURL.path
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
         guard normalized != "/", normalized != home, normalized != "/Users" else {
-            return RovaError(code: "PROTECTED_PATH", message: "Sistem veya kullanıcı kök klasörü silinemez.", category: "permission")
+            return (nil, RovaError(code: "PROTECTED_PATH", message: "Sistem veya kullanıcı kök klasörü silinemez.", category: "permission"))
         }
         guard !isSymbolicLink(target) else {
-            return RovaError(code: "SYMLINK_REJECTED", message: "Sembolik bağlantı silinmedi.", category: "permission")
+            return (nil, RovaError(code: "SYMLINK_REJECTED", message: "Sembolik bağlantı silinmedi.", category: "permission"))
         }
         if isDirectory(target) && !payload.recursive {
             do {
                 let children = try FileManager.default.contentsOfDirectory(atPath: target.path)
                 if !children.isEmpty {
-                    return RovaError(code: "RECURSIVE_REQUIRED", message: "Dolu klasörü silmek için recursive=true açıkça belirtilmeli.", category: "permission")
+                    return (nil, RovaError(code: "RECURSIVE_REQUIRED", message: "Dolu klasörü silmek için recursive=true açıkça belirtilmeli.", category: "permission"))
                 }
             } catch {
-                return localFileError(code: "FILE_LIST_FAILED", fallback: "Klasörün boş olduğu doğrulanamadı; silinmedi.", error: error)
+                return (nil, localFileError(code: "FILE_LIST_FAILED", fallback: "Klasörün boş olduğu doğrulanamadı; silinmedi.", error: error))
             }
         }
+        let originalPath = target.standardizedFileURL.path
+        let isRegularFile = (try? target.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        var trashedURL: NSURL?
         do {
-            try FileManager.default.removeItem(at: target)
-            return nil
+            try FileManager.default.trashItem(at: target, resultingItemURL: &trashedURL)
+            guard let trashedPath = (trashedURL as URL?)?.standardizedFileURL.path else {
+                return (nil, RovaError(code: "FILE_DELETE_UNVERIFIED", message: "Öğe Çöp Sepeti'ne taşındı ancak konumu doğrulanamadı.", category: "tool_failure"))
+            }
+            var undoId: String?
+            if isRegularFile {
+                undoId = registerFileUndo(path: trashedPath, before: nil, restorePath: originalPath)
+                if undoId == nil {
+                    try FileManager.default.moveItem(atPath: trashedPath, toPath: originalPath)
+                    return (nil, RovaError(code: "FILE_UNDO_UNAVAILABLE", message: "Geri alma kaydı oluşturulamadı; dosya özgün konumuna döndürüldü.", category: "tool_failure"))
+                }
+            }
+            let entry = FileSystemEntry(path: originalPath, name: target.lastPathComponent, byteCount: 0, modifiedAt: nil, isDirectory: !isRegularFile, undoId: undoId)
+            return (.files([entry]), nil)
         } catch {
-            return localFileError(code: "FILE_DELETE_FAILED", fallback: "Dosya silinemedi.", error: error)
+            return (nil, localFileError(code: "FILE_DELETE_FAILED", fallback: "Dosya Çöp Sepeti'ne taşınamadı.", error: error))
         }
     }
 

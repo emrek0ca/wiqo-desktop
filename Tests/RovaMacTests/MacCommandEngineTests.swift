@@ -2,6 +2,132 @@ import XCTest
 @testable import RovaMac
 
 final class MacCommandEngineTests: XCTestCase {
+    func testTerminalUndoRestoresOnlyAnUnchangedFileAndIsOneShot() throws {
+        let root = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("WiqoUndoTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let resolvedRoot = root
+        let path = resolvedRoot.appendingPathComponent("draft.txt")
+        let before = Data("before".utf8)
+        try before.write(to: path)
+        try Data("after".utf8).write(to: path)
+        let undoId = try XCTUnwrap(MacSystem.registerTerminalUndo(root: resolvedRoot.path, changes: [(path: path.path, before: before, created: false, after: try Data(contentsOf: path))]))
+
+        let undone = MacSystem.undoTerminalChange(undoId: undoId, root: resolvedRoot.path)
+        XCTAssertNil(undone.error)
+        XCTAssertEqual(try Data(contentsOf: path), before)
+        XCTAssertEqual(MacSystem.undoTerminalChange(undoId: undoId, root: resolvedRoot.path).error?.code, "TERMINAL_UNDO_INVALID")
+    }
+
+    func testTerminalUndoRefusesWhenTheFileChangedAfterTheRecordedEdit() throws {
+        let root = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("WiqoUndoStaleTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let resolvedRoot = root
+        let path = resolvedRoot.appendingPathComponent("draft.txt")
+        let before = Data("before".utf8)
+        try before.write(to: path)
+        try Data("after".utf8).write(to: path)
+        let undoId = try XCTUnwrap(MacSystem.registerTerminalUndo(root: resolvedRoot.path, changes: [(path: path.path, before: before, created: false, after: try Data(contentsOf: path))]))
+        try Data("newer user edit".utf8).write(to: path)
+
+        let result = MacSystem.undoTerminalChange(undoId: undoId, root: resolvedRoot.path)
+        XCTAssertEqual(result.error?.code, "TERMINAL_UNDO_STALE")
+        XCTAssertEqual(try String(contentsOf: path), "newer user edit")
+    }
+
+    func testFileToolUndoUsesItsOpaqueRecordAndRestoresCreatedFileOnce() throws {
+        let root = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("WiqoFileUndoTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let path = root.appendingPathComponent("created.txt")
+        try Data("created".utf8).write(to: path)
+        let undoId = try XCTUnwrap(MacSystem.registerFileUndo(path: path.path, before: nil))
+
+        let result = MacSystem.undoFileChange(undoId: undoId)
+        XCTAssertNil(result.error)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
+        XCTAssertEqual(MacSystem.undoFileChange(undoId: undoId).error?.code, "FILE_UNDO_INVALID")
+    }
+
+    func testFileToolUndoPreservesNewerContent() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("WiqoFileUndoStaleTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let path = root.appendingPathComponent("draft.txt")
+        try Data("written by Wiqo".utf8).write(to: path)
+        let undoId = try XCTUnwrap(MacSystem.registerFileUndo(path: path.path, before: Data("before".utf8)))
+        try Data("newer user edit".utf8).write(to: path)
+
+        let result = MacSystem.undoFileChange(undoId: undoId)
+        XCTAssertEqual(result.error?.code, "FILE_UNDO_STALE")
+        XCTAssertEqual(try String(contentsOf: path, encoding: .utf8), "newer user edit")
+    }
+
+    func testMoveUndoRestoresSourceAndRejectsOccupiedSource() throws {
+        let root = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("WiqoMoveUndoTest-\(UUID().uuidString)", isDirectory: true)
+        let sourceFolder = root.appendingPathComponent("source", isDirectory: true)
+        let targetFolder = root.appendingPathComponent("target", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: targetFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = sourceFolder.appendingPathComponent("note.txt")
+        try Data("original".utf8).write(to: source)
+
+        let moved = MacSystem.moveFileResult(LocalFileOperationPayload(path: source.path, destination: targetFolder.path))
+        XCTAssertNil(moved.error)
+        guard case .files(let rows)? = moved.data else { return XCTFail("Move did not return a file receipt: \(moved.message), \(moved.error?.code ?? "no error")") }
+        let movedPath = try XCTUnwrap(rows.first?.path)
+        let undoId = try XCTUnwrap(rows.first?.undoId)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: movedPath)), Data("original".utf8))
+
+        let undone = MacSystem.undoFileChange(undoId: undoId)
+        XCTAssertNil(undone.error)
+        XCTAssertEqual(try Data(contentsOf: source), Data("original".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: movedPath))
+        XCTAssertEqual(MacSystem.undoFileChange(undoId: undoId).error?.code, "FILE_UNDO_INVALID")
+    }
+
+    func testDeleteMovesRegularFileToTrashAndProvidesOneTapUndo() throws {
+        let root = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("WiqoDeleteUndoTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("draft.txt")
+        try Data("keep me".utf8).write(to: file)
+
+        let deleted = MacSystem.deleteFile(LocalFileOperationPayload(path: file.path))
+        XCTAssertNil(deleted.error)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        guard case .files(let rows)? = deleted.data else { return XCTFail("Delete did not return a receipt") }
+        let undoId = try XCTUnwrap(rows.first?.undoId)
+
+        let undone = MacSystem.undoFileChange(undoId: undoId)
+        XCTAssertNil(undone.error)
+        XCTAssertEqual(try Data(contentsOf: file), Data("keep me".utf8))
+        XCTAssertEqual(MacSystem.undoFileChange(undoId: undoId).error?.code, "FILE_UNDO_INVALID")
+    }
+
+    func testMoveUndoPreservesNewSourceCollisionAndMovedFile() throws {
+        let root = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("WiqoMoveUndoCollisionTest-\(UUID().uuidString)", isDirectory: true)
+        let sourceFolder = root.appendingPathComponent("source", isDirectory: true)
+        let targetFolder = root.appendingPathComponent("target", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: targetFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = sourceFolder.appendingPathComponent("note.txt")
+        try Data("original".utf8).write(to: source)
+        let moved = MacSystem.moveFileResult(LocalFileOperationPayload(path: source.path, destination: targetFolder.path))
+        guard case .files(let rows)? = moved.data, let undoId = rows.first?.undoId, let movedPath = rows.first?.path else { return XCTFail("Move did not return an undo receipt: \(moved.message), \(moved.error?.code ?? "no error")") }
+
+        try Data("new source".utf8).write(to: source)
+        let result = MacSystem.undoFileChange(undoId: undoId)
+        XCTAssertEqual(result.error?.code, "FILE_UNDO_STALE")
+        XCTAssertEqual(try Data(contentsOf: source), Data("new source".utf8))
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: movedPath)), Data("original".utf8))
+    }
+
     func testMoveFileKeepsExistingDestinationWithoutApproval() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-move-collision-\(UUID().uuidString)")
         let source = root.appendingPathComponent("source", isDirectory: true)
@@ -25,7 +151,7 @@ final class MacCommandEngineTests: XCTestCase {
     }
 
     func testCopyIntoFolderReturnsActualRenamedPathAndFailPolicyDoesNotWrite() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-copy-collision-\(UUID().uuidString)")
+        let root = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("WiqoCopyCollisionTest-\(UUID().uuidString)", isDirectory: true)
         let source = root.appendingPathComponent("source", isDirectory: true)
         let target = root.appendingPathComponent("target", isDirectory: true)
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
@@ -48,7 +174,11 @@ final class MacCommandEngineTests: XCTestCase {
         guard case .files(let receipt)? = result.data else { return XCTFail("Missing actual-path receipt") }
         XCTAssertEqual(receipt.first?.requestedPath, existing.path)
         XCTAssertEqual(receipt.first?.path, target.appendingPathComponent("image (2).png").path)
+        let undoId = try XCTUnwrap(receipt.first?.undoId)
         XCTAssertTrue(FileManager.default.fileExists(atPath: original.path))
+        let undone = MacSystem.undoFileChange(undoId: undoId)
+        XCTAssertNil(undone.error)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.appendingPathComponent("image (2).png").path))
     }
 
     func testArtifactURLAcceptsProductionOriginAndRejectsLookalikes() {

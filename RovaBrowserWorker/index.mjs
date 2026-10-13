@@ -14,7 +14,7 @@ const MAX_TEXT = 4_000;
 const COMMAND_TIMEOUT_MS = 30_000;
 const RUNTIME_SETUP_TIMEOUT_MS = 105_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ACTIONS = new Set(["navigate", "observe", "observe_diff", "read", "click", "fill", "select", "press", "scroll", "back", "submit", "run_steps"]);
+const ACTIONS = new Set(["navigate", "observe", "observe_diff", "read", "click", "fill", "select", "press", "scroll", "back", "submit", "run_steps", "handoff"]);
 const STEP_ACTIONS = new Set(["navigate", "observe", "observe_diff", "read", "click", "fill", "select", "press", "scroll", "back", "submit"]);
 const MAX_BATCH_STEPS = 8;
 const KEYS = new Set(["Enter", "Escape", "Tab", "ArrowDown", "ArrowUp"]);
@@ -57,6 +57,7 @@ const SAFE_ERRORS = {
   BROWSER_PERMISSION_REQUIRED: "Bu tarayıcı görevi için kullanıcı izni gerekiyor.",
   BROWSER_SUBMIT_REQUIRED: "Bu form Enter ile güvenle gönderilemez; güvenli bir arama alanı veya form hedefi gerekli.",
   BROWSER_HUMAN_REQUIRED: "Sayfa insan doğrulaması (CAPTCHA) istiyor. Tarayıcı penceresinde bu adımı senin tamamlaman gerekiyor; ardından devam edebilirim.",
+  BROWSER_HANDOFF_PAGE_MISMATCH: "İnsan yardımı için açık Wiqo sayfası istenen siteyle eşleşmiyor; mevcut görevin sayfası korunuyor.",
   BROWSER_FAILED: "Tarayıcı işlemi tamamlanamadı."
 };
 
@@ -790,7 +791,11 @@ async function handleInterstitials(task) {
   const url = task.page.url();
   const challenge = /\/sorry\/|captcha|challenge/i.test(new URL(url).pathname)
     || await task.page.locator("iframe[src*='recaptcha'], iframe[src*='hcaptcha'], iframe[src*='challenges.cloudflare.com']").count().catch(() => 0) > 0;
-  if (challenge) throw Object.assign(new Error(), { code: "BROWSER_HUMAN_REQUIRED" });
+  if (challenge) {
+    await task.page.bringToFront().catch(() => {});
+    return true;
+  }
+  return false;
 }
 
 async function execute(message) {
@@ -800,6 +805,21 @@ async function execute(message) {
   }
   const { action, taskId } = message;
   if (action === "run_steps") return executeSteps(message);
+  if (action === "handoff") {
+    // Keep this task's page and session. Opening the URL in the OS browser loses that state.
+    // Bring the same visible page forward for the person; a later request with this taskId
+    // observes the same page after the challenge has been completed.
+    const task = await getTask(taskId);
+    let current;
+    let requested;
+    try {
+      current = new URL(task.page.url());
+      requested = new URL(message.url);
+    } catch { return taskFailure(task, action, "BROWSER_NO_PAGE"); }
+    if (current.origin !== requested.origin) return taskFailure(task, action, "BROWSER_HANDOFF_PAGE_MISMATCH");
+    await task.page.bringToFront();
+    return taskFailure(task, action, "BROWSER_HUMAN_REQUIRED");
+  }
   if (action === "navigate") {
     if (!cleanURL(message.url)) return failure("BROWSER_NETWORK_BLOCKED");
     const task = await getTask(taskId, true);
@@ -807,7 +827,7 @@ async function execute(message) {
     task.contentShared = false;
     await task.page.goto(message.url, { waitUntil: "domcontentloaded", timeout: COMMAND_TIMEOUT_MS });
     await settle(task);
-    await handleInterstitials(task);
+    if (await handleInterstitials(task)) return taskFailure(task, action, "BROWSER_HUMAN_REQUIRED");
     // The navigate command itself is delivered only after the task-scoped approval. Persist that
     // grant in the worker so every later read and interaction uses the same decision.
     task.interactionApproved = true;
@@ -843,7 +863,7 @@ async function execute(message) {
     if (message.key === "Enter") await assertEnterSafe(task.page.locator(":focus"));
     await task.page.keyboard.press(message.key);
     await settle(task);
-    await handleInterstitials(task);
+    if (await handleInterstitials(task)) return taskFailure(task, action, "BROWSER_HUMAN_REQUIRED");
     task.targetRefs.clear();
     return { ok: true, result: await pageState(task, action, message) };
   }
@@ -866,7 +886,7 @@ async function execute(message) {
       await assertEnterSafe(locator);
       await locator.press("Enter", { timeout: COMMAND_TIMEOUT_MS });
       await settle(task);
-      await handleInterstitials(task);
+      if (await handleInterstitials(task)) return taskFailure(task, action, "BROWSER_HUMAN_REQUIRED");
       navigated = true;
     }
   } else if (action === "select") {
@@ -893,7 +913,7 @@ async function execute(message) {
       task.page = openedPage;
     }
     await settle(task);
-    await handleInterstitials(task);
+    if (await handleInterstitials(task)) return taskFailure(task, action, "BROWSER_HUMAN_REQUIRED");
     navigated = true;
   }
   if (["click", "fill", "select", "press"].includes(action)) task.interactionApproved = true;

@@ -7,6 +7,8 @@ enum RelayPairingState: Equatable {
     /// The code is valid and this Mac is watching for the phone to claim it.
     case waiting(RelayPairingPayload)
     case paired
+    /// The phone claimed the code, but the Mac could not finish saving or connecting the pairing.
+    case failed(String)
     /// The backend cannot be reached; the local-network code still works.
     case unavailable
 }
@@ -129,14 +131,14 @@ final class MacRelayPairing {
     private let api: RelayPairingAPI
     private let timing: Timing
     private let onState: @MainActor (RelayPairingState) -> Void
-    private let onClaimed: @MainActor (_ pairingToken: String, _ backendToken: String?, _ deviceAccessToken: String?, _ deviceRefreshToken: String?) async -> Void
+    private let onClaimed: @MainActor (_ pairingToken: String, _ backendToken: String?, _ deviceAccessToken: String?, _ deviceRefreshToken: String?) async -> String?
     private var task: Task<Void, Never>?
 
     init(
         api: RelayPairingAPI,
         timing: Timing = Timing(),
         onState: @escaping @MainActor (RelayPairingState) -> Void,
-        onClaimed: @escaping @MainActor (_ pairingToken: String, _ backendToken: String?, _ deviceAccessToken: String?, _ deviceRefreshToken: String?) async -> Void
+        onClaimed: @escaping @MainActor (_ pairingToken: String, _ backendToken: String?, _ deviceAccessToken: String?, _ deviceRefreshToken: String?) async -> String?
     ) {
         self.api = api
         self.timing = timing
@@ -168,7 +170,9 @@ final class MacRelayPairing {
             onState(.waiting(RelayPairingPayload(sessionID: session.id, secret: session.secret, expiresAt: session.expiresAt)))
             switch await watch(session) {
             case .claimed(let pairingToken, let backendToken, let deviceAccessToken, let deviceRefreshToken):
-                await onClaimed(pairingToken, backendToken, deviceAccessToken, deviceRefreshToken)
+                if let message = await onClaimed(pairingToken, backendToken, deviceAccessToken, deviceRefreshToken) {
+                    onState(.failed(message))
+                }
                 return
             case .expired:
                 onState(.preparing)

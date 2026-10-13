@@ -232,6 +232,16 @@ struct PairingQRView: View {
             }
         case .preparing:
             ProgressView("Güvenli bağlantı kuruluyor…")
+        case .failed(let message):
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 38))
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .textSelection(.enabled)
+            Button("Yeni QR oluştur") { runtime.regeneratePairing() }
+                .buttonStyle(.borderedProminent)
         case .unavailable:
             localNetworkContent
         }

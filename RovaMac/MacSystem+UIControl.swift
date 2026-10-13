@@ -302,6 +302,13 @@ extension MacSystem {
         guard CGPreflightScreenCaptureAccess() else {
             return (nil, RovaError(code: "SCREEN_RECORDING_PERMISSION_REQUIRED", message: "Ekran görüntüsü için Sistem Ayarları > Gizlilik ve Güvenlik > Ekran ve Sistem Sesi Kaydı bölümünden Wiqo'ya izin verin. Ayarlar: x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture", category: "permission"))
         }
+        if let targetApplication = payload.targetApplication?.trimmingCharacters(in: .whitespacesAndNewlines), !targetApplication.isEmpty {
+            let activation = await controlApplication(ApplicationControlPayload(action: .activate, target: targetApplication))
+            if let error = activation.error { return (nil, error) }
+            guard case .applicationControl(let state)? = activation.data, state.verified else {
+                return (nil, RovaError(code: "APPLICATION_ACTIVATION_UNVERIFIED", message: "\(targetApplication) öne getirilemedi; başka bir pencerenin görüntüsünü almadım.", category: "tool_failure"))
+            }
+        }
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             guard let display = payload.displayID.flatMap({ id in content.displays.first(where: { $0.displayID == id }) }) ?? content.displays.first else {
@@ -618,7 +625,15 @@ extension MacSystem {
     }
 
     private static func desktopObservation(taskId: String, action: ComputerDesktopAction, changedFrom: String? = nil, changed: Bool? = nil, verified: Bool) -> (data: CommandData?, error: RovaError?) {
-        guard let application = NSWorkspace.shared.frontmostApplication, application.processIdentifier > 0 else {
+        // Right after an app is launched or activated the system can report no frontmost application for a moment; one lookup ended whole tasks, so wait briefly first.
+        var frontmost = NSWorkspace.shared.frontmostApplication
+        var waited = 0.0
+        while (frontmost?.processIdentifier ?? 0) <= 0, waited < 1.5 {
+            Thread.sleep(forTimeInterval: 0.1)
+            waited += 0.1
+            frontmost = NSWorkspace.shared.frontmostApplication
+        }
+        guard let application = frontmost, application.processIdentifier > 0 else {
             return (nil, RovaError(code: "DESKTOP_APP_UNAVAILABLE", message: "Ön plandaki uygulama belirlenemedi.", category: "tool_failure"))
         }
         let appElement = AXUIElementCreateApplication(application.processIdentifier)

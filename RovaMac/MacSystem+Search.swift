@@ -16,8 +16,6 @@ enum MacFileSearch {
         var since: Date?
         var content: Bool
         var recent: Bool
-        /// Own folders only: key material and credential names are left out.
-        var hidesSensitive: Bool
     }
 
     static let pageSize = 12
@@ -76,7 +74,6 @@ enum MacFileSearch {
 
     static func spec(for payload: FileSearchPayload, now: Date = Date()) -> (spec: Spec?, error: RovaError?) {
         var roots: [URL]
-        var hidesSensitive = false
         if payload.everywhere == true {
             roots = [FileManager.default.homeDirectoryForCurrentUser]
         } else if let folder = payload.folder {
@@ -84,10 +81,8 @@ enum MacFileSearch {
                 return (nil, MacSystem.missingPathError(folder, message: "\"\(folder)\" klasörü bulunamadı."))
             }
             roots = [url]
-            hidesSensitive = RovaOwnFolders.isOwnFolder(folder)
         } else {
             roots = ownFolders()
-            hidesSensitive = true
         }
         if roots.isEmpty { return (nil, RovaError(code: "SEARCH_FAILED", message: "Aranacak klasör bulunamadı.", category: "tool_failure")) }
         let words = tokens(from: payload.query)
@@ -101,8 +96,7 @@ enum MacFileSearch {
             kind: payload.kind,
             since: since,
             content: payload.content == true,
-            recent: payload.sort == "recent" || (words.isEmpty && payload.sort != "relevance"),
-            hidesSensitive: hidesSensitive
+            recent: payload.sort == "recent" || (words.isEmpty && payload.sort != "relevance")
         )
         return (spec, nil)
     }
@@ -186,7 +180,8 @@ enum MacFileSearch {
 
     private static func admissible(_ path: String, _ spec: Spec) -> Bool {
         guard path.count <= 500, !isNoise(path) else { return false }
-        return !(spec.hidesSensitive && RovaOwnFolders.isSensitive(path))
+        let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        return !RovaOwnFolders.isSensitive(path) && !RovaOwnFolders.isSensitive(resolved)
     }
 
     static func rank(_ entries: [FileSystemEntry], spec: Spec) -> [FileSystemEntry] {
