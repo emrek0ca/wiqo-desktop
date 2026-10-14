@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace RovaWindows.Operations;
@@ -29,11 +30,17 @@ internal static class LocalAnalysisOperations
             query = payload.Query,
             expression = payload.Expression,
             variables = payload.Variables,
+            quality = path is not null && Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase) ? "layout" : "auto",
+            maxChars = Math.Min(payload.Limit * 100, 50_000),
             limit = payload.Limit
         }, WireJson.Options);
         var encoded = Convert.ToBase64String(request);
-        var worker = await RunPython(encoded, cancellationToken).ConfigureAwait(false);
-        if (worker is null) return Outcome.Fail("LOCAL_ANALYSIS_RUNTIME_MISSING", "Python yerel analiz çalışma zamanı bulunamadı.", "unavailable");
+        var worker = await RunPython(encoded, payload.Action, cancellationToken).ConfigureAwait(false);
+        var documentStatus = payload.Action == "dependencyStatus" ? await RunPython(encoded, "documentStatus", cancellationToken).ConfigureAwait(false) : null;
+        if (worker is null && documentStatus is not null) worker = documentStatus;
+        if (worker is null) return payload.Action == "extractDocument"
+            ? Outcome.Fail("DOCUMENT_DEPENDENCY_MISSING", "Yerel belge paketi kurulu değil; belge çalışma zamanı kurulumunu tamamlayın.", "unavailable")
+            : Outcome.Fail("LOCAL_ANALYSIS_RUNTIME_MISSING", "Python yerel analiz çalışma zamanı bulunamadı.", "unavailable");
         if (worker.Value.TimedOut) return Outcome.Fail("LOCAL_ANALYSIS_TIMEOUT", "Yerel analiz için ayrılan süre doldu.", "timeout");
         if (worker.Value.ExitCode != 0) return Outcome.Fail("LOCAL_ANALYSIS_FAILED", "Yerel analiz tamamlanamadı.");
         try
@@ -51,14 +58,14 @@ internal static class LocalAnalysisOperations
                 ["action"] = payload.Action,
                 ["adapter"] = root.TryGetProperty("adapter", out var adapter) ? adapter.GetString() ?? "python" : "python",
                 ["available"] = !root.TryGetProperty("available", out var available) || available.GetBoolean(),
-                ["text"] = root.TryGetProperty("text", out var text) ? text.GetString() : null,
+                ["text"] = root.TryGetProperty("text", out var text) ? text.GetString() + (root.TryGetProperty("warnings", out var warnings) && warnings.GetArrayLength() > 0 ? "\n[Belge okuma: " + string.Join(", ", warnings.EnumerateArray().Select(item => item.GetString())) + "]" : "") : null,
                 ["columns"] = Strings(root, "columns"),
                 ["rows"] = Rows(root),
                 ["changedFiles"] = Array.Empty<string>(),
-                ["dependencies"] = Dependencies(root),
+                ["dependencies"] = payload.Action == "dependencyStatus" ? MergedDependencies(root, documentStatus?.Output) : Dependencies(root),
                 ["truncated"] = root.TryGetProperty("truncated", out var truncated) && truncated.GetBoolean()
             };
-            if (cacheKey is not null) Cache(cacheKey, value);
+            if (cacheKey is not null && (payload.Action != "extractDocument" || root.TryGetProperty("sha256", out var digest) && cacheKey.Contains("|" + (digest.GetString() ?? "").ToUpperInvariant() + "\u001f", StringComparison.Ordinal))) Cache(cacheKey, value);
             return Outcome.WithData("localAnalysis", value, "Yerel analiz tamamlandı.");
         }
         catch (JsonException)
@@ -76,7 +83,13 @@ internal static class LocalAnalysisOperations
             try
             {
                 var info = new FileInfo(path);
-                fileStamp = $"{path}|{info.Length}|{info.LastWriteTimeUtc.Ticks}";
+                if (payload.Action == "extractDocument")
+                {
+                    if (info.Length > 25 * 1024 * 1024) return null;
+                    using var content = File.OpenRead(path);
+                    fileStamp = path + "|" + Convert.ToHexString(SHA256.HashData(content));
+                }
+                else fileStamp = $"{path}|{info.Length}|{info.LastWriteTimeUtc.Ticks}";
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return null; }
         }
@@ -157,19 +170,45 @@ internal static class LocalAnalysisOperations
         root.TryGetProperty("rows", out var value) && value.ValueKind == JsonValueKind.Array
             ? value.EnumerateArray().Select(row => row.EnumerateArray().Select(cell => cell.GetString() ?? "").ToArray()).ToArray() : [];
 
+    private static object[] MergedDependencies(JsonElement root, string? documentStatus)
+    {
+        var values = new Dictionary<string, bool>();
+        if (root.TryGetProperty("dependencies", out var current))
+            foreach (var item in current.EnumerateObject()) values[item.Name] = item.Value.GetBoolean();
+        values["markitdown"] = false; values["docling"] = false;
+        if (documentStatus is not null)
+        {
+            using var parsed = JsonDocument.Parse(documentStatus);
+            if (parsed.RootElement.TryGetProperty("dependencies", out var document))
+                foreach (var item in document.EnumerateObject()) values[item.Name] = item.Value.GetBoolean();
+        }
+        return values.Select(item => (object)new { name = item.Key, available = item.Value }).ToArray();
+    }
+
     private static object[] Dependencies(JsonElement root) =>
         root.TryGetProperty("dependencies", out var value) && value.ValueKind == JsonValueKind.Object
             ? value.EnumerateObject().Select(item => (object)new { name = item.Name, available = item.Value.GetBoolean() }).ToArray() : [];
 
-    private static async Task<(int ExitCode, string Output, bool TimedOut)?> RunPython(string payload, CancellationToken cancellationToken)
+    private static async Task<(int ExitCode, string Output, bool TimedOut)?> RunPython(string payload, string action, CancellationToken cancellationToken)
     {
-        foreach (var candidate in new[] { (File: "python", Prefix: Array.Empty<string>()), (File: "py", Prefix: new[] { "-3" }) })
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(45));
+        cancellationToken = deadline.Token;
+        var documentRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Wiqo", "Documents");
+        var documentPython = Path.Combine(documentRoot, ".venv", "Scripts", "python.exe");
+        var documentScript = Path.Combine(AppContext.BaseDirectory, "DocumentWorker", "document_adapter.py");
+        var isDocument = action is "extractDocument" or "documentStatus";
+        if (isDocument && (!File.Exists(documentPython) || !File.Exists(documentScript))) return null;
+        var candidates = isDocument
+            ? new[] { (File: documentPython, Prefix: Array.Empty<string>()) }
+            : new[] { (File: "python", Prefix: Array.Empty<string>()), (File: "py", Prefix: new[] { "-3" }) };
+        foreach (var candidate in candidates)
         {
             using var process = new Process();
             process.StartInfo = new ProcessStartInfo(candidate.File) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
             foreach (var argument in candidate.Prefix) process.StartInfo.ArgumentList.Add(argument);
-            process.StartInfo.ArgumentList.Add("-c");
-            process.StartInfo.ArgumentList.Add(PythonScript);
+            process.StartInfo.ArgumentList.Add(isDocument ? "-B" : "-c");
+            process.StartInfo.ArgumentList.Add(isDocument ? documentScript : PythonScript);
             process.StartInfo.ArgumentList.Add(payload);
             var inheritedPath = Environment.GetEnvironmentVariable("PATH") ?? "";
             process.StartInfo.Environment.Clear();
@@ -178,6 +217,9 @@ internal static class LocalAnalysisOperations
             process.StartInfo.Environment["HOME"] = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             process.StartInfo.Environment["TEMP"] = Path.GetTempPath();
             process.StartInfo.Environment["PYTHONUTF8"] = "1";
+            process.StartInfo.Environment["WIQO_DOCUMENT_MODELS"] = Path.Combine(documentRoot, "models");
+            process.StartInfo.Environment["HF_HUB_OFFLINE"] = "1";
+            process.StartInfo.Environment["HF_HUB_DISABLE_TELEMETRY"] = "1";
             try
             {
                 if (!process.Start()) continue;
@@ -210,10 +252,7 @@ if action=="dependencyStatus": emit({"ok":True,"adapter":"python","available":Tr
 required={"extractDocument":"markitdown","queryData":"duckdb","solveSymbolic":"sympy"}.get(action)
 if not required or importlib.util.find_spec(modules[required]) is None: emit({"ok":False,"available":False,"errorCode":"DEPENDENCY_MISSING","errorMessage":f"{required or 'İstenen'} yerel analiz bağımlılığı kurulu değil."}); raise SystemExit(0)
 try:
- if action=="extractDocument":
-  from markitdown import MarkItDown
-  result=MarkItDown().convert(request["path"]); text=(getattr(result,"text_content","") or "").strip(); ceiling=min(limit*100,50000); emit({"ok":True,"adapter":"markitdown","available":True,"text":text[:ceiling],"truncated":len(text)>ceiling})
- elif action=="queryData":
+ if action=="queryData":
   import duckdb
   query=(request.get("query") or "").strip()
   if not re.match(r"^(select|with)\b",query,re.I) or ";" in query or re.search(r"\b(attach|copy|create|delete|drop|export|import|insert|install|load|pragma|update|call|read_[a-z0-9_]*|[a-z0-9_]*scan|httpfs|sqlite|postgres|glob|secret)\b",query,re.I): raise ValueError("unsafe query")

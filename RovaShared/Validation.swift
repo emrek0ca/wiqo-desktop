@@ -416,7 +416,7 @@ public enum RovaValidation {
         case .computerBrowser:
             guard case .computerBrowser(let browser) = request.payload,
                   UUID(uuidString: browser.taskId) != nil,
-                  ["navigate", "observe", "observe_diff", "read", "click", "fill", "select", "press", "scroll", "back", "submit", "run_steps", "handoff"].contains(browser.action),
+                  ["navigate", "observe", "observe_diff", "read", "click", "fill", "select", "press", "scroll", "back", "download", "submit", "run_steps", "handoff"].contains(browser.action),
                   browser.submit == nil || browser.action == "fill",
                   browser.key == nil || browser.action == "press",
                   browser.offset == nil || (browser.action == "read" && (0...2_000_000).contains(browser.offset!)) else {
@@ -479,7 +479,7 @@ public enum RovaValidation {
                       browser.scrollAmount.map({ (1...3).contains($0) }) ?? true else {
                     return RovaError(code: "INVALID_PAYLOAD", message: String(localized: "Kaydırma yönü geçersiz."), category: "validation")
                 }
-            case "click", "fill", "select", "submit":
+            case "click", "download", "fill", "select", "submit":
                 guard browser.url == nil,
                       hasTarget,
                       browser.value.map({ $0.count <= 2_000 && !$0.contains("\0") }) ?? true,
@@ -868,7 +868,7 @@ public enum RovaValidation {
             return step.url == nil && noTarget && step.value == nil && step.direction == nil && step.scrollAmount == nil && ["Enter", "Escape", "Tab", "ArrowDown", "ArrowUp"].contains(step.key ?? "")
         case "scroll":
             return step.url == nil && noTarget && step.value == nil && (step.direction == "up" || step.direction == "down") && (step.scrollAmount.map({ (1...3).contains($0) }) ?? true)
-        case "click", "submit":
+        case "click", "download", "submit":
             return step.url == nil && hasTarget && step.value == nil && step.direction == nil && step.scrollAmount == nil && (step.action != "submit" || hasRef || (step.targetBy == "role" && step.role == "button"))
         case "fill", "select":
             return step.url == nil && hasTarget && step.value.map({ $0.count <= 2_000 && !$0.contains("\0") }) == true && step.direction == nil && step.scrollAmount == nil
@@ -1009,13 +1009,13 @@ public enum RovaCommandAuthority {
             if browser.action == "run_steps" {
                 let actions = Set((browser.steps ?? []).map(\.action))
                 let readsContent = !actions.isDisjoint(with: ["navigate", "observe", "observe_diff", "read", "back", "scroll"])
-                let interacts = !actions.isDisjoint(with: ["navigate", "click", "fill", "select", "press", "scroll", "back", "submit"])
+                let interacts = !actions.isDisjoint(with: ["navigate", "click", "fill", "select", "press", "scroll", "back", "download", "submit"])
                 return (readsContent && browser.contentAccessGranted != true)
                     || (interacts && browser.interactionAccessGranted != true)
             }
             if ["navigate", "observe", "observe_diff", "read", "back", "scroll"].contains(browser.action),
                browser.contentAccessGranted != true { return true }
-            if ["navigate", "click", "fill", "select", "press", "scroll", "back", "submit"].contains(browser.action) {
+            if ["navigate", "click", "fill", "select", "press", "scroll", "back", "download", "submit"].contains(browser.action) {
                 return browser.interactionAccessGranted != true
             }
             return false
@@ -1059,6 +1059,7 @@ public enum RovaTerminalPolicy {
     public static let featureV3 = "terminal-session-v3"
     /// Companion-owned undo records for terminal file changes.
     public static let featureV4 = "terminal-session-v4"
+    public static let featureV5 = "terminal-session-v5"
     /// Longest grant the phone may sign; the backend offers more than 30 minutes only to v2 Macs, more than 8 hours only to v3.
     public static let maxGrantSeconds = 30 * 24 * 60 * 60
     /// The id of the grant a card-less read runs under (never signed; read mode, one folder, checked by readFolderWithoutGrant).

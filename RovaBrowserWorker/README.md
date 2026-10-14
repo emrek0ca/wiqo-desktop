@@ -15,3 +15,11 @@ messaging actions remain blocked.
 
 Closing a command or finishing a task never closes the visible browser. The task context and browser
 are closed only when the user explicitly asks to close them or the desktop application shuts down.
+
+## Verified document downloads
+
+`download` is a standalone action on an observed target under the existing browser grant. Public document links stream into a task-specific subdirectory of the worker's application-data directory. Each redirect is revalidated and DNS is pinned to the allowed public address. Streams are capped at 25 MB and 25 seconds; cancellation aborts the stream. Chromium's own downloads remain disabled, including extra popup downloads. Existing filenames are never overwritten, temporary files are cleaned, and the saved bytes are read back to verify SHA-256 before returning a local path.
+
+Only PDF, DOCX, XLSX, PPTX, CSV, TXT and Markdown are accepted. No file is launched. HTML login/error responses and obvious type mismatches fail. Authenticated or blob-only downloads may require a manual download; browser cookies are not copied to the HTTP adapter. Read the returned path through the existing document/file capability. Download is excluded from `run_steps` so its receipt cannot be lost behind a later step. Saved documents remain until the user removes them; closing the browser does not remove their outputs.
+
+Run focused verification with `node --test RovaBrowserWorker/downloads.test.mjs`.

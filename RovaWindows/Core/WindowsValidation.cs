@@ -187,7 +187,7 @@ public static class WindowsValidation
     }
 
     private static bool IsValidBrowserStep(ComputerBrowserStep value) =>
-        IsValidBrowserAction(value.Action, value.Url, value.TargetRef, value.TargetBy, value.Target, value.Role,
+        value.Action != "download" && IsValidBrowserAction(value.Action, value.Url, value.TargetRef, value.TargetBy, value.Target, value.Role,
             value.Value, value.Direction, value.ScrollAmount, value.Submit, value.Key, value.Offset);
 
     private static bool IsValidBrowserAction(string action, string? url, string? targetRef, string? targetBy,
@@ -217,7 +217,7 @@ public static class WindowsValidation
             "navigate" => IsPublicBrowserUrl(url) && noTarget && noValue && noDirection && scrollAmount is null,
             "observe" or "observe_diff" or "back" => noUrl && noTarget && noValue && noDirection && scrollAmount is null,
             "scroll" => noUrl && noTarget && noValue && (direction is "up" or "down") && (scrollAmount is null or >= 1 and <= 3),
-            "click" => noUrl && hasTarget && noValue && noDirection && scrollAmount is null,
+            "click" or "download" => noUrl && hasTarget && noValue && noDirection && scrollAmount is null,
             "submit" => noUrl && hasTarget && noValue && noDirection && scrollAmount is null && (hasRef || (targetBy == "role" && role == "button")),
             "fill" or "select" => noUrl && hasTarget && value is { Length: <= 2_000 } fillValue && !fillValue.Contains('\0') && noDirection && scrollAmount is null,
             _ => false

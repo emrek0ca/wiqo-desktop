@@ -1,8 +1,10 @@
 import AppKit
 import CoreText
+import CryptoKit
 import Foundation
 import Darwin
 import PDFKit
+import Vision
 
 /// Local document adapter for the Mac companion.
 ///
@@ -26,7 +28,7 @@ enum DocumentEngine {
     }
 
     /// Text of a document at an already-validated location (Desktop or a resolved local path).
-    static func extractText(from fileURL: URL, displayName filename: String) -> (data: DocumentContent?, error: RovaError?) {
+    static func extractText(from fileURL: URL, displayName filename: String, useAdvanced: Bool = true) -> (data: DocumentContent?, error: RovaError?) {
         guard !RovaOwnFolders.isSensitive(fileURL.resolvingSymlinksInPath().path) else {
             return (nil, RovaError(code: "SENSITIVE_FILE_BLOCKED", message: "Kimlik bilgisi içerebilecek dosyalar Wiqo tarafından okunamaz.", category: "permission"))
         }
@@ -42,6 +44,12 @@ enum DocumentEngine {
                 return (nil, makeError("DOCUMENT_UNSUPPORTED", "Bu belge biçimi henüz desteklenmiyor."))
             }
 
+            // Office structure is retained as Markdown when the optional reader is ready.
+            if useAdvanced, [.docx, .xlsx].contains(format),
+               let parsed = LocalDocumentAdapter.extract(fileURL), parsed.ok,
+               parsed.truncated != true, let text = parsed.text, !text.isEmpty {
+                return (DocumentContent(filename: filename, format: format, text: text), nil)
+            }
             let text: String
             switch format {
             case .txt, .md, .csv, .html:
@@ -54,7 +62,48 @@ enum DocumentEngine {
                 guard let document = PDFDocument(url: fileURL) else {
                     return (nil, makeError("DOCUMENT_PARSE_FAILED", "PDF belgesi açılamadı."))
                 }
-                text = (0..<document.pageCount).compactMap { document.page(at: $0)?.string }.joined(separator: "\n\n")
+                guard !document.isLocked, document.pageCount <= 200 else {
+                    return (nil, makeError("DOCUMENT_LIMIT", "PDF kilitli veya 200 sayfalık okuma sınırını aşıyor."))
+                }
+                let pages = (0..<document.pageCount).map { index in
+                    "--- Sayfa \(index + 1) ---\n" + (document.page(at: index)?.string ?? "")
+                }
+                let missingText = (0..<document.pageCount).contains { (document.page(at: $0)?.string?.trimmingCharacters(in: .whitespacesAndNewlines).count ?? 0) < 20 }
+                let structuredLayout = pages.contains { $0.range(of: #"\S[ \t]{3,}\S"#, options: .regularExpression) != nil }
+                if (missingText || structuredLayout), useAdvanced, let parsed = LocalDocumentAdapter.extract(fileURL, quality: "layout"),
+                   parsed.ok, parsed.adapter == "docling", parsed.truncated != true, let extracted = parsed.text {
+                    return (DocumentContent(filename: filename, format: format, text: extracted), nil)
+                }
+                if missingText {
+                    let deadline = Date().addingTimeInterval(25)
+                    var recognized: [String] = []
+                    var ocrPages = 0
+                    for index in 0..<document.pageCount {
+                        guard !Task.isCancelled, Date() < deadline, let page = document.page(at: index) else {
+                            return (nil, makeError("DOCUMENT_OCR_TIMEOUT", "Belge OCR süresi doldu; tamamı okunmuş sayılmadı."))
+                        }
+                        var pageText = page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        if pageText.count < 20 {
+                            ocrPages += 1
+                            guard ocrPages <= 30 else { return (nil, makeError("DOCUMENT_OCR_LIMIT", "Belge 30 taranmış sayfa sınırını aşıyor; daha küçük parçalara bölün.")) }
+                            let bounds = page.bounds(for: .mediaBox)
+                            let scale = 2000 / max(bounds.width, bounds.height, 1)
+                            guard let image = page.thumbnail(of: CGSize(width: bounds.width * scale, height: bounds.height * scale), for: .mediaBox).cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                                return (nil, makeError("DOCUMENT_OCR_REQUIRED", "Bir PDF sayfası okunamadı."))
+                            }
+                            let request = VNRecognizeTextRequest()
+                            request.recognitionLevel = .accurate
+                            request.recognitionLanguages = ["tr-TR", "en-US"]
+                            request.usesLanguageCorrection = true
+                            try VNImageRequestHandler(cgImage: image).perform([request])
+                            let extracted = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+                            if extracted.count > pageText.count { pageText = extracted }
+                            guard !pageText.isEmpty else { return (nil, makeError("DOCUMENT_OCR_EMPTY", "Bir PDF sayfasından okunabilir metin çıkarılamadı; belge tamamlanmış sayılmadı.")) }
+                        }
+                        recognized.append("--- Sayfa \(index + 1) ---\n\(pageText)")
+                    }
+                    text = "[OCR ile okunan sayfalarda tanıma hataları olabilir.]\n" + recognized.joined(separator: "\n\n")
+                } else { text = pages.joined(separator: "\n\n") }
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     return (nil, makeError("DOCUMENT_OCR_REQUIRED", "Bu PDF taranmış görünüyor; metin katmanı bulunamadı. Görseli Gemini Vision ile analiz etmek için belgeyi görsel olarak ekleyin."))
                 }
@@ -487,5 +536,66 @@ enum DocumentEngine {
 
     private static func failure(_ code: String, _ message: String) -> DocumentFailure {
         DocumentFailure(error: makeError(code, message))
+    }
+}
+
+/// Optional libraries stay behind the existing document/localAnalyze capability and policy.
+/// Invoked by the existing background command executor, never by a SwiftUI view.
+enum LocalDocumentAdapter {
+    struct Response: Decodable {
+        let ok: Bool
+        let adapter: String?
+        let text: String?
+        let truncated: Bool?
+        let warnings: [String]?
+        let dependencies: [String: Bool]?
+        let sha256: String?
+        let errorCode: String?
+        let errorMessage: String?
+    }
+
+    private final class Cached: NSObject {
+        let response: Response
+        init(_ response: Response) { self.response = response }
+    }
+    private final class Cache: @unchecked Sendable {
+        let entries = NSCache<NSString, Cached>()
+        init() { entries.countLimit = 12; entries.totalCostLimit = 4_000_000 }
+    }
+    private static let cache = Cache()
+
+    static func status() -> Response? { invoke(["action": "dependencyStatus"]) }
+
+    static func extract(_ file: URL, quality: String = "auto", maxChars: Int = 500_000) -> Response? {
+        guard !RovaOwnFolders.isSensitive(file.resolvingSymlinksInPath().path) else { return nil }
+        // Content digest prevents stale answers even when size and modification date are unchanged.
+        guard let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 25 * 1024 * 1024,
+              let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        defer { try? handle.close() }
+        guard let bytes = try? handle.read(upToCount: 25 * 1024 * 1024 + 1), bytes.count <= 25 * 1024 * 1024 else { return nil }
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let key = "\(digest)|\(quality)|\(maxChars)" as NSString
+        if let cached = cache.entries.object(forKey: key) { return cached.response }
+        let response = invoke(["action": "extractDocument", "path": file.path, "quality": quality, "maxChars": maxChars])
+        if let response, response.ok, response.sha256 == digest, (response.warnings ?? []).isEmpty {
+            cache.entries.setObject(Cached(response), forKey: key, cost: response.text?.utf8.count ?? 0)
+        }
+        return response
+    }
+
+    private static func invoke(_ request: [String: Any]) -> Response? {
+        guard !Thread.isMainThread,
+              let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first,
+              let script = Bundle.main.url(forResource: "document_adapter", withExtension: "py", subdirectory: "RovaDocumentWorker") else { return nil }
+        let root = support.appendingPathComponent("Wiqo/Documents")
+        let python = root.appendingPathComponent(".venv/bin/python").path
+        guard FileManager.default.isExecutableFile(atPath: python) else { return nil }
+        guard let data = try? JSONSerialization.data(withJSONObject: request) else { return nil }
+        let result = MacSystem.runProcess(executable: python, arguments: ["-B", script.path, data.base64EncodedString()], timeoutSeconds: 45,
+            environment: ["PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", "HOME": NSHomeDirectory(), "LANG": "en_US.UTF-8",
+                          "WIQO_DOCUMENT_MODELS": root.appendingPathComponent("models").path, "HF_HUB_OFFLINE": "1", "HF_HUB_DISABLE_TELEMETRY": "1"],
+            outputLimit: 2_100_000)
+        guard !result.timedOut, !result.truncated, result.exitCode == 0 else { return nil }
+        return try? JSONDecoder().decode(Response.self, from: result.stdout)
     }
 }

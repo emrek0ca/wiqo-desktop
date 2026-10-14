@@ -24,6 +24,18 @@ extension MacSystem {
             }
             path = url.path
         }
+        if payload.action == .extractDocument, let path {
+            let url = URL(fileURLWithPath: path)
+            if let parsed = LocalDocumentAdapter.extract(url, quality: url.pathExtension.lowercased() == "pdf" ? "layout" : "auto", maxChars: min(payload.limit * 100, 50_000)), parsed.ok, let text = parsed.text {
+                let warnings = (parsed.warnings ?? []).isEmpty ? "" : "\n[Belge okuma: \((parsed.warnings ?? []).joined(separator: ", "))]"
+                return (.localAnalysis(LocalAnalysisContent(action: payload.action, adapter: parsed.adapter ?? "document", available: true, text: text + warnings, truncated: parsed.truncated ?? false)), nil)
+            }
+            // Missing optional Python packages never remove native document reading.
+            let native = DocumentEngine.extractText(from: url, displayName: url.lastPathComponent, useAdvanced: false)
+            guard let document = native.data else { return (nil, native.error) }
+            let limit = min(payload.limit * 100, 50_000)
+            return (.localAnalysis(LocalAnalysisContent(action: payload.action, adapter: "native", available: true, text: String(document.text.prefix(limit)), truncated: document.text.count > limit)), nil)
+        }
         let cacheKey = LocalAnalysisResultCache.key(for: payload, resolvedPath: path)
         if let cacheKey, let cached = LocalAnalysisResultCache.shared.value(for: cacheKey) {
             return (.localAnalysis(cached), nil)
@@ -56,13 +68,22 @@ extension MacSystem {
         }
         guard snapshot.exitCode == 0,
               let response = try? JSONDecoder().decode(LocalAnalysisWorkerResponse.self, from: snapshot.stdout) else {
+            if payload.action == .dependencyStatus {
+                let documentStatus = LocalDocumentAdapter.status()?.dependencies ?? ["markitdown": false, "docling": false]
+                return (.localAnalysis(LocalAnalysisContent(action: payload.action, adapter: "native", available: true,
+                    dependencies: documentStatus.map { LocalDependencyStatus(name: $0.key, available: $0.value) }.sorted { $0.name < $1.name })), nil)
+            }
             return (nil, RovaError(code: "LOCAL_ANALYSIS_FAILED", message: "Yerel analiz tamamlanamadı.", category: "tool_failure"))
         }
         if response.ok != true {
             let code = response.errorCode ?? (response.available == false ? "DEPENDENCY_MISSING" : "LOCAL_ANALYSIS_FAILED")
             return (nil, RovaError(code: code, message: response.errorMessage ?? "Yerel analiz bağımlılığı kullanılamıyor.", category: "tool_failure"))
         }
-        let dependencies = (response.dependencies ?? [:]).map { LocalDependencyStatus(name: $0.key, available: $0.value) }.sorted { $0.name < $1.name }
+        var dependencyMap = response.dependencies ?? [:]
+        if payload.action == .dependencyStatus {
+            dependencyMap.merge(LocalDocumentAdapter.status()?.dependencies ?? ["markitdown": false, "docling": false]) { _, current in current }
+        }
+        let dependencies = dependencyMap.map { LocalDependencyStatus(name: $0.key, available: $0.value) }.sorted { $0.name < $1.name }
         let content = LocalAnalysisContent(
             action: payload.action,
             adapter: response.adapter ?? "python",
@@ -98,13 +119,7 @@ if not required or importlib.util.find_spec(modules[required]) is None:
     raise SystemExit(0)
 
 try:
-    if action == "extractDocument":
-        from markitdown import MarkItDown
-        result = MarkItDown().convert(request["path"])
-        text = (getattr(result, "text_content", "") or "").strip()
-        ceiling = min(limit * 100, 50000)
-        emit({"ok": True, "adapter": "markitdown", "available": True, "text": text[:ceiling], "truncated": len(text) > ceiling})
-    elif action == "queryData":
+    if action == "queryData":
         import duckdb
         query = (request.get("query") or "").strip()
         if not re.match(r"^(select|with)\b", query, re.I) or ";" in query or re.search(r"\b(attach|copy|create|delete|drop|export|import|insert|install|load|pragma|update|call|read_[a-z0-9_]*|[a-z0-9_]*scan|httpfs|sqlite|postgres|glob|secret)\b", query, re.I):

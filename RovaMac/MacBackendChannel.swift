@@ -93,6 +93,7 @@ final class MacBackendChannel: NSObject {
         let workingDirectory: String
         var state = "running"
         var processIdentifier: Int32?
+        var input: TerminalInputEndpoint?
         var cancelRequested = false
         var output: ProcessOutputContent?
         var message = "Terminal işi çalışıyor."
@@ -370,8 +371,8 @@ final class MacBackendChannel: NSObject {
             "appVersion": "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"))",
             "capabilities": info.capabilities,
             // Optional protocol features; an older backend ignores the field.
-            "features": ["artifact-directory-v1", "bulk-document-move-v1", "file-inspect-v1"] + (CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2, RovaTerminalPolicy.featureV3, RovaTerminalPolicy.featureV4] : [])
-                + (AgentAccessStore.shared.isEnabled ? [AgentAccessStore.feature] : [])
+            "features": ["artifact-directory-v1", "bulk-document-move-v1", "file-inspect-v1"] + (CapabilityStore.shared.isEnabled("device.code.execute") ? [RovaTerminalPolicy.feature, RovaTerminalPolicy.featureV2, RovaTerminalPolicy.featureV3, RovaTerminalPolicy.featureV4, RovaTerminalPolicy.featureV5] : [])
+                + (AgentAccessStore.shared.isEnabled ? [AgentAccessStore.feature, "terminal-full-access-v1"] : [])
                 + (AgentAccessStore.shared.isActive && !AgentAccessStore.shared.isEnabled ? [AgentAccessStore.taskActiveFeature] : [])
                 + [AgentAccessStore.grantFeature],
             "terminalProfile": terminalProfileJSON.flatMap { try? JSONSerialization.jsonObject(with: $0) } ?? NSNull(),
@@ -563,6 +564,19 @@ final class MacBackendChannel: NSObject {
     /// signature: it runs only while the owner has full access on at this Mac, and only for
     /// capabilities left enabled in Settings. Timestamp, payload validation, dedupe and every
     /// operation's own checks still apply inside MacCommandEngine.
+    private func acceptsTerminalGrant(_ grant: TerminalGrantPayload) -> Bool {
+        if grant.signature == "local-full-access-v1" {
+            return AgentAccessStore.shared.isEnabled
+                && CapabilityStore.shared.isEnabled("device.code.execute")
+                && grant.expiresAt > Int(Date().timeIntervalSince1970)
+                && grant.expiresAt <= Int(Date().timeIntervalSince1970) + 1805
+                && UUID(uuidString: grant.id) != nil
+                && grant.mode == "full"
+        }
+        guard let token = pairedDeviceToken() else { return false }
+        return RovaTerminalPolicy.verifyGrant(grantId: grant.id, rootDirectory: grant.rootDirectory, mode: grant.mode, expiresAt: grant.expiresAt, signature: grant.signature, token: token)
+    }
+
     private func executeAgentCommand(_ payload: InteractiveCommandPayload, on task: URLSessionWebSocketTask) {
         let request = payload.request
         let deny = { [weak self] (code: String, message: String) in
@@ -585,6 +599,13 @@ final class MacBackendChannel: NSObject {
         }
         AgentAccessStore.shared.stepStarted(request.type.rawValue)
         Task { @MainActor [weak self, engine, runtimeStatus] in
+            guard AgentAccessStore.shared.isActive,
+                  AgentAccessStore.shared.denial(for: request) == nil,
+                  CapabilityStore.shared.isEnabled(capability) else {
+                AgentAccessStore.shared.stepFinished()
+                deny("FULL_ACCESS_DISABLED", "PC yetkisi kaldırıldı; işlem başlatılmadı.")
+                return
+            }
             let result = await engine.execute(request, runtimeStatus: runtimeStatus())
             AgentAccessStore.shared.stepFinished()
             self?.sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)
@@ -644,8 +665,8 @@ final class MacBackendChannel: NSObject {
             sendInteractiveCommandResult(commandId: payload.commandId, result: result, on: task)
             return
         }
-        if action == "get_job" || action == "cancel_job" {
-            handleTerminalJobAction(action, jobId: request.jobId, grant: request.grant, commandId: payload.commandId, on: task)
+        if action == "get_job" || action == "cancel_job" || action == "send_input" {
+            handleTerminalJobAction(action, input: request.input, jobId: request.jobId, grant: request.grant, commandId: payload.commandId, on: task)
             return
         }
         // Without a card, only scoped file reading and search are allowed.
@@ -664,8 +685,7 @@ final class MacBackendChannel: NSObject {
             deny("TERMINAL_DISABLED", "Kod çalıştırma Wiqo Mac ayarlarında kapalı.")
             return
         }
-        guard request.grant == nil || (pairedDeviceToken().map { token in
-              RovaTerminalPolicy.verifyGrant(grantId: grant.id, rootDirectory: grant.rootDirectory, mode: grant.mode, expiresAt: grant.expiresAt, signature: grant.signature, token: token) } ?? false) else {
+        guard request.grant == nil || acceptsTerminalGrant(grant) else {
             deny("TERMINAL_GRANT_INVALID", "Terminal oturum izni geçersiz ya da süresi dolmuş; telefondan yeniden onay gerekiyor.")
             return
         }
@@ -739,7 +759,7 @@ final class MacBackendChannel: NSObject {
                 return
             }
             let remainingSeconds = max(1, grant.expiresAt - Int(Date().timeIntervalSince1970))
-            startTerminalJob(id: jobId, grantId: grant.id, command: command, directory: directory, timeoutSeconds: max(1, min(1800, min(request.timeoutSeconds ?? 600, remainingSeconds))), writeScope: Self.writeScope(grant: grant, root: root))
+            startTerminalJob(id: jobId, grantId: grant.id, command: command, directory: directory, root: root, timeoutSeconds: max(1, min(1800, min(request.timeoutSeconds ?? 600, remainingSeconds))), writeScope: Self.writeScope(grant: grant, root: root), interactive: request.interactive == true && grant.mode == "full")
             sendTerminalJobSnapshot(jobId, commandId: payload.commandId, on: task)
             return
         }
@@ -904,6 +924,8 @@ final class MacBackendChannel: NSObject {
                 var results: [TerminalStepResult] = []
                 var failed = false
                 for step in steps {
+                    let authorityActive = await MainActor.run { self?.acceptsTerminalGrant(grant) == true }
+                    if !authorityActive { failed = true }
                     let remaining = budget - Int(Date().timeIntervalSince(started))
                     if failed || remaining < 1 {
                         results.append(TerminalStepResult(command: step.command, exitCode: -1, stdout: "", stderr: "", durationMs: 0, truncated: false, skipped: true))
@@ -943,7 +965,7 @@ final class MacBackendChannel: NSObject {
         sendInteractiveCommandResult(commandId: commandId, result: result, on: task)
     }
 
-    private func handleTerminalJobAction(_ action: String, jobId: String?, grant: TerminalGrantPayload?, commandId: String, on task: URLSessionWebSocketTask) {
+    private func handleTerminalJobAction(_ action: String, input: String?, jobId: String?, grant: TerminalGrantPayload?, commandId: String, on task: URLSessionWebSocketTask) {
         guard let jobId, UUID(uuidString: jobId) != nil, let job = terminalJobs[jobId] else {
             let now = Date()
             let value = TerminalJobContent(jobId: jobId ?? "", status: "unknown", message: "Bu Mac sürecinde iş bulunamadı; yeniden başlatıldıysa sonucu bilinmiyor.", errorCode: "TERMINAL_JOB_UNKNOWN")
@@ -951,12 +973,32 @@ final class MacBackendChannel: NSObject {
             sendInteractiveCommandResult(commandId: commandId, result: result, on: task)
             return
         }
-        guard let grant, let token = pairedDeviceToken(), grant.id == job.grantId,
-              RovaTerminalPolicy.verifyGrant(grantId: grant.id, rootDirectory: grant.rootDirectory, mode: grant.mode, expiresAt: grant.expiresAt, signature: grant.signature, token: token),
+        // Existing job identity permits observation/cancellation even after authority expires.
+        // This path cannot start a process or widen its original working directory.
+        guard let grant, grant.id == job.grantId,
               let root = RovaTerminalPolicy.resolveDirectory(grant.rootDirectory),
               RovaTerminalPolicy.isWithin(job.workingDirectory, root: root) else {
             sendTerminalDenial(commandId, code: "TERMINAL_GRANT_INVALID", message: "İşin imzalı terminal izni doğrulanamadı.", on: task)
             return
+        }
+        if action == "send_input" {
+            guard CapabilityStore.shared.isEnabled("device.code.execute"), acceptsTerminalGrant(grant), grant.mode == "full",
+                  job.state == "running", !job.cancelRequested,
+                  let input, !input.isEmpty, input.utf8.count <= 4096, !input.contains("\0"), !RovaTerminalPolicy.isForbidden(input),
+                  let endpoint = job.input else {
+                sendTerminalDenial(commandId, code: "TERMINAL_INPUT_DENIED", message: "Etkin tam izinli etkileşimli iş gerekli.", on: task)
+                return
+            }
+            if input == "\u{3}", let pid = job.processIdentifier {
+                // The slave is a PTY; explicit interrupt also covers children without job control.
+                if kill(-pid, SIGINT) != 0 { _ = kill(pid, SIGINT) }
+                sendTerminalJobSnapshot(jobId, commandId: commandId, on: task)
+                return
+            }
+            guard endpoint.send(input) else {
+                sendTerminalDenial(commandId, code: "TERMINAL_INPUT_UNCERTAIN", message: "Girdi teslimi doğrulanamadı; tekrarlamadan önce çıktıyı kontrol et.", on: task)
+                return
+            }
         }
         if action == "cancel_job", job.state == "running" {
             job.cancelRequested = true
@@ -971,10 +1013,15 @@ final class MacBackendChannel: NSObject {
         grant.mode == "full" ? .folder(root) : .readOnly
     }
 
-    private func startTerminalJob(id: String, grantId: String, command: String, directory: String, timeoutSeconds: Int, writeScope: MacSystem.TerminalWriteScope?) {
+    private func startTerminalJob(id: String, grantId: String, command: String, directory: String, root: String, timeoutSeconds: Int, writeScope: MacSystem.TerminalWriteScope?, interactive: Bool = false) {
         guard terminalJobs[id] == nil else { return }
         let job = TerminalJobRecord(id: id, grantId: grantId, workingDirectory: directory)
+        let input = interactive ? TerminalInputEndpoint() : nil
+        job.input = input
         terminalJobs[id] = job
+        let startingExports = terminalSessionExports[grantId]
+        let startingDirectory = terminalSessionDirectories[grantId]
+        let generation = sessionGeneration
         // Built here, on the main actor, as a Sendable callback: the process-start signal arrives on
         // another thread and only hops back to the main actor to record the process id.
         let processStarted: @Sendable (Int32) -> Void = { [weak self] processIdentifier in
@@ -985,9 +1032,23 @@ final class MacBackendChannel: NSObject {
             }
         }
         Task.detached(priority: .userInitiated) { [weak self] in
-            let outcome = MacSystem.executeTerminalCommand(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, writeScope: writeScope, processStarted: processStarted)
+            let outcome = MacSystem.executeTerminalCommandTrackingDirectory(command, workingDirectory: directory, timeoutSeconds: timeoutSeconds, writeScope: writeScope, exports: startingExports, processStarted: processStarted, outputUpdated: { [weak self] output in
+                Task { @MainActor [weak self] in
+                    guard let self, let current = self.terminalJobs[id], current.state == "running", !current.cancelRequested else { return }
+                    current.output = output
+                }
+            }, terminalInput: input)
             await MainActor.run { [weak self] in
                 guard let self, let current = self.terminalJobs[id] else { return }
+                // A late background job must not overwrite a newer foreground session.
+                if self.sessionGeneration == generation, !current.cancelRequested, outcome.error == nil,
+                   self.terminalSessionDirectories[grantId] == startingDirectory,
+                   self.terminalSessionExports[grantId] == startingExports {
+                    if let end = outcome.endDirectory, let resolved = RovaTerminalPolicy.resolveDirectory(end), RovaTerminalPolicy.isWithin(resolved, root: root) {
+                        self.terminalSessionDirectories[grantId] = resolved
+                    }
+                    if let exports = outcome.exports { self.terminalSessionExports[grantId] = exports }
+                }
                 if case let .processOutput(output)? = outcome.data { current.output = output }
                 if current.cancelRequested {
                     current.state = "cancelled"
@@ -1006,6 +1067,7 @@ final class MacBackendChannel: NSObject {
                     current.message = "Terminal işi tamamlandı."
                 }
                 current.processIdentifier = nil
+                current.input = nil
                 self.sendTerminalJobStateUpdate(current)
             }
         }
@@ -1274,6 +1336,8 @@ private struct TerminalCommandRequest: Decodable, Sendable {
     let workingDirectory: String?
     let timeoutSeconds: Int?
     let jobId: String?
+    let interactive: Bool?
+    let input: String?
     let filePath: String?
     let patch: String?
     // terminal-session-v2

@@ -34,6 +34,9 @@
     <Resource Include="Assets\wiqo-256.png" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="../../RovaDocumentWorker/*.py;../../RovaDocumentWorker/pyproject.toml;../../RovaDocumentWorker/uv.lock"
+             Link="DocumentWorker/%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../RovaBrowserWorker/**"
              Link="BrowserWorker/%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest"

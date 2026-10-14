@@ -236,7 +236,7 @@ struct CapabilitiesSettingsView: View {
                 Toggle(isOn: Binding(get: { agentAccess.isEnabled }, set: { agentAccess.setEnabled($0) })) {
                     Label("Tam yetki (onaysız PC ajanı)", systemImage: "bolt.shield")
                 }
-                Text("Açıkken Wiqo çok adımlı işleri bu Mac'te telefon onayı beklemeden, adım adım yürütür. Aşağıda kapattığın yetenekler yine kullanılamaz. Menü çubuğundan tek tıkla kapatabilirsin.")
+                Text("Açıkken Wiqo istediğin uygulama, ekran, tarayıcı, dosya, belge ve terminal işlemlerini tekrar telefon onayı istemeden yürütür. Aşağıda kapattığın yetenekler ve macOS izinleri geçerlidir. Menü çubuğundan kapatabilir, telefondan görevi durdurabilirsin.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

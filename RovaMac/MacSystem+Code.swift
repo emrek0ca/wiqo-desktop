@@ -3,6 +3,22 @@ import CryptoKit
 import Darwin
 import Foundation
 
+final class TerminalInputEndpoint: @unchecked Sendable {
+    private let lock = NSLock()
+    private var descriptor: Int32 = -1
+    func attach(_ fd: Int32) { lock.lock(); defer { lock.unlock() }; descriptor = dup(fd) }
+    func close() { lock.lock(); defer { lock.unlock() }; if descriptor >= 0 { Darwin.close(descriptor); descriptor = -1 } }
+    deinit { close() }
+    func send(_ text: String) -> Bool {
+        let bytes = Array(text.utf8)
+        guard !bytes.isEmpty, bytes.count <= 4096 else { return false }
+        lock.lock(); defer { lock.unlock() }
+        guard descriptor >= 0 else { return false }
+        // Nonblocking, bounded input. A partial write is uncertain and must not be replayed.
+        return bytes.withUnsafeBytes { Darwin.write(descriptor, $0.baseAddress, $0.count) } == bytes.count
+    }
+}
+
 /// Running code in a sandbox and the process helper it shares.
 extension MacSystem {
     static func executeCode(_ payload: CodeExecutionPayload) -> (data: CommandData?, error: RovaError?) {
@@ -103,10 +119,12 @@ extension MacSystem {
         workingDirectory: String,
         timeoutSeconds: Int,
         writeScope: TerminalWriteScope? = nil,
-        processStarted: @escaping @Sendable (Int32) -> Void
+        processStarted: @escaping @Sendable (Int32) -> Void,
+        outputUpdated: (@Sendable (ProcessOutputContent) -> Void)? = nil,
+        terminalInput: TerminalInputEndpoint? = nil
     ) -> (data: CommandData?, error: RovaError?) {
         let payload = CodeExecutionPayload(language: "shell", code: command, timeoutSeconds: timeoutSeconds, allowNetwork: true, scope: "computer", shell: "zsh", workingDirectory: workingDirectory)
-        return executeComputerTerminal(payload, processStarted: processStarted, writeScope: writeScope)
+        return executeComputerTerminal(payload, processStarted: processStarted, writeScope: writeScope, outputUpdated: outputUpdated, terminalInput: terminalInput)
     }
 
     /// Where a terminal command may write. The grant names one folder; without this a command could still write anywhere the user can
@@ -232,7 +250,8 @@ extension MacSystem {
     /// Explicit terminal scope for a user-approved PC task. The historical sandbox path above
     /// remains the default; this branch is deliberately opt-in so old requests cannot silently
     /// gain access to the user's files or applications.
-    private static func executeComputerTerminal(_ payload: CodeExecutionPayload, processStarted: (@Sendable (Int32) -> Void)? = nil, writeScope: TerminalWriteScope? = nil) -> (data: CommandData?, error: RovaError?) {
+    private static func executeComputerTerminal(_ payload: CodeExecutionPayload, processStarted: (@Sendable (Int32) -> Void)? = nil, writeScope: TerminalWriteScope? = nil, outputUpdated: (@Sendable (ProcessOutputContent) -> Void)? = nil,
+        terminalInput: TerminalInputEndpoint? = nil) -> (data: CommandData?, error: RovaError?) {
         let directoryPath = payload.workingDirectory ?? NSHomeDirectory()
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directoryPath, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -259,7 +278,9 @@ extension MacSystem {
                 timeoutSeconds: payload.timeoutSeconds,
                 workingDirectory: URL(fileURLWithPath: directoryPath),
                 environment: environment,
-                processStarted: processStarted
+                processStarted: processStarted,
+                outputUpdated: outputUpdated,
+                terminalInput: terminalInput
             )
         case "python", "javascript":
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("wiqo-terminal-\(UUID().uuidString)", isDirectory: true)
@@ -365,7 +386,10 @@ extension MacSystem {
         timeoutSeconds: Int,
         workingDirectory: URL? = nil,
         environment: [String: String]? = nil,
-        processStarted: (@Sendable (Int32) -> Void)? = nil
+        processStarted: (@Sendable (Int32) -> Void)? = nil,
+        outputLimit: Int = maxProcessOutputBytes,
+        outputUpdated: (@Sendable (ProcessOutputContent) -> Void)? = nil,
+        terminalInput: TerminalInputEndpoint? = nil
     ) -> ProcessSnapshot {
         let started = Date()
         let process = Process()
@@ -377,6 +401,25 @@ extension MacSystem {
         if let environment { process.environment = environment }
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        var terminalMaster: FileHandle?
+        var terminalSlave: FileHandle?
+        if let terminalInput {
+            var master: Int32 = -1
+            var slave: Int32 = -1
+            var size = winsize(ws_row: 40, ws_col: 120, ws_xpixel: 0, ws_ypixel: 0)
+            guard openpty(&master, &slave, nil, nil, &size) == 0 else {
+                return ProcessSnapshot(stdout: Data(), stderr: Data("Etkileşimli terminal açılamadı.".utf8), exitCode: -1, timedOut: false, truncated: false, durationMs: 0)
+            }
+            terminalMaster = FileHandle(fileDescriptor: master, closeOnDealloc: true)
+            terminalSlave = FileHandle(fileDescriptor: slave, closeOnDealloc: true)
+            _ = fcntl(master, F_SETFL, O_NONBLOCK)
+            process.standardInput = terminalSlave
+            process.standardOutput = terminalSlave
+            process.standardError = terminalSlave
+            terminalInput.attach(master)
+        }
+        defer { terminalInput?.close(); try? terminalSlave?.close(); try? terminalMaster?.close() }
+        let outputHandle = terminalMaster ?? stdoutPipe.fileHandleForReading
         var stdout = Data()
         var stderr = Data()
         var truncated = false
@@ -389,11 +432,18 @@ extension MacSystem {
             _ = fcntl(stdoutPipe.fileHandleForReading.fileDescriptor, F_SETFL, O_NONBLOCK)
             _ = fcntl(stderrPipe.fileHandleForReading.fileDescriptor, F_SETFL, O_NONBLOCK)
             let deadline = Date().addingTimeInterval(TimeInterval(max(1, timeoutSeconds)))
+            var lastUpdate = Date.distantPast
+            var publishedBytes = 0
             while process.isRunning {
-                drainProcessPipe(stdoutPipe.fileHandleForReading, into: &stdout, truncated: &truncated)
-                drainProcessPipe(stderrPipe.fileHandleForReading, into: &stderr, truncated: &truncated)
-                if process.isRunning && Date() >= deadline {
-                    timedOut = true
+                drainProcessPipe(outputHandle, into: &stdout, truncated: &truncated, limit: outputLimit)
+                drainProcessPipe(stderrPipe.fileHandleForReading, into: &stderr, truncated: &truncated, limit: outputLimit)
+                if let outputUpdated, (stdout.count + stderr.count != publishedBytes || truncated), Date().timeIntervalSince(lastUpdate) >= 0.5 {
+                    publishedBytes = stdout.count + stderr.count
+                    lastUpdate = Date()
+                    outputUpdated(ProcessOutputContent(language: "shell", exitCode: 0, stdout: String(decoding: stdout, as: UTF8.self), stderr: String(decoding: stderr, as: UTF8.self), truncated: truncated, durationMs: Int(Date().timeIntervalSince(started) * 1_000)))
+                }
+                if process.isRunning && (Date() >= deadline || Task.isCancelled) {
+                    timedOut = Date() >= deadline
                     if ownsProcessGroup {
                         kill(-process.processIdentifier, SIGTERM)
                     } else {
@@ -407,8 +457,8 @@ extension MacSystem {
                 if process.isRunning { Thread.sleep(forTimeInterval: 0.01) }
             }
             process.waitUntilExit()
-            drainProcessPipe(stdoutPipe.fileHandleForReading, into: &stdout, truncated: &truncated)
-            drainProcessPipe(stderrPipe.fileHandleForReading, into: &stderr, truncated: &truncated)
+            drainProcessPipe(outputHandle, into: &stdout, truncated: &truncated, limit: outputLimit)
+            drainProcessPipe(stderrPipe.fileHandleForReading, into: &stderr, truncated: &truncated, limit: outputLimit)
         } catch {
             stderr.append(Data("İşlem başlatılamadı.".utf8))
             return ProcessSnapshot(stdout: stdout, stderr: stderr, exitCode: -1, timedOut: false, truncated: truncated, durationMs: Int(Date().timeIntervalSince(started) * 1_000))
@@ -416,20 +466,19 @@ extension MacSystem {
         return ProcessSnapshot(stdout: stdout, stderr: stderr, exitCode: process.terminationStatus, timedOut: timedOut, truncated: truncated, durationMs: Int(Date().timeIntervalSince(started) * 1_000))
     }
 
-    private static func drainProcessPipe(_ handle: FileHandle, into data: inout Data, truncated: inout Bool) {
+    private static func drainProcessPipe(_ handle: FileHandle, into data: inout Data, truncated: inout Bool, limit: Int) {
         var buffer = [UInt8](repeating: 0, count: 8_192)
-        while true {
+        // A continuously writing child must yield to cancellation/deadline checks.
+        for _ in 0..<64 {
             let count = buffer.withUnsafeMutableBytes { rawBuffer in
                 Darwin.read(handle.fileDescriptor, rawBuffer.baseAddress, rawBuffer.count)
             }
             guard count > 0 else { return }
-            let bytesRead = Int(count)
-            let bytesBefore = data.count
-            if data.count < maxProcessOutputBytes {
-                let remaining = maxProcessOutputBytes - data.count
-                data.append(contentsOf: buffer.prefix(min(bytesRead, remaining)))
+            data.append(contentsOf: buffer.prefix(Int(count)))
+            if data.count > limit {
+                data.removeFirst(data.count - limit)
+                truncated = true
             }
-            if bytesBefore >= maxProcessOutputBytes || bytesRead > maxProcessOutputBytes - bytesBefore { truncated = true }
         }
     }
 }
@@ -468,11 +517,26 @@ extension MacSystem {
         timeoutSeconds: Int,
         writeScope: TerminalWriteScope? = nil,
         exports: String? = nil,
-        processStarted: @escaping @Sendable (Int32) -> Void
+        processStarted: @escaping @Sendable (Int32) -> Void,
+        outputUpdated: (@Sendable (ProcessOutputContent) -> Void)? = nil,
+        terminalInput: TerminalInputEndpoint? = nil
     ) -> (data: CommandData?, error: RovaError?, endDirectory: String?, exports: String?) {
         let restore = exports.map { "eval \"$(printf %s '\(Data($0.utf8).base64EncodedString())' | /usr/bin/base64 -D)\" 2>/dev/null\n" } ?? ""
-        let wrapped = "\(restore)\(command)\n__wiqo_rc=$?; printf '\\n\(cwdMarker)%s\\n' \"$PWD\"; printf '\(envMarker)%s\\n' \"$(export -p | /usr/bin/base64)\"; exit $__wiqo_rc"
-        let outcome = executeTerminalCommand(wrapped, workingDirectory: workingDirectory, timeoutSeconds: timeoutSeconds, writeScope: writeScope, processStarted: processStarted)
+        if let terminalInput {
+            let outcome = executeTerminalCommand(restore + command, workingDirectory: workingDirectory, timeoutSeconds: timeoutSeconds, writeScope: writeScope, processStarted: processStarted, outputUpdated: outputUpdated, terminalInput: terminalInput)
+            return (outcome.data, outcome.error, nil, nil)
+        }
+        let wrapped = "\(restore)\(command)\n__wiqo_rc=$?; set +xv; printf '\\n\(cwdMarker)%s\\n' \"$PWD\"; printf '\(envMarker)%s\\n' \"$(export -p | /usr/bin/base64)\"; exit $__wiqo_rc"
+        let progress: (@Sendable (ProcessOutputContent) -> Void)?
+        if let callback = outputUpdated {
+            progress = { @Sendable (output: ProcessOutputContent) in
+                // Environment bookkeeping is private, including partially emitted marker lines.
+                let visible = output.stdout.components(separatedBy: cwdMarker).first ?? ""
+                let completeLines = visible.lastIndex(of: "\n").map { String(visible[...$0]) } ?? ""
+                callback(ProcessOutputContent(language: output.language, exitCode: output.exitCode, stdout: completeLines, stderr: output.stderr, truncated: output.truncated, durationMs: output.durationMs))
+            }
+        } else { progress = nil }
+        let outcome = executeTerminalCommand(wrapped, workingDirectory: workingDirectory, timeoutSeconds: timeoutSeconds, writeScope: writeScope, processStarted: processStarted, outputUpdated: progress)
         guard case let .processOutput(output)? = outcome.data else { return (outcome.data, outcome.error, nil, nil) }
         var endDirectory: String?
         var exported: String?

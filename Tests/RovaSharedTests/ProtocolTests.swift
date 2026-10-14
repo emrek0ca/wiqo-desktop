@@ -1,6 +1,31 @@
 import XCTest
 
 final class ProtocolTests: XCTestCase {
+    func testLargeDesktopObservationPreservesPlannerIdentityAndTargets() throws {
+        let targets = (0..<80).map { index in
+            DesktopTarget(ref: "d-\(index)", role: index == 79 ? "textarea" : "row",
+                name: String(repeating: "Uzun hedef açıklaması ", count: 12),
+                frame: DesktopTargetFrame(x: 0.123456789, y: 0.23456789, width: 0.321234567, height: 0.12345678),
+                actions: ["click", "double_click", "right_click", "move", "type"], enabled: true, secure: false)
+        }
+        let source = DesktopControlContent(taskId: UUID().uuidString, action: .observe, snapshotId: UUID().uuidString,
+            applicationName: "TextEdit", applicationIdentifier: "com.apple.TextEdit", targets: targets,
+            addedTargets: targets, changedTargets: targets, accessGranted: true, changed: false, verified: true,
+            evidence: [ActionVerificationEvidence(index: 0, action: "click", ok: false, changed: false, verified: false, errorCode: "DESKTOP_TARGET_NOT_FOUND")])
+        XCTAssertGreaterThan(try JSONEncoder().encode(CommandData.computerDesktop(source)).count, 11_500)
+        let data = try XCTUnwrap(source.plannerData())
+        XCTAssertLessThanOrEqual(data.count, 10_500)
+        guard case .computerDesktop(let decoded) = try JSONDecoder().decode(CommandData.self, from: data) else { return XCTFail("Missing desktop envelope") }
+        XCTAssertEqual(decoded.taskId, source.taskId)
+        XCTAssertEqual(decoded.snapshotId, source.snapshotId)
+        XCTAssertEqual(decoded.action, .observe)
+        XCTAssertTrue(decoded.accessGranted)
+        XCTAssertEqual(decoded.targets.first?.ref, "d-79")
+        XCTAssertFalse(decoded.targets.isEmpty)
+        XCTAssertTrue(decoded.addedTargets.isEmpty)
+        XCTAssertEqual(decoded.evidence.first?.errorCode, "DESKTOP_TARGET_NOT_FOUND")
+    }
+
     func testSpeechPermissionBridgeHandlesBackgroundCompletion() async {
         let task = Task { @MainActor in
             let granted: Bool = await WiqoSpeechPermissionBridge.resolve { completion in

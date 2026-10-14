@@ -1285,6 +1285,61 @@ public struct DesktopControlContent: Codable, Equatable, Sendable {
     }
 }
 
+extension DesktopControlContent {
+    /// Preserve protocol identities when forwarding a large AX tree to the planner.
+    /// Repeated diff arrays are presentation data; never replace the envelope with raw JSON preview.
+    public func plannerData() -> Data? {
+        guard let raw = try? JSONEncoder().encode(self),
+              var value = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any] else { return nil }
+        value["addedTargets"] = []
+        value["changedTargets"] = []
+        value["removedTargetRefs"] = []
+        if let receipts = value["evidence"] as? [[String: Any]] {
+            value["evidence"] = receipts.map { receipt in
+                var compact = receipt
+                for key in ["before", "after"] {
+                    if var state = compact[key] as? [String: Any] {
+                        state.removeValue(forKey: "title")
+                        compact[key] = state
+                    }
+                }
+                return compact
+            }
+        }
+        for key in ["windowTitle", "applicationName"] {
+            if let text = value[key] as? String { value[key] = String(text.prefix(160)) }
+        }
+        let candidates = value["targets"] as? [[String: Any]] ?? []
+        var kept: [[String: Any]] = []
+        // Editors and named controls take priority over anonymous rows in file dialogs.
+        let ordered = candidates.enumerated().sorted { lhs, rhs in
+            func rank(_ entry: [String: Any]) -> Int {
+                let role = entry["role"] as? String ?? ""
+                if role == "textarea" { return 0 }
+                if role == "button" || role == "textfield" { return 1 }
+                return 2
+            }
+            let l = rank(lhs.element), r = rank(rhs.element)
+            return l == r ? lhs.offset < rhs.offset : l < r
+        }
+        for candidate in ordered {
+            var target = candidate.element
+            if let name = target["name"] as? String { target["name"] = String(name.prefix(100)) }
+            if var frame = target["frame"] as? [String: Double] {
+                for (key, number) in frame { frame[key] = (number * 100_000).rounded() / 100_000 }
+                target["frame"] = frame
+            }
+            value["targets"] = kept + [target]
+            let envelope: [String: Any] = ["kind": "computerDesktop", "value": value, "truncated": true, "totalTargets": candidates.count]
+            guard let encoded = try? JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys]), encoded.count <= 10_500 else { continue }
+            kept.append(target)
+        }
+        value["targets"] = kept
+        return try? JSONSerialization.data(withJSONObject: ["kind": "computerDesktop", "value": value,
+            "truncated": kept.count < candidates.count, "totalTargets": candidates.count], options: [.sortedKeys])
+    }
+}
+
 public struct ApplicationControlContent: Codable, Equatable, Sendable {
     public let action: ApplicationControlAction
     public let resolvedName: String

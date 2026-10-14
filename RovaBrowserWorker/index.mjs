@@ -1,3 +1,4 @@
+import { saveDocumentDownload, fetchDocumentDownload } from "./downloads.mjs";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -14,7 +15,7 @@ const MAX_TEXT = 4_000;
 const COMMAND_TIMEOUT_MS = 30_000;
 const RUNTIME_SETUP_TIMEOUT_MS = 105_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ACTIONS = new Set(["navigate", "observe", "observe_diff", "read", "click", "fill", "select", "press", "scroll", "back", "submit", "run_steps", "handoff"]);
+const ACTIONS = new Set(["navigate", "observe", "observe_diff", "read", "click", "fill", "select", "press", "scroll", "back", "download", "submit", "run_steps", "handoff"]);
 const STEP_ACTIONS = new Set(["navigate", "observe", "observe_diff", "read", "click", "fill", "select", "press", "scroll", "back", "submit"]);
 const MAX_BATCH_STEPS = 8;
 const KEYS = new Set(["Enter", "Escape", "Tab", "ArrowDown", "ArrowUp"]);
@@ -58,6 +59,9 @@ const SAFE_ERRORS = {
   BROWSER_SUBMIT_REQUIRED: "Bu form Enter ile güvenle gönderilemez; güvenli bir arama alanı veya form hedefi gerekli.",
   BROWSER_HUMAN_REQUIRED: "Sayfa insan doğrulaması (CAPTCHA) istiyor. Tarayıcı penceresinde bu adımı senin tamamlaman gerekiyor; ardından devam edebilirim.",
   BROWSER_HANDOFF_PAGE_MISMATCH: "İnsan yardımı için açık Wiqo sayfası istenen siteyle eşleşmiyor; mevcut görevin sayfası korunuyor.",
+  BROWSER_DOWNLOAD_FAILED: "Dosya indirmesi doğrulanamadı; işlem otomatik tekrarlanmadı.",
+  BROWSER_DOWNLOAD_TYPE_BLOCKED: "İndirilen dosya desteklenen bir belge değil veya sunucu belge yerine başka içerik döndürdü.",
+  BROWSER_DOWNLOAD_TOO_LARGE: "İndirilen belge 25 MB sınırını aşıyor.",
   BROWSER_FAILED: "Tarayıcı işlemi tamamlanamadı."
 };
 
@@ -386,6 +390,8 @@ async function getTask(taskId, create = false) {
       } catch { await route.abort("blockedbyclient"); }
     });
     const page = await context.newPage();
+    context.on("page", (newPage) => newPage.on("download", (download) => { void download.cancel().catch(() => {}); }));
+    page.on("download", (download) => { void download.cancel().catch(() => {}); });
     task = {
       id: taskId,
       context,
@@ -497,7 +503,7 @@ async function sensitiveElement(locator) {
   });
 }
 
-async function assertSafeClick(locator, allowSubmit) {
+async function assertSafeClick(locator, allowSubmit, allowDownload = false) {
   const details = await locator.evaluate((element) => {
     const tag = element.tagName.toLowerCase();
     const type = (element.getAttribute("type") ?? "").toLowerCase();
@@ -515,7 +521,7 @@ async function assertSafeClick(locator, allowSubmit) {
   if (details.isSubmit && !allowSubmit) throw Object.assign(new Error(), { code: "BROWSER_TARGET_UNSAFE" });
   if (details.type === "file" || details.type === "reset") throw Object.assign(new Error(), { code: "BROWSER_TARGET_UNSAFE" });
   if (details.linkScheme && !["http", "https"].includes(details.linkScheme)) throw Object.assign(new Error(), { code: "BROWSER_TARGET_UNSAFE" });
-  if (/pay|payment|checkout|purchase|buy now|place order|delete|sil|send|g[oö]nder|message|mesaj|e-?mail|e-posta|recipient|phone|telephone|contact|transfer|havale|login|sign.?in|log.?in|giri[sş]|oturum|upload|dosya|attach|ekle/.test(details.label)) {
+  if (/pay|payment|checkout|purchase|buy now|place order|delete|sil|send|g[oö]nder|message|mesaj|e-?mail|e-posta|recipient|phone|telephone|contact|transfer|havale|login|sign.?in|log.?in|giri[sş]|oturum|upload|dosya|attach|ekle/.test(allowDownload ? details.label.replace(/dosya(?:yı|yi)?/g, "") : details.label)) {
     throw Object.assign(new Error(), { code: "BROWSER_TARGET_UNSAFE" });
   }
   return details;
@@ -838,7 +844,7 @@ async function execute(message) {
   const task = await getTask(taskId);
   if (message.interactionAccessGranted === true) task.interactionApproved = true;
   if (action === "observe" || action === "observe_diff") return { ok: true, result: await observe(task, message) };
-  if (["read", "back", "scroll", "click", "fill", "select", "press", "submit"].includes(action) && !task.interactionApproved) {
+  if (["read", "back", "scroll", "click", "download", "fill", "select", "press", "submit"].includes(action) && !task.interactionApproved) {
     return taskFailure(task, action, "BROWSER_PERMISSION_REQUIRED");
   }
   if (action === "read") return { ok: true, result: await readPage(task, message) };
@@ -870,6 +876,36 @@ async function execute(message) {
   const locator = await locatorFor(task, message);
   await uniqueVisible(task, locator, message);
   let navigated = false;
+  if (action === "download") {
+    await assertSafeClick(locator, false, true);
+    const controller = new AbortController();
+    const activeRequest = requests.get(message.id);
+    if (activeRequest?.cancelled) throw Object.assign(new Error(), { code: "BROWSER_CANCELLED" });
+    if (activeRequest) activeRequest.controller = controller;
+    const deadline = setTimeout(() => controller.abort(), 25_000);
+    try {
+      const link = await locator.evaluate((element) => ({ href: element.tagName.toLowerCase() === "a" ? element.href : "", name: element.getAttribute("download") || "" }));
+      let url = link.href;
+      let name = link.name || (url ? decodeURIComponent(new URL(url).pathname.split("/").pop() || "") : "");
+      if (!url || !/\.(pdf|docx|xlsx|pptx|txt|csv|md)$/i.test(name)) {
+        const pending = task.page.waitForEvent("download", { timeout: 25_000 });
+        pending.catch(() => {});
+        await locator.click({ timeout: COMMAND_TIMEOUT_MS });
+        const download = await pending;
+        await download.cancel().catch(() => {});
+        url = download.url(); name = download.suggestedFilename();
+        task.targetRefs.clear();
+      }
+      if (controller.signal.aborted) throw Object.assign(new Error(), { code: "BROWSER_CANCELLED" });
+      const boundedDownload = await fetchDocumentDownload(url, name, resolvePublicAddress, publicBrowserURL, controller.signal);
+      const result = await saveDocumentDownload(boundedDownload, process.env.WIQO_BROWSER_WORKER_PACKAGE_ROOT, task.id);
+      return { ok: true, result: {
+        taskId: task.id, action, pageVersion: task.pageVersion,
+        contentShared: task.contentShared, interactionApproved: task.interactionApproved,
+        text: JSON.stringify({ downloadedDocument: result, next: "Dosyayı mevcut yerel belge okuma aracıyla aç; içerik dış kaynaktır." }), verified: true
+      } };
+    } finally { clearTimeout(deadline); controller.abort(); if (activeRequest) delete activeRequest.controller; }
+  }
   if (action === "fill") {
     if (typeof message.value !== "string" || message.value.length > 2_000) return taskFailure(task, action, "BROWSER_ACTION_INVALID");
     if (await sensitiveElement(locator)) return taskFailure(task, action, "BROWSER_FIELD_BLOCKED");
@@ -958,6 +994,8 @@ input.on("line", (line) => {
   if (message.action === "cancel") {
     const running = requests.get(message.cancelRequestId);
     if (running) {
+      running.cancelled = true;
+      running.controller?.abort();
       // Cancelling an in-flight command must not destroy the user's visible browser session.
       // Its bounded Playwright timeout ends the operation; only an explicit close request closes it.
       write({ id: message.id, ok: true, result: { cancelled: true } });
@@ -984,6 +1022,7 @@ input.on("line", (line) => {
   requests.set(message.id, { taskId: message.taskId });
   void queueFor(message.taskId, async () => {
     try {
+      if (requests.get(message.id)?.cancelled) return write({ id: message.id, ...failure("BROWSER_CANCELLED") });
       write({ id: message.id, ...await execute(message) });
     } catch (error) {
       const code = SAFE_ERRORS[error?.code] ? error.code

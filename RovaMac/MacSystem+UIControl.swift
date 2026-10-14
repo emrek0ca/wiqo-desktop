@@ -425,7 +425,7 @@ private final class MacAgentCursorOverlay {
         let panel = self.panel ?? makePanel()
         self.panel = panel
         let cursor = NSEvent.mouseLocation
-        panel.setFrameOrigin(NSPoint(x: cursor.x - 15, y: cursor.y - 15))
+        panel.setFrameOrigin(NSPoint(x: cursor.x - 15, y: cursor.y - 18))
         panel.orderFrontRegardless()
         hideTask?.cancel()
         hideTask = Task { @MainActor [weak self] in
@@ -444,7 +444,7 @@ private final class MacAgentCursorOverlay {
 
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 30, height: 30),
+            contentRect: NSRect(x: 0, y: 0, width: 86, height: 36),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -463,7 +463,7 @@ private final class MacAgentCursorOverlay {
 private final class MacAgentCursorView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        let outer = bounds.insetBy(dx: 2, dy: 2)
+        let outer = NSRect(x: 2, y: 5, width: 26, height: 26)
         NSColor.systemPurple.withAlphaComponent(0.2).setFill()
         NSBezierPath(ovalIn: outer).fill()
         NSColor.systemPurple.setStroke()
@@ -471,7 +471,12 @@ private final class MacAgentCursorView: NSView {
         path.lineWidth = 2
         path.stroke()
         NSColor.white.setFill()
-        NSBezierPath(ovalIn: NSRect(x: bounds.midX - 2, y: bounds.midY - 2, width: 4, height: 4)).fill()
+        NSBezierPath(ovalIn: NSRect(x: 13, y: 16, width: 4, height: 4)).fill()
+        NSColor.systemPurple.setFill()
+        NSBezierPath(roundedRect: NSRect(x: 31, y: 7, width: 52, height: 23), xRadius: 9, yRadius: 9).fill()
+        ("Wiqo" as NSString).draw(at: NSPoint(x: 39, y: 11), withAttributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: NSColor.white
+        ])
     }
 }
 
@@ -503,18 +508,25 @@ extension MacSystem {
         if let snapshotId = payload.snapshotId, snapshotId != prior.id {
             return (nil, RovaError(code: "DESKTOP_STALE_OBSERVATION", message: "Masaüstü görünümü değişti; işlemden önce yeniden gözlemleyin.", category: "tool_failure"))
         }
+        guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == prior.applicationIdentifier else {
+            return (nil, RovaError(code: "DESKTOP_STALE_OBSERVATION", message: "Öndeki uygulama değişti; işlemden önce yeniden gözlemleyin.", category: "tool_failure"))
+        }
         if desktopWasInterrupted(prior) {
             desktopStore.clear(taskId: payload.taskId)
             Task { @MainActor in MacAgentCursorOverlay.shared.hide() }
             return (nil, RovaError(code: "DESKTOP_USER_INTERRUPTED", message: "Kullanıcı fareyi devraldığı için masaüstü görevi güvenle durduruldu.", category: "permission"))
         }
 
+        guard !Task.isCancelled else {
+            return (nil, RovaError(code: "DESKTOP_CANCELLED", message: "Masaüstü işlemi durduruldu.", category: "tool_failure"))
+        }
         let operationError: RovaError?
         switch payload.action {
         case .move:
-            operationError = desktopPoint(for: payload, snapshot: prior).flatMap { point in
-                moveDesktopCursor(to: point)
-            } ?? RovaError(code: "DESKTOP_TARGET_NOT_FOUND", message: "Hedef güncel masaüstü görünümünde bulunamadı.", category: "tool_failure")
+            guard let point = desktopPoint(for: payload, snapshot: prior) else {
+                return (nil, RovaError(code: "DESKTOP_TARGET_NOT_FOUND", message: "Hedef güncel masaüstü görünümünde bulunamadı.", category: "tool_failure"))
+            }
+            operationError = moveDesktopCursor(to: point)
         case .click, .doubleClick, .rightClick:
             guard let point = desktopPoint(for: payload, snapshot: prior) else {
                 return (nil, RovaError(code: "DESKTOP_TARGET_NOT_FOUND", message: "Tıklama hedefi güncel masaüstü görünümünde bulunamadı.", category: "tool_failure"))
@@ -525,13 +537,16 @@ extension MacSystem {
             operationError = clickDesktop(at: point, action: payload.action)
         case .scroll:
             if let targetRef = payload.targetRef, let point = prior.points[targetRef] {
-                _ = moveDesktopCursor(to: point)
+                if let error = moveDesktopCursor(to: point) { return (nil, error) }
             }
             operationError = scrollDesktop(direction: payload.direction ?? "down", amount: payload.amount ?? 2)
         case .dragDrop:
             guard let sourceRef = payload.sourceRef, let destinationRef = payload.destinationRef,
                   let source = prior.points[sourceRef], let destination = prior.points[destinationRef] else {
                 return (nil, RovaError(code: "DESKTOP_TARGET_NOT_FOUND", message: "Sürükleme kaynak veya hedefi artık görünür değil.", category: "tool_failure"))
+            }
+            guard !prior.targets.contains(where: { ($0.ref == sourceRef || $0.ref == destinationRef) && desktopTargetIsSensitive($0) }) else {
+                return (nil, RovaError(code: "DESKTOP_SENSITIVE_ACTION_BLOCKED", message: "Bu hedef için sürükleme izni yok.", category: "permission"))
             }
             operationError = dragDesktop(from: source, to: destination)
         case .type:
@@ -698,6 +713,11 @@ extension MacSystem {
         let changedTargets = targets.filter { target in oldTargets[target.ref].map { $0 != target } ?? false }
         let removedTargetRefs = oldTargets.keys.filter { newTargets[$0] == nil }.sorted()
         let content = DesktopControlContent(taskId: taskId, action: action, snapshotId: snapshotId, previousSnapshotId: previous?.id, applicationName: application.localizedName, applicationIdentifier: application.bundleIdentifier, windowTitle: windowTitle, cursorX: cursorX, cursorY: cursorY, targets: targets, addedTargets: addedTargets, changedTargets: changedTargets, removedTargetRefs: removedTargetRefs, accessGranted: true, changed: didChange || !addedTargets.isEmpty || !changedTargets.isEmpty || !removedTargetRefs.isEmpty, verified: verified)
+        // Keep older phones below their generic preview threshold as well. The full AX tree
+        // remains in desktopStore; only the planner projection is bounded on the wire.
+        if let encoded = content.plannerData(), let projected = try? JSONDecoder().decode(CommandData.self, from: encoded) {
+            return (projected, nil)
+        }
         return (.computerDesktop(content), nil)
     }
 
@@ -750,12 +770,14 @@ extension MacSystem {
     private static func moveDesktopCursor(to point: CGPoint) -> RovaError? {
         let start = CGEvent(source: nil)?.location ?? point
         for step in 1...10 {
+            guard !Task.isCancelled else { return RovaError(code: "DESKTOP_CANCELLED", message: "Fare hareketi durduruldu.", category: "tool_failure") }
             let progress = CGFloat(step) / 10
             let current = CGPoint(x: start.x + (point.x - start.x) * progress, y: start.y + (point.y - start.y) * progress)
             guard let event = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: current, mouseButton: .left) else {
                 return RovaError(code: "DESKTOP_INPUT_UNAVAILABLE", message: "Fare hareketi oluşturulamadı.", category: "tool_failure")
             }
             event.post(tap: .cghidEventTap)
+            Task { @MainActor in MacAgentCursorOverlay.shared.show() }
             usleep(12_000)
         }
         guard let observed = CGEvent(source: nil)?.location, hypot(observed.x - point.x, observed.y - point.y) <= 4 else {
@@ -800,13 +822,19 @@ extension MacSystem {
             return RovaError(code: "DESKTOP_INPUT_UNAVAILABLE", message: "Sürükleme eylemi oluşturulamadı.", category: "tool_failure")
         }
         down.post(tap: .cghidEventTap)
+        // Release at the actual cursor position even when cancellation interrupts a drag.
+        defer {
+            let point = CGEvent(source: nil)?.location ?? source
+            CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+        }
         for step in 1...14 {
+            guard !Task.isCancelled else { return RovaError(code: "DESKTOP_CANCELLED", message: "Sürükleme durduruldu.", category: "tool_failure") }
             let progress = CGFloat(step) / 14
             let point = CGPoint(x: source.x + (destination.x - source.x) * progress, y: source.y + (destination.y - source.y) * progress)
             CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+            Task { @MainActor in MacAgentCursorOverlay.shared.show() }
             usleep(18_000)
         }
-        CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: destination, mouseButton: .left)?.post(tap: .cghidEventTap)
         Task { @MainActor in MacAgentCursorOverlay.shared.show() }
         return nil
     }
@@ -815,8 +843,46 @@ extension MacSystem {
         _ = AXUIElementSetMessagingTimeout(element, 0.5)
         _ = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         let result = AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, text as CFTypeRef)
-        guard result == .success else {
+        if result == .attributeUnsupported || result == .notImplemented {
+            // Some web/native editors expose focus and value but reject AX writes.
+            // Unicode key events avoid changing the user's clipboard or keyboard layout.
+            func targetIsFocused() -> Bool {
+                var focused: CFTypeRef?
+                return AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString, &focused) == .success
+                    && focused.map { CFEqual($0, element) } == true
+            }
+            guard targetIsFocused(), axString(element, attribute: kAXValueAttribute) != nil else {
+                return RovaError(code: "DESKTOP_TYPE_FAILED", message: "Metin alanının odağı doğrulanamadı.", category: "tool_failure")
+            }
+            if let error = sendDesktopHotkey(["command", "a"]) { return error }
+            let units = Array(text.utf16)
+            var offset = 0
+            while offset < units.count {
+                guard !Task.isCancelled, targetIsFocused() else {
+                    return RovaError(code: "DESKTOP_TYPE_INTERRUPTED", message: "Metin girişi durdu; devam etmeden alanı yeniden gözlemleyin.", category: "tool_failure")
+                }
+                var end = min(offset + 32, units.count)
+                if end < units.count, (0xD800...0xDBFF).contains(units[end - 1]) { end -= 1 }
+                let chunk = Array(units[offset..<end])
+                guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
+                      let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
+                    return RovaError(code: "DESKTOP_TYPE_FAILED", message: "Klavye girişi oluşturulamadı.", category: "tool_failure")
+                }
+                chunk.withUnsafeBufferPointer { buffer in
+                    down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
+                    up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
+                }
+                down.post(tap: .cghidEventTap)
+                up.post(tap: .cghidEventTap)
+                offset = end
+                usleep(10_000)
+            }
+            usleep(100_000)
+        } else if result != .success {
             return RovaError(code: "DESKTOP_TYPE_FAILED", message: "Metin hedef alana güvenli biçimde yazılamadı.", category: "tool_failure")
+        }
+        guard axString(element, attribute: kAXValueAttribute) == text else {
+            return RovaError(code: "DESKTOP_TYPE_UNVERIFIED", message: "Metin yazma sonucu doğrulanamadı; alanı yeniden gözlemleyin.", category: "tool_failure")
         }
         return nil
     }
