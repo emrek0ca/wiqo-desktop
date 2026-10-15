@@ -354,7 +354,7 @@ public sealed class WindowsDesktopControlAdapter : IDesktopControlAdapter
         };
         if (keys.Length == 0 || keys.Any(key => !virtualKeys.ContainsKey(key))) return new WireError("DESKTOP_HOTKEY_BLOCKED", "Bu klavye kısayolu güvenli izin listesinde değil.", "permission");
         var values = keys.Select(key => virtualKeys[key]).ToArray();
-        var inputs = values.Select(KeyDown).Concat(values.Reverse().Select(KeyUp)).ToArray();
+        var inputs = values.Select(KeyDown).Concat(values.AsEnumerable().Reverse().Select(KeyUp)).ToArray();
         return NativeMethods.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<NativeMethods.Input>()) == (uint)inputs.Length ? null : InputUnavailable();
     }
 
