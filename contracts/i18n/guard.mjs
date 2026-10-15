@@ -1,6 +1,7 @@
 // Fails when a string that goes over the wire or is matched by code is wrapped in String(localized:), which would translate it.
 // A header named "Authorization" became "Autorisierung" in German once; this keeps that from coming back. Run in CI (contracts job).
 import { readdirSync, readFileSync } from "node:fs";
+import { argv } from "node:process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,17 +41,21 @@ const withoutInterpolation = (text) => {
   }
   return out;
 };
-const literal = /"((?:[^"\\]|\\.|\\\((?:[^()]|\([^()]*\))*\))*?[çğıöşüÇĞİÖŞÜ](?:[^"\\]|\\.|\\\((?:[^()]|\([^()]*\))*\))*?)"/g;
-for (const file of readdirSync(join(root, "RovaIOS")).filter((name) => name.endsWith(".swift")).map((name) => join("RovaIOS", name))) {
-  readFileSync(join(root, file), "utf8").split("\n").forEach((line, index) => {
-    if (line.trim().startsWith("//")) return;
-    for (const match of line.matchAll(literal)) {
-      const raw = match[1];
-      if (known.has(withoutInterpolation(raw).replace(/\\n/g, "\n").replace(/\\"/g, '"')) || verbatim.has(raw.slice(0, 80))) continue;
-      console.error(`${file}:${index + 1}: Turkish text outside the catalog: "${raw.slice(0, 60)}" (wrap it in String(localized:) or list it in verbatim.json)`);
-      failed++;
-    }
-  });
+if (!argv.includes("--wire-only")) {
+  const literal = /"((?:[^"\\]|\\.|\\\((?:[^()]|\([^()]*\))*\))*?[çğıöşüÇĞİÖŞÜ](?:[^"\\]|\\.|\\\((?:[^()]|\([^()]*\))*\))*?)"/g;
+  for (const file of readdirSync(join(root, "RovaIOS")).filter((name) => name.endsWith(".swift")).map((name) => join("RovaIOS", name))) {
+    readFileSync(join(root, file), "utf8").split("\n").forEach((line, index) => {
+      if (line.trim().startsWith("//")) return;
+      for (const match of line.matchAll(literal)) {
+        const raw = match[1];
+        if (known.has(withoutInterpolation(raw).replace(/\\n/g, "\n").replace(/\\"/g, '"')) || verbatim.has(raw.slice(0, 80))) continue;
+        console.error(`${file}:${index + 1}: Turkish text outside the catalog: "${raw.slice(0, 60)}" (wrap it in String(localized:) or list it in verbatim.json)`);
+        failed++;
+      }
+    });
+  }
 }
 if (failed) process.exit(1);
-console.log("no wire identifiers are localized; no Turkish text outside the catalog");
+console.log(argv.includes("--wire-only")
+  ? "no wire identifiers are localized"
+  : "no wire identifiers are localized; no Turkish text outside the catalog");
