@@ -155,7 +155,10 @@ public enum ActArchive {
         let c = Calendar(identifier: .gregorian).dateComponents(in: TimeZone.current, from: date)
         let year = max(1980, c.year ?? 1980) - 1980
         let day = UInt16(year << 9 | (c.month ?? 1) << 5 | (c.day ?? 1))
-        let time = UInt16((c.hour ?? 0) << 11 | (c.minute ?? 0) << 5 | ((c.second ?? 0) / 2))
+        let hourBits = (c.hour ?? 0) << 11
+        let minuteBits = (c.minute ?? 0) << 5
+        let twoSecondBits = (c.second ?? 0) / 2
+        let time = UInt16(hourBits | minuteBits | twoSecondBits)
         return (day, time)
     }
 

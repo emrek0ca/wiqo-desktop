@@ -6,6 +6,8 @@ on:
       - "RovaIOS/**"
       - "RovaMac/**"
       - "RovaShared/**"
+      - "RovaBrowserWorker/**"
+      - "RovaDocumentWorker/**"
       - "Tests/**"
       - "Rova.xcodeproj/**"
       - "contracts/**"
@@ -15,6 +17,8 @@ on:
       - "RovaIOS/**"
       - "RovaMac/**"
       - "RovaShared/**"
+      - "RovaBrowserWorker/**"
+      - "RovaDocumentWorker/**"
       - "Tests/**"
       - "Rova.xcodeproj/**"
       - "contracts/**"
@@ -44,8 +48,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: iPhone app
-        run: xcodebuild -project Rova.xcodeproj -scheme Wiqo -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+        run: xcodebuild -project Rova.xcodeproj -scheme 'Wiqo iOS' -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
       - name: Mac app
-        run: xcodebuild -project Rova.xcodeproj -scheme RovaMac -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+        run: xcodebuild -project Rova.xcodeproj -scheme Wiqo -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
       - name: Shared tests
-        run: xcodebuild -project Rova.xcodeproj -scheme RovaMac -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test -only-testing:RovaSharedTests
+        run: xcodebuild -project Rova.xcodeproj -scheme Wiqo -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test -only-testing:RovaSharedTests

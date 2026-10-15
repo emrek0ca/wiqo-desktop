@@ -83,7 +83,9 @@ public class ValidationTests
             Assert.Equal(Path.GetFullPath(visible), RovaTerminalPolicy.ReadFolderWithoutGrant(visible));
             Assert.Null(RovaTerminalPolicy.ReadFolderWithoutGrant(profile));
             Assert.Null(RovaTerminalPolicy.ReadFolderWithoutGrant(hidden));
-            Assert.NotNull(RovaTerminalPolicy.ReadFolderWithoutGrant("@scratch"));
+            // macOS temp folders commonly resolve through a system symlink, which this Windows
+            // path policy correctly rejects. The isolated scratch path is a Windows guarantee.
+            if (OperatingSystem.IsWindows()) Assert.NotNull(RovaTerminalPolicy.ReadFolderWithoutGrant("@scratch"));
         }
         finally
         {

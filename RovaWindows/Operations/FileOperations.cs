@@ -87,7 +87,7 @@ internal static class FileOperations
                 .OrderBy(info => info.Name, StringComparer.CurrentCultureIgnoreCase)
                 .Skip(Math.Max(0, payload.Page) * Math.Max(1, payload.PageSize))
                 .Take(Math.Max(1, payload.PageSize))
-                .Select(Entry)
+                .Select(info => Entry(info))
                 .ToArray();
             return Outcome.WithData("files", entries, $"{entries.Length} dosya bulundu.");
         }

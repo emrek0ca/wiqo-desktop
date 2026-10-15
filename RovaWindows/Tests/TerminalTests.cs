@@ -62,7 +62,7 @@ public class TerminalFileTests
         var undone = TerminalFiles.UndoLocalFile(undoId!);
         Assert.Null(undone.Error);
         Assert.False(File.Exists(path));
-        Assert.Equal("TERMINAL_UNDO_INVALID", TerminalFiles.UndoLocalFile(undoId!).Error?.Code);
+        Assert.Equal("FILE_UNDO_INVALID", TerminalFiles.UndoLocalFile(undoId!).Error?.Code);
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public class TerminalFileTests
         Assert.Null(undone.Error);
         Assert.Equal("original", File.ReadAllText(source));
         Assert.False(File.Exists(moved));
-        Assert.Equal("TERMINAL_UNDO_INVALID", TerminalFiles.UndoLocalFile(undoId!).Error?.Code);
+        Assert.Equal("FILE_UNDO_INVALID", TerminalFiles.UndoLocalFile(undoId!).Error?.Code);
     }
 
     [Fact]

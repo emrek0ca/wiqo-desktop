@@ -33,9 +33,20 @@ const rendered = `${JSON.stringify({ sourceLanguage: "tr", strings, version: "1.
 if (argv.includes("--check")) {
   const languages = Object.keys(translations);
   const missing = keys.filter((key) => languages.some((language) => !translations[language][key]));
-  let current = "";
-  try { current = readFileSync(output, "utf8"); } catch { /* reported below */ }
-  if (current !== rendered) { console.error("RovaIOS/Localizable.xcstrings is stale: run node contracts/i18n/build.mjs and commit it."); exit(1); }
+  let current;
+  try { current = JSON.parse(readFileSync(output, "utf8")); } catch { /* reported below */ }
+  const expected = JSON.parse(rendered);
+  const canonical = (value) => Array.isArray(value)
+    ? `[${value.map(canonical).join(",")}]`
+    : value && typeof value === "object"
+      ? `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`
+      : JSON.stringify(value);
+  // Xcode may add extracted keys and update the catalog schema version. Verify every key
+  // generated from translations.json, while preserving those additional catalog entries.
+  const stale = !current
+    || current.sourceLanguage !== expected.sourceLanguage
+    || Object.entries(expected.strings).some(([key, value]) => canonical(current.strings?.[key]) !== canonical(value));
+  if (stale) { console.error("RovaIOS/Localizable.xcstrings is stale: run node contracts/i18n/build.mjs and commit it."); exit(1); }
   if (missing.length > 0) { console.error(`${missing.length} keys lack a translation, e.g. ${JSON.stringify(missing[0])}`); exit(1); }
   console.log(`catalog current: ${keys.length} strings, ${languages.length} languages`);
   exit(0);

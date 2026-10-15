@@ -61,7 +61,9 @@ const vectors = {
 const text = `${JSON.stringify(vectors, null, 2)}\n`;
 
 if (process.argv.includes("--check")) {
-  const current = readFileSync(output, "utf8");
+  // Windows checkouts may normalize tracked text files to CRLF. The vector contract is JSON
+  // content; line-ending conversion must not make a current generated file appear stale.
+  const current = readFileSync(output, "utf8").replace(/\r\n?/g, "\n");
   if (current !== text) {
     console.error("✖ vectors.json güncel değil: node contracts/companion/generate-vectors.mjs");
     process.exit(1);

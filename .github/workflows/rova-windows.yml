@@ -5,12 +5,16 @@ on:
     paths:
       - "RovaWindows/**"
       - "RovaShared/**"
+      - "RovaBrowserWorker/**"
+      - "RovaDocumentWorker/**"
       - "contracts/companion/**"
       - ".github/workflows/rova-windows.yml"
   pull_request:
     paths:
       - "RovaWindows/**"
       - "RovaShared/**"
+      - "RovaBrowserWorker/**"
+      - "RovaDocumentWorker/**"
       - "contracts/companion/**"
       - ".github/workflows/rova-windows.yml"
 
