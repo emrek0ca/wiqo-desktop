@@ -17,6 +17,18 @@ on:
       - "RovaDocumentWorker/**"
       - "contracts/companion/**"
       - ".github/workflows/rova-windows.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing GitHub release to receive the Windows installers
+        required: true
+        default: v1.1.0-7
+        type: string
+
+permissions:
+  contents: write
 
 jobs:
   windows:
@@ -39,12 +51,30 @@ jobs:
         run: dotnet test RovaWindows/RovaWindows.sln --configuration Release --no-build --no-restore
       - name: Publish Wiqo.exe (x64, ARM64)
         shell: bash
-        run: RovaWindows/scripts/publish.sh
+        run: |
+          RovaWindows/scripts/publish.sh
+          cp RovaWindows/dist/win-x64/Wiqo.exe RovaWindows/dist/Wiqo-win-x64.exe
+          cp RovaWindows/dist/win-arm64/Wiqo.exe RovaWindows/dist/Wiqo-win-arm64.exe
       - uses: actions/upload-artifact@v4
         with:
           name: wiqo-windows
-          path: RovaWindows/dist/*/Wiqo.exe
+          path: RovaWindows/dist/Wiqo-win-*.exe
           retention-days: 14
+
+  release-assets:
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wiqo-windows
+          path: release-assets
+      - name: Attach Windows packages to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
+        run: gh release upload "$RELEASE_TAG" release-assets/Wiqo-win-x64.exe release-assets/Wiqo-win-arm64.exe --repo "$GITHUB_REPOSITORY" --clobber
 
   # The Mac side of the same contract: RovaShared against vectors.json, and operations.json is
   # the current export of RovaShared's operation catalogue.
