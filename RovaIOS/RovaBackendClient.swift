@@ -2198,7 +2198,7 @@ enum WiqoOnDeviceIntentModel {
             let response = try await session.respond(
                 to: message,
                 generating: Decision.self,
-                options: GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 160)
+                options: GenerationOptions(maximumResponseTokens: 160)
             )
             let decision = response.content
             let value: [String: Any] = [
